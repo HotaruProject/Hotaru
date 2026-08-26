@@ -245,11 +245,15 @@ class Runtime:
             current_version = self._version_key(active.loaded.manifest.version)
             candidate_version = self._version_key(candidate_loaded.manifest.version)
             if not force and current_version is not None and candidate_version is not None and candidate_version < current_version:
+                if self.observatory is not None:
+                    self.observatory.emit("modules", "update_blocked", module=module_id, old_version=active.loaded.manifest.version, new_version=candidate_loaded.manifest.version, reason="downgrade")
                 return f"reload blocked: version downgrade {active.loaded.manifest.version} to {candidate_loaded.manifest.version}"
         await self.deactivate_module(module_id)
         try:
             await self.activate_module(str(reload_path))
         except Exception as exc:
+            if self.observatory is not None:
+                self.observatory.emit("modules", "update_error", module=module_id, error=type(exc).__name__)
             try:
                 if self.stager is None:
                     raise RuntimeError("module stager is unavailable")
@@ -257,7 +261,11 @@ class Runtime:
                 await self.modules.activate_source(old_path, self.kernel)
             except Exception:
                 return f"reload failed: {type(exc).__name__}; rollback failed"
+            if self.observatory is not None:
+                self.observatory.emit("modules", "rollback_restored", module=module_id, version=active.loaded.manifest.version)
             return f"reload failed: {type(exc).__name__}; previous version restored"
+        if self.observatory is not None:
+            self.observatory.emit("modules", "update_applied", module=module_id, version=self.modules.get(module_id).loaded.manifest.version)
         return f"reloaded: {module_id}"
 
     async def _command_off(self, invocation: Any) -> str:
