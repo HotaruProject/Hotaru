@@ -5,6 +5,9 @@ import hashlib
 import os
 import re
 import tempfile
+import urllib.error
+import urllib.parse
+import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -113,9 +116,54 @@ class HmodLoader:
         return isinstance(value, list) and all(isinstance(item, str) and item for item in value)
 
 
+class ModuleFetchError(ValueError):
+    pass
+
+
 class ModuleStager:
     def __init__(self, loader: HmodLoader | None = None) -> None:
         self.loader = loader or HmodLoader()
+
+    @staticmethod
+    def normalize_url(value: str) -> str:
+        parsed = urllib.parse.urlparse(value)
+        if parsed.scheme != "https" or parsed.username or parsed.password or parsed.port:
+            raise ModuleFetchError("module URL must be a plain HTTPS URL")
+        host = (parsed.hostname or "").casefold()
+        parts = [urllib.parse.unquote(part) for part in parsed.path.split("/") if part]
+        if host == "github.com" and len(parts) >= 5 and parts[2] == "blob":
+            owner, repo, _, ref, *filename = parts
+            if not filename or not filename[-1].endswith(".hmod"):
+                raise ModuleFetchError("module URL must target a .hmod file")
+            return "https://raw.githubusercontent.com/" + "/".join([owner, repo, ref, *filename])
+        if host == "raw.githubusercontent.com" and len(parts) >= 4 and parts[-1].endswith(".hmod"):
+            return urllib.parse.urlunparse(("https", host, "/" + "/".join(parts), "", "", ""))
+        raise ModuleFetchError("module URL host or path is not allowed")
+
+    def stage_url(self, value: str, destination: str | Path, *, timeout: float = 10.0) -> LoadedModule:
+        if timeout <= 0:
+            raise ValueError("timeout must be positive")
+        url = self.normalize_url(value)
+        try:
+            request = urllib.request.Request(url, headers={"Accept": "text/plain"}, method="GET")
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                final = urllib.parse.urlparse(response.geturl())
+                if final.scheme != "https" or (final.hostname or "").casefold() != "raw.githubusercontent.com":
+                    raise ModuleFetchError("module URL redirected to an unsafe host")
+                data = response.read(self.loader.max_bytes + 1)
+        except (OSError, urllib.error.URLError) as exc:
+            raise ModuleFetchError("module download failed") from exc
+        if len(data) > self.loader.max_bytes:
+            raise ModuleFetchError("module download exceeds the size limit")
+        fd, temporary = tempfile.mkstemp(prefix=".hotaru-source-", suffix=".hmod")
+        path = Path(temporary)
+        try:
+            with os.fdopen(fd, "wb") as handle:
+                handle.write(data)
+            os.chmod(path, 0o600)
+            return self.stage(path, destination)
+        finally:
+            path.unlink(missing_ok=True)
 
     def stage(self, source: str | Path, destination: str | Path) -> LoadedModule:
         loaded = self.loader.load(source)

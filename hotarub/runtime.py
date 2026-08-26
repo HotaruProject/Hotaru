@@ -107,11 +107,20 @@ class Runtime:
             return "commands: unavailable"
         return "commands:\n" + "\n".join(f"{self.config.prefix}{name}" for name in sorted(self.kernel.registry.names()))
 
+    def stage_module_url(self, source: str, destination: str | Path | None = None) -> Any:
+        if self.stager is None:
+            raise RuntimeError("build the runtime before staging modules")
+        target = Path(destination) if destination is not None else self.config.state_path.parent / "constellations"
+        return self.stager.stage_url(source, target)
+
     async def _command_ld(self, invocation: Any) -> str:
         if len(invocation.args) != 1:
             return "usage: !ld <path-to-hmod>"
         try:
-            loaded = self.stage_module(invocation.args[0])
+            if invocation.args[0].startswith("https://"):
+                loaded = self.stage_module_url(invocation.args[0])
+            else:
+                loaded = self.stage_module(invocation.args[0])
         except Exception as exc:
             return f"load failed: {type(exc).__name__}"
         return f"staged: {loaded.manifest.module_id} {loaded.manifest.version}"
