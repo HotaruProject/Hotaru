@@ -150,6 +150,9 @@ class ModuleStager:
                 final = urllib.parse.urlparse(response.geturl())
                 if final.scheme != "https" or (final.hostname or "").casefold() != "raw.githubusercontent.com":
                     raise ModuleFetchError("module URL redirected to an unsafe host")
+                content_length = response.headers.get("Content-Length")
+                if content_length is not None and int(content_length) > self.loader.max_bytes:
+                    raise ModuleFetchError("module download exceeds the size limit")
                 data = response.read(self.loader.max_bytes + 1)
         except (OSError, urllib.error.URLError) as exc:
             raise ModuleFetchError("module download failed") from exc
