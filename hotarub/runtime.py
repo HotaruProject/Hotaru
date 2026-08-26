@@ -76,6 +76,8 @@ class Runtime:
         self.kernel.registry.register("ls", self._command_ls, kernel=True)
         self.kernel.registry.register("hlp", self._command_hlp, kernel=True)
         self.kernel.registry.register("ld", self._command_ld, kernel=True)
+        self.kernel.registry.register("ul", self._command_ul, kernel=True)
+        self.kernel.registry.register("rl", self._command_rl, kernel=True)
         self.kernel.attach(self.app)
         self.app.on_cb(self._on_callback)
         self.event_router.attach_aux(self.app)
@@ -124,6 +126,33 @@ class Runtime:
         except Exception as exc:
             return f"load failed: {type(exc).__name__}"
         return f"staged: {loaded.manifest.module_id} {loaded.manifest.version}"
+
+    async def _command_ul(self, invocation: Any) -> str:
+        if len(invocation.args) != 1 or self.modules is None:
+            return "usage: !ul <module-id>"
+        module_id = invocation.args[0].casefold()
+        if await self.deactivate_module(module_id):
+            return f"unloaded: {module_id}"
+        return f"module not active: {module_id}"
+
+    async def _command_rl(self, invocation: Any) -> str:
+        if len(invocation.args) != 1 or self.modules is None:
+            return "usage: !rl <module-id>"
+        module_id = invocation.args[0].casefold()
+        active = self.modules.get(module_id)
+        if active is None:
+            return f"module not active: {module_id}"
+        old_path = active.loaded.path
+        await self.deactivate_module(module_id)
+        try:
+            await self.activate_module(str(old_path))
+        except Exception as exc:
+            try:
+                await self.modules.activate_source(old_path, self.kernel)
+            except Exception:
+                return f"reload failed: {type(exc).__name__}; rollback failed"
+            return f"reload failed: {type(exc).__name__}; previous version restored"
+        return f"reloaded: {module_id}"
 
     def _event_error(self, error: Exception) -> None:
         if self.observatory is not None:
