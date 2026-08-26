@@ -234,11 +234,19 @@ class Runtime:
         required = ("id", "access_hash")
         if any(not isinstance(document.get(key), int) for key in required):
             raise ValueError("MTProto document location is incomplete")
+        file_reference = document.get("file_reference", b"")
+        if isinstance(file_reference, str):
+            try:
+                file_reference = bytes.fromhex(file_reference)
+            except ValueError:
+                file_reference = file_reference.encode("utf-8")
+        if not isinstance(file_reference, (bytes, bytearray)):
+            raise ValueError("MTProto file reference is invalid")
         location = {
             "_": "inputDocumentFileLocation",
             "id": document["id"],
             "access_hash": document["access_hash"],
-            "file_reference": document.get("file_reference", b""),
+            "file_reference": bytes(file_reference),
             "thumb_size": "",
         }
         await message.app.mt.download_file(location, str(destination), limit=524288)

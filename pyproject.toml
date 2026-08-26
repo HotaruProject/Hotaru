@@ -8,7 +8,7 @@ version = "0.1.5"
 description = "HotaruUB userbot kernel on GoyGram"
 requires-python = ">=3.11"
 dependencies = [
-    "goygram @ git+https://github.com/GoyGram/GoyGram.git@70bf51be6d7f48a95e59d9a31372803541ea616d",
+    "goygram @ git+https://github.com/GoyGram/GoyGram.git@67becae1134aaff9b82e9fcd49abf3ddc2da241b",
 ]
 
 [project.scripts]
