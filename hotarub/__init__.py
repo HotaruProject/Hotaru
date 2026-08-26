@@ -6,7 +6,7 @@ from .activation import ActivationError, ActiveModule, ModuleManager
 from .capabilities import BehaviorEnvelope, CapabilityBroker, CapabilityDenied, CapabilityProvider
 from .registry import CommandRegistry, CommandSpec
 from .runtime import Runtime
-from .response import ModuleContext, Response, ResponseService
+from .response import ModuleContext, Response, ResponseError, ResponseService
 from .state import StateError, StateNamespace, StateStore
 
 __all__ = [
@@ -27,6 +27,7 @@ __all__ = [
     "RuntimeConfig",
     "ModuleContext",
     "Response",
+    "ResponseError",
     "ResponseService",
     "BehaviorEnvelope",
     "CapabilityBroker",

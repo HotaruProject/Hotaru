@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Any, Callable, Literal
 
 from .state import StateNamespace
 
 
 OutputMode = Literal["edit", "reply", "auto"]
+
+
+class ResponseError(RuntimeError):
+    pass
 
 
 @dataclass(frozen=True, slots=True)
@@ -18,6 +22,9 @@ class Response:
 
 
 class ResponseService:
+    def __init__(self, rich_sender: Callable[..., Any] | None = None) -> None:
+        self.rich_sender = rich_sender
+
     async def answer(
         self,
         message: Any,
@@ -36,9 +43,21 @@ class ResponseService:
             raise ValueError("text and rich_message are mutually exclusive")
         if output not in ("edit", "reply", "auto"):
             raise ValueError("output mode is invalid")
-        payload = {"kbd": buttons}
         if rich_message is not None:
-            payload["rich_message"] = rich_message
+            if self.rich_sender is None:
+                raise ResponseError("rich transport is not configured")
+            result = self.rich_sender(
+                message,
+                rich_message=rich_message,
+                buttons=buttons,
+                output=output,
+                reply_to=reply_to,
+                topic_id=topic_id,
+            )
+            if hasattr(result, "__await__"):
+                result = await result
+            return Response(True, "edit" if output == "edit" else "reply", getattr(message, "src", None), result)
+        payload = {"kbd": buttons}
         if media is not None:
             payload["media"] = media
         if reply_to is not None:
@@ -72,9 +91,11 @@ class ModuleContext:
         return await self.responses.answer(self.message, **kwargs)
 
     async def answer_file(self, media: Any, **kwargs: Any) -> Response:
+        kwargs.setdefault("output", "reply")
         return await self.answer(media=media, **kwargs)
 
     async def answer_media(self, media: Any, **kwargs: Any) -> Response:
+        kwargs.setdefault("output", "reply")
         return await self.answer(media=media, **kwargs)
 
     async def answer_rich(self, rich_message: Any, **kwargs: Any) -> Response:
