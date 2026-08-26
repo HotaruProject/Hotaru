@@ -81,6 +81,7 @@ class Runtime:
         self.kernel.registry.register("rm", self._command_rm, kernel=True)
         self.kernel.registry.register("bk", self._command_bk, kernel=True)
         self.callbacks.register("remove_confirm", self._remove_confirm)
+        self.callbacks.register("restore_confirm", self._restore_confirm)
         self.kernel.attach(self.app)
         self.app.on_cb(self._on_callback)
         self.event_router.attach_aux(self.app)
@@ -173,20 +174,35 @@ class Runtime:
             self.observatory.emit("backup", "created", files=len(module_paths) + 1, removed=len(removed))
         return result
 
-    async def _command_bk(self, invocation: Any) -> str:
+    async def _command_bk(self, invocation: Any) -> tuple[str, list[dict[str, str]]] | str:
         if not invocation.args:
             try:
                 archive = self.create_backup()
             except Exception as exc:
                 return f"backup failed: {type(exc).__name__}"
             return f"backup created: {archive.name}"
-        if len(invocation.args) == 2 and invocation.args[0].casefold() == "test":
+        action = invocation.args[0].casefold()
+        if action == "list" and len(invocation.args) == 1:
+            directory = self.config.state_path.parent / "backups"
+            names = sorted(path.name for path in directory.glob("*.hbk") if path.is_file())
+            return "backups: none" if not names else "backups:\n" + "\n".join(names)
+        if action == "test" and len(invocation.args) == 2:
             try:
                 plan = self.backups.plan(invocation.args[1])
             except Exception as exc:
                 return f"backup invalid: {type(exc).__name__}"
             return f"backup valid: {len(plan.files)} files"
-        return "usage: !bk | !bk test <archive>"
+        if action == "restore" and len(invocation.args) == 2 and self.callbacks is not None and self.kernel is not None and self.kernel.owner_id is not None:
+            try:
+                self.backups.plan(invocation.args[1])
+            except Exception as exc:
+                return f"backup invalid: {type(exc).__name__}"
+            handle = self.callbacks.store.issue(
+                CallbackBinding(self.kernel.owner_id, invocation.chat_id, invocation.message_id),
+                {"action": "restore_confirm", "payload": invocation.args[1]},
+            )
+            return ("confirm restore", [{"text": "Confirm", "callback_data": handle}])
+        return "usage: !bk | !bk list | !bk test <archive> | !bk restore <archive>"
 
     async def _command_rm(self, invocation: Any) -> tuple[str, list[dict[str, str]]] | str:
         if len(invocation.args) != 1 or self.modules is None or self.callbacks is None:
@@ -221,6 +237,19 @@ class Runtime:
             return await callback.edit(f"removal failed: {payload}")
         await callback.answer("Module removed", alert=True)
         return await callback.edit(f"removed: {payload}")
+
+    async def _restore_confirm(self, callback: Any, payload: Any) -> object:
+        if not isinstance(payload, str) or self.backups is None:
+            await callback.answer("Invalid restore request", alert=True)
+            return None
+        try:
+            plan = self.backups.plan(payload)
+            await self.restore_filesystem(plan, self.config.state_path.parent / "constellations")
+        except Exception as exc:
+            await callback.answer("Restore failed", alert=True)
+            return await callback.edit(f"restore failed: {type(exc).__name__}")
+        await callback.answer("Restore completed", alert=True)
+        return await callback.edit("restore completed")
 
     def _event_error(self, error: Exception) -> None:
         if self.observatory is not None:

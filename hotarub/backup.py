@@ -182,8 +182,11 @@ class BackupService:
         source = Path(staged)
         state_source = source / "state/state.sqlite3"
         modules_source = source / "modules"
-        if not state_source.is_file() or not modules_source.is_dir():
+        if not state_source.is_file():
             raise BackupError("staged restore is incomplete")
+        if modules_source.exists() and not modules_source.is_dir():
+            raise BackupError("staged module tree is invalid")
+        modules_source.mkdir(parents=True, exist_ok=True)
         target_state = Path(state_path)
         target_modules = Path(modules_path)
         target_state.parent.mkdir(parents=True, exist_ok=True)

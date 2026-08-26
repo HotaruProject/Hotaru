@@ -45,9 +45,10 @@ class CallbackStore:
 
     def consume(self, handle: str, binding: CallbackBinding) -> Any:
         self._purge()
-        entry = self._items.pop(handle, None)
+        entry = self._items.get(handle)
         if entry is None or entry.binding != binding:
             raise CallbackDenied("callback is invalid or expired")
+        del self._items[handle]
         return entry.value
 
     def _purge(self) -> None:
