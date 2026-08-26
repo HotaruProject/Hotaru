@@ -45,7 +45,7 @@ class Kernel:
         message_id = self._message_id(message)
         chat_id = getattr(message, "chat_id", None)
         key = (source, chat_id, message_id)
-        if key in self._seen:
+        if source != "edit" and key in self._seen:
             return None
         invocation = self.parser.parse(
             getattr(message, "text", None),
