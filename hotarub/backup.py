@@ -9,6 +9,7 @@ import stat
 import sqlite3
 import tempfile
 import zipfile
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +18,13 @@ from .modules import HmodLoader, ModuleValidationError
 
 class BackupError(ValueError):
     pass
+
+
+@dataclass(frozen=True, slots=True)
+class RestorePlan:
+    archive: Path
+    files: tuple[str, ...]
+    metadata: dict[str, Any]
 
 
 class BackupService:
@@ -140,6 +148,11 @@ class BackupService:
             path.unlink()
             removed.append(path)
         return tuple(removed)
+
+    def plan(self, archive_path: str | Path) -> RestorePlan:
+        archive = self._regular(Path(archive_path))
+        result = self.dry_run(archive)
+        return RestorePlan(archive, result["files"], result["metadata"])
 
     def stage(self, archive_path: str | Path, directory: str | Path | None = None) -> Path:
         self.dry_run(archive_path)
