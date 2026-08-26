@@ -1,4 +1,6 @@
 import asyncio
+import os
+import tempfile
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -201,16 +203,57 @@ class Runtime:
         target = Path(destination) if destination is not None else self.config.state_path.parent / "constellations"
         return self.stager.stage_url(source, target)
 
+    async def _download_module_message(self, message: Any, destination: Path) -> None:
+        source = message
+        if not (source.get("document") or source.get("media")):
+            source = message.get("reply_to_message") or message.get("reply")
+        if source is None or not hasattr(source, "get"):
+            raise ValueError("module file is missing")
+        document = source.get("document")
+        media = source.get("media")
+        if document is None and isinstance(media, dict):
+            document = media.get("document")
+        if not isinstance(document, dict):
+            raise ValueError("module file must be a document")
+        if source.src == "bot":
+            await source.download(str(destination))
+            return
+        required = ("id", "access_hash")
+        if any(not isinstance(document.get(key), int) for key in required):
+            raise ValueError("MTProto document location is incomplete")
+        location = {
+            "_": "inputDocumentFileLocation",
+            "id": document["id"],
+            "access_hash": document["access_hash"],
+            "file_reference": document.get("file_reference", b""),
+            "thumb_size": "",
+        }
+        await source.app.mt.download_file(location, str(destination), limit=524288)
+
     async def _command_ld(self, invocation: Any) -> str:
-        if len(invocation.args) != 1:
-            return "usage: !ld <path-to-hmod>"
+        if len(invocation.args) > 1:
+            return "usage: .ld <raw-url> | reply to a .hmod file | .hmod caption"
+        temporary: Path | None = None
         try:
-            if invocation.args[0].startswith("https://"):
-                loaded = self.stage_module_url(invocation.args[0])
+            if invocation.args:
+                source = invocation.args[0]
+                if source.startswith("https://"):
+                    loaded = self.stage_module_url(source)
+                else:
+                    loaded = self.stage_module(source)
             else:
-                loaded = self.stage_module(invocation.args[0])
+                if invocation.message is None:
+                    return "usage: .ld <raw-url> | reply to a .hmod file | .hmod caption"
+                fd, raw_path = tempfile.mkstemp(prefix=".hotaru-download-", suffix=".hmod")
+                os.close(fd)
+                temporary = Path(raw_path)
+                await self._download_module_message(invocation.message, temporary)
+                loaded = self.stage_module(temporary)
         except Exception as exc:
             return f"load failed: {type(exc).__name__}"
+        finally:
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
         if self.modules is not None and self.modules.get(loaded.manifest.module_id) is not None:
             result = await self._command_rl(SimpleNamespace(args=(loaded.manifest.module_id,)))
             if result.startswith("reloaded:"):

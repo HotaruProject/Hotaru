@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from typing import Any
 
 
 @dataclass(frozen=True, slots=True)
@@ -8,6 +9,7 @@ class CommandInvocation:
     source: str
     message_id: int
     chat_id: int | str | None
+    message: Any = None
 
 
 class CommandParser:
@@ -23,6 +25,7 @@ class CommandParser:
         source: str,
         message_id: int,
         chat_id: int | str | None,
+        message: Any = None,
     ) -> CommandInvocation | None:
         if not text or not text.startswith(self.prefix):
             return None
@@ -35,4 +38,5 @@ class CommandParser:
             source=source,
             message_id=message_id,
             chat_id=chat_id,
+            message=message,
         )

@@ -52,6 +52,7 @@ class Kernel:
             source=source,
             message_id=message_id,
             chat_id=chat_id,
+            message=message,
         )
         if invocation is None:
             return None
