@@ -12,6 +12,7 @@ from .observatory import Observatory
 from .registry import Handler
 from .response import ModuleContextFactory, ResponseService
 from .state import StateStore
+from .tasks import TaskSupervisor
 
 
 @dataclass(slots=True)
@@ -27,6 +28,7 @@ class Runtime:
     observatory: Observatory | None = None
     backups: BackupService | None = None
     context_factory: ModuleContextFactory | None = None
+    tasks: TaskSupervisor | None = None
 
     @classmethod
     def from_env(cls) -> "Runtime":
@@ -60,6 +62,7 @@ class Runtime:
         self.callbacks = CallbackRouter()
         self.observatory = Observatory()
         self.backups = BackupService()
+        self.tasks = TaskSupervisor()
         self.app.on_cb(self._on_callback)
         return self.app
 
@@ -100,3 +103,5 @@ class Runtime:
             await self.app.close()
         if self.state is not None:
             self.state.close()
+        if self.tasks is not None:
+            await self.tasks.close()

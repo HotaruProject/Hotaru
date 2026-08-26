@@ -11,6 +11,7 @@ from .runtime import Runtime
 from .response import ModuleContext, ModuleContextFactory, Response, ResponseError, ResponseService
 from .observatory import Observatory
 from .state import StateError, StateNamespace, StateStore
+from .tasks import TaskLimitError, TaskSupervisor
 
 __all__ = [
     "CommandInvocation",
@@ -49,5 +50,7 @@ __all__ = [
     "StateError",
     "StateNamespace",
     "StateStore",
+    "TaskLimitError",
+    "TaskSupervisor",
 ]
 __version__ = "0.1.0"
