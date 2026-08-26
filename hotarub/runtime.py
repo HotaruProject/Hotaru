@@ -141,13 +141,24 @@ class Runtime:
         if self.kernel is None or self.callbacks is None or page < 0:
             return "help unavailable"
         names = sorted(self.kernel.registry.names())
+        entries: list[str] = []
+        if self.modules is not None:
+            active = {item.loaded.manifest.module_id: item.loaded.manifest.version for item in self.modules.items()}
+            known = set(self.state.module_ids()) if self.state is not None else set()
+            for module_id in sorted(set(active) | known):
+                if module_id in active:
+                    entries.append(f"{module_id} [on] v{active[module_id]}")
+                else:
+                    entries.append(f"{module_id} [off]")
+        if not entries:
+            entries = [f"{self.config.prefix}{name}" for name in names]
         page_size = 24
         start = page * page_size
-        if start >= len(names) and names:
+        if start >= len(entries) and entries:
             return "help page unavailable"
-        current = names[start : start + page_size]
-        text = "commands: " + (", ".join(f"{self.config.prefix}{name}" for name in current) or "none")
-        if start + page_size >= len(names):
+        current = entries[start : start + page_size]
+        text = "catalog: " + (", ".join(current) or "none")
+        if start + page_size >= len(entries):
             return text
         if self.kernel.owner_id is None or chat_id is None:
             return text
