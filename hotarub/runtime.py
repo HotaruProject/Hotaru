@@ -217,9 +217,19 @@ class Runtime:
             return f"unloaded: {module_id}"
         return f"module not active: {module_id}"
 
+    @staticmethod
+    def _version_key(value: str) -> tuple[int, ...] | None:
+        parts = value.split(".")
+        if not parts or any(not part.isdigit() for part in parts):
+            return None
+        return tuple(int(part) for part in parts)
+
     async def _command_rl(self, invocation: Any) -> str:
-        if len(invocation.args) != 1 or self.modules is None:
-            return "usage: !rl <module-id>"
+        if len(invocation.args) not in (1, 2) or self.modules is None:
+            return "usage: !rl <module-id> [force]"
+        force = len(invocation.args) == 2 and invocation.args[1].casefold() == "force"
+        if len(invocation.args) == 2 and not force:
+            return "usage: !rl <module-id> [force]"
         module_id = invocation.args[0].casefold()
         active = self.modules.get(module_id)
         if active is None:
@@ -228,6 +238,14 @@ class Runtime:
         old_source = active.loaded.source
         candidate = self.config.state_path.parent / "constellations" / f"{module_id}.hmod"
         reload_path = candidate if candidate.is_file() else old_path
+        if reload_path == candidate:
+            candidate_loaded = self.modules.loader.load(candidate)
+            if candidate_loaded.manifest.module_id != module_id:
+                return f"module id mismatch: {module_id}"
+            current_version = self._version_key(active.loaded.manifest.version)
+            candidate_version = self._version_key(candidate_loaded.manifest.version)
+            if not force and current_version is not None and candidate_version is not None and candidate_version < current_version:
+                return f"reload blocked: version downgrade {active.loaded.manifest.version} to {candidate_loaded.manifest.version}"
         await self.deactivate_module(module_id)
         try:
             await self.activate_module(str(reload_path))
