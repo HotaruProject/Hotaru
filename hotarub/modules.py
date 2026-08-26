@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import ast
 import hashlib
+import os
 import re
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -109,6 +111,30 @@ class HmodLoader:
     @staticmethod
     def _strings(value: Any) -> bool:
         return isinstance(value, list) and all(isinstance(item, str) and item for item in value)
+
+
+class ModuleStager:
+    def __init__(self, loader: HmodLoader | None = None) -> None:
+        self.loader = loader or HmodLoader()
+
+    def stage(self, source: str | Path, destination: str | Path) -> LoadedModule:
+        loaded = self.loader.load(source)
+        root = Path(destination)
+        root.mkdir(parents=True, exist_ok=True)
+        os.chmod(root, 0o700)
+        fd, temporary = tempfile.mkstemp(prefix=".hotaru-module-", suffix=".hmod", dir=root)
+        temporary_path = Path(temporary)
+        try:
+            with os.fdopen(fd, "wb") as handle:
+                handle.write(loaded.source.encode("utf-8"))
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.chmod(temporary_path, 0o600)
+            target = root / f"{loaded.manifest.module_id}.hmod"
+            os.replace(temporary_path, target)
+            return self.loader.load(target)
+        finally:
+            temporary_path.unlink(missing_ok=True)
 
 
 class ModuleCatalog:

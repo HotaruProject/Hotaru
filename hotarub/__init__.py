@@ -1,6 +1,6 @@
 from .commands import CommandInvocation, CommandParser
 from .kernel import Kernel
-from .modules import HmodLoader, LoadedModule, ModuleCatalog, ModuleManifest, ModuleValidationError
+from .modules import HmodLoader, LoadedModule, ModuleCatalog, ModuleManifest, ModuleStager, ModuleValidationError
 from .config import RuntimeConfig
 from .activation import ActivationError, ActiveModule, ModuleBinder, ModuleInstance, ModuleManager
 from .backup import BackupError, BackupService, RestorePlan
@@ -21,6 +21,7 @@ __all__ = [
     "LoadedModule",
     "ModuleCatalog",
     "ModuleManifest",
+    "ModuleStager",
     "ModuleValidationError",
     "ActivationError",
     "ActiveModule",

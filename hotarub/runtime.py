@@ -10,6 +10,7 @@ from .config import RuntimeConfig
 from .commands import CommandParser
 from .events import EventRouter
 from .kernel import Kernel
+from .modules import ModuleStager
 from .activation import ModuleManager
 from .observatory import Observatory
 from .registry import Handler
@@ -26,6 +27,7 @@ class Runtime:
     state: StateStore | None = None
     capabilities: CapabilityBroker | None = None
     modules: ModuleManager | None = None
+    stager: ModuleStager | None = None
     responses: ResponseService | None = None
     callbacks: CallbackRouter | None = None
     observatory: Observatory | None = None
@@ -68,6 +70,7 @@ class Runtime:
         self.backups = BackupService()
         self.tasks = TaskSupervisor()
         self.modules = ModuleManager(tasks=self.tasks)
+        self.stager = ModuleStager(self.modules.loader)
         self.kernel.context_factory = self.context_factory
         self.kernel.registry.register("ver", self._command_ver, kernel=True)
         self.kernel.registry.register("ls", self._command_ls, kernel=True)
@@ -141,6 +144,12 @@ class Runtime:
         if self.observatory is not None:
             self.observatory.emit("backup", "created", files=len(module_paths) + 1, removed=len(removed))
         return result
+
+    def stage_module(self, source: str | Path, destination: str | Path | None = None) -> Any:
+        if self.stager is None:
+            raise RuntimeError("build the runtime before staging modules")
+        target = Path(destination) if destination is not None else self.config.state_path.parent / "constellations"
+        return self.stager.stage(source, target)
 
     async def activate_module(self, path: str, *, health: Any = None) -> Any:
         if self.modules is None or self.kernel is None:
