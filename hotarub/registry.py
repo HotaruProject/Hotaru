@@ -10,8 +10,8 @@ Handler = Callable[..., Awaitable[object] | object]
 class CommandSpec:
     name: str
     handler: Handler
+    module_id: str
     kernel: bool = False
-    module_id: str = "kernel"
 
 
 class CommandRegistry:
@@ -28,21 +28,15 @@ class CommandRegistry:
     ) -> None:
         if not name.isidentifier():
             raise ValueError("command name must be an identifier")
-        if kernel:
-            if module_id not in (None, "kernel"):
-                raise ValueError("kernel command must belong to kernel")
-            owner = "kernel"
-        else:
-            if not isinstance(module_id, str) or not module_id:
-                raise ValueError("module command must belong to a module")
-            owner = module_id
+        if not isinstance(module_id, str) or not module_id:
+            raise ValueError("every command must belong to a module")
         key = name.casefold()
         current = self._items.get(key)
         if current is not None and current.kernel and not kernel:
             raise ValueError(f"kernel command is reserved: {key}")
         if current is not None:
             raise ValueError(f"command already registered: {key}")
-        self._items[key] = CommandSpec(name=key, handler=handler, kernel=kernel, module_id=owner)
+        self._items[key] = CommandSpec(name=key, handler=handler, kernel=kernel, module_id=module_id)
 
     def unregister(self, name: str, *, module_id: str | None = None) -> bool:
         key = name.casefold()

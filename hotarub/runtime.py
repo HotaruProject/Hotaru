@@ -22,6 +22,7 @@ from .tasks import TaskSupervisor
 
 @dataclass(slots=True)
 class Runtime:
+    KERNEL_MODULE_ID = "kernel-core"
     config: RuntimeConfig
     app: Any = None
     kernel: Kernel | None = None
@@ -75,18 +76,18 @@ class Runtime:
         self.modules = ModuleManager(tasks=self.tasks)
         self.stager = ModuleStager(self.modules.loader)
         self.kernel.context_factory = self.context_factory
-        self.kernel.registry.register("ver", self._command_ver, kernel=True)
-        self.kernel.registry.register("st", self._command_st, kernel=True)
-        self.kernel.registry.register("ls", self._command_ls, kernel=True)
-        self.kernel.registry.register("mi", self._command_mi, kernel=True)
-        self.kernel.registry.register("hlp", self._command_hlp, kernel=True)
-        self.kernel.registry.register("ld", self._command_ld, kernel=True)
-        self.kernel.registry.register("ul", self._command_ul, kernel=True)
-        self.kernel.registry.register("rl", self._command_rl, kernel=True)
-        self.kernel.registry.register("rm", self._command_rm, kernel=True)
-        self.kernel.registry.register("bk", self._command_bk, kernel=True)
-        self.kernel.registry.register("on", self._command_on, kernel=True)
-        self.kernel.registry.register("off", self._command_off, kernel=True)
+        self.kernel.registry.register("ver", self._command_ver, kernel=True, module_id=self.KERNEL_MODULE_ID)
+        self.kernel.registry.register("st", self._command_st, kernel=True, module_id=self.KERNEL_MODULE_ID)
+        self.kernel.registry.register("ls", self._command_ls, kernel=True, module_id=self.KERNEL_MODULE_ID)
+        self.kernel.registry.register("mi", self._command_mi, kernel=True, module_id=self.KERNEL_MODULE_ID)
+        self.kernel.registry.register("hlp", self._command_hlp, kernel=True, module_id=self.KERNEL_MODULE_ID)
+        self.kernel.registry.register("ld", self._command_ld, kernel=True, module_id=self.KERNEL_MODULE_ID)
+        self.kernel.registry.register("ul", self._command_ul, kernel=True, module_id=self.KERNEL_MODULE_ID)
+        self.kernel.registry.register("rl", self._command_rl, kernel=True, module_id=self.KERNEL_MODULE_ID)
+        self.kernel.registry.register("rm", self._command_rm, kernel=True, module_id=self.KERNEL_MODULE_ID)
+        self.kernel.registry.register("bk", self._command_bk, kernel=True, module_id=self.KERNEL_MODULE_ID)
+        self.kernel.registry.register("on", self._command_on, kernel=True, module_id=self.KERNEL_MODULE_ID)
+        self.kernel.registry.register("off", self._command_off, kernel=True, module_id=self.KERNEL_MODULE_ID)
         self.callbacks.register("remove_confirm", self._remove_confirm)
         self.callbacks.register("restore_confirm", self._restore_confirm)
         self.callbacks.register("help_page", self._help_page)
