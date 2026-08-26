@@ -131,6 +131,11 @@ class Runtime:
             raise RuntimeError("build the runtime before deactivating modules")
         return await self.modules.deactivate(module_id)
 
+    async def restore_backup(self, plan: Any, activate: Any, *, rollback: Any | None = None, timeout: float = 10.0) -> Any:
+        if self.backups is None:
+            raise RuntimeError("backup service is not ready")
+        return await self.backups.restore(plan, activate, rollback=rollback, timeout=timeout)
+
     def status(self) -> dict[str, Any]:
         return {
             "runtime": "closed" if self.closed else ("ready" if self.app is not None else "new"),

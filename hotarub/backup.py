@@ -173,7 +173,7 @@ class BackupService:
 
     async def restore(
         self,
-        archive_path: str | Path,
+        archive_path: str | Path | RestorePlan,
         activate: Any,
         *,
         rollback: Any | None = None,
@@ -181,7 +181,8 @@ class BackupService:
     ) -> Any:
         if timeout <= 0:
             raise ValueError("timeout must be positive")
-        staged = self.stage(archive_path)
+        plan = archive_path if isinstance(archive_path, RestorePlan) else self.plan(archive_path)
+        staged = self.stage(plan.archive)
         try:
             result = activate(staged)
             if inspect.isawaitable(result):
