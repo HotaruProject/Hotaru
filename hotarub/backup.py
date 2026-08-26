@@ -6,6 +6,7 @@ import inspect
 import json
 import os
 import stat
+import sqlite3
 import tempfile
 import zipfile
 from pathlib import Path
@@ -32,7 +33,8 @@ class BackupService:
     ) -> Path:
         files: list[tuple[str, Path]] = []
         state = self._regular(Path(state_path))
-        files.append(("state/state.sqlite3", state))
+        snapshot = self._snapshot_state(state)
+        files.append(("state/state.sqlite3", snapshot))
         for path in sorted((Path(item) for item in module_paths), key=lambda item: str(item)):
             module = self._regular(path)
             if module.suffix != ".hmod":
@@ -64,6 +66,7 @@ class BackupService:
             return destination
         finally:
             temporary_path.unlink(missing_ok=True)
+            snapshot.unlink(missing_ok=True)
 
     def dry_run(self, archive_path: str | Path) -> dict[str, Any]:
         archive = self._regular(Path(archive_path))
@@ -190,6 +193,25 @@ class BackupService:
             else:
                 child.unlink()
         path.rmdir()
+
+    @staticmethod
+    def _snapshot_state(path: Path) -> Path:
+        fd, temporary = tempfile.mkstemp(prefix=".hotaru-state-", suffix=".sqlite3")
+        os.close(fd)
+        snapshot = Path(temporary)
+        try:
+            with sqlite3.connect(path) as source, sqlite3.connect(snapshot) as target:
+                source.backup(target)
+                check = target.execute("PRAGMA integrity_check").fetchone()
+                if check != ("ok",):
+                    raise BackupError("SQLite integrity check failed")
+            return snapshot
+        except BackupError:
+            snapshot.unlink(missing_ok=True)
+            raise
+        except (sqlite3.DatabaseError, OSError) as exc:
+            snapshot.unlink(missing_ok=True)
+            raise BackupError("SQLite snapshot failed") from exc
 
     @staticmethod
     def _digest(path: Path) -> str:
