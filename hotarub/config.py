@@ -13,6 +13,7 @@ class RuntimeConfig:
     session_name: str
     session_dir: Path
     state_path: Path
+    backup_keep: int
 
     @classmethod
     def from_env(cls) -> "RuntimeConfig":
@@ -32,6 +33,7 @@ class RuntimeConfig:
             session_name=os.environ.get("HOTARU_SESSION_NAME", "hotarub"),
             session_dir=Path(os.environ.get("HOTARU_SESSION_DIR", "sanctuary/sessions")),
             state_path=Path(os.environ.get("HOTARU_STATE_PATH", "sanctuary/state.sqlite3")),
+            backup_keep=int(os.environ.get("HOTARU_BACKUP_KEEP", "7")),
         )
 
     def validate(self) -> None:
@@ -41,6 +43,8 @@ class RuntimeConfig:
             raise ValueError("HOTARU_PREFIX must be one non-whitespace character")
         if self.owner_id is not None and self.owner_id == 0:
             raise ValueError("HOTARU_OWNER_ID must be nonzero")
+        if self.backup_keep < 1:
+            raise ValueError("HOTARU_BACKUP_KEEP must be positive")
         if not self.session_name or Path(self.session_name).name != self.session_name:
             raise ValueError("HOTARU_SESSION_NAME must be a simple filename")
         if self.api_id is not None and self.api_id <= 0:

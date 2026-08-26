@@ -115,8 +115,9 @@ class Runtime:
             module_paths=module_paths,
             metadata={"reason": "module_activation", "module": str(candidate.name)},
         )
+        removed = self.backups.prune(destination.parent, keep=self.config.backup_keep)
         if self.observatory is not None:
-            self.observatory.emit("backup", "created", files=len(module_paths) + 1)
+            self.observatory.emit("backup", "created", files=len(module_paths) + 1, removed=len(removed))
         return result
 
     async def activate_module(self, path: str, *, health: Any = None) -> Any:
