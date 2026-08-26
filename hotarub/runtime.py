@@ -390,8 +390,9 @@ class Runtime:
     def _backup_before_activation(self, path: str | Path) -> Path:
         if self.backups is None or self.state is None or self.modules is None:
             raise RuntimeError("backup services are not ready")
-        module_paths = [active.loaded.path for active in self.modules.items()]
         candidate = Path(path)
+        self.modules.loader.load(candidate)
+        module_paths = [active.loaded.path for active in self.modules.items()]
         if candidate not in module_paths:
             module_paths.append(candidate)
         stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S.%fZ")
