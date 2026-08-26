@@ -50,12 +50,13 @@ class Runtime:
             parser=CommandParser(self.config.prefix),
             owner_id=self.config.owner_id,
         )
-        self.kernel.attach(self.app)
         self.state = StateStore(self.config.state_path)
         self.capabilities = CapabilityBroker()
         self.modules = HmodLoader()
         self.responses = ResponseService()
         self.context_factory = ModuleContextFactory(self.state, self.responses)
+        self.kernel.context_factory = self.context_factory
+        self.kernel.attach(self.app)
         self.callbacks = CallbackRouter()
         self.observatory = Observatory()
         self.backups = BackupService()
@@ -79,6 +80,11 @@ class Runtime:
         if self.kernel is None:
             raise RuntimeError("build the runtime before registering commands")
         self.kernel.registry.register(name, handler, kernel=kernel)
+
+    def register_module_command(self, module_id: str, name: str, handler: Handler) -> None:
+        if self.kernel is None:
+            raise RuntimeError("build the runtime before registering commands")
+        self.kernel.register_module_command(module_id, name, handler)
 
     async def run(self) -> None:
         if self.app is None:

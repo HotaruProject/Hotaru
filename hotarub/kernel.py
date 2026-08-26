@@ -15,6 +15,7 @@ class Kernel:
         *,
         parser: CommandParser | None = None,
         owner_id: int | None = None,
+        context_factory: Any = None,
         seen_limit: int = 4096,
     ) -> None:
         if seen_limit < 1:
@@ -22,6 +23,7 @@ class Kernel:
         self.registry = registry or CommandRegistry()
         self.parser = parser or CommandParser()
         self.owner_id = owner_id
+        self.context_factory = context_factory
         self._seen: OrderedDict[tuple[str, int | str | None, int], None] = OrderedDict()
         self._seen_limit = seen_limit
 
@@ -55,10 +57,21 @@ class Kernel:
         spec = self.registry.resolve(invocation)
         if spec is None:
             return None
-        result = spec.handler(invocation)
+        if spec.module_id is not None:
+            if self.context_factory is None:
+                raise RuntimeError("module context factory is not configured")
+            context = self.context_factory.create(spec.module_id, message)
+            result = spec.handler(context, invocation)
+        else:
+            result = spec.handler(invocation)
         if inspect.isawaitable(result):
             return await result
         return result
+
+    def register_module_command(self, module_id: str, name: str, handler: Any) -> None:
+        if self.context_factory is None:
+            raise RuntimeError("module context factory is not configured")
+        self.registry.register(name, handler, module_id=module_id)
 
     def _is_owner(self, message: Any) -> bool:
         if self.owner_id is not None:
