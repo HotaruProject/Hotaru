@@ -86,6 +86,7 @@ class Runtime:
         self.callbacks.register("remove_confirm", self._remove_confirm)
         self.callbacks.register("restore_confirm", self._restore_confirm)
         self.callbacks.register("help_page", self._help_page)
+        self.callbacks.register("module_detail", self._module_detail)
         self.kernel.attach(self.app)
         self.app.on_cb(self._on_callback)
         self.event_router.attach_aux(self.app)
@@ -112,20 +113,23 @@ class Runtime:
             return "modules: none"
         return "modules:\n" + "\n".join(sorted(item.loaded.manifest.module_id for item in items))
 
-    def _command_mi(self, invocation: Any) -> str:
-        if len(invocation.args) != 1 or self.modules is None:
-            return "usage: !mi <module-id>"
-        active = self.modules.get(invocation.args[0].casefold())
+    def _module_detail_text(self, module_id: str) -> str:
+        if self.modules is None:
+            return "module unavailable"
+        active = self.modules.get(module_id)
         if active is None:
-            if self.state is not None and invocation.args[0].casefold() in self.state.module_ids():
-                namespace = self.state.namespace(invocation.args[0].casefold())
-                error = namespace.get("lasterror", "none")
-                return f"module: {invocation.args[0].casefold()}\nstatus: disabled\nlasterror: {error}"
-            return f"module not active: {invocation.args[0].casefold()}"
+            if self.state is not None and module_id in self.state.module_ids():
+                return f"module: {module_id}\nstatus: disabled\nlasterror: {self.state.namespace(module_id).get('lasterror', 'none')}"
+            return f"module not active: {module_id}"
         manifest = active.loaded.manifest
         commands = ", ".join(manifest.commands) if manifest.commands else "none"
         capabilities = ", ".join(manifest.capabilities) if manifest.capabilities else "none"
         return f"module: {manifest.module_id}\nversion: {manifest.version}\ncommands: {commands}\ncapabilities: {capabilities}\ndescription: {manifest.description}"
+
+    def _command_mi(self, invocation: Any) -> str:
+        if len(invocation.args) != 1:
+            return "usage: !mi <module-id>"
+        return self._module_detail_text(invocation.args[0].casefold())
 
     async def _command_hlp(self, invocation: Any) -> tuple[str, list[dict[str, str]]] | str:
         page = 0
@@ -142,6 +146,7 @@ class Runtime:
             return "help unavailable"
         names = sorted(self.kernel.registry.names())
         entries: list[str] = []
+        entry_ids: list[str | None] = []
         if self.modules is not None:
             active = {item.loaded.manifest.module_id: item.loaded.manifest.version for item in self.modules.items()}
             known = set(self.state.module_ids()) if self.state is not None else set()
@@ -150,23 +155,34 @@ class Runtime:
                     entries.append(f"{module_id} [on] v{active[module_id]}")
                 else:
                     entries.append(f"{module_id} [off]")
+                entry_ids.append(module_id)
         if not entries:
             entries = [f"{self.config.prefix}{name}" for name in names]
+            entry_ids = [None] * len(entries)
         page_size = 24
         start = page * page_size
         if start >= len(entries) and entries:
             return "help page unavailable"
         current = entries[start : start + page_size]
         text = "catalog: " + (", ".join(current) or "none")
-        if start + page_size >= len(entries):
-            return text
         if self.kernel.owner_id is None or chat_id is None:
             return text
-        handle = self.callbacks.store.issue(
-            CallbackBinding(self.kernel.owner_id, chat_id, message_id),
-            {"action": "help_page", "payload": page + 1},
-        )
-        return text, [{"text": "Next", "callback_data": handle}]
+        buttons: list[dict[str, str]] = []
+        for module_id in entry_ids[start : start + page_size]:
+            if module_id is None:
+                continue
+            handle = self.callbacks.store.issue(
+                CallbackBinding(self.kernel.owner_id, chat_id, message_id),
+                {"action": "module_detail", "payload": module_id},
+            )
+            buttons.append({"text": module_id, "callback_data": handle})
+        if start + page_size < len(entries):
+            handle = self.callbacks.store.issue(
+                CallbackBinding(self.kernel.owner_id, chat_id, message_id),
+                {"action": "help_page", "payload": page + 1},
+            )
+            buttons.append({"text": "Next", "callback_data": handle})
+        return text, buttons
 
     def stage_module_url(self, source: str, destination: str | Path | None = None) -> Any:
         if self.stager is None:
@@ -319,6 +335,12 @@ class Runtime:
             return await callback.edit(f"removal failed: {payload}")
         await callback.answer("Module removed", alert=True)
         return await callback.edit(f"removed: {payload}")
+
+    async def _module_detail(self, callback: Any, payload: Any) -> object:
+        if not isinstance(payload, str):
+            await callback.answer("Invalid module", alert=True)
+            return None
+        return await callback.edit(self._module_detail_text(payload))
 
     async def _help_page(self, callback: Any, payload: Any) -> object:
         if not isinstance(payload, int) or payload < 0:
