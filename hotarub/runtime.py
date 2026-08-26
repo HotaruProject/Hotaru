@@ -183,6 +183,7 @@ class Runtime:
             await callback.answer("Module is already unloaded", alert=True)
             return await callback.edit(f"module not active: {payload}")
         path = active.loaded.path
+        self._backup_before_activation(path)
         await self.deactivate_module(payload)
         try:
             path.unlink()
