@@ -69,6 +69,10 @@ class StateStore:
             "module_id TEXT NOT NULL, key TEXT NOT NULL, value TEXT NOT NULL, "
             "PRIMARY KEY(module_id, key))"
         )
+        self.connection.execute(
+            "CREATE TABLE IF NOT EXISTS runtime_settings ("
+            "key TEXT PRIMARY KEY, value TEXT NOT NULL)"
+        )
         self.connection.commit()
         self.path.chmod(0o600)
 
@@ -80,6 +84,22 @@ class StateStore:
     def module_ids(self) -> tuple[str, ...]:
         rows = self.connection.execute("SELECT DISTINCT module_id FROM module_state ORDER BY module_id").fetchall()
         return tuple(row[0] for row in rows)
+
+    def get_setting(self, key: str, default: Any = None) -> Any:
+        if not isinstance(key, str) or not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9:.-]{0,127}", key):
+            raise StateError("setting key is invalid")
+        row = self.connection.execute("SELECT value FROM runtime_settings WHERE key = ?", (key,)).fetchone()
+        return default if row is None else json.loads(row[0])
+
+    def set_setting(self, key: str, value: Any) -> None:
+        if not isinstance(key, str) or not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9:.-]{0,127}", key):
+            raise StateError("setting key is invalid")
+        encoded = json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+        with self.connection:
+            self.connection.execute(
+                "INSERT INTO runtime_settings(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                (key, encoded),
+            )
 
     def close(self) -> None:
         self.connection.close()

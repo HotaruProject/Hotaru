@@ -39,8 +39,10 @@ class Runtime:
     closed: bool = False
 
     @classmethod
-    def from_env(cls) -> "Runtime":
-        return cls(RuntimeConfig.from_env())
+    def from_database(cls, path: str | Path | None = None) -> "Runtime":
+        from .config import DEFAULT_STATE_PATH
+
+        return cls(RuntimeConfig.from_database(path or DEFAULT_STATE_PATH))
 
     def build(self) -> Any:
         self.config.validate()

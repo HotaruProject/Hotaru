@@ -1,6 +1,11 @@
 from dataclasses import dataclass
-import os
+from getpass import getpass
 from pathlib import Path
+
+from .state import StateStore
+
+
+DEFAULT_STATE_PATH = Path(__file__).resolve().parent.parent / "sanctuary/state.sqlite3"
 
 
 @dataclass(frozen=True, slots=True)
@@ -16,36 +21,59 @@ class RuntimeConfig:
     backup_keep: int
 
     @classmethod
-    def from_env(cls) -> "RuntimeConfig":
-        api_id_value = os.environ.get("HOTARU_API_ID")
-        api_hash = os.environ.get("HOTARU_API_HASH")
-        bot_token = os.environ.get("HOTARU_BOT_TOKEN")
-        owner_id_value = os.environ.get("HOTARU_OWNER_ID")
-        if bool(api_id_value) != bool(api_hash):
-            raise ValueError("HOTARU_API_ID and HOTARU_API_HASH must be provided together")
-        api_id = int(api_id_value) if api_id_value else None
-        return cls(
-            api_id=api_id,
-            api_hash=api_hash,
-            bot_token=bot_token,
-            owner_id=int(owner_id_value) if owner_id_value else None,
-            prefix=os.environ.get("HOTARU_PREFIX", "!"),
-            session_name=os.environ.get("HOTARU_SESSION_NAME", "hotarub"),
-            session_dir=Path(os.environ.get("HOTARU_SESSION_DIR", "sanctuary/sessions")),
-            state_path=Path(os.environ.get("HOTARU_STATE_PATH", "sanctuary/state.sqlite3")),
-            backup_keep=int(os.environ.get("HOTARU_BACKUP_KEEP", "7")),
-        )
+    def from_database(cls, path: str | Path = DEFAULT_STATE_PATH) -> "RuntimeConfig":
+        state = StateStore(path)
+        try:
+            required = ("api-id", "api-hash", "owner-id", "prefix", "session-name", "session-dir", "backup-keep")
+            if any(state.get_setting(key) is None for key in required):
+                if not __import__("sys").stdin.isatty():
+                    raise ValueError("runtime settings are missing; run from an interactive TTY")
+                print("HotaruUB first-run database setup")
+                api_id = int(input("Telegram API ID: ").strip())
+                api_hash = getpass("Telegram API hash: ")
+                owner_raw = input("Owner Telegram ID: ").strip()
+                owner_id = int(owner_raw) if owner_raw else None
+                prefix = input("Command prefix [!]: ").strip() or "!"
+                session_name = input("Session name [hotarub]: ").strip() or "hotarub"
+                session_dir = input("Session directory [.]: ").strip() or "."
+                backup_keep = int(input("Backups to keep [7]: ").strip() or "7")
+                values = {
+                    "api-id": api_id,
+                    "api-hash": api_hash,
+                    "bot-token": None,
+                    "owner-id": owner_id,
+                    "prefix": prefix,
+                    "session-name": session_name,
+                    "session-dir": session_dir,
+                    "backup-keep": backup_keep,
+                }
+                for key, value in values.items():
+                    state.set_setting(key, value)
+            values = {key: state.get_setting(key) for key in ("api-id", "api-hash", "bot-token", "owner-id", "prefix", "session-name", "session-dir", "backup-keep")}
+            return cls(
+                api_id=values["api-id"],
+                api_hash=values["api-hash"],
+                bot_token=values["bot-token"],
+                owner_id=values["owner-id"],
+                prefix=values["prefix"],
+                session_name=values["session-name"],
+                session_dir=Path(values["session-dir"]),
+                state_path=Path(path),
+                backup_keep=values["backup-keep"],
+            )
+        finally:
+            state.close()
 
     def validate(self) -> None:
         if self.api_id is None and self.bot_token is None:
-            raise ValueError("configure MTProto credentials or HOTARU_BOT_TOKEN")
+            raise ValueError("configure MTProto credentials or bot token in the database")
         if len(self.prefix) != 1 or self.prefix.isspace():
-            raise ValueError("HOTARU_PREFIX must be one non-whitespace character")
+            raise ValueError("prefix must be one non-whitespace character")
         if self.owner_id is not None and self.owner_id == 0:
-            raise ValueError("HOTARU_OWNER_ID must be nonzero")
+            raise ValueError("owner ID must be nonzero")
         if self.backup_keep < 1:
-            raise ValueError("HOTARU_BACKUP_KEEP must be positive")
+            raise ValueError("backup retention must be positive")
         if not self.session_name or Path(self.session_name).name != self.session_name:
-            raise ValueError("HOTARU_SESSION_NAME must be a simple filename")
+            raise ValueError("session name must be a simple filename")
         if self.api_id is not None and self.api_id <= 0:
-            raise ValueError("HOTARU_API_ID must be positive")
+            raise ValueError("API ID must be positive")
