@@ -226,9 +226,11 @@ class Runtime:
             return f"module not active: {module_id}"
         old_path = active.loaded.path
         old_source = active.loaded.source
+        candidate = self.config.state_path.parent / "constellations" / f"{module_id}.hmod"
+        reload_path = candidate if candidate.is_file() else old_path
         await self.deactivate_module(module_id)
         try:
-            await self.activate_module(str(old_path))
+            await self.activate_module(str(reload_path))
         except Exception as exc:
             try:
                 if self.stager is None:
