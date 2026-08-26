@@ -74,6 +74,7 @@ class Runtime:
         self.kernel.context_factory = self.context_factory
         self.kernel.registry.register("ver", self._command_ver, kernel=True)
         self.kernel.registry.register("ls", self._command_ls, kernel=True)
+        self.kernel.registry.register("mi", self._command_mi, kernel=True)
         self.kernel.registry.register("hlp", self._command_hlp, kernel=True)
         self.kernel.registry.register("ld", self._command_ld, kernel=True)
         self.kernel.registry.register("ul", self._command_ul, kernel=True)
@@ -109,6 +110,17 @@ class Runtime:
         if not items:
             return "modules: none"
         return "modules:\n" + "\n".join(sorted(item.loaded.manifest.module_id for item in items))
+
+    def _command_mi(self, invocation: Any) -> str:
+        if len(invocation.args) != 1 or self.modules is None:
+            return "usage: !mi <module-id>"
+        active = self.modules.get(invocation.args[0].casefold())
+        if active is None:
+            return f"module not active: {invocation.args[0].casefold()}"
+        manifest = active.loaded.manifest
+        commands = ", ".join(manifest.commands) if manifest.commands else "none"
+        capabilities = ", ".join(manifest.capabilities) if manifest.capabilities else "none"
+        return f"module: {manifest.module_id}\nversion: {manifest.version}\ncommands: {commands}\ncapabilities: {capabilities}\ndescription: {manifest.description}"
 
     def _command_hlp(self, invocation: Any) -> str:
         if self.kernel is None:
