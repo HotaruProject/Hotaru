@@ -73,6 +73,9 @@ class Kernel:
             raise RuntimeError("module context factory is not configured")
         self.registry.register(name, handler, module_id=module_id)
 
+    def unregister_module_command(self, module_id: str, name: str) -> bool:
+        return self.registry.unregister(name, module_id=module_id)
+
     def _is_owner(self, message: Any) -> bool:
         if self.owner_id is not None:
             return getattr(message, "from_id", None) == self.owner_id

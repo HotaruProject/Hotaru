@@ -22,6 +22,32 @@ class ActiveModule:
 Starter = Callable[[LoadedModule], Any]
 
 
+class ModuleBinder:
+    def bind(self, loaded: LoadedModule, namespace: dict[str, Any], kernel: Any) -> tuple[str, ...]:
+        handlers: list[tuple[str, Any]] = []
+        for name in loaded.manifest.commands:
+            if not name.isidentifier():
+                raise ActivationError(f"module command is invalid: {name}")
+            handler = namespace.get(f"command_{name}")
+            if not callable(handler):
+                raise ActivationError(f"module handler is missing: {name}")
+            handlers.append((name, handler))
+        bound: list[str] = []
+        try:
+            for name, handler in handlers:
+                kernel.register_module_command(loaded.manifest.module_id, name, handler)
+                bound.append(name)
+        except Exception as exc:
+            for name in bound:
+                kernel.unregister_module_command(loaded.manifest.module_id, name)
+            raise ActivationError(f"module command binding failed: {loaded.manifest.module_id}") from exc
+        return tuple(bound)
+
+    def unbind(self, loaded: LoadedModule, commands: tuple[str, ...], kernel: Any) -> None:
+        for name in commands:
+            kernel.unregister_module_command(loaded.manifest.module_id, name)
+
+
 class ModuleManager:
     def __init__(self, loader: HmodLoader | None = None, *, timeout: float = 5.0) -> None:
         if timeout <= 0:

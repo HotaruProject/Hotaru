@@ -36,6 +36,14 @@ class CommandRegistry:
             raise ValueError(f"command already registered: {key}")
         self._items[key] = CommandSpec(name=key, handler=handler, kernel=kernel, module_id=module_id)
 
+    def unregister(self, name: str, *, module_id: str | None = None) -> bool:
+        key = name.casefold()
+        current = self._items.get(key)
+        if current is None or current.kernel or current.module_id != module_id:
+            return False
+        del self._items[key]
+        return True
+
     def resolve(self, invocation: CommandInvocation) -> CommandSpec | None:
         return self._items.get(invocation.name)
 
