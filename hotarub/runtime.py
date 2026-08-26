@@ -8,7 +8,7 @@ from .config import RuntimeConfig
 from .commands import CommandParser
 from .events import EventRouter
 from .kernel import Kernel
-from .modules import HmodLoader
+from .activation import ModuleManager
 from .observatory import Observatory
 from .registry import Handler
 from .response import ModuleContextFactory, ResponseService
@@ -23,7 +23,7 @@ class Runtime:
     kernel: Kernel | None = None
     state: StateStore | None = None
     capabilities: CapabilityBroker | None = None
-    modules: HmodLoader | None = None
+    modules: ModuleManager | None = None
     responses: ResponseService | None = None
     callbacks: CallbackRouter | None = None
     observatory: Observatory | None = None
@@ -56,16 +56,16 @@ class Runtime:
         )
         self.state = StateStore(self.config.state_path)
         self.capabilities = CapabilityBroker()
-        self.modules = HmodLoader()
         self.responses = ResponseService()
         self.context_factory = ModuleContextFactory(self.state, self.responses)
-        self.kernel.context_factory = self.context_factory
-        self.kernel.attach(self.app)
         self.callbacks = CallbackRouter()
         self.observatory = Observatory()
         self.event_router = EventRouter(self._event_error)
         self.backups = BackupService()
         self.tasks = TaskSupervisor()
+        self.modules = ModuleManager(tasks=self.tasks)
+        self.kernel.context_factory = self.context_factory
+        self.kernel.attach(self.app)
         self.app.on_cb(self._on_callback)
         self.event_router.attach_aux(self.app)
         return self.app
@@ -96,6 +96,16 @@ class Runtime:
         if self.kernel is None:
             raise RuntimeError("build the runtime before registering commands")
         self.kernel.register_module_command(module_id, name, handler)
+
+    async def activate_module(self, path: str, *, health: Any = None) -> Any:
+        if self.modules is None or self.kernel is None:
+            raise RuntimeError("build the runtime before activating modules")
+        return await self.modules.activate_source(path, self.kernel, health=health)
+
+    async def deactivate_module(self, module_id: str) -> bool:
+        if self.modules is None:
+            raise RuntimeError("build the runtime before deactivating modules")
+        return await self.modules.deactivate(module_id)
 
     def status(self) -> dict[str, Any]:
         return {

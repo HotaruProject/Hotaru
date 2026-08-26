@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Awaitable, Callable
 
 from .modules import HmodLoader, LoadedModule
+from .tasks import TaskSupervisor
 
 
 class ActivationError(RuntimeError):
@@ -56,12 +57,19 @@ class ModuleBinder:
 
 
 class ModuleManager:
-    def __init__(self, loader: HmodLoader | None = None, *, timeout: float = 5.0) -> None:
+    def __init__(
+        self,
+        loader: HmodLoader | None = None,
+        *,
+        timeout: float = 5.0,
+        tasks: TaskSupervisor | None = None,
+    ) -> None:
         if timeout <= 0:
             raise ValueError("timeout must be positive")
         self.loader = loader or HmodLoader()
         self.binder = ModuleBinder()
         self.timeout = timeout
+        self.tasks = tasks
         self._active: dict[str, ActiveModule] = {}
         self._bindings: dict[str, tuple[Any, tuple[str, ...]]] = {}
 
@@ -146,6 +154,8 @@ class ModuleManager:
             result = stopper(active)
             if inspect.isawaitable(result):
                 await asyncio.wait_for(result, timeout=self.timeout)
+        if self.tasks is not None:
+            await self.tasks.cancel_module(module_id)
         binding = self._bindings.pop(module_id, None)
         if binding is not None:
             self.binder.unbind(active.loaded, binding[1], binding[0])
