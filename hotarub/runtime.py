@@ -143,11 +143,15 @@ class Runtime:
         if active is None:
             return f"module not active: {module_id}"
         old_path = active.loaded.path
+        old_source = active.loaded.source
         await self.deactivate_module(module_id)
         try:
             await self.activate_module(str(old_path))
         except Exception as exc:
             try:
+                if self.stager is None:
+                    raise RuntimeError("module stager is unavailable")
+                self.stager.stage_text(old_source, old_path.parent)
                 await self.modules.activate_source(old_path, self.kernel)
             except Exception:
                 return f"reload failed: {type(exc).__name__}; rollback failed"

@@ -165,6 +165,17 @@ class ModuleStager:
         finally:
             path.unlink(missing_ok=True)
 
+    def stage_text(self, source: str, destination: str | Path) -> LoadedModule:
+        fd, temporary = tempfile.mkstemp(prefix=".hotaru-source-", suffix=".hmod")
+        path = Path(temporary)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                handle.write(source)
+            os.chmod(path, 0o600)
+            return self.stage(path, destination)
+        finally:
+            path.unlink(missing_ok=True)
+
     def stage(self, source: str | Path, destination: str | Path) -> LoadedModule:
         loaded = self.loader.load(source)
         root = Path(destination)
