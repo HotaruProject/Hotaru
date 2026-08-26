@@ -403,6 +403,8 @@ class Runtime:
             try:
                 await self.activate_module(source_path)
             except Exception as exc:
+                namespace.set("enabled", False)
+                namespace.set("lasterror", type(exc).__name__)
                 if self.observatory is not None:
                     self.observatory.emit("modules", "restore_error", module=module_id, error=type(exc).__name__)
                 continue
