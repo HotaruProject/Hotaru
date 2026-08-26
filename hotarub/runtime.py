@@ -1,10 +1,13 @@
 from dataclasses import dataclass
 from typing import Any
 
+from .capabilities import CapabilityBroker
 from .config import RuntimeConfig
 from .commands import CommandParser
 from .kernel import Kernel
+from .modules import HmodLoader
 from .registry import Handler
+from .state import StateStore
 
 
 @dataclass(slots=True)
@@ -12,6 +15,9 @@ class Runtime:
     config: RuntimeConfig
     app: Any = None
     kernel: Kernel | None = None
+    state: StateStore | None = None
+    capabilities: CapabilityBroker | None = None
+    modules: HmodLoader | None = None
 
     @classmethod
     def from_env(cls) -> "Runtime":
@@ -19,6 +25,8 @@ class Runtime:
 
     def build(self) -> Any:
         self.config.validate()
+        if self.app is not None:
+            return self.app
         from goygram import GoyGram
 
         self.config.session_dir.mkdir(parents=True, exist_ok=True)
@@ -34,6 +42,9 @@ class Runtime:
             owner_id=self.config.owner_id,
         )
         self.kernel.attach(self.app)
+        self.state = StateStore(self.config.state_path)
+        self.capabilities = CapabilityBroker()
+        self.modules = HmodLoader()
         return self.app
 
     def register_command(self, name: str, handler: Handler, *, kernel: bool = False) -> None:
@@ -53,3 +64,5 @@ class Runtime:
     async def close(self) -> None:
         if self.app is not None:
             await self.app.close()
+        if self.state is not None:
+            self.state.close()

@@ -12,6 +12,7 @@ class RuntimeConfig:
     prefix: str
     session_name: str
     session_dir: Path
+    state_path: Path
 
     @classmethod
     def from_env(cls) -> "RuntimeConfig":
@@ -30,6 +31,7 @@ class RuntimeConfig:
             prefix=os.environ.get("HOTARU_PREFIX", "!"),
             session_name=os.environ.get("HOTARU_SESSION_NAME", "hotarub"),
             session_dir=Path(os.environ.get("HOTARU_SESSION_DIR", "sanctuary/sessions")),
+            state_path=Path(os.environ.get("HOTARU_STATE_PATH", "sanctuary/state.sqlite3")),
         )
 
     def validate(self) -> None:
