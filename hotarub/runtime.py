@@ -1,4 +1,6 @@
 from dataclasses import dataclass
+from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 from .capabilities import CapabilityBroker
@@ -98,9 +100,29 @@ class Runtime:
             raise RuntimeError("build the runtime before registering commands")
         self.kernel.register_module_command(module_id, name, handler)
 
+    def _backup_before_activation(self, path: str | Path) -> Path:
+        if self.backups is None or self.state is None or self.modules is None:
+            raise RuntimeError("backup services are not ready")
+        module_paths = [active.loaded.path for active in self.modules.items()]
+        candidate = Path(path)
+        if candidate not in module_paths:
+            module_paths.append(candidate)
+        stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S.%fZ")
+        destination = self.config.state_path.parent / "backups" / f"{stamp}.hbk"
+        result = self.backups.create(
+            destination,
+            state_path=self.config.state_path,
+            module_paths=module_paths,
+            metadata={"reason": "module_activation", "module": str(candidate.name)},
+        )
+        if self.observatory is not None:
+            self.observatory.emit("backup", "created", files=len(module_paths) + 1)
+        return result
+
     async def activate_module(self, path: str, *, health: Any = None) -> Any:
         if self.modules is None or self.kernel is None:
             raise RuntimeError("build the runtime before activating modules")
+        self._backup_before_activation(path)
         return await self.modules.activate_source(path, self.kernel, health=health)
 
     async def deactivate_module(self, module_id: str) -> bool:
