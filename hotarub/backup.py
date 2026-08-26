@@ -92,6 +92,23 @@ class BackupService:
                     raise BackupError("backup checksum verification failed")
             return {"format": 1, "files": tuple(sorted(records)), "metadata": manifest.get("metadata", {})}
 
+    def prune(self, directory: str | Path, *, keep: int = 7) -> tuple[Path, ...]:
+        if keep < 1:
+            raise ValueError("keep must be positive")
+        root = Path(directory)
+        if not root.is_dir():
+            return ()
+        archives = sorted(
+            (path for path in root.glob("*.hbk") if path.is_file() and not path.is_symlink()),
+            key=lambda path: (path.stat().st_mtime_ns, path.name),
+            reverse=True,
+        )
+        removed: list[Path] = []
+        for path in archives[keep:]:
+            path.unlink()
+            removed.append(path)
+        return tuple(removed)
+
     def stage(self, archive_path: str | Path, directory: str | Path | None = None) -> Path:
         self.dry_run(archive_path)
         destination = Path(directory) if directory is not None else Path(tempfile.mkdtemp(prefix="hotaru-restore-"))
