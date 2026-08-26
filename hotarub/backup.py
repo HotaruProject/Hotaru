@@ -6,6 +6,7 @@ import inspect
 import json
 import os
 import stat
+import shutil
 import sqlite3
 import tempfile
 import zipfile
@@ -170,6 +171,65 @@ class BackupService:
                 with target.open("xb") as stream:
                     stream.write(source.read(name))
         return destination
+
+    def activate_staged(
+        self,
+        staged: str | Path,
+        *,
+        state_path: str | Path,
+        modules_path: str | Path,
+    ) -> None:
+        source = Path(staged)
+        state_source = source / "state/state.sqlite3"
+        modules_source = source / "modules"
+        if not state_source.is_file() or not modules_source.is_dir():
+            raise BackupError("staged restore is incomplete")
+        target_state = Path(state_path)
+        target_modules = Path(modules_path)
+        target_state.parent.mkdir(parents=True, exist_ok=True)
+        target_modules.parent.mkdir(parents=True, exist_ok=True)
+        self._validate_state(state_source.read_bytes())
+        state_fd, state_temp_name = tempfile.mkstemp(prefix=".hotaru-activate-", suffix=".sqlite3", dir=target_state.parent)
+        os.close(state_fd)
+        state_temp = Path(state_temp_name)
+        modules_temp = Path(tempfile.mkdtemp(prefix=".hotaru-modules-", dir=target_modules.parent))
+        state_backup = target_state.with_name(f".{target_state.name}.rollback")
+        modules_backup = target_modules.with_name(f".{target_modules.name}.rollback")
+        state_replaced = False
+        modules_replaced = False
+        try:
+            shutil.copy2(state_source, state_temp)
+            for item in modules_source.iterdir():
+                if item.is_symlink() or not item.is_file() or item.suffix != ".hmod":
+                    raise BackupError("staged module tree contains an unsafe file")
+                shutil.copy2(item, modules_temp / item.name)
+            if target_state.exists():
+                os.replace(target_state, state_backup)
+            if target_modules.exists():
+                if target_modules.is_symlink():
+                    raise BackupError("module target is a symlink")
+                os.replace(target_modules, modules_backup)
+            os.replace(state_temp, target_state)
+            state_replaced = True
+            os.replace(modules_temp, target_modules)
+            modules_replaced = True
+        except Exception as exc:
+            if modules_replaced:
+                shutil.rmtree(target_modules, ignore_errors=True)
+            if modules_backup.exists():
+                os.replace(modules_backup, target_modules)
+            if state_replaced:
+                target_state.unlink(missing_ok=True)
+            if state_backup.exists():
+                os.replace(state_backup, target_state)
+            raise BackupError("atomic restore activation failed") from exc
+        finally:
+            state_temp.unlink(missing_ok=True)
+            if modules_temp.exists():
+                shutil.rmtree(modules_temp, ignore_errors=True)
+            state_backup.unlink(missing_ok=True)
+            if modules_backup.exists():
+                shutil.rmtree(modules_backup, ignore_errors=True)
 
     async def restore(
         self,
