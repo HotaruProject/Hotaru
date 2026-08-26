@@ -212,7 +212,7 @@ class Runtime:
             reply_to = message.get("reply_to")
             reply_id = reply_to.get("reply_to_msg_id") if isinstance(reply_to, dict) else None
             if isinstance(reply_id, int) and getattr(message, "src", None) != "bot":
-                result = await message.app.mt_req("messages.getMessages", ids=[reply_id])
+                result = await message.app.mt_req("messages.getMessages", id=[reply_id])
                 body = result.get("result") if isinstance(result, dict) and isinstance(result.get("result"), dict) else result
                 messages = body.get("messages") if isinstance(body, dict) else None
                 source = messages[0] if isinstance(messages, list) and messages else None
