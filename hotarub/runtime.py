@@ -31,6 +31,7 @@ class Runtime:
     context_factory: ModuleContextFactory | None = None
     tasks: TaskSupervisor | None = None
     event_router: EventRouter | None = None
+    closed: bool = False
 
     @classmethod
     def from_env(cls) -> "Runtime":
@@ -109,7 +110,7 @@ class Runtime:
 
     def status(self) -> dict[str, Any]:
         return {
-            "runtime": "ready" if self.app is not None else "new",
+            "runtime": "closed" if self.closed else ("ready" if self.app is not None else "new"),
             "kernel": self.kernel is not None,
             "state": self.state is not None,
             "capabilities": self.capabilities is not None,
@@ -135,9 +136,15 @@ class Runtime:
             self.app.stop()
 
     async def close(self) -> None:
+        if self.closed:
+            return
+        if self.modules is not None:
+            for active in tuple(self.modules.items()):
+                await self.modules.deactivate(active.loaded.manifest.module_id)
+        if self.tasks is not None:
+            await self.tasks.close()
         if self.app is not None:
             await self.app.close()
         if self.state is not None:
             self.state.close()
-        if self.tasks is not None:
-            await self.tasks.close()
+        self.closed = True
