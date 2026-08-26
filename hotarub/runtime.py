@@ -116,6 +116,10 @@ class Runtime:
             return "usage: !mi <module-id>"
         active = self.modules.get(invocation.args[0].casefold())
         if active is None:
+            if self.state is not None and invocation.args[0].casefold() in self.state.module_ids():
+                namespace = self.state.namespace(invocation.args[0].casefold())
+                error = namespace.get("lasterror", "none")
+                return f"module: {invocation.args[0].casefold()}\nstatus: disabled\nlasterror: {error}"
             return f"module not active: {invocation.args[0].casefold()}"
         manifest = active.loaded.manifest
         commands = ", ".join(manifest.commands) if manifest.commands else "none"
