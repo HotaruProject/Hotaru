@@ -12,6 +12,8 @@ import zipfile
 from pathlib import Path
 from typing import Any
 
+from .modules import HmodLoader, ModuleValidationError
+
 
 class BackupError(ValueError):
     pass
@@ -96,6 +98,8 @@ class BackupService:
                     raise BackupError("backup checksum verification failed")
                 if name == "state/state.sqlite3":
                     self._validate_state(data)
+                elif name.startswith("modules/"):
+                    self._validate_module(data)
             return {"format": 1, "files": tuple(sorted(records)), "metadata": manifest.get("metadata", {})}
 
     @classmethod
@@ -195,6 +199,19 @@ class BackupService:
             else:
                 child.unlink()
         path.rmdir()
+
+    @staticmethod
+    def _validate_module(data: bytes) -> None:
+        fd, temporary = tempfile.mkstemp(prefix=".hotaru-module-", suffix=".hmod")
+        os.close(fd)
+        path = Path(temporary)
+        try:
+            path.write_bytes(data)
+            HmodLoader().load(path)
+        except (ModuleValidationError, OSError) as exc:
+            raise BackupError("backup module is invalid") from exc
+        finally:
+            path.unlink(missing_ok=True)
 
     @staticmethod
     def _validate_state(data: bytes) -> None:
