@@ -484,6 +484,8 @@ class Runtime:
         restored: list[str] = []
         for module_id in self.state.module_ids()[:256]:
             namespace = self.state.namespace(module_id)
+            if self.modules.get(module_id) is not None:
+                continue
             if namespace.get("enabled") is not True:
                 continue
             source_path = namespace.get("sourcepath")
