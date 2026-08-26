@@ -75,6 +75,7 @@ class Runtime:
         self.kernel.registry.register("ver", self._command_ver, kernel=True)
         self.kernel.registry.register("ls", self._command_ls, kernel=True)
         self.kernel.registry.register("hlp", self._command_hlp, kernel=True)
+        self.kernel.registry.register("ld", self._command_ld, kernel=True)
         self.kernel.attach(self.app)
         self.app.on_cb(self._on_callback)
         self.event_router.attach_aux(self.app)
@@ -105,6 +106,15 @@ class Runtime:
         if self.kernel is None:
             return "commands: unavailable"
         return "commands:\n" + "\n".join(f"{self.config.prefix}{name}" for name in sorted(self.kernel.registry.names()))
+
+    async def _command_ld(self, invocation: Any) -> str:
+        if len(invocation.args) != 1:
+            return "usage: !ld <path-to-hmod>"
+        try:
+            loaded = self.stage_module(invocation.args[0])
+        except Exception as exc:
+            return f"load failed: {type(exc).__name__}"
+        return f"staged: {loaded.manifest.module_id} {loaded.manifest.version}"
 
     def _event_error(self, error: Exception) -> None:
         if self.observatory is not None:
