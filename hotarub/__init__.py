@@ -1,10 +1,12 @@
 from .commands import CommandInvocation, CommandParser
+from .kernel import Kernel
 from .config import RuntimeConfig
 from .registry import CommandRegistry, CommandSpec
 from .runtime import Runtime
 
 __all__ = [
     "CommandInvocation",
+    "Kernel",
     "CommandParser",
     "CommandRegistry",
     "CommandSpec",

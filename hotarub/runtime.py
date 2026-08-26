@@ -2,12 +2,16 @@ from dataclasses import dataclass
 from typing import Any
 
 from .config import RuntimeConfig
+from .commands import CommandParser
+from .kernel import Kernel
+from .registry import Handler
 
 
 @dataclass(slots=True)
 class Runtime:
     config: RuntimeConfig
     app: Any = None
+    kernel: Kernel | None = None
 
     @classmethod
     def from_env(cls) -> "Runtime":
@@ -25,7 +29,17 @@ class Runtime:
             api_hash=self.config.api_hash,
             session_name=session_name,
         )
+        self.kernel = Kernel(
+            parser=CommandParser(self.config.prefix),
+            owner_id=self.config.owner_id,
+        )
+        self.kernel.attach(self.app)
         return self.app
+
+    def register_command(self, name: str, handler: Handler, *, kernel: bool = False) -> None:
+        if self.kernel is None:
+            raise RuntimeError("build the runtime before registering commands")
+        self.kernel.registry.register(name, handler, kernel=kernel)
 
     async def run(self) -> None:
         if self.app is None:
