@@ -1,0 +1,18 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "hotarub"
+version = "0.1.0"
+description = "HotaruUB userbot kernel on GoyGram"
+requires-python = ">=3.11"
+dependencies = [
+    "goygram @ git+https://github.com/GoyGram/GoyGram.git@8e663862c4c7754ef33d0ee3e82db303a66afa34",
+]
+
+[project.scripts]
+hotarub = "hotarub.__main__:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["hotarub"]
