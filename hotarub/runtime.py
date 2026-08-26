@@ -307,7 +307,7 @@ class Runtime:
 
     async def _command_ul(self, invocation: Any) -> str:
         if len(invocation.args) != 1 or self.modules is None:
-            return "usage: !ul <module-id>"
+            return "usage: .ul <module-id>"
         module_id = invocation.args[0].casefold()
         if await self.deactivate_module(module_id):
             return f"unloaded: {module_id}"
@@ -568,10 +568,7 @@ class Runtime:
     async def deactivate_module(self, module_id: str) -> bool:
         if self.modules is None:
             raise RuntimeError("build the runtime before deactivating modules")
-        result = await self.modules.deactivate(module_id)
-        if result and self.state is not None:
-            self.state.namespace(module_id).set("enabled", False)
-        return result
+        return await self.modules.deactivate(module_id)
 
     async def restore_backup(self, plan: Any, activate: Any, *, rollback: Any | None = None, timeout: float = 10.0) -> Any:
         if self.backups is None:
