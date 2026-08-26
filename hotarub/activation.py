@@ -30,7 +30,13 @@ class ModuleManager:
         self.timeout = timeout
         self._active: dict[str, ActiveModule] = {}
 
-    async def activate(self, path: str | Path, starter: Starter) -> ActiveModule:
+    async def activate(
+        self,
+        path: str | Path,
+        starter: Starter,
+        *,
+        health: Callable[[Any], Any] | None = None,
+    ) -> ActiveModule:
         loaded = self.loader.load(path)
         module_id = loaded.manifest.module_id
         if module_id in self._active:
@@ -39,11 +45,30 @@ class ModuleManager:
             context = starter(loaded)
             if inspect.isawaitable(context):
                 context = await asyncio.wait_for(context, timeout=self.timeout)
+            if health is not None:
+                result = health(context)
+                if inspect.isawaitable(result):
+                    result = await asyncio.wait_for(result, timeout=self.timeout)
+                if result is False:
+                    raise RuntimeError("health check returned false")
         except Exception as exc:
+            await self._cleanup(context if "context" in locals() else None)
             raise ActivationError(f"module activation failed: {module_id}") from exc
         active = ActiveModule(loaded, context)
         self._active[module_id] = active
         return active
+
+    async def _cleanup(self, context: Any) -> None:
+        if context is None:
+            return
+        for name in ("stop", "close"):
+            method = getattr(context, name, None)
+            if method is None:
+                continue
+            result = method()
+            if inspect.isawaitable(result):
+                await asyncio.wait_for(result, timeout=self.timeout)
+            return
 
     async def deactivate(self, module_id: str, stopper: Callable[[ActiveModule], Any] | None = None) -> bool:
         active = self._active.get(module_id)
