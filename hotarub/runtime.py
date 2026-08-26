@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from .capabilities import CapabilityBroker
+from .backup import BackupService
 from .callbacks import CallbackDenied, CallbackRouter
 from .config import RuntimeConfig
 from .commands import CommandParser
@@ -24,6 +25,7 @@ class Runtime:
     responses: ResponseService | None = None
     callbacks: CallbackRouter | None = None
     observatory: Observatory | None = None
+    backups: BackupService | None = None
 
     @classmethod
     def from_env(cls) -> "Runtime":
@@ -54,6 +56,7 @@ class Runtime:
         self.responses = ResponseService()
         self.callbacks = CallbackRouter()
         self.observatory = Observatory()
+        self.backups = BackupService()
         self.app.on_cb(self._on_callback)
         return self.app
 
