@@ -208,6 +208,13 @@ class Runtime:
         if not (source.get("document") or source.get("media")):
             source = message.get("reply_to_message") or message.get("reply")
         if source is None or not hasattr(source, "get"):
+            reply_to = message.get("reply_to")
+            reply_id = reply_to.get("reply_to_msg_id") if isinstance(reply_to, dict) else None
+            if isinstance(reply_id, int) and getattr(message, "src", None) != "bot":
+                result = await message.app.mt_req("messages.getMessages", ids=[reply_id])
+                messages = result.get("messages") if isinstance(result, dict) else None
+                source = messages[0] if isinstance(messages, list) and messages else None
+        if source is None or not hasattr(source, "get"):
             raise ValueError("module file is missing")
         document = source.get("document")
         media = source.get("media")
@@ -215,8 +222,14 @@ class Runtime:
             document = media.get("document")
         if not isinstance(document, dict):
             raise ValueError("module file must be a document")
-        if source.src == "bot":
-            await source.download(str(destination))
+        if getattr(source, "src", getattr(message, "src", None)) == "bot":
+            if hasattr(source, "download"):
+                await source.download(str(destination))
+            else:
+                file_id = document.get("file_id")
+                if not isinstance(file_id, str):
+                    raise ValueError("Bot API document file_id is missing")
+                await message.app.download_file(file_id, str(destination))
             return
         required = ("id", "access_hash")
         if any(not isinstance(document.get(key), int) for key in required):
@@ -228,7 +241,7 @@ class Runtime:
             "file_reference": document.get("file_reference", b""),
             "thumb_size": "",
         }
-        await source.app.mt.download_file(location, str(destination), limit=524288)
+        await message.app.mt.download_file(location, str(destination), limit=524288)
 
     async def _command_ld(self, invocation: Any) -> str:
         if len(invocation.args) > 1:

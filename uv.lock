@@ -268,7 +268,7 @@ wheels = [
 [[package]]
 name = "goygram"
 version = "0.7.57"
-source = { git = "https://github.com/GoyGram/GoyGram.git?rev=e38bfe152e3e70500f758b158f71c5a7f26c3b80#e38bfe152e3e70500f758b158f71c5a7f26c3b80" }
+source = { git = "https://github.com/GoyGram/GoyGram.git?rev=70bf51be6d7f48a95e59d9a31372803541ea616d#70bf51be6d7f48a95e59d9a31372803541ea616d" }
 dependencies = [
     { name = "aiohttp" },
     { name = "qrcode" },
@@ -284,7 +284,7 @@ dependencies = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "goygram", git = "https://github.com/GoyGram/GoyGram.git?rev=e38bfe152e3e70500f758b158f71c5a7f26c3b80" }]
+requires-dist = [{ name = "goygram", git = "https://github.com/GoyGram/GoyGram.git?rev=70bf51be6d7f48a95e59d9a31372803541ea616d" }]
 
 [[package]]
 name = "idna"
