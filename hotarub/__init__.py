@@ -8,6 +8,7 @@ from .callbacks import CallbackBinding, CallbackDenied, CallbackRouter, Callback
 from .registry import CommandRegistry, CommandSpec
 from .runtime import Runtime
 from .response import ModuleContext, Response, ResponseError, ResponseService
+from .observatory import Observatory
 from .state import StateError, StateNamespace, StateStore
 
 __all__ = [
@@ -30,6 +31,7 @@ __all__ = [
     "Response",
     "ResponseError",
     "ResponseService",
+    "Observatory",
     "BehaviorEnvelope",
     "CapabilityBroker",
     "CapabilityDenied",

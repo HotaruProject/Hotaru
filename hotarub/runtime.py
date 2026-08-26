@@ -7,6 +7,7 @@ from .config import RuntimeConfig
 from .commands import CommandParser
 from .kernel import Kernel
 from .modules import HmodLoader
+from .observatory import Observatory
 from .registry import Handler
 from .response import ResponseService
 from .state import StateStore
@@ -22,6 +23,7 @@ class Runtime:
     modules: HmodLoader | None = None
     responses: ResponseService | None = None
     callbacks: CallbackRouter | None = None
+    observatory: Observatory | None = None
 
     @classmethod
     def from_env(cls) -> "Runtime":
@@ -51,6 +53,7 @@ class Runtime:
         self.modules = HmodLoader()
         self.responses = ResponseService()
         self.callbacks = CallbackRouter()
+        self.observatory = Observatory()
         self.app.on_cb(self._on_callback)
         return self.app
 
