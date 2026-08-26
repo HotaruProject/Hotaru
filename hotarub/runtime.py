@@ -85,6 +85,7 @@ class Runtime:
         self.kernel.registry.register("off", self._command_off, kernel=True)
         self.callbacks.register("remove_confirm", self._remove_confirm)
         self.callbacks.register("restore_confirm", self._restore_confirm)
+        self.callbacks.register("help_page", self._help_page)
         self.kernel.attach(self.app)
         self.app.on_cb(self._on_callback)
         self.event_router.attach_aux(self.app)
@@ -126,10 +127,33 @@ class Runtime:
         capabilities = ", ".join(manifest.capabilities) if manifest.capabilities else "none"
         return f"module: {manifest.module_id}\nversion: {manifest.version}\ncommands: {commands}\ncapabilities: {capabilities}\ndescription: {manifest.description}"
 
-    def _command_hlp(self, invocation: Any) -> str:
-        if self.kernel is None:
-            return "commands: unavailable"
-        return "commands:\n" + "\n".join(f"{self.config.prefix}{name}" for name in sorted(self.kernel.registry.names()))
+    async def _command_hlp(self, invocation: Any) -> tuple[str, list[dict[str, str]]] | str:
+        page = 0
+        if invocation.args:
+            if len(invocation.args) != 1 or not invocation.args[0].isdigit():
+                return "usage: !hlp [page]"
+            page = int(invocation.args[0])
+        return self._help_render(page, invocation.chat_id, invocation.message_id)
+
+    def _help_render(self, page: int, chat_id: int | str | None, message_id: int) -> tuple[str, list[dict[str, str]]] | str:
+        if self.kernel is None or self.callbacks is None or page < 0:
+            return "help unavailable"
+        names = sorted(self.kernel.registry.names())
+        page_size = 24
+        start = page * page_size
+        if start >= len(names) and names:
+            return "help page unavailable"
+        current = names[start : start + page_size]
+        text = "commands: " + (", ".join(f"{self.config.prefix}{name}" for name in current) or "none")
+        if start + page_size >= len(names):
+            return text
+        if self.kernel.owner_id is None or chat_id is None:
+            return text
+        handle = self.callbacks.store.issue(
+            CallbackBinding(self.kernel.owner_id, chat_id, message_id),
+            {"action": "help_page", "payload": page + 1},
+        )
+        return text, [{"text": "Next", "callback_data": handle}]
 
     def stage_module_url(self, source: str, destination: str | Path | None = None) -> Any:
         if self.stager is None:
@@ -282,6 +306,16 @@ class Runtime:
             return await callback.edit(f"removal failed: {payload}")
         await callback.answer("Module removed", alert=True)
         return await callback.edit(f"removed: {payload}")
+
+    async def _help_page(self, callback: Any, payload: Any) -> object:
+        if not isinstance(payload, int) or payload < 0:
+            await callback.answer("Invalid help page", alert=True)
+            return None
+        result = self._help_render(payload, callback.chat_id, callback.msg_id)
+        if isinstance(result, tuple):
+            text, buttons = result
+            return await callback.edit(text, kbd=buttons)
+        return await callback.edit(result)
 
     async def _restore_confirm(self, callback: Any, payload: Any) -> object:
         if not isinstance(payload, str) or self.backups is None:
