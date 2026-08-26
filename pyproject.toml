@@ -14,5 +14,8 @@ dependencies = [
 [project.scripts]
 hotarub = "hotarub.__main__:main"
 
+[tool.hatch.metadata]
+allow-direct-references = true
+
 [tool.hatch.build.targets.wheel]
 packages = ["hotarub"]
