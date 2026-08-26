@@ -10,7 +10,7 @@ from .kernel import Kernel
 from .modules import HmodLoader
 from .observatory import Observatory
 from .registry import Handler
-from .response import ResponseService
+from .response import ModuleContextFactory, ResponseService
 from .state import StateStore
 
 
@@ -26,6 +26,7 @@ class Runtime:
     callbacks: CallbackRouter | None = None
     observatory: Observatory | None = None
     backups: BackupService | None = None
+    context_factory: ModuleContextFactory | None = None
 
     @classmethod
     def from_env(cls) -> "Runtime":
@@ -54,6 +55,7 @@ class Runtime:
         self.capabilities = CapabilityBroker()
         self.modules = HmodLoader()
         self.responses = ResponseService()
+        self.context_factory = ModuleContextFactory(self.state, self.responses)
         self.callbacks = CallbackRouter()
         self.observatory = Observatory()
         self.backups = BackupService()

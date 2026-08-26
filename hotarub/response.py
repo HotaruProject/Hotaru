@@ -100,3 +100,12 @@ class ModuleContext:
 
     async def answer_rich(self, rich_message: Any, **kwargs: Any) -> Response:
         return await self.answer(rich_message=rich_message, **kwargs)
+
+
+class ModuleContextFactory:
+    def __init__(self, state: Any, responses: ResponseService) -> None:
+        self._state = state
+        self._responses = responses
+
+    def create(self, module_id: str, message: Any) -> ModuleContext:
+        return ModuleContext(module_id, message, self._state.namespace(module_id), self._responses)
