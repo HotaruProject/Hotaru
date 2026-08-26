@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import secrets
 import time
 from dataclasses import dataclass
@@ -54,3 +55,38 @@ class CallbackStore:
         for handle, entry in tuple(self._items.items()):
             if entry.expires <= now:
                 del self._items[handle]
+
+
+class CallbackRouter:
+    def __init__(self, store: CallbackStore | None = None) -> None:
+        self.store = store or CallbackStore()
+        self._handlers: dict[str, Any] = {}
+
+    def register(self, action: str, handler: Any) -> None:
+        if not action or action in self._handlers:
+            raise ValueError("callback action is already registered")
+        self._handlers[action] = handler
+
+    async def dispatch(self, callback: Any) -> object:
+        binding = CallbackBinding(
+            actor=self._required(callback, "from_id"),
+            chat_id=self._required(callback, "chat_id"),
+            message_id=self._required(callback, "msg_id"),
+        )
+        value = self.store.consume(getattr(callback, "data", ""), binding)
+        if not isinstance(value, dict) or not isinstance(value.get("action"), str):
+            raise CallbackDenied("callback payload is invalid")
+        handler = self._handlers.get(value["action"])
+        if handler is None:
+            raise CallbackDenied("callback action is unavailable")
+        result = handler(callback, value.get("payload"))
+        if inspect.isawaitable(result):
+            return await result
+        return result
+
+    @staticmethod
+    def _required(callback: Any, name: str) -> int | str:
+        value = getattr(callback, name, None)
+        if value is None:
+            raise CallbackDenied("callback identity is incomplete")
+        return value
