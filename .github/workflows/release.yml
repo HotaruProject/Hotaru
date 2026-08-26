@@ -1,0 +1,25 @@
+name: release
+
+on:
+  push:
+    tags: ['v*.*.*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv sync --locked
+      - run: uv build --out-dir dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hotarub-${{ github.ref_name }}
+          path: dist/*
+          if-no-files-found: error
