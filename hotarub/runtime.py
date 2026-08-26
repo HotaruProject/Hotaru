@@ -136,6 +136,30 @@ class Runtime:
             raise RuntimeError("backup service is not ready")
         return await self.backups.restore(plan, activate, rollback=rollback, timeout=timeout)
 
+    async def restore_filesystem(self, plan: Any, modules_path: str | Path) -> None:
+        if self.backups is None or self.state is None or self.modules is None:
+            raise RuntimeError("runtime services are not ready")
+        if self.modules.items():
+            raise RuntimeError("unload modules before filesystem restore")
+        state = self.state
+        self.state = None
+        state.close()
+        try:
+            await self.backups.restore(
+                plan,
+                lambda staged: self.backups.activate_staged(
+                    staged,
+                    state_path=self.config.state_path,
+                    modules_path=modules_path,
+                ),
+            )
+        finally:
+            self.state = StateStore(self.config.state_path)
+            self.context_factory = ModuleContextFactory(self.state, self.responses)
+            if self.kernel is not None:
+                self.kernel.context_factory = self.context_factory
+            self.modules = ModuleManager(tasks=self.tasks)
+
     def status(self) -> dict[str, Any]:
         return {
             "runtime": "closed" if self.closed else ("ready" if self.app is not None else "new"),

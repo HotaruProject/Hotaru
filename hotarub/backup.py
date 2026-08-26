@@ -204,7 +204,11 @@ class BackupService:
                     raise BackupError("staged module tree contains an unsafe file")
                 shutil.copy2(item, modules_temp / item.name)
             if target_state.exists():
-                os.replace(target_state, state_backup)
+                rollback_state = self._snapshot_state(target_state)
+                os.replace(rollback_state, state_backup)
+                self._remove_sqlite_sidecars(target_state)
+            else:
+                self._remove_sqlite_sidecars(target_state)
             if target_modules.exists():
                 if target_modules.is_symlink():
                     raise BackupError("module target is a symlink")
@@ -286,6 +290,11 @@ class BackupService:
             raise BackupError("backup module is invalid") from exc
         finally:
             path.unlink(missing_ok=True)
+
+    @staticmethod
+    def _remove_sqlite_sidecars(path: Path) -> None:
+        for suffix in ("-wal", "-shm"):
+            path.with_name(path.name + suffix).unlink(missing_ok=True)
 
     @staticmethod
     def _validate_state(data: bytes) -> None:
