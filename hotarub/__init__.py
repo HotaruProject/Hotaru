@@ -10,6 +10,7 @@ from .registry import CommandRegistry, CommandSpec
 from .runtime import Runtime
 from .response import ModuleContext, ModuleContextFactory, Response, ResponseError, ResponseService
 from .observatory import Observatory
+from .events import EventRouter
 from .state import StateError, StateNamespace, StateStore
 from .tasks import TaskLimitError, TaskSupervisor
 
@@ -39,6 +40,7 @@ __all__ = [
     "ResponseError",
     "ResponseService",
     "Observatory",
+    "EventRouter",
     "BehaviorEnvelope",
     "CapabilityBroker",
     "CapabilityDenied",
