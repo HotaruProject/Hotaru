@@ -89,6 +89,23 @@ class Runtime:
             raise RuntimeError("build the runtime before registering commands")
         self.kernel.register_module_command(module_id, name, handler)
 
+    def status(self) -> dict[str, Any]:
+        return {
+            "runtime": "ready" if self.app is not None else "new",
+            "kernel": self.kernel is not None,
+            "state": self.state is not None,
+            "capabilities": self.capabilities is not None,
+            "modules": self.modules is not None,
+            "responses": self.responses is not None,
+            "callbacks": self.callbacks is not None,
+            "observatory": self.observatory is not None,
+            "backups": self.backups is not None,
+            "tasks": self.tasks is not None,
+        }
+
+    def health(self) -> bool:
+        return all(self.status().values())
+
     async def run(self) -> None:
         if self.app is None:
             self.build()
