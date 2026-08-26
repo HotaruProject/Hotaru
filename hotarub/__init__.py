@@ -2,6 +2,7 @@ from .commands import CommandInvocation, CommandParser
 from .kernel import Kernel
 from .modules import HmodLoader, LoadedModule, ModuleManifest, ModuleValidationError
 from .config import RuntimeConfig
+from .capabilities import BehaviorEnvelope, CapabilityBroker, CapabilityDenied, CapabilityProvider
 from .registry import CommandRegistry, CommandSpec
 from .runtime import Runtime
 from .state import StateError, StateNamespace, StateStore
@@ -18,6 +19,10 @@ __all__ = [
     "CommandSpec",
     "Runtime",
     "RuntimeConfig",
+    "BehaviorEnvelope",
+    "CapabilityBroker",
+    "CapabilityDenied",
+    "CapabilityProvider",
     "StateError",
     "StateNamespace",
     "StateStore",
