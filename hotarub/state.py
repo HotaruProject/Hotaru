@@ -126,5 +126,10 @@ class StateStore:
                 (key, encoded),
             )
 
+    def delete_module(self, module_id: str) -> bool:
+        with self.connection:
+            result = self.connection.execute("DELETE FROM module_state WHERE module_id = ?", (module_id,))
+        return result.rowcount > 0
+
     def close(self) -> None:
         self.connection.close()

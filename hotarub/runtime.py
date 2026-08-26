@@ -306,12 +306,28 @@ class Runtime:
         return f"staged: {loaded.manifest.module_id} {loaded.manifest.version}"
 
     async def _command_ul(self, invocation: Any) -> str:
-        if len(invocation.args) != 1 or self.modules is None:
+        if len(invocation.args) != 1 or self.modules is None or self.state is None:
             return "usage: .ul <module-id>"
         module_id = invocation.args[0].casefold()
-        if await self.deactivate_module(module_id):
-            return f"unloaded: {module_id}"
-        return f"module not active: {module_id}"
+        active = self.modules.get(module_id)
+        namespace = self.state.namespace(module_id)
+        source_path = active.loaded.path if active is not None else Path(namespace.get("sourcepath", self.config.state_path.parent / "constellations" / f"{module_id}.hmod"))
+        if not source_path.is_file():
+            return f"module not found: {module_id}"
+        try:
+            self._backup_before_activation(source_path)
+            if active is not None:
+                await self.deactivate_module(module_id)
+            source_path.unlink()
+        except Exception as exc:
+            if active is not None and self.modules.get(module_id) is None and source_path.is_file():
+                try:
+                    await self.activate_module(str(source_path))
+                except Exception:
+                    pass
+            return f"unload failed: {type(exc).__name__}"
+        self.state.delete_module(module_id)
+        return f"unloaded permanently: {module_id}"
 
     @staticmethod
     def _version_key(value: str) -> tuple[int, ...] | None:
