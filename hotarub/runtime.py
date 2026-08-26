@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import os
 import tempfile
 from dataclasses import dataclass
@@ -56,12 +57,21 @@ class Runtime:
 
         self.config.session_dir.mkdir(parents=True, exist_ok=True)
         session_name = str(self.config.session_dir / self.config.session_name)
-        self.app = GoyGram(
-            bot_token=self.config.bot_token,
-            api_id=self.config.api_id,
-            api_hash=self.config.api_hash,
-            session_name=session_name,
-        )
+        previous_disable = logging.root.manager.disable
+        logging.disable(logging.INFO)
+        try:
+            self.app = GoyGram(
+                bot_token=self.config.bot_token,
+                api_id=self.config.api_id,
+                api_hash=self.config.api_hash,
+                session_name=session_name,
+            )
+        finally:
+            logging.disable(previous_disable)
+        logging.getLogger("goygram").setLevel(logging.ERROR)
+        for name, logger in logging.Logger.manager.loggerDict.items():
+            if name.startswith("goygram") and isinstance(logger, logging.Logger):
+                logger.setLevel(logging.ERROR)
         self.responses = ResponseService()
         self.kernel = Kernel(
             parser=CommandParser(self.config.prefix),
