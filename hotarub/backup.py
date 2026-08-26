@@ -38,6 +38,7 @@ class BackupService:
             if module.suffix != ".hmod":
                 raise BackupError("backup accepts only .hmod modules")
             files.append((f"modules/{module.name}", module))
+        self._validate_metadata(metadata or {})
         manifest = {
             "format": 1,
             "metadata": metadata or {},
@@ -91,6 +92,28 @@ class BackupService:
                 if len(data) != record.get("size") or hashlib.sha256(data).hexdigest() != record.get("sha256"):
                     raise BackupError("backup checksum verification failed")
             return {"format": 1, "files": tuple(sorted(records)), "metadata": manifest.get("metadata", {})}
+
+    @classmethod
+    def _validate_metadata(cls, value: Any, depth: int = 0) -> None:
+        if depth > 4:
+            raise BackupError("backup metadata is too deep")
+        if isinstance(value, dict):
+            if len(value) > 64:
+                raise BackupError("backup metadata has too many fields")
+            for key, item in value.items():
+                if not isinstance(key, str):
+                    raise BackupError("backup metadata keys must be strings")
+                lowered = key.casefold()
+                if any(secret in lowered for secret in ("token", "password", "api_hash", "auth_key", "vault")):
+                    raise BackupError("backup metadata contains a sensitive key")
+                cls._validate_metadata(item, depth + 1)
+        elif isinstance(value, list):
+            if len(value) > 64:
+                raise BackupError("backup metadata list is too large")
+            for item in value:
+                cls._validate_metadata(item, depth + 1)
+        elif not isinstance(value, (str, int, float, bool)) and value is not None:
+            raise BackupError("backup metadata is not JSON-compatible")
 
     def prune(self, directory: str | Path, *, keep: int = 7) -> tuple[Path, ...]:
         if keep < 1:
