@@ -53,13 +53,14 @@ class Runtime:
             api_hash=self.config.api_hash,
             session_name=session_name,
         )
+        self.responses = ResponseService()
         self.kernel = Kernel(
             parser=CommandParser(self.config.prefix),
             owner_id=self.config.owner_id,
+            response_service=self.responses,
         )
         self.state = StateStore(self.config.state_path)
         self.capabilities = CapabilityBroker()
-        self.responses = ResponseService()
         self.context_factory = ModuleContextFactory(self.state, self.responses)
         self.callbacks = CallbackRouter()
         self.observatory = Observatory()
@@ -68,6 +69,9 @@ class Runtime:
         self.tasks = TaskSupervisor()
         self.modules = ModuleManager(tasks=self.tasks)
         self.kernel.context_factory = self.context_factory
+        self.kernel.registry.register("ver", self._command_ver, kernel=True)
+        self.kernel.registry.register("ls", self._command_ls, kernel=True)
+        self.kernel.registry.register("hlp", self._command_hlp, kernel=True)
         self.kernel.attach(self.app)
         self.app.on_cb(self._on_callback)
         self.event_router.attach_aux(self.app)
@@ -80,6 +84,24 @@ class Runtime:
             return await self.callbacks.dispatch(callback)
         except CallbackDenied:
             return None
+
+    def _command_ver(self, invocation: Any) -> str:
+        from . import __version__
+
+        return f"HotaruUB {__version__}"
+
+    def _command_ls(self, invocation: Any) -> str:
+        if self.modules is None:
+            return "modules: unavailable"
+        items = self.modules.items()
+        if not items:
+            return "modules: none"
+        return "modules:\n" + "\n".join(sorted(item.loaded.manifest.module_id for item in items))
+
+    def _command_hlp(self, invocation: Any) -> str:
+        if self.kernel is None:
+            return "commands: unavailable"
+        return "commands:\n" + "\n".join(f"{self.config.prefix}{name}" for name in sorted(self.kernel.registry.names()))
 
     def _event_error(self, error: Exception) -> None:
         if self.observatory is not None:

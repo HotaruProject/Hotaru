@@ -16,6 +16,7 @@ class Kernel:
         parser: CommandParser | None = None,
         owner_id: int | None = None,
         context_factory: Any = None,
+        response_service: Any = None,
         seen_limit: int = 4096,
     ) -> None:
         if seen_limit < 1:
@@ -24,6 +25,7 @@ class Kernel:
         self.parser = parser or CommandParser()
         self.owner_id = owner_id
         self.context_factory = context_factory
+        self.response_service = response_service
         self._seen: OrderedDict[tuple[str, int | str | None, int], None] = OrderedDict()
         self._seen_limit = seen_limit
 
@@ -65,7 +67,9 @@ class Kernel:
         else:
             result = spec.handler(invocation)
         if inspect.isawaitable(result):
-            return await result
+            result = await result
+        if spec.kernel and self.response_service is not None and isinstance(result, str):
+            return await self.response_service.answer(message, text=result, output="edit")
         return result
 
     def register_module_command(self, module_id: str, name: str, handler: Any) -> None:
