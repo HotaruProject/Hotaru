@@ -127,10 +127,16 @@ class ModuleStager:
     @staticmethod
     def normalize_url(value: str) -> str:
         parsed = urllib.parse.urlparse(value)
-        if parsed.scheme != "https" or parsed.username or parsed.password or parsed.port:
+        try:
+            port = parsed.port
+        except ValueError as exc:
+            raise ModuleFetchError("module URL must be a plain HTTPS URL") from exc
+        if parsed.scheme != "https" or parsed.username or parsed.password or port or parsed.query or parsed.fragment:
             raise ModuleFetchError("module URL must be a plain HTTPS URL")
         host = (parsed.hostname or "").casefold()
         parts = [urllib.parse.unquote(part) for part in parsed.path.split("/") if part]
+        if any(part in {".", ".."} or "\\" in part for part in parts):
+            raise ModuleFetchError("module URL path is unsafe")
         if host == "github.com" and len(parts) >= 5 and parts[2] == "blob":
             owner, repo, _, ref, *filename = parts
             if not filename or not filename[-1].endswith(".hmod"):
