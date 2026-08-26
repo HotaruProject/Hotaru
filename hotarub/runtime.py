@@ -213,7 +213,8 @@ class Runtime:
             reply_id = reply_to.get("reply_to_msg_id") if isinstance(reply_to, dict) else None
             if isinstance(reply_id, int) and getattr(message, "src", None) != "bot":
                 result = await message.app.mt_req("messages.getMessages", ids=[reply_id])
-                messages = result.get("messages") if isinstance(result, dict) else None
+                body = result.get("result") if isinstance(result, dict) and isinstance(result.get("result"), dict) else result
+                messages = body.get("messages") if isinstance(body, dict) else None
                 source = messages[0] if isinstance(messages, list) and messages else None
         if source is None or not hasattr(source, "get"):
             raise ValueError("module file is missing")
