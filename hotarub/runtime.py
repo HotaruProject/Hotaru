@@ -80,6 +80,8 @@ class Runtime:
         self.kernel.registry.register("rl", self._command_rl, kernel=True)
         self.kernel.registry.register("rm", self._command_rm, kernel=True)
         self.kernel.registry.register("bk", self._command_bk, kernel=True)
+        self.kernel.registry.register("on", self._command_on, kernel=True)
+        self.kernel.registry.register("off", self._command_off, kernel=True)
         self.callbacks.register("remove_confirm", self._remove_confirm)
         self.callbacks.register("restore_confirm", self._restore_confirm)
         self.kernel.attach(self.app)
@@ -161,6 +163,33 @@ class Runtime:
                 return f"reload failed: {type(exc).__name__}; rollback failed"
             return f"reload failed: {type(exc).__name__}; previous version restored"
         return f"reloaded: {module_id}"
+
+    async def _command_off(self, invocation: Any) -> str:
+        if len(invocation.args) != 1 or self.modules is None or self.state is None:
+            return "usage: !off <module-id>"
+        module_id = invocation.args[0].casefold()
+        if self.modules.get(module_id) is None:
+            return f"module not active: {module_id}"
+        if await self.deactivate_module(module_id):
+            self.state.namespace(module_id).set("enabled", False)
+            return f"disabled: {module_id}"
+        return f"module not active: {module_id}"
+
+    async def _command_on(self, invocation: Any) -> str:
+        if len(invocation.args) != 1 or self.modules is None or self.state is None:
+            return "usage: !on <module-id>"
+        module_id = invocation.args[0].casefold()
+        if self.modules.get(module_id) is not None:
+            return f"module already active: {module_id}"
+        namespace = self.state.namespace(module_id)
+        source_path = namespace.get("sourcepath")
+        if not isinstance(source_path, str):
+            return f"module source unavailable: {module_id}"
+        try:
+            await self.activate_module(source_path)
+        except Exception as exc:
+            return f"enable failed: {type(exc).__name__}"
+        return f"enabled: {module_id}"
 
     def create_backup(self) -> Path:
         if self.backups is None or self.state is None or self.modules is None:
@@ -300,7 +329,13 @@ class Runtime:
         if self.modules is None or self.kernel is None:
             raise RuntimeError("build the runtime before activating modules")
         self._backup_before_activation(path)
-        return await self.modules.activate_source(path, self.kernel, health=health)
+        result = await self.modules.activate_source(path, self.kernel, health=health)
+        module_id = result.loaded.manifest.module_id
+        namespace = self.state.namespace(module_id) if self.state is not None else None
+        if namespace is not None:
+            namespace.set("enabled", True)
+            namespace.set("sourcepath", str(result.loaded.path))
+        return result
 
     async def deactivate_module(self, module_id: str) -> bool:
         if self.modules is None:
