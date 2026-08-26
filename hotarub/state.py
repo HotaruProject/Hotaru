@@ -73,6 +73,12 @@ class StateStore:
             "CREATE TABLE IF NOT EXISTS runtime_settings ("
             "key TEXT PRIMARY KEY, value TEXT NOT NULL)"
         )
+        self.connection.execute(
+            "CREATE TABLE IF NOT EXISTS accounts ("
+            "user_id INTEGER NOT NULL, account_number INTEGER NOT NULL, vault_name TEXT NOT NULL, "
+            "session_dir TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1, "
+            "PRIMARY KEY(user_id, account_number), UNIQUE(vault_name))"
+        )
         self.connection.commit()
         self.path.chmod(0o600)
 
@@ -84,6 +90,25 @@ class StateStore:
     def module_ids(self) -> tuple[str, ...]:
         rows = self.connection.execute("SELECT DISTINCT module_id FROM module_state ORDER BY module_id").fetchall()
         return tuple(row[0] for row in rows)
+
+    def register_account(self, user_id: int, account_number: int, session_dir: str | Path) -> Any:
+        from .accounts import AccountProfile
+
+        profile = AccountProfile.create(user_id, account_number, session_dir)
+        profile.validate()
+        with self.connection:
+            self.connection.execute(
+                "INSERT INTO accounts(user_id, account_number, vault_name, session_dir, enabled) VALUES (?, ?, ?, ?, 1) "
+                "ON CONFLICT(user_id, account_number) DO UPDATE SET vault_name=excluded.vault_name, session_dir=excluded.session_dir",
+                (profile.user_id, profile.account_number, profile.vault_name, str(profile.session_dir)),
+            )
+        return profile
+
+    def accounts(self) -> tuple[Any, ...]:
+        from .accounts import AccountProfile
+
+        rows = self.connection.execute("SELECT user_id, account_number, vault_name, session_dir, enabled FROM accounts ORDER BY user_id, account_number").fetchall()
+        return tuple(AccountProfile(row[0], row[1], row[2], Path(row[3]), bool(row[4])) for row in rows)
 
     def get_setting(self, key: str, default: Any = None) -> Any:
         if not isinstance(key, str) or not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9:.-]{0,127}", key):

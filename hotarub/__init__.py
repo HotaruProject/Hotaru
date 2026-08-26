@@ -1,4 +1,5 @@
 from .commands import CommandInvocation, CommandParser
+from .accounts import AccountProfile, vault_name
 from .kernel import Kernel
 from .modules import HmodLoader, LoadedModule, ModuleCatalog, ModuleFetchError, ModuleManifest, ModuleStager, ModuleValidationError
 from .config import RuntimeConfig
@@ -16,6 +17,8 @@ from .tasks import TaskLimitError, TaskSupervisor
 
 __all__ = [
     "CommandInvocation",
+    "AccountProfile",
+    "vault_name",
     "Kernel",
     "HmodLoader",
     "LoadedModule",
