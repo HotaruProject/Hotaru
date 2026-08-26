@@ -253,7 +253,10 @@ class Runtime:
         namespace = self.state.namespace(module_id)
         source_path = namespace.get("sourcepath")
         if not isinstance(source_path, str):
-            return f"module source unavailable: {module_id}"
+            candidate = self.config.state_path.parent / "constellations" / f"{module_id}.hmod"
+            if not candidate.is_file():
+                return f"module source unavailable: {module_id}"
+            source_path = str(candidate)
         try:
             await self.activate_module(source_path)
         except Exception as exc:
