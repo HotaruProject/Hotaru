@@ -562,12 +562,16 @@ class Runtime:
             namespace.set("enabled", True)
             namespace.set("sourcepath", str(result.loaded.path))
             namespace.set("moduleversion", result.loaded.manifest.version)
+            namespace.delete("lasterror")
         return result
 
     async def deactivate_module(self, module_id: str) -> bool:
         if self.modules is None:
             raise RuntimeError("build the runtime before deactivating modules")
-        return await self.modules.deactivate(module_id)
+        result = await self.modules.deactivate(module_id)
+        if result and self.state is not None:
+            self.state.namespace(module_id).set("enabled", False)
+        return result
 
     async def restore_backup(self, plan: Any, activate: Any, *, rollback: Any | None = None, timeout: float = 10.0) -> Any:
         if self.backups is None:
