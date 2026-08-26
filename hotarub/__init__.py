@@ -2,7 +2,7 @@ from .commands import CommandInvocation, CommandParser
 from .kernel import Kernel
 from .modules import HmodLoader, LoadedModule, ModuleCatalog, ModuleManifest, ModuleValidationError
 from .config import RuntimeConfig
-from .activation import ActivationError, ActiveModule, ModuleBinder, ModuleManager
+from .activation import ActivationError, ActiveModule, ModuleBinder, ModuleInstance, ModuleManager
 from .backup import BackupError, BackupService
 from .capabilities import BehaviorEnvelope, CapabilityBroker, CapabilityDenied, CapabilityProvider
 from .callbacks import CallbackBinding, CallbackDenied, CallbackRouter, CallbackStore
@@ -23,6 +23,7 @@ __all__ = [
     "ActivationError",
     "ActiveModule",
     "ModuleBinder",
+    "ModuleInstance",
     "ModuleManager",
     "BackupError",
     "BackupService",

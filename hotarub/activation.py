@@ -22,6 +22,13 @@ class ActiveModule:
 Starter = Callable[[LoadedModule], Any]
 
 
+@dataclass(frozen=True, slots=True)
+class ModuleInstance:
+    loaded: LoadedModule
+    namespace: dict[str, Any]
+    commands: tuple[str, ...]
+
+
 class ModuleBinder:
     def bind(self, loaded: LoadedModule, namespace: dict[str, Any], kernel: Any) -> tuple[str, ...]:
         handlers: list[tuple[str, Any]] = []
@@ -53,8 +60,10 @@ class ModuleManager:
         if timeout <= 0:
             raise ValueError("timeout must be positive")
         self.loader = loader or HmodLoader()
+        self.binder = ModuleBinder()
         self.timeout = timeout
         self._active: dict[str, ActiveModule] = {}
+        self._bindings: dict[str, tuple[Any, tuple[str, ...]]] = {}
 
     async def activate(
         self,
@@ -84,6 +93,39 @@ class ModuleManager:
         self._active[module_id] = active
         return active
 
+    async def activate_source(
+        self,
+        path: str | Path,
+        kernel: Any,
+        *,
+        health: Callable[[ModuleInstance], Any] | None = None,
+    ) -> ActiveModule:
+        loaded = self.loader.load(path)
+        namespace: dict[str, Any] = {
+            "__name__": f"hotarub_module_{loaded.manifest.module_id}",
+            "__file__": str(loaded.path),
+        }
+        try:
+            exec(compile(loaded.source, str(loaded.path), "exec"), namespace, namespace)
+            commands = self.binder.bind(loaded, namespace, kernel)
+            instance = ModuleInstance(loaded, namespace, commands)
+            if health is not None:
+                result = health(instance)
+                if inspect.isawaitable(result):
+                    result = await asyncio.wait_for(result, timeout=self.timeout)
+                if result is False:
+                    raise RuntimeError("health check returned false")
+            active = ActiveModule(loaded, instance)
+            if loaded.manifest.module_id in self._active:
+                raise ActivationError(f"module is already active: {loaded.manifest.module_id}")
+            self._active[loaded.manifest.module_id] = active
+            self._bindings[loaded.manifest.module_id] = (kernel, commands)
+            return active
+        except Exception as exc:
+            if "commands" in locals():
+                self.binder.unbind(loaded, commands, kernel)
+            raise ActivationError(f"module activation failed: {loaded.manifest.module_id}") from exc
+
     async def _cleanup(self, context: Any) -> None:
         if context is None:
             return
@@ -104,6 +146,9 @@ class ModuleManager:
             result = stopper(active)
             if inspect.isawaitable(result):
                 await asyncio.wait_for(result, timeout=self.timeout)
+        binding = self._bindings.pop(module_id, None)
+        if binding is not None:
+            self.binder.unbind(active.loaded, binding[1], binding[0])
         del self._active[module_id]
         return True
 
