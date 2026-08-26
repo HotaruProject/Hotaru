@@ -206,7 +206,8 @@ class Runtime:
     async def _download_module_message(self, message: Any, destination: Path) -> None:
         source = message
         if not (source.get("document") or source.get("media")):
-            source = message.get("reply_to_message") or message.get("reply")
+            candidate = message.get("reply_to_message") or message.get("reply")
+            source = candidate if candidate is not None and (candidate.get("document") or candidate.get("media")) else None
         if source is None or not hasattr(source, "get"):
             reply_to = message.get("reply_to")
             reply_id = reply_to.get("reply_to_msg_id") if isinstance(reply_to, dict) else None
