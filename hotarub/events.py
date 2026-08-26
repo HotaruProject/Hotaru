@@ -36,6 +36,11 @@ class EventRouter:
                         await error
         return tuple(results)
 
+    def attach_aux(self, app: Any) -> None:
+        app.on_poll(lambda event: self.dispatch("poll", event))
+        app.on_member(lambda event: self.dispatch("member", event))
+        app.on_update(lambda event: self.dispatch("update", event))
+
     def attach(self, app: Any) -> None:
         app.on_msg(lambda event: self.dispatch("new", event))
         app.on_edit(lambda event: self.dispatch("edit", event))

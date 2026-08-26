@@ -6,6 +6,7 @@ from .backup import BackupService
 from .callbacks import CallbackDenied, CallbackRouter
 from .config import RuntimeConfig
 from .commands import CommandParser
+from .events import EventRouter
 from .kernel import Kernel
 from .modules import HmodLoader
 from .observatory import Observatory
@@ -29,6 +30,7 @@ class Runtime:
     backups: BackupService | None = None
     context_factory: ModuleContextFactory | None = None
     tasks: TaskSupervisor | None = None
+    event_router: EventRouter | None = None
 
     @classmethod
     def from_env(cls) -> "Runtime":
@@ -61,9 +63,11 @@ class Runtime:
         self.kernel.attach(self.app)
         self.callbacks = CallbackRouter()
         self.observatory = Observatory()
+        self.event_router = EventRouter(self._event_error)
         self.backups = BackupService()
         self.tasks = TaskSupervisor()
         self.app.on_cb(self._on_callback)
+        self.event_router.attach_aux(self.app)
         return self.app
 
     async def _on_callback(self, callback: Any) -> object | None:
@@ -73,6 +77,10 @@ class Runtime:
             return await self.callbacks.dispatch(callback)
         except CallbackDenied:
             return None
+
+    def _event_error(self, error: Exception) -> None:
+        if self.observatory is not None:
+            self.observatory.emit("events", "handler_error", error=type(error).__name__)
 
     def register_callback(self, action: str, handler: Any) -> None:
         if self.callbacks is None:
@@ -101,6 +109,7 @@ class Runtime:
             "observatory": self.observatory is not None,
             "backups": self.backups is not None,
             "tasks": self.tasks is not None,
+            "event_router": self.event_router is not None,
         }
 
     def health(self) -> bool:
