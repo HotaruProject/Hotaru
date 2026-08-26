@@ -5,7 +5,7 @@ from typing import Any
 
 from .capabilities import CapabilityBroker
 from .backup import BackupService
-from .callbacks import CallbackDenied, CallbackRouter
+from .callbacks import CallbackBinding, CallbackDenied, CallbackRouter
 from .config import RuntimeConfig
 from .commands import CommandParser
 from .events import EventRouter
@@ -78,6 +78,8 @@ class Runtime:
         self.kernel.registry.register("ld", self._command_ld, kernel=True)
         self.kernel.registry.register("ul", self._command_ul, kernel=True)
         self.kernel.registry.register("rl", self._command_rl, kernel=True)
+        self.kernel.registry.register("rm", self._command_rm, kernel=True)
+        self.callbacks.register("remove_confirm", self._remove_confirm)
         self.kernel.attach(self.app)
         self.app.on_cb(self._on_callback)
         self.event_router.attach_aux(self.app)
@@ -157,6 +159,39 @@ class Runtime:
                 return f"reload failed: {type(exc).__name__}; rollback failed"
             return f"reload failed: {type(exc).__name__}; previous version restored"
         return f"reloaded: {module_id}"
+
+    async def _command_rm(self, invocation: Any) -> tuple[str, list[dict[str, str]]] | str:
+        if len(invocation.args) != 1 or self.modules is None or self.callbacks is None:
+            return "usage: !rm <module-id>"
+        if self.kernel is None or self.kernel.owner_id is None:
+            return "rm unavailable: explicit owner id required"
+        module_id = invocation.args[0].casefold()
+        if self.modules.get(module_id) is None:
+            return f"module not active: {module_id}"
+        handle = self.callbacks.store.issue(
+            CallbackBinding(self.kernel.owner_id, invocation.chat_id, invocation.message_id),
+            {"action": "remove_confirm", "payload": module_id},
+        )
+        return (f"confirm removal: {module_id}", [{"text": "Confirm", "callback_data": handle}])
+
+    async def _remove_confirm(self, callback: Any, payload: Any) -> object:
+        if not isinstance(payload, str) or self.modules is None:
+            await callback.answer("Invalid removal request", alert=True)
+            return None
+        active = self.modules.get(payload)
+        if active is None:
+            await callback.answer("Module is already unloaded", alert=True)
+            return await callback.edit(f"module not active: {payload}")
+        path = active.loaded.path
+        await self.deactivate_module(payload)
+        try:
+            path.unlink()
+        except OSError:
+            await self.modules.activate_source(path, self.kernel)
+            await callback.answer("Removal failed", alert=True)
+            return await callback.edit(f"removal failed: {payload}")
+        await callback.answer("Module removed", alert=True)
+        return await callback.edit(f"removed: {payload}")
 
     def _event_error(self, error: Exception) -> None:
         if self.observatory is not None:

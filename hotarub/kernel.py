@@ -68,8 +68,11 @@ class Kernel:
             result = spec.handler(invocation)
         if inspect.isawaitable(result):
             result = await result
-        if spec.kernel and self.response_service is not None and isinstance(result, str):
-            return await self.response_service.answer(message, text=result, output="edit")
+        if spec.kernel and self.response_service is not None:
+            if isinstance(result, tuple) and len(result) == 2:
+                return await self.response_service.answer(message, text=result[0], buttons=result[1], output="edit")
+            if isinstance(result, str):
+                return await self.response_service.answer(message, text=result, output="edit")
         return result
 
     def register_module_command(self, module_id: str, name: str, handler: Any) -> None:
