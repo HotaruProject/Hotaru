@@ -188,7 +188,11 @@ class ModuleStager:
     def stage(self, source: str | Path, destination: str | Path) -> LoadedModule:
         loaded = self.loader.load(source)
         root = Path(destination)
-        root.mkdir(parents=True, exist_ok=True)
+        if root.exists():
+            if root.is_symlink() or not root.is_dir():
+                raise ModuleValidationError("staging destination must be a regular directory")
+        else:
+            root.mkdir(parents=True, exist_ok=True)
         os.chmod(root, 0o700)
         fd, temporary = tempfile.mkstemp(prefix=".hotaru-module-", suffix=".hmod", dir=root)
         temporary_path = Path(temporary)
