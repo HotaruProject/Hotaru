@@ -4,6 +4,7 @@ from .modules import HmodLoader, LoadedModule, ModuleManifest, ModuleValidationE
 from .config import RuntimeConfig
 from .registry import CommandRegistry, CommandSpec
 from .runtime import Runtime
+from .state import StateError, StateNamespace, StateStore
 
 __all__ = [
     "CommandInvocation",
@@ -17,5 +18,8 @@ __all__ = [
     "CommandSpec",
     "Runtime",
     "RuntimeConfig",
+    "StateError",
+    "StateNamespace",
+    "StateStore",
 ]
 __version__ = "0.1.0"
