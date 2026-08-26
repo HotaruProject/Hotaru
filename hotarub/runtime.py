@@ -265,6 +265,12 @@ class Runtime:
                 return f"module source unavailable: {module_id}"
             source_path = str(candidate)
         try:
+            loaded = self.modules.loader.load(source_path)
+        except Exception as exc:
+            return f"enable failed: {type(exc).__name__}"
+        if loaded.manifest.module_id != module_id:
+            return f"module id mismatch: {module_id}"
+        try:
             await self.activate_module(source_path)
         except Exception as exc:
             return f"enable failed: {type(exc).__name__}"
@@ -431,6 +437,7 @@ class Runtime:
         if namespace is not None:
             namespace.set("enabled", True)
             namespace.set("sourcepath", str(result.loaded.path))
+            namespace.set("moduleversion", result.loaded.manifest.version)
         return result
 
     async def deactivate_module(self, module_id: str) -> bool:
@@ -504,6 +511,9 @@ class Runtime:
                     if not isinstance(source_path, str):
                         continue
                     try:
+                        loaded = self.modules.loader.load(source_path)
+                        if loaded.manifest.module_id != module_id:
+                            raise ValueError("module id mismatch")
                         await self.activate_module(source_path)
                     except Exception as exc:
                         namespace.set("enabled", False)
