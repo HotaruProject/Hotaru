@@ -389,9 +389,30 @@ class Runtime:
     def health(self) -> bool:
         return all(self.status().values())
 
+    async def restore_enabled_modules(self) -> tuple[str, ...]:
+        if self.state is None or self.modules is None or self.kernel is None:
+            raise RuntimeError("runtime services are not ready")
+        restored: list[str] = []
+        for module_id in self.state.module_ids()[:256]:
+            namespace = self.state.namespace(module_id)
+            if namespace.get("enabled") is not True:
+                continue
+            source_path = namespace.get("sourcepath")
+            if not isinstance(source_path, str):
+                continue
+            try:
+                await self.activate_module(source_path)
+            except Exception as exc:
+                if self.observatory is not None:
+                    self.observatory.emit("modules", "restore_error", module=module_id, error=type(exc).__name__)
+                continue
+            restored.append(module_id)
+        return tuple(restored)
+
     async def run(self) -> None:
         if self.app is None:
             self.build()
+        await self.restore_enabled_modules()
         await self.app.run()
 
     def stop(self) -> None:

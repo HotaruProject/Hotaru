@@ -77,5 +77,9 @@ class StateStore:
             raise StateError("module id is invalid")
         return StateNamespace(self.connection, module_id)
 
+    def module_ids(self) -> tuple[str, ...]:
+        rows = self.connection.execute("SELECT DISTINCT module_id FROM module_state ORDER BY module_id").fetchall()
+        return tuple(row[0] for row in rows)
+
     def close(self) -> None:
         self.connection.close()
