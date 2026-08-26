@@ -130,8 +130,10 @@ class Runtime:
     async def _command_hlp(self, invocation: Any) -> tuple[str, list[dict[str, str]]] | str:
         page = 0
         if invocation.args:
-            if len(invocation.args) != 1 or not invocation.args[0].isdigit():
-                return "usage: !hlp [page]"
+            if len(invocation.args) != 1:
+                return "usage: !hlp [page] | !hlp <module-id>"
+            if not invocation.args[0].isdigit():
+                return self._command_mi(invocation)
             page = int(invocation.args[0])
         return self._help_render(page, invocation.chat_id, invocation.message_id)
 
