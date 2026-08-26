@@ -94,6 +94,8 @@ class BackupService:
                 data = source.read(name)
                 if len(data) != record.get("size") or hashlib.sha256(data).hexdigest() != record.get("sha256"):
                     raise BackupError("backup checksum verification failed")
+                if name == "state/state.sqlite3":
+                    self._validate_state(data)
             return {"format": 1, "files": tuple(sorted(records)), "metadata": manifest.get("metadata", {})}
 
     @classmethod
@@ -193,6 +195,25 @@ class BackupService:
             else:
                 child.unlink()
         path.rmdir()
+
+    @staticmethod
+    def _validate_state(data: bytes) -> None:
+        fd, temporary = tempfile.mkstemp(prefix=".hotaru-check-", suffix=".sqlite3")
+        os.close(fd)
+        path = Path(temporary)
+        try:
+            path.write_bytes(data)
+            with sqlite3.connect(path) as connection:
+                check = connection.execute("PRAGMA integrity_check").fetchone()
+                table = connection.execute(
+                    "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'module_state'"
+                ).fetchone()
+        except sqlite3.DatabaseError as exc:
+            raise BackupError("backup state database is invalid") from exc
+        finally:
+            path.unlink(missing_ok=True)
+        if check != ("ok",) or table != (1,):
+            raise BackupError("backup state schema is invalid")
 
     @staticmethod
     def _snapshot_state(path: Path) -> Path:
