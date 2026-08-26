@@ -7,6 +7,7 @@ from .commands import CommandParser
 from .kernel import Kernel
 from .modules import HmodLoader
 from .registry import Handler
+from .response import ResponseService
 from .state import StateStore
 
 
@@ -18,6 +19,7 @@ class Runtime:
     state: StateStore | None = None
     capabilities: CapabilityBroker | None = None
     modules: HmodLoader | None = None
+    responses: ResponseService | None = None
 
     @classmethod
     def from_env(cls) -> "Runtime":
@@ -45,6 +47,7 @@ class Runtime:
         self.state = StateStore(self.config.state_path)
         self.capabilities = CapabilityBroker()
         self.modules = HmodLoader()
+        self.responses = ResponseService()
         return self.app
 
     def register_command(self, name: str, handler: Handler, *, kernel: bool = False) -> None:
