@@ -59,13 +59,13 @@ class Kernel:
         spec = self.registry.resolve(invocation)
         if spec is None:
             return None
-        if spec.module_id is not None:
+        if spec.kernel:
+            result = spec.handler(invocation)
+        else:
             if self.context_factory is None:
                 raise RuntimeError("module context factory is not configured")
             context = self.context_factory.create(spec.module_id, message)
             result = spec.handler(context, invocation)
-        else:
-            result = spec.handler(invocation)
         if inspect.isawaitable(result):
             result = await result
         if spec.kernel and self.response_service is not None:

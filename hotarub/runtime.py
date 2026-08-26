@@ -2,6 +2,7 @@ import asyncio
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 from .capabilities import CapabilityBroker
@@ -210,6 +211,11 @@ class Runtime:
                 loaded = self.stage_module(invocation.args[0])
         except Exception as exc:
             return f"load failed: {type(exc).__name__}"
+        if self.modules is not None and self.modules.get(loaded.manifest.module_id) is not None:
+            result = await self._command_rl(SimpleNamespace(args=(loaded.manifest.module_id,)))
+            if result.startswith("reloaded:"):
+                return f"updated: {loaded.manifest.module_id} {loaded.manifest.version}"
+            return result
         return f"staged: {loaded.manifest.module_id} {loaded.manifest.version}"
 
     async def _command_ul(self, invocation: Any) -> str:
