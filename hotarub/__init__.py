@@ -4,6 +4,7 @@ from .modules import HmodLoader, LoadedModule, ModuleCatalog, ModuleManifest, Mo
 from .config import RuntimeConfig
 from .activation import ActivationError, ActiveModule, ModuleManager
 from .capabilities import BehaviorEnvelope, CapabilityBroker, CapabilityDenied, CapabilityProvider
+from .callbacks import CallbackBinding, CallbackDenied, CallbackStore
 from .registry import CommandRegistry, CommandSpec
 from .runtime import Runtime
 from .response import ModuleContext, Response, ResponseError, ResponseService
@@ -33,6 +34,9 @@ __all__ = [
     "CapabilityBroker",
     "CapabilityDenied",
     "CapabilityProvider",
+    "CallbackBinding",
+    "CallbackDenied",
+    "CallbackStore",
     "StateError",
     "StateNamespace",
     "StateStore",
