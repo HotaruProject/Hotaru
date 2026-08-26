@@ -1,6 +1,6 @@
 from .commands import CommandInvocation, CommandParser
 from .kernel import Kernel
-from .modules import HmodLoader, LoadedModule, ModuleManifest, ModuleValidationError
+from .modules import HmodLoader, LoadedModule, ModuleCatalog, ModuleManifest, ModuleValidationError
 from .config import RuntimeConfig
 from .capabilities import BehaviorEnvelope, CapabilityBroker, CapabilityDenied, CapabilityProvider
 from .registry import CommandRegistry, CommandSpec
@@ -12,6 +12,7 @@ __all__ = [
     "Kernel",
     "HmodLoader",
     "LoadedModule",
+    "ModuleCatalog",
     "ModuleManifest",
     "ModuleValidationError",
     "CommandParser",

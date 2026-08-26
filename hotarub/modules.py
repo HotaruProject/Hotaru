@@ -109,3 +109,31 @@ class HmodLoader:
     @staticmethod
     def _strings(value: Any) -> bool:
         return isinstance(value, list) and all(isinstance(item, str) and item for item in value)
+
+
+class ModuleCatalog:
+    def __init__(self, loader: HmodLoader | None = None) -> None:
+        self.loader = loader or HmodLoader()
+        self._items: dict[str, LoadedModule] = {}
+
+    def discover(self, root: str | Path) -> tuple[LoadedModule, ...]:
+        directory = Path(root)
+        if not directory.is_dir():
+            return ()
+        found: list[LoadedModule] = []
+        for path in sorted(directory.glob("*.hmod")):
+            loaded = self.loader.load(path)
+            if loaded.manifest.module_id in self._items or any(
+                item.manifest.module_id == loaded.manifest.module_id for item in found
+            ):
+                raise ModuleValidationError("duplicate module id")
+            found.append(loaded)
+        for loaded in found:
+            self._items[loaded.manifest.module_id] = loaded
+        return tuple(found)
+
+    def get(self, module_id: str) -> LoadedModule | None:
+        return self._items.get(module_id)
+
+    def items(self) -> tuple[LoadedModule, ...]:
+        return tuple(self._items.values())
