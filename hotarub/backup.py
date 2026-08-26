@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
+import inspect
 import json
 import os
 import stat
@@ -107,11 +109,47 @@ class BackupService:
                     stream.write(source.read(name))
         return destination
 
+    async def restore(
+        self,
+        archive_path: str | Path,
+        activate: Any,
+        *,
+        rollback: Any | None = None,
+        timeout: float = 10.0,
+    ) -> Any:
+        if timeout <= 0:
+            raise ValueError("timeout must be positive")
+        staged = self.stage(archive_path)
+        try:
+            result = activate(staged)
+            if inspect.isawaitable(result):
+                result = await asyncio.wait_for(result, timeout=timeout)
+            return result
+        except Exception as exc:
+            if rollback is not None:
+                recovery = rollback()
+                if inspect.isawaitable(recovery):
+                    await asyncio.wait_for(recovery, timeout=timeout)
+            raise BackupError("restore activation failed") from exc
+        finally:
+            self._remove_tree(staged)
+
     @staticmethod
     def _regular(path: Path) -> Path:
         if path.is_symlink() or not path.is_file():
             raise BackupError("backup input must be a regular file")
         return path
+
+    @staticmethod
+    def _remove_tree(path: Path) -> None:
+        if not path.exists():
+            return
+        for child in sorted(path.rglob("*"), reverse=True):
+            if child.is_dir() and not child.is_symlink():
+                child.rmdir()
+            else:
+                child.unlink()
+        path.rmdir()
 
     @staticmethod
     def _digest(path: Path) -> str:
