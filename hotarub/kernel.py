@@ -86,7 +86,7 @@ class Kernel:
 
     def _is_owner(self, message: Any) -> bool:
         if self.owner_id is not None:
-            return getattr(message, "from_id", None) == self.owner_id
+            return getattr(message, "from_id", None) == self.owner_id or bool(getattr(message, "is_me", False))
         return bool(getattr(message, "is_me", False))
 
     @staticmethod
