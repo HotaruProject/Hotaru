@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from .capabilities import CapabilityBroker
+from .callbacks import CallbackDenied, CallbackRouter
 from .config import RuntimeConfig
 from .commands import CommandParser
 from .kernel import Kernel
@@ -20,6 +21,7 @@ class Runtime:
     capabilities: CapabilityBroker | None = None
     modules: HmodLoader | None = None
     responses: ResponseService | None = None
+    callbacks: CallbackRouter | None = None
 
     @classmethod
     def from_env(cls) -> "Runtime":
@@ -48,7 +50,22 @@ class Runtime:
         self.capabilities = CapabilityBroker()
         self.modules = HmodLoader()
         self.responses = ResponseService()
+        self.callbacks = CallbackRouter()
+        self.app.on_cb(self._on_callback)
         return self.app
+
+    async def _on_callback(self, callback: Any) -> object | None:
+        if self.callbacks is None:
+            return None
+        try:
+            return await self.callbacks.dispatch(callback)
+        except CallbackDenied:
+            return None
+
+    def register_callback(self, action: str, handler: Any) -> None:
+        if self.callbacks is None:
+            raise RuntimeError("build the runtime before registering callbacks")
+        self.callbacks.register(action, handler)
 
     def register_command(self, name: str, handler: Handler, *, kernel: bool = False) -> None:
         if self.kernel is None:
