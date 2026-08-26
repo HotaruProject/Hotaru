@@ -74,6 +74,7 @@ class Runtime:
         self.stager = ModuleStager(self.modules.loader)
         self.kernel.context_factory = self.context_factory
         self.kernel.registry.register("ver", self._command_ver, kernel=True)
+        self.kernel.registry.register("st", self._command_st, kernel=True)
         self.kernel.registry.register("ls", self._command_ls, kernel=True)
         self.kernel.registry.register("mi", self._command_mi, kernel=True)
         self.kernel.registry.register("hlp", self._command_hlp, kernel=True)
@@ -105,6 +106,11 @@ class Runtime:
         from . import __version__
 
         return f"HotaruUB {__version__}"
+
+    def _command_st(self, invocation: Any) -> str:
+        status = self.status()
+        flags = ", ".join(f"{key}={value}" for key, value in status.items())
+        return f"health: {self.health()}\n{flags}"
 
     def _command_ls(self, invocation: Any) -> str:
         if self.modules is None:
@@ -477,7 +483,8 @@ class Runtime:
         }
 
     def health(self) -> bool:
-        return all(self.status().values())
+        status = self.status()
+        return status["runtime"] == "ready" and all(value for key, value in status.items() if key != "runtime")
 
     async def restore_enabled_modules(self, *, timeout: float = 60.0) -> tuple[str, ...]:
         if timeout <= 0:
