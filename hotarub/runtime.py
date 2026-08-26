@@ -79,6 +79,7 @@ class Runtime:
         self.kernel.registry.register("ul", self._command_ul, kernel=True)
         self.kernel.registry.register("rl", self._command_rl, kernel=True)
         self.kernel.registry.register("rm", self._command_rm, kernel=True)
+        self.kernel.registry.register("bk", self._command_bk, kernel=True)
         self.callbacks.register("remove_confirm", self._remove_confirm)
         self.kernel.attach(self.app)
         self.app.on_cb(self._on_callback)
@@ -159,6 +160,33 @@ class Runtime:
                 return f"reload failed: {type(exc).__name__}; rollback failed"
             return f"reload failed: {type(exc).__name__}; previous version restored"
         return f"reloaded: {module_id}"
+
+    def create_backup(self) -> Path:
+        if self.backups is None or self.state is None or self.modules is None:
+            raise RuntimeError("backup services are not ready")
+        module_paths = [active.loaded.path for active in self.modules.items()]
+        stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S.%fZ")
+        destination = self.config.state_path.parent / "backups" / f"{stamp}.hbk"
+        result = self.backups.create(destination, state_path=self.config.state_path, module_paths=module_paths, metadata={"reason": "operator"})
+        removed = self.backups.prune(destination.parent, keep=self.config.backup_keep)
+        if self.observatory is not None:
+            self.observatory.emit("backup", "created", files=len(module_paths) + 1, removed=len(removed))
+        return result
+
+    async def _command_bk(self, invocation: Any) -> str:
+        if not invocation.args:
+            try:
+                archive = self.create_backup()
+            except Exception as exc:
+                return f"backup failed: {type(exc).__name__}"
+            return f"backup created: {archive.name}"
+        if len(invocation.args) == 2 and invocation.args[0].casefold() == "test":
+            try:
+                plan = self.backups.plan(invocation.args[1])
+            except Exception as exc:
+                return f"backup invalid: {type(exc).__name__}"
+            return f"backup valid: {len(plan.files)} files"
+        return "usage: !bk | !bk test <archive>"
 
     async def _command_rm(self, invocation: Any) -> tuple[str, list[dict[str, str]]] | str:
         if len(invocation.args) != 1 or self.modules is None or self.callbacks is None:
