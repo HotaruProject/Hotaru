@@ -267,6 +267,7 @@ class InlineManager:
         self._task: asyncio.Task[None] | None = None
         self._handlers: list[Callable[[Any], Awaitable[Any]]] = []
         self._cb_handlers: list[Callable[[Any], Awaitable[Any]]] = []
+        self._pm_handlers: list[Callable[[Any], Awaitable[Any]]] = []
         self._stop = asyncio.Event()
         self._create_attempts: list[float] = []
         self._provision_lock = asyncio.Lock()
@@ -277,6 +278,10 @@ class InlineManager:
 
     def on_callback(self, handler: Callable[[Any], Awaitable[Any]]) -> Callable[[Any], Awaitable[Any]]:
         self._cb_handlers.append(handler)
+        return handler
+
+    def on_bot_pm(self, handler: Callable[[Any], Awaitable[Any]]) -> Callable[[Any], Awaitable[Any]]:
+        self._pm_handlers.append(handler)
         return handler
 
     async def ensure_bot(self, *, allow_create: bool = True) -> InlineBotInfo:
@@ -470,6 +475,7 @@ class InlineManager:
         )
         self.bot_app.on_inline(self._dispatch_inline)
         self.bot_app.on_cb(self._dispatch_callback)
+        self.bot_app.on_msg(self._dispatch_bot_pm)
         self._task = asyncio.create_task(self._run(), name="hotaru:inline-bot")
 
     async def _run(self) -> None:
@@ -533,12 +539,34 @@ class InlineManager:
                     self.runtime.observatory.emit("inline", "handler_error", error=type(exc).__name__)
 
     async def _dispatch_callback(self, callback: Any) -> None:
+        security = getattr(self.runtime, "security", None)
+        if security is not None:
+            from .security import AccessVerdict
+
+            verdict = security.check_callback(callback, transport="inline")
+            if verdict is not AccessVerdict.ALLOW:
+                return
         for handler in tuple(self._cb_handlers):
             try:
                 await handler(callback)
             except Exception as exc:
                 if self.runtime.observatory is not None:
                     self.runtime.observatory.emit("inline", "callback_error", error=type(exc).__name__)
+
+    async def _dispatch_bot_pm(self, message: Any) -> None:
+        security = getattr(self.runtime, "security", None)
+        if security is not None:
+            from .security import AccessVerdict
+
+            verdict = security.check(message, transport="bot-pm")
+            if verdict is not AccessVerdict.ALLOW:
+                return
+        for handler in tuple(self._pm_handlers):
+            try:
+                await handler(message)
+            except Exception as exc:
+                if self.runtime.observatory is not None:
+                    self.runtime.observatory.emit("inline", "pm_handler_error", error=type(exc).__name__)
 
     async def stop(self) -> None:
         self._stop.set()

@@ -7,6 +7,7 @@ from typing import Any
 
 from .commands import CommandInvocation, CommandParser
 from .registry import CommandRegistry
+from .security import AccessVerdict, SecurityGate
 
 
 class Kernel:
@@ -31,6 +32,7 @@ class Kernel:
         self.context_factory = context_factory
         self.response_service = response_service
         self.command_timeout = command_timeout
+        self.security: SecurityGate | None = None
         self._seen: OrderedDict[tuple[str, int | str | None, int], None] = OrderedDict()
         self._seen_limit = seen_limit
         self._running: dict[tuple[int | str | None, int], asyncio.Task[Any]] = {}
@@ -48,6 +50,10 @@ class Kernel:
     async def dispatch(self, message: Any, *, source: str) -> object | None:
         if not self._is_owner(message):
             return None
+        if self.security is not None:
+            verdict = self.security.check(message, transport="mt", is_group=self._is_group(message))
+            if verdict is not AccessVerdict.ALLOW:
+                return None
         message_id = self._message_id(message)
         chat_id = getattr(message, "chat_id", None)
         key = (source, chat_id, message_id)
@@ -145,6 +151,11 @@ class Kernel:
         if self.owner_id is not None:
             return getattr(message, "from_id", None) == self.owner_id or bool(getattr(message, "is_me", False))
         return bool(getattr(message, "is_me", False))
+
+    @staticmethod
+    def _is_group(message: Any) -> bool:
+        chat_id = getattr(message, "chat_id", None)
+        return isinstance(chat_id, int) and (chat_id < 0 or chat_id > 1000000000000)
 
     @staticmethod
     def _message_id(message: Any) -> int:

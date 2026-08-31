@@ -16,6 +16,7 @@ from .observatory import Observatory
 from .events import EventRouter
 from .state import StateError, StateNamespace, StateStore
 from .supervisor import ConnectionSupervisor, Health, SupervisorState
+from .security import AccessVerdict, ModulePolicy, Principal, SecurityGate, SecurityError
 from .tasks import TaskLimitError, TaskSupervisor
 
 __all__ = [
@@ -70,6 +71,11 @@ __all__ = [
     "ConnectionSupervisor",
     "Health",
     "SupervisorState",
+    "AccessVerdict",
+    "ModulePolicy",
+    "Principal",
+    "SecurityGate",
+    "SecurityError",
     "TaskLimitError",
     "TaskSupervisor",
 ]

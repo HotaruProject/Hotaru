@@ -22,6 +22,7 @@ from .activation import ModuleManager
 from .observatory import Observatory
 from .registry import Handler
 from .response import ModuleContextFactory, ResponseService
+from .security import ModulePolicy, SecurityGate
 from .state import StateStore
 from .supervisor import ConnectionSupervisor, Health
 from .tasks import TaskSupervisor
@@ -46,6 +47,7 @@ class Runtime:
     event_router: EventRouter | None = None
     inline: InlineManager | None = None
     supervisor: ConnectionSupervisor | None = None
+    security: SecurityGate | None = None
     closed: bool = False
 
     @classmethod
@@ -79,12 +81,14 @@ class Runtime:
                 logger.setLevel(logging.ERROR)
         self.responses = ResponseService()
         self.supervisor = ConnectionSupervisor()
+        self.security = SecurityGate(self.config.owner_id)
         self.kernel = Kernel(
             parser=CommandParser(self.config.prefix),
             owner_id=self.config.owner_id,
             response_service=self.responses,
             command_timeout=self.config.command_timeout,
         )
+        self.kernel.security = self.security
         self.state = StateStore(self.config.state_path)
         self.capabilities = CapabilityBroker()
         self.context_factory = ModuleContextFactory(self.state, self.responses)
@@ -124,14 +128,24 @@ class Runtime:
     async def _on_callback(self, callback: Any) -> object | None:
         if self.callbacks is None:
             return None
+        if self.security is not None:
+            from .security import AccessVerdict
+
+            verdict = self.security.check_callback(callback, transport="mt")
+            if verdict is not AccessVerdict.ALLOW:
+                return None
         try:
             return await self.callbacks.dispatch(callback)
         except CallbackDenied:
             return None
 
     async def _on_inline_query(self, query: Any) -> None:
-        if self.kernel is not None and self.kernel.owner_id is not None and query.from_id != self.kernel.owner_id:
-            return
+        if self.security is not None:
+            from .security import AccessVerdict
+
+            verdict = self.security.check(query, transport="inline")
+            if verdict is not AccessVerdict.ALLOW:
+                return
         from . import __version__
 
         results = []
@@ -149,7 +163,21 @@ class Runtime:
         await query.answer(results, cache_time=0, is_personal=True)
 
     async def _on_inline_callback(self, callback: Any) -> None:
-        return None
+        if self.security is None or self.callbacks is None:
+            return None
+        from .security import AccessVerdict
+
+        verdict = self.security.check_callback(callback, transport="inline")
+        if verdict is not AccessVerdict.ALLOW:
+            try:
+                await callback.answer()
+            except Exception:
+                pass
+            return None
+        try:
+            return await self.callbacks.dispatch(callback)
+        except Exception:
+            return None
 
     def _command_ver(self, invocation: Any) -> str:
         from . import __version__
