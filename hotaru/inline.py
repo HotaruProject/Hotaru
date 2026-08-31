@@ -268,6 +268,8 @@ class InlineManager:
         self._handlers: list[Callable[[Any], Awaitable[Any]]] = []
         self._cb_handlers: list[Callable[[Any], Awaitable[Any]]] = []
         self._stop = asyncio.Event()
+        self._create_attempts: list[float] = []
+        self._provision_lock = asyncio.Lock()
 
     def on_inline(self, handler: Callable[[Any], Awaitable[Any]]) -> Callable[[Any], Awaitable[Any]]:
         self._handlers.append(handler)
@@ -277,7 +279,7 @@ class InlineManager:
         self._cb_handlers.append(handler)
         return handler
 
-    async def ensure_bot(self) -> InlineBotInfo:
+    async def ensure_bot(self, *, allow_create: bool = True) -> InlineBotInfo:
         state = self.runtime.state
         if state is None:
             raise InlineError("state store is not ready")
@@ -285,18 +287,77 @@ class InlineManager:
         username = state.get_setting("inline-bot-username")
         bot_id = state.get_setting("inline-bot-id")
         if token and username and bot_id:
-            self.info = InlineBotInfo(str(token), str(username), int(bot_id))
-            return self.info
-        info = await self._find_existing_bot() or await self._create_bot()
+            info = InlineBotInfo(str(token), str(username), int(bot_id))
+            if await self._token_alive(info):
+                self.info = info
+                return info
+            self._forget_bot()
+            if self.runtime.observatory is not None:
+                self.runtime.observatory.emit("inline", "token_dead", username=str(username))
+        info = await self._find_existing_bot()
+        if info is None and allow_create:
+            self._create_gate()
+            async with self._provision_lock:
+                info = await self._create_bot()
+        if info is None:
+            raise InlineError("no inline bot available: nothing stored, nothing found, creation disabled")
         state.set_setting("inline-bot-token", info.token)
         state.set_setting("inline-bot-username", info.username)
         state.set_setting("inline-bot-id", info.bot_id)
         self.info = info
         return info
 
+    def _create_gate(self, *, max_attempts: int = 3, window: float = 3600.0, cooldown: float = 900.0) -> None:
+        now = time.monotonic()
+        self._create_attempts = [t for t in self._create_attempts if now - t < window]
+        if len(self._create_attempts) >= max_attempts:
+            last = self._create_attempts[-1]
+            waited = now - last
+            if waited < cooldown:
+                raise InlineError(
+                    f"provisioning cooldown: {max_attempts} creations in the last hour, retry in {int(cooldown - waited)}s"
+                )
+        self._create_attempts.append(now)
+
+    async def _token_alive(self, info: InlineBotInfo) -> bool:
+        import urllib.error
+        import urllib.request
+
+        try:
+            request = urllib.request.Request(
+                f"https://api.telegram.org/bot{info.token}/getMe",
+                method="GET",
+            )
+            with urllib.request.urlopen(request, timeout=10) as response:
+                import json
+
+                payload = json.loads(response.read().decode("utf-8"))
+            result = payload.get("result") if isinstance(payload, dict) else None
+            if not isinstance(result, dict):
+                return False
+            if info.bot_id and result.get("id") != info.bot_id:
+                if self.runtime.observatory is not None:
+                    self.runtime.observatory.emit("inline", "token_mismatch", stored=info.bot_id, actual=result.get("id"))
+                return False
+            actual = result.get("username")
+            if isinstance(actual, str) and actual.casefold() != info.username.casefold():
+                info = InlineBotInfo(info.token, actual.lstrip("@"), info.bot_id)
+            return True
+        except Exception:
+            return False
+
+    def _forget_bot(self) -> None:
+        state = self.runtime.state
+        if state is None:
+            return
+        for key in ("inline-bot-token", "inline-bot-username", "inline-bot-id"):
+            state.set_setting(key, None)
+        self.info = None
+
     async def _find_existing_bot(self) -> InlineBotInfo | None:
         state = self.runtime.state
         wanted = state.get_setting("inline-bot-username") if state else None
+        candidates: list[tuple[str, str]] = []
         try:
             async with BotFatherGuard(self.runtime.app), BotFatherConversation(self.runtime.app) as conv:
                 response = await conv.ask("/mybots")
@@ -310,13 +371,16 @@ class InlineManager:
                         candidate = text.lstrip("@")
                         if not USERNAME_RE.match(candidate):
                             continue
-                        if wanted and candidate.casefold() != str(wanted).casefold():
-                            continue
-                        token = await self._fetch_token(conv, text)
-                        if token is None:
-                            continue
-                        bot_id = int(token.split(":", 1)[0])
-                        return InlineBotInfo(token, candidate, bot_id)
+                        if wanted and candidate.casefold() == str(wanted).casefold():
+                            candidates.insert(0, (text, candidate))
+                        elif candidate.lower().startswith("hotaru") or not wanted:
+                            candidates.append((text, candidate))
+                for button_text, candidate in candidates:
+                    token = await self._fetch_token(conv, button_text)
+                    if token is None:
+                        continue
+                    bot_id = int(token.split(":", 1)[0])
+                    return InlineBotInfo(token, candidate, bot_id)
         except InlineError:
             return None
         except Exception:
@@ -371,13 +435,29 @@ class InlineManager:
             ("/setinline", at, self.inline_placeholder),
             ("/setinlinefeedback", at, "Enabled"),
         ):
+            retried = False
             for message in step:
                 try:
-                    await conv.ask(message)
+                    response = await conv.ask(message)
                 except InlineError:
+                    if retried:
+                        return
+                    retried = True
+                    if self.runtime.observatory is not None:
+                        self.runtime.observatory.emit("inline", "configure_retry", step=step[0], message=message)
+                    continue
+                text = response.get("message", "").lower()
+                if "invalid bot selected" in text and not retried:
+                    retried = True
+                    await conv.ask(message)
+                if "invalid bot selected" in text and retried:
+                    if self.runtime.observatory is not None:
+                        self.runtime.observatory.emit("inline", "configure_desync", step=step[0])
                     return
 
     async def start(self) -> None:
+        if self._task is not None and not self._task.done():
+            return
         if self.info is None:
             await self.ensure_bot()
         assert self.info is not None
@@ -405,6 +485,18 @@ class InlineManager:
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
+                if self._is_auth_failure(exc):
+                    if self.runtime.observatory is not None:
+                        self.runtime.observatory.emit("inline", "token_revoked_midflight")
+                    self._forget_bot()
+                    await self.stop_polling()
+                    try:
+                        await self.ensure_bot()
+                        await self.start()
+                    except Exception as retry_exc:
+                        if self.runtime.observatory is not None:
+                            self.runtime.observatory.emit("inline", "reprovision_failed", error=type(retry_exc).__name__)
+                    return
                 if self.runtime.observatory is not None:
                     self.runtime.observatory.emit("inline", "poll_error", error=type(exc).__name__)
                 try:
@@ -412,6 +504,25 @@ class InlineManager:
                 except asyncio.TimeoutError:
                     pass
                 delay = min(delay * 2, 60.0)
+
+    @staticmethod
+    def _is_auth_failure(exc: Exception) -> bool:
+        text = str(exc).lower()
+        if "http 401" in text or "unauthorized" in text:
+            return True
+        return "token" in text and ("invalid" in text or "revoked" in text)
+
+    async def stop_polling(self) -> None:
+        if self.bot_app is not None:
+            try:
+                self.bot_app.stop()
+                await self.bot_app.core.bot.close()
+            except Exception:
+                pass
+        if self._task is not None and not self._task.done():
+            self._task.cancel()
+            await asyncio.gather(self._task, return_exceptions=True)
+        self._task = None
 
     async def _dispatch_inline(self, query: Any) -> None:
         for handler in tuple(self._handlers):
