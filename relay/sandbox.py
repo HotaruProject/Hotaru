@@ -45,7 +45,7 @@ def _cap_call(name, payload):
     req = json.dumps({"cap": name, "payload": payload})
     sys.stdout.write(req + "\n")
     sys.stdout.flush()
-    for attempt in range(2):
+    while True:
         line = sys.stdin.readline()
         if not line:
             raise OSError("host closed the sandbox channel")
@@ -55,13 +55,20 @@ def _cap_call(name, payload):
         if not resp.get("ok"):
             raise PermissionError(resp.get("error", "capability denied"))
         return resp.get("result")
-    raise OSError("host did not answer the capability request")
+
+
+def _mt_call(method, **kwargs):
+    return _cap_call("mt", {"method": method, "kwargs": kwargs})
+
+
+def _net_call(url, data=None, timeout=10.0):
+    return _cap_call("net", {"url": url, "data": data, "timeout": timeout})
 
 
 def main():
     cfg = json.loads(sys.stdin.readline())
     apply_limits(cfg.get("mem_mb", 128), cfg.get("file_mb", 16), cfg.get("nofile", 64), cfg.get("net_blocked", True))
-    ns = {"__name__": cfg.get("module_id", "sandbox"), "cap": _cap_call}
+    ns = {"__name__": cfg.get("module_id", "sandbox"), "cap": _cap_call, "mt": _mt_call, "net": _net_call}
     try:
         exec(compile(cfg["source"], cfg.get("module_id", "sandbox"), "exec"), ns, ns)
     except BaseException as exc:

@@ -6,7 +6,54 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
+MT_READ_ONLY = frozenset({
+    "get",
+    "gethistory",
+    "getentity",
+    "getdialogs",
+    "getpeerdialogs",
+    "getmessages",
+    "getdifference",
+    "getstate",
+    "search",
+    "getforumtopics",
+    "getuserphotos",
+    "getfulluser",
+    "getfullchannel",
+    "getfullchat",
+})
+
+MT_DESTRUCTIVE = frozenset({
+    "deleteaccount",
+    "resetauthorization",
+    "resetauthorizations",
+    "log_out",
+    "logout",
+    "updatestatus",
+    "account.resetnotifysettings",
+    "auth.resetauthorizations",
+})
+
+MT_BLOCKED = frozenset({
+    "sendcode",
+    "sendsms",
+    "sendsmscode",
+    "firerauth",
+    "requestpasswordrecovery",
+    "recoverpassword",
+    "importauthorization",
+    "importbotauthorization",
+    "bindtempauthkey",
+    "acceptauthorization",
+    "cancelcode",
+})
+
 PROVIDERS: dict[str, dict[str, Any]] = {
+    "mt": {
+        "title": "Telegram API",
+        "detail": "full userbot MTProto access (messages, media, dialogs, chats) with destructive and auth operations blocked",
+        "side_effect": "write",
+    },
     "msg": {
         "title": "Messages",
         "detail": "send messages as the userbot",
@@ -76,6 +123,8 @@ class CapabilityHost:
         if not self._allowed(module_id, capability):
             raise PermissionError(f"capability not granted to module: {capability}")
         meta = PROVIDERS[capability]
+        if capability == "mt":
+            return await self._mt_call(module_id, payload, meta)
         if capability == "msg":
             return await self._send_message(module_id, payload, meta)
         if capability == "files":
@@ -85,6 +134,35 @@ class CapabilityHost:
         if capability == "state":
             return self._state_op(module_id, payload, meta)
         raise PermissionError(f"capability not implemented: {capability}")
+
+    async def _mt_call(self, module_id: str, payload: dict[str, Any], meta: dict[str, Any]) -> Any:
+        app = self.runtime.app
+        if app is None or app.mt is None:
+            raise PermissionError("userbot transport is not ready")
+        method = payload.get("method")
+        if not isinstance(method, str) or not method:
+            raise PermissionError("mt payload requires a method")
+        lowered = method.lower()
+        if lowered in MT_DESTRUCTIVE or lowered in MT_BLOCKED:
+            raise PermissionError(f"mt method is blocked by policy: {method}")
+        if not lowered.startswith(("get", "search")) and lowered not in MT_READ_ONLY:
+            self._audit_mt(module_id, method, payload)
+        kwargs = payload.get("kwargs") or {}
+        if not isinstance(kwargs, dict):
+            raise PermissionError("mt kwargs must be a mapping")
+        if lowered.startswith(("messages.gethistory",)):
+            limit = kwargs.get("limit", 100)
+            if isinstance(limit, (int, float)) and int(limit) > 500:
+                kwargs = dict(kwargs, limit=500)
+        result = await app.mt_req(method, **kwargs)
+        body = result.get("result") if isinstance(result, dict) and isinstance(result.get("result"), dict) else result
+        return body
+
+    def _audit_mt(self, module_id: str, method: str, payload: dict[str, Any]) -> None:
+        observatory = getattr(self.runtime, "observatory", None)
+        if observatory is None:
+            return
+        observatory.emit("caps", "mt_call", module=module_id, method=method)
 
     async def _send_message(self, module_id: str, payload: dict[str, Any], meta: dict[str, Any]) -> Any:
         app = self.runtime.app
