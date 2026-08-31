@@ -6,7 +6,7 @@ from .runtime import Runtime
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(prog="hotarub")
+    parser = argparse.ArgumentParser(prog="hotaru")
     parser.add_argument("--check", action="store_true")
     args = parser.parse_args()
     config = RuntimeConfig.from_database()

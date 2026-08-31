@@ -28,13 +28,13 @@ class RuntimeConfig:
             if any(state.get_setting(key) is None for key in required):
                 if not __import__("sys").stdin.isatty():
                     raise ValueError("runtime settings are missing; run from an interactive TTY")
-                print("HotaruUB first-run database setup")
+                print("Hotaru first-run database setup")
                 api_id = int(input("Telegram API ID: ").strip())
                 api_hash = getpass("Telegram API hash: ")
                 owner_raw = input("Owner Telegram ID: ").strip()
                 owner_id = int(owner_raw) if owner_raw else None
                 prefix = input("Command prefix [!]: ").strip() or "!"
-                session_name = input("Session name [hotarub]: ").strip() or "hotarub"
+                session_name = input("Session name [hotaru]: ").strip() or "hotaru"
                 session_dir = input("Session directory [.]: ").strip() or "."
                 backup_keep = int(input("Backups to keep [7]: ").strip() or "7")
                 values = {
