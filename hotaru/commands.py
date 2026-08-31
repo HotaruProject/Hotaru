@@ -36,24 +36,27 @@ class CommandParser:
         if not parts:
             return None
         name = parts[0].casefold()
-        if name.isidentifier():
-            return CommandInvocation(
-                name=name,
-                args=tuple(parts[1:]),
-                source=source,
-                message_id=message_id,
-                chat_id=chat_id,
-                message=message,
-            )
-        swapped = swap_layout(parts[0]).casefold()
-        if swapped.isidentifier():
-            return CommandInvocation(
-                name=swapped,
-                args=tuple(parts[1:]),
-                source=source,
-                message_id=message_id,
-                chat_id=chat_id,
-                message=message,
-                layout_swapped=True,
-            )
-        return None
+        if not name.isidentifier():
+            return None
+        return CommandInvocation(
+            name=name,
+            args=tuple(parts[1:]),
+            source=source,
+            message_id=message_id,
+            chat_id=chat_id,
+            message=message,
+        )
+
+    def swap_invocation(self, invocation: CommandInvocation) -> CommandInvocation | None:
+        swapped = swap_layout(invocation.name).casefold()
+        if not swapped.isidentifier() or swapped == invocation.name:
+            return None
+        return CommandInvocation(
+            name=swapped,
+            args=invocation.args,
+            source=invocation.source,
+            message_id=invocation.message_id,
+            chat_id=invocation.chat_id,
+            message=invocation.message,
+            layout_swapped=True,
+        )

@@ -65,6 +65,12 @@ class Kernel:
         self._remember(key)
         spec = self.registry.resolve(invocation)
         if spec is None:
+            swapped = self.parser.swap_invocation(invocation)
+            if swapped is not None:
+                spec = self.registry.resolve(swapped)
+                if spec is not None:
+                    invocation = swapped
+        if spec is None:
             return None
         task_key = (chat_id, message_id)
         previous = self._running.get(task_key)
