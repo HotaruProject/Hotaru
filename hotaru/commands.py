@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 from typing import Any
 
+from .layouts import swap_layout
+
 
 @dataclass(frozen=True, slots=True)
 class CommandInvocation:
@@ -10,6 +12,7 @@ class CommandInvocation:
     message_id: int
     chat_id: int | str | None
     message: Any = None
+    layout_swapped: bool = False
 
 
 class CommandParser:
@@ -30,13 +33,27 @@ class CommandParser:
         if not text or not text.startswith(self.prefix):
             return None
         parts = text[len(self.prefix) :].split()
-        if not parts or not parts[0].isidentifier():
+        if not parts:
             return None
-        return CommandInvocation(
-            name=parts[0].casefold(),
-            args=tuple(parts[1:]),
-            source=source,
-            message_id=message_id,
-            chat_id=chat_id,
-            message=message,
-        )
+        name = parts[0].casefold()
+        if name.isidentifier():
+            return CommandInvocation(
+                name=name,
+                args=tuple(parts[1:]),
+                source=source,
+                message_id=message_id,
+                chat_id=chat_id,
+                message=message,
+            )
+        swapped = swap_layout(parts[0]).casefold()
+        if swapped.isidentifier():
+            return CommandInvocation(
+                name=swapped,
+                args=tuple(parts[1:]),
+                source=source,
+                message_id=message_id,
+                chat_id=chat_id,
+                message=message,
+                layout_swapped=True,
+            )
+        return None

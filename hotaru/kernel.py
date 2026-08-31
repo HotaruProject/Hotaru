@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import inspect
 from collections import OrderedDict
 from typing import Any
@@ -18,16 +19,21 @@ class Kernel:
         context_factory: Any = None,
         response_service: Any = None,
         seen_limit: int = 4096,
+        command_timeout: float = 60.0,
     ) -> None:
         if seen_limit < 1:
             raise ValueError("seen_limit must be positive")
+        if command_timeout <= 0:
+            raise ValueError("command_timeout must be positive")
         self.registry = registry or CommandRegistry()
         self.parser = parser or CommandParser()
         self.owner_id = owner_id
         self.context_factory = context_factory
         self.response_service = response_service
+        self.command_timeout = command_timeout
         self._seen: OrderedDict[tuple[str, int | str | None, int], None] = OrderedDict()
         self._seen_limit = seen_limit
+        self._running: dict[tuple[int | str | None, int], asyncio.Task[Any]] = {}
 
     def attach(self, app: Any) -> None:
         app.on_edit(self._on_edit)
@@ -60,6 +66,45 @@ class Kernel:
         spec = self.registry.resolve(invocation)
         if spec is None:
             return None
+        task_key = (chat_id, message_id)
+        previous = self._running.get(task_key)
+        if previous is not None and not previous.done():
+            previous.cancel()
+        task = asyncio.create_task(
+            self._execute(spec, invocation, message),
+            name=f"hotaru:cmd:{spec.name}",
+        )
+        self._running[task_key] = task
+        try:
+            return await task
+        finally:
+            if self._running.get(task_key) is task:
+                self._running.pop(task_key, None)
+
+    async def _execute(self, spec: Any, invocation: CommandInvocation, message: Any) -> object | None:
+        try:
+            result = await asyncio.wait_for(
+                self._invoke(spec, invocation, message),
+                timeout=self.command_timeout,
+            )
+        except asyncio.TimeoutError:
+            if self.response_service is not None:
+                return await self.response_service.answer(
+                    message,
+                    text=f"command timed out after {self.command_timeout:.0f}s: {spec.name}",
+                    output="edit",
+                )
+            return None
+        except asyncio.CancelledError:
+            return None
+        if spec.kernel and self.response_service is not None:
+            if isinstance(result, tuple) and len(result) == 2:
+                return await self.response_service.answer(message, text=result[0], buttons=result[1], output="edit")
+            if isinstance(result, str):
+                return await self.response_service.answer(message, text=result, output="edit")
+        return result
+
+    async def _invoke(self, spec: Any, invocation: CommandInvocation, message: Any) -> object:
         if spec.kernel:
             result = spec.handler(invocation)
         else:
@@ -68,13 +113,19 @@ class Kernel:
             context = self.context_factory.create(spec.module_id, message)
             result = spec.handler(context, invocation)
         if inspect.isawaitable(result):
-            result = await result
-        if spec.kernel and self.response_service is not None:
-            if isinstance(result, tuple) and len(result) == 2:
-                return await self.response_service.answer(message, text=result[0], buttons=result[1], output="edit")
-            if isinstance(result, str):
-                return await self.response_service.answer(message, text=result, output="edit")
+            return await result
         return result
+
+    def running(self) -> int:
+        return sum(1 for task in self._running.values() if not task.done())
+
+    async def cancel_all(self) -> None:
+        tasks = [task for task in self._running.values() if not task.done()]
+        for task in tasks:
+            task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+        self._running.clear()
 
     def register_module_command(self, module_id: str, name: str, handler: Any) -> None:
         if self.context_factory is None:
@@ -103,4 +154,3 @@ class Kernel:
         self._seen.move_to_end(key)
         while len(self._seen) > self._seen_limit:
             self._seen.popitem(last=False)
-

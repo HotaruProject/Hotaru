@@ -19,6 +19,8 @@ class RuntimeConfig:
     session_dir: Path
     state_path: Path
     backup_keep: int
+    command_timeout: float = 60.0
+    inline_enabled: bool = True
 
     @classmethod
     def from_database(cls, path: str | Path = DEFAULT_STATE_PATH) -> "RuntimeConfig":
@@ -49,7 +51,7 @@ class RuntimeConfig:
                 }
                 for key, value in values.items():
                     state.set_setting(key, value)
-            values = {key: state.get_setting(key) for key in ("api-id", "api-hash", "bot-token", "owner-id", "prefix", "session-name", "session-dir", "backup-keep")}
+            values = {key: state.get_setting(key) for key in ("api-id", "api-hash", "bot-token", "owner-id", "prefix", "session-name", "session-dir", "backup-keep", "command-timeout", "inline-enabled")}
             return cls(
                 api_id=values["api-id"],
                 api_hash=values["api-hash"],
@@ -60,6 +62,8 @@ class RuntimeConfig:
                 session_dir=Path(values["session-dir"]),
                 state_path=Path(path),
                 backup_keep=values["backup-keep"],
+                command_timeout=float(values["command-timeout"] if values["command-timeout"] is not None else 60.0),
+                inline_enabled=bool(values["inline-enabled"] if values["inline-enabled"] is not None else True),
             )
         finally:
             state.close()

@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import os
+import tempfile
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Callable, Literal
 
 from .state import StateNamespace
@@ -80,6 +83,15 @@ class ResponseService:
         return Response(True, "reply", getattr(message, "src", None), result)
 
 
+@dataclass(frozen=True, slots=True)
+class Attachment:
+    kind: str
+    file_name: str | None
+    mime_type: str | None
+    size: int | None
+    raw: Any
+
+
 @dataclass(slots=True)
 class ModuleContext:
     module_id: str
@@ -100,6 +112,113 @@ class ModuleContext:
 
     async def answer_rich(self, rich_message: Any, **kwargs: Any) -> Response:
         return await self.answer(rich_message=rich_message, **kwargs)
+
+    @property
+    def reply_message(self) -> Any | None:
+        candidate = self.message.get("reply_to_message") or self.message.get("reply")
+        if candidate is not None:
+            return candidate
+        return None
+
+    @property
+    def reply_text(self) -> str | None:
+        reply = self.reply_message
+        if reply is None:
+            return None
+        if hasattr(reply, "get"):
+            text = reply.get("text") or reply.get("message") or reply.get("caption")
+            return str(text) if text is not None else None
+        return None
+
+    @property
+    def has_media(self) -> bool:
+        return self.attachment is not None
+
+    @property
+    def attachment(self) -> Attachment | None:
+        return self._attachment_of(self.message)
+
+    @property
+    def reply_attachment(self) -> Attachment | None:
+        reply = self.reply_message
+        if reply is None:
+            return None
+        return self._attachment_of(reply)
+
+    @staticmethod
+    def _attachment_of(message: Any) -> Attachment | None:
+        if not hasattr(message, "get"):
+            return None
+        for kind in ("document", "photo", "video", "audio", "voice", "animation", "video_note", "sticker"):
+            media = message.get(kind)
+            if media is None:
+                continue
+            if isinstance(media, list):
+                media = media[-1] if media else None
+            if not isinstance(media, dict):
+                continue
+            return Attachment(
+                kind=kind,
+                file_name=media.get("file_name") or media.get("name"),
+                mime_type=media.get("mime_type"),
+                size=media.get("size") if isinstance(media.get("size"), int) else None,
+                raw=media,
+            )
+        media_wrap = message.get("media")
+        if isinstance(media_wrap, dict):
+            document = media_wrap.get("document")
+            if isinstance(document, dict):
+                return Attachment(
+                    kind="document",
+                    file_name=document.get("file_name"),
+                    mime_type=document.get("mime_type"),
+                    size=document.get("size") if isinstance(document.get("size"), int) else None,
+                    raw=document,
+                )
+            photo = media_wrap.get("photo")
+            if isinstance(photo, dict):
+                return Attachment(kind="photo", file_name=None, mime_type="image/jpeg", size=None, raw=photo)
+        return None
+
+    async def download(self, attachment: Attachment | None = None, destination: str | Path | None = None) -> Path:
+        target = attachment or self.attachment or self.reply_attachment
+        if target is None:
+            raise ResponseError("no attachment to download")
+        if destination is None:
+            fd, raw = tempfile.mkstemp(prefix="hotaru-dl-")
+            os.close(fd)
+            destination = raw
+        path = Path(destination)
+        source = self.message
+        if self.attachment is None and self.reply_message is not None:
+            source = self.reply_message
+        if hasattr(source, "download"):
+            await source.download(str(path))
+            return path
+        document = target.raw if isinstance(target.raw, dict) else None
+        if document is None:
+            raise ResponseError("attachment is not downloadable")
+        file_id = document.get("file_id")
+        if isinstance(file_id, str):
+            await self.message.app.download_file(file_id, str(path))
+            return path
+        if isinstance(document.get("id"), int) and isinstance(document.get("access_hash"), int):
+            file_reference = document.get("file_reference", b"")
+            if isinstance(file_reference, str):
+                try:
+                    file_reference = bytes.fromhex(file_reference)
+                except ValueError:
+                    file_reference = file_reference.encode("utf-8")
+            location = {
+                "_": "inputDocumentFileLocation",
+                "id": document["id"],
+                "access_hash": document["access_hash"],
+                "file_reference": bytes(file_reference),
+                "thumb_size": "",
+            }
+            await self.message.app.mt.download_file(location, str(path), limit=524288)
+            return path
+        raise ResponseError("attachment location is incomplete")
 
 
 class ModuleContextFactory:
