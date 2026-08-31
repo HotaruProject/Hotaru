@@ -767,10 +767,12 @@ class Runtime:
             peer = await app.mt.resolve_peer("me")
             import secrets as _secrets
 
+            from .layouts import swap_layout
+
             await app.mt_req(
                 "messages.sendMessage",
                 peer=peer,
-                message="!st",
+                message=swap_layout("!st"),
                 random_id=_secrets.randbits(63),
             )
             if self.observatory is not None:
