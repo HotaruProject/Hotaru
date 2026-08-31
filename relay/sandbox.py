@@ -41,10 +41,27 @@ def apply_limits(mem_mb, file_mb, nofile, net_blocked):
     except Exception:
         pass
 
+def _cap_call(name, payload):
+    req = json.dumps({"cap": name, "payload": payload})
+    sys.stdout.write(req + "\n")
+    sys.stdout.flush()
+    for attempt in range(2):
+        line = sys.stdin.readline()
+        if not line:
+            raise OSError("host closed the sandbox channel")
+        resp = json.loads(line)
+        if resp.get("kind") != "cap_result":
+            continue
+        if not resp.get("ok"):
+            raise PermissionError(resp.get("error", "capability denied"))
+        return resp.get("result")
+    raise OSError("host did not answer the capability request")
+
+
 def main():
     cfg = json.loads(sys.stdin.readline())
     apply_limits(cfg.get("mem_mb", 128), cfg.get("file_mb", 16), cfg.get("nofile", 64), cfg.get("net_blocked", True))
-    ns = {"__name__": cfg.get("module_id", "sandbox")}
+    ns = {"__name__": cfg.get("module_id", "sandbox"), "cap": _cap_call}
     try:
         exec(compile(cfg["source"], cfg.get("module_id", "sandbox"), "exec"), ns, ns)
     except BaseException as exc:
@@ -159,25 +176,68 @@ class ModuleSandbox:
         return process is not None
 
     async def call(self, module_id: str, command: str, args: list[str], payload: dict[str, Any]) -> Any:
+        result = await self.roundtrip(module_id, {"command": command, "args": args, "payload": payload})
+        if not isinstance(result, dict) or not result.get("ok"):
+            raise SandboxError(f"sandbox call failed: {result.get('error') if isinstance(result, dict) else 'malformed'}")
+        return result.get("result")
+
+    async def cap_call(self, module_id: str, capability: str, payload: dict[str, Any]) -> Any:
+        result = await self.roundtrip(module_id, {"command": "$cap." + capability, "args": [], "payload": payload})
+        if not isinstance(result, dict) or not result.get("ok"):
+            raise SandboxError(f"sandbox capability failed: {result.get('error') if isinstance(result, dict) else 'malformed'}")
+        return result.get("result")
+
+    async def roundtrip(self, module_id: str, request: dict[str, Any]) -> dict[str, Any] | None:
         process = self._workers.get(module_id)
         if process is None or process.poll() is not None:
             raise SandboxError(f"sandbox worker is not running: {module_id}")
-        request = {"command": command, "args": args, "payload": payload}
         loop = asyncio.get_running_loop()
 
         def _roundtrip() -> Any:
             assert process.stdin is not None
             process.stdin.write((json.dumps(request) + "\n").encode("utf-8"))
             process.stdin.flush()
-            line = self._readline(process)
-            if not line:
-                raise SandboxError(f"sandbox worker died during call: {module_id}")
-            return json.loads(line)
+            while True:
+                line = self._readline(process)
+                if not line:
+                    raise SandboxError(f"sandbox worker died during call: {module_id}")
+                message = json.loads(line)
+                if isinstance(message, dict) and "cap" in message:
+                    self._pending_caps.append(message)
+                    continue
+                return message
 
-        result = await asyncio.wait_for(loop.run_in_executor(None, _roundtrip), timeout=self.call_timeout)
-        if not isinstance(result, dict) or not result.get("ok"):
-            raise SandboxError(f"sandbox call failed: {result.get('error') if isinstance(result, dict) else 'malformed'}")
-        return result.get("result")
+        self._pending_caps = getattr(self, "_pending_caps", [])
+        task = asyncio.ensure_future(loop.run_in_executor(None, _roundtrip))
+        while True:
+            try:
+                return await asyncio.wait_for(asyncio.shield(task), timeout=0.05)
+            except asyncio.TimeoutError:
+                if self._pending_caps:
+                    await self._serve_caps(module_id)
+                continue
+            except Exception:
+                task.cancel()
+                raise
+
+    async def _serve_caps(self, module_id: str) -> None:
+        caps = self._pending_caps
+        self._pending_caps = []
+        cap_host = getattr(self.runtime, "cap_host", None)
+        for message in caps:
+            name = message.get("cap")
+            payload = message.get("payload") or {}
+            reply = {"kind": "cap_result", "ok": False, "error": "capability host is unavailable"}
+            if cap_host is not None:
+                try:
+                    result = await cap_host.call(module_id, name, payload)
+                    reply = {"kind": "cap_result", "ok": True, "result": result}
+                except Exception as exc:
+                    reply = {"kind": "cap_result", "ok": False, "error": f"{type(exc).__name__}: {exc}"[:200]}
+            process = self._workers.get(module_id)
+            if process is not None and process.poll() is None and process.stdin is not None:
+                process.stdin.write((json.dumps(reply) + "\n").encode("utf-8"))
+                process.stdin.flush()
 
     def stop_module(self, module_id: str) -> bool:
         process = self._workers.pop(module_id, None)
