@@ -3,19 +3,19 @@ requires = ["hatchling>=1.25"]
 build-backend = "hatchling.build"
 
 [project]
-name = "hotarub"
+name = "hotaru"
 version = "0.1.5"
-description = "HotaruUB userbot kernel on GoyGram"
+description = "Hotaru userbot kernel on GoyGram"
 requires-python = ">=3.11"
 dependencies = [
     "goygram @ git+https://github.com/GoyGram/GoyGram.git@67becae1134aaff9b82e9fcd49abf3ddc2da241b",
 ]
 
 [project.scripts]
-hotarub = "hotarub.__main__:main"
+hotaru = "hotaru.__main__:main"
 
 [tool.hatch.metadata]
 allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
-packages = ["hotarub"]
+packages = ["hotaru"]

@@ -110,7 +110,7 @@ class ModuleManager:
     ) -> ActiveModule:
         loaded = self.loader.load(path)
         namespace: dict[str, Any] = {
-            "__name__": f"hotarub_module_{loaded.manifest.module_id}",
+            "__name__": f"hotaru_module_{loaded.manifest.module_id}",
             "__file__": str(loaded.path),
         }
         try:

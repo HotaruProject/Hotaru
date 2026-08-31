@@ -121,7 +121,7 @@ class Runtime:
     def _command_ver(self, invocation: Any) -> str:
         from . import __version__
 
-        return f"HotaruUB {__version__}"
+        return f"Hotaru {__version__}"
 
     def _command_st(self, invocation: Any) -> str:
         status = self.status()

@@ -20,6 +20,6 @@ jobs:
       - run: uv build --out-dir dist
       - uses: actions/upload-artifact@v4
         with:
-          name: hotarub-${{ github.ref_name }}
+          name: hotaru-${{ github.ref_name }}
           path: dist/*
           if-no-files-found: error
