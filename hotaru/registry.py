@@ -12,6 +12,7 @@ class CommandSpec:
     handler: Handler
     module_id: str
     kernel: bool = False
+    sandbox: bool = False
 
 
 class CommandRegistry:
@@ -25,6 +26,7 @@ class CommandRegistry:
         *,
         kernel: bool = False,
         module_id: str | None = None,
+        sandbox: bool = False,
     ) -> None:
         if not name.isidentifier():
             raise ValueError("command name must be an identifier")
@@ -36,7 +38,7 @@ class CommandRegistry:
             raise ValueError(f"kernel command is reserved: {key}")
         if current is not None:
             raise ValueError(f"command already registered: {key}")
-        self._items[key] = CommandSpec(name=key, handler=handler, kernel=kernel, module_id=module_id)
+        self._items[key] = CommandSpec(name=key, handler=handler, kernel=kernel, module_id=module_id, sandbox=sandbox)
 
     def unregister(self, name: str, *, module_id: str | None = None) -> bool:
         key = name.casefold()

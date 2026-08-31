@@ -13,6 +13,7 @@ class CommandInvocation:
     chat_id: int | str | None
     message: Any = None
     layout_swapped: bool = False
+    module_id: str | None = None
 
 
 class CommandParser:

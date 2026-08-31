@@ -18,4 +18,4 @@ hotaru = "hotaru.__main__:main"
 allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
-packages = ["hotaru"]
+packages = ["hotaru", "relay"]

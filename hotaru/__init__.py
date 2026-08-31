@@ -1,6 +1,6 @@
 from .commands import CommandInvocation, CommandParser
 from .accounts import AccountProfile, vault_name
-from .inline import BotFatherConversation, InlineBotInfo, InlineError, InlineManager
+from relay.inline import BotFatherConversation, InlineBotInfo, InlineError, InlineManager
 from .kernel import Kernel
 from .layouts import swap_layout
 from .modules import HmodLoader, LoadedModule, ModuleCatalog, ModuleFetchError, ModuleManifest, ModuleStager, ModuleValidationError
