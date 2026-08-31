@@ -1,0 +1,16 @@
+HOTARU = {
+    "id": "ping",
+    "version": "1.0.0",
+    "description": "Ping/pong with latency measurement",
+    "commands": ["ping"],
+    "capabilities": [],
+}
+
+import time
+
+
+async def command_ping(ctx, invocation):
+    start = time.perf_counter()
+    await ctx.answer(text="ping")
+    elapsed = (time.perf_counter() - start) * 1000
+    await ctx.answer(text=f"pong: {elapsed:.1f} ms")
