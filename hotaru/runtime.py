@@ -13,7 +13,9 @@ from .backup import BackupService
 from .callbacks import CallbackBinding, CallbackDenied, CallbackRouter
 from .config import RuntimeConfig
 from .commands import CommandParser
+from goygram.types import InlineObj
 from .events import EventRouter
+from .inline import InlineManager
 from .kernel import Kernel
 from .modules import ModuleStager
 from .activation import ModuleManager
@@ -21,6 +23,7 @@ from .observatory import Observatory
 from .registry import Handler
 from .response import ModuleContextFactory, ResponseService
 from .state import StateStore
+from .supervisor import ConnectionSupervisor, Health
 from .tasks import TaskSupervisor
 
 
@@ -41,6 +44,8 @@ class Runtime:
     context_factory: ModuleContextFactory | None = None
     tasks: TaskSupervisor | None = None
     event_router: EventRouter | None = None
+    inline: InlineManager | None = None
+    supervisor: ConnectionSupervisor | None = None
     closed: bool = False
 
     @classmethod
@@ -73,10 +78,12 @@ class Runtime:
             if name.startswith("goygram") and isinstance(logger, logging.Logger):
                 logger.setLevel(logging.ERROR)
         self.responses = ResponseService()
+        self.supervisor = ConnectionSupervisor()
         self.kernel = Kernel(
             parser=CommandParser(self.config.prefix),
             owner_id=self.config.owner_id,
             response_service=self.responses,
+            command_timeout=self.config.command_timeout,
         )
         self.state = StateStore(self.config.state_path)
         self.capabilities = CapabilityBroker()
@@ -88,6 +95,7 @@ class Runtime:
         self.tasks = TaskSupervisor()
         self.modules = ModuleManager(tasks=self.tasks)
         self.stager = ModuleStager(self.modules.loader)
+        self.inline = InlineManager(self)
         self.kernel.context_factory = self.context_factory
         self.kernel.registry.register("ver", self._command_ver, kernel=True, module_id=self.KERNEL_MODULE_ID)
         self.kernel.registry.register("st", self._command_st, kernel=True, module_id=self.KERNEL_MODULE_ID)
@@ -101,7 +109,10 @@ class Runtime:
         self.kernel.registry.register("bk", self._command_bk, kernel=True, module_id=self.KERNEL_MODULE_ID)
         self.kernel.registry.register("on", self._command_on, kernel=True, module_id=self.KERNEL_MODULE_ID)
         self.kernel.registry.register("off", self._command_off, kernel=True, module_id=self.KERNEL_MODULE_ID)
+        self.kernel.registry.register("bot", self._command_bot, kernel=True, module_id=self.KERNEL_MODULE_ID)
         self.callbacks.register("remove_confirm", self._remove_confirm)
+        self.inline.on_inline(self._on_inline_query)
+        self.inline.on_callback(self._on_inline_callback)
         self.callbacks.register("restore_confirm", self._restore_confirm)
         self.callbacks.register("help_page", self._help_page)
         self.callbacks.register("module_detail", self._module_detail)
@@ -118,6 +129,28 @@ class Runtime:
         except CallbackDenied:
             return None
 
+    async def _on_inline_query(self, query: Any) -> None:
+        if self.kernel is not None and self.kernel.owner_id is not None and query.from_id != self.kernel.owner_id:
+            return
+        from . import __version__
+
+        results = []
+        text = (query.query or "").strip()
+        lowered = text.casefold()
+        if not lowered or "ping" in lowered:
+            results.append(InlineObj.article("hotaru-ping", "Ping", "pong!", description="Measure roundtrip"))
+        if not lowered or "stat" in lowered or "st" in lowered:
+            body = self._command_st(SimpleNamespace(args=()))
+            results.append(InlineObj.article("hotaru-st", "Status", body, description="Runtime status"))
+        if not lowered or "help" in lowered or "hlp" in lowered:
+            results.append(InlineObj.article("hotaru-hlp", "Help", "Send !hlp to list modules", description="Command catalog"))
+        if not lowered or "ver" in lowered:
+            results.append(InlineObj.article("hotaru-ver", "Version", f"Hotaru {__version__}", description="Kernel version"))
+        await query.answer(results, cache_time=0, is_personal=True)
+
+    async def _on_inline_callback(self, callback: Any) -> None:
+        return None
+
     def _command_ver(self, invocation: Any) -> str:
         from . import __version__
 
@@ -126,7 +159,18 @@ class Runtime:
     def _command_st(self, invocation: Any) -> str:
         status = self.status()
         flags = ", ".join(f"{key}={value}" for key, value in status.items())
-        return f"health: {self.health()}\n{flags}"
+        lines = [f"health: {self.health()}", flags]
+        if self.supervisor is not None:
+            state = self.supervisor.state
+            lines.append(f"connection: {state.health.value} reconnects={state.reconnects} mt={state.mt_ready} bot={state.bot_ready}")
+            if state.last_error:
+                lines.append(f"last_error: {state.last_error}")
+        if self.kernel is not None:
+            lines.append(f"running_commands: {self.kernel.running()}")
+        if self.inline is not None and self.inline.info is not None:
+            running = self.inline._task is not None and not self.inline._task.done()
+            lines.append(f"inline: @{self.inline.info.username} ({'running' if running else 'stopped'})")
+        return "\n".join(lines)
 
     def _command_ls(self, invocation: Any) -> str:
         if self.modules is None:
@@ -206,6 +250,28 @@ class Runtime:
             )
             buttons.append({"text": "Next", "callback_data": handle})
         return text, buttons
+
+    async def _command_bot(self, invocation: Any) -> str:
+        if self.inline is None:
+            return "inline bot: disabled"
+        info = self.inline.info
+        if info is None:
+            if not self.config.inline_enabled:
+                return "inline bot: disabled (enable with !bot on)"
+            try:
+                info = await self.inline.ensure_bot()
+            except Exception as exc:
+                return f"inline bot provisioning failed: {type(exc).__name__}"
+        if invocation.args and invocation.args[0].casefold() == "off":
+            await self.inline.stop()
+            return "inline bot: stopped"
+        if invocation.args and invocation.args[0].casefold() == "on":
+            if self.inline._task is None or self.inline._task.done():
+                await self.inline.start()
+            return f"inline bot: @{info.username} running"
+        running = self.inline._task is not None and not self.inline._task.done()
+        status = "running" if running else "stopped"
+        return f"inline bot: @{info.username} ({status})\nusage: !bot [on|off]"
 
     def stage_module_url(self, source: str, destination: str | Path | None = None) -> Any:
         if self.stager is None:
@@ -671,8 +737,47 @@ class Runtime:
     async def run(self) -> None:
         if self.app is None:
             self.build()
+        assert self.app is not None
         await self.restore_enabled_modules()
-        await self.app.run()
+        if self.config.inline_enabled and self.inline is not None:
+            try:
+                await self.inline.start()
+                if self.observatory is not None and self.inline.info is not None:
+                    self.observatory.emit("inline", "started", username=self.inline.info.username)
+            except Exception as exc:
+                if self.observatory is not None:
+                    self.observatory.emit("inline", "start_failed", error=type(exc).__name__)
+        if self.supervisor is not None:
+            self.supervisor.mark_ready(mt=self.app.mt is not None, bot=self.app.bot is not None)
+        if self.state is not None and self.state.get_setting("selftest") is True:
+            self.state.set_setting("selftest", False)
+            asyncio.get_running_loop().create_task(self._self_test())
+        try:
+            await self.app.run()
+        finally:
+            if self.supervisor is not None:
+                self.supervisor.mark_stopped()
+
+    async def _self_test(self) -> None:
+        try:
+            await asyncio.sleep(12)
+            app = self.app
+            if app is None or app.mt is None:
+                return
+            peer = await app.mt.resolve_peer("me")
+            import secrets as _secrets
+
+            await app.mt_req(
+                "messages.sendMessage",
+                peer=peer,
+                message="!st",
+                random_id=_secrets.randbits(63),
+            )
+            if self.observatory is not None:
+                self.observatory.emit("selftest", "sent")
+        except Exception as exc:
+            if self.observatory is not None:
+                self.observatory.emit("selftest", "failed", error=type(exc).__name__)
 
     def stop(self) -> None:
         if self.app is not None:
@@ -681,6 +786,10 @@ class Runtime:
     async def close(self) -> None:
         if self.closed:
             return
+        if self.inline is not None:
+            await self.inline.stop()
+        if self.kernel is not None:
+            await self.kernel.cancel_all()
         if self.modules is not None:
             for active in tuple(self.modules.items()):
                 await self.modules.deactivate(active.loaded.manifest.module_id)

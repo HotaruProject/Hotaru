@@ -1,6 +1,8 @@
 from .commands import CommandInvocation, CommandParser
 from .accounts import AccountProfile, vault_name
+from .inline import BotFatherConversation, InlineBotInfo, InlineError, InlineManager
 from .kernel import Kernel
+from .layouts import swap_layout
 from .modules import HmodLoader, LoadedModule, ModuleCatalog, ModuleFetchError, ModuleManifest, ModuleStager, ModuleValidationError
 from .config import RuntimeConfig
 from .activation import ActivationError, ActiveModule, ModuleBinder, ModuleInstance, ModuleManager
@@ -9,17 +11,23 @@ from .capabilities import BehaviorEnvelope, CapabilityBroker, CapabilityDenied, 
 from .callbacks import CallbackBinding, CallbackDenied, CallbackRouter, CallbackStore
 from .registry import CommandRegistry, CommandSpec
 from .runtime import Runtime
-from .response import ModuleContext, ModuleContextFactory, Response, ResponseError, ResponseService
+from .response import Attachment, ModuleContext, ModuleContextFactory, Response, ResponseError, ResponseService
 from .observatory import Observatory
 from .events import EventRouter
 from .state import StateError, StateNamespace, StateStore
+from .supervisor import ConnectionSupervisor, Health, SupervisorState
 from .tasks import TaskLimitError, TaskSupervisor
 
 __all__ = [
     "CommandInvocation",
     "AccountProfile",
     "vault_name",
+    "BotFatherConversation",
+    "InlineBotInfo",
+    "InlineError",
+    "InlineManager",
     "Kernel",
+    "swap_layout",
     "HmodLoader",
     "LoadedModule",
     "ModuleCatalog",
@@ -40,6 +48,7 @@ __all__ = [
     "CommandSpec",
     "Runtime",
     "RuntimeConfig",
+    "Attachment",
     "ModuleContext",
     "ModuleContextFactory",
     "Response",
@@ -58,6 +67,9 @@ __all__ = [
     "StateError",
     "StateNamespace",
     "StateStore",
+    "ConnectionSupervisor",
+    "Health",
+    "SupervisorState",
     "TaskLimitError",
     "TaskSupervisor",
 ]
