@@ -749,37 +749,11 @@ class Runtime:
                     self.observatory.emit("inline", "start_failed", error=type(exc).__name__)
         if self.supervisor is not None:
             self.supervisor.mark_ready(mt=self.app.mt is not None, bot=self.app.bot is not None)
-        if self.state is not None and self.state.get_setting("selftest") is True:
-            self.state.set_setting("selftest", False)
-            asyncio.get_running_loop().create_task(self._self_test())
         try:
             await self.app.run()
         finally:
             if self.supervisor is not None:
                 self.supervisor.mark_stopped()
-
-    async def _self_test(self) -> None:
-        try:
-            await asyncio.sleep(12)
-            app = self.app
-            if app is None or app.mt is None:
-                return
-            peer = await app.mt.resolve_peer("me")
-            import secrets as _secrets
-
-            from .layouts import swap_layout
-
-            await app.mt_req(
-                "messages.sendMessage",
-                peer=peer,
-                message=swap_layout("!st"),
-                random_id=_secrets.randbits(63),
-            )
-            if self.observatory is not None:
-                self.observatory.emit("selftest", "sent")
-        except Exception as exc:
-            if self.observatory is not None:
-                self.observatory.emit("selftest", "failed", error=type(exc).__name__)
 
     def stop(self) -> None:
         if self.app is not None:
