@@ -166,6 +166,89 @@ class BotFatherConversation:
         await self._delete(mine_id, reply.get("id", 0))
         return reply
 
+class BotFatherGuard:
+    def __init__(self, app: Any) -> None:
+        self.app = app
+        self._peer: bytes | None = None
+        self._was_archived: bool | None = None
+        self._was_muted: bool | None = None
+
+    async def _resolve(self) -> bytes:
+        if self._peer is None:
+            self._peer = await self.app.mt.resolve_peer(BOTFATHER)
+        return self._peer
+
+    async def _dialog(self) -> dict[str, Any] | None:
+        peer = await self._resolve()
+        result = await self.app.mt_req(
+            "messages.getPeerDialogs",
+            peers=[{"_": "inputDialogPeer", "peer": peer}],
+        )
+        body = result.get("result") if isinstance(result, dict) and isinstance(result.get("result"), dict) else result
+        for dialog in (body.get("dialogs") or []) if isinstance(body, dict) else []:
+            if isinstance(dialog, dict):
+                return dialog
+        return None
+
+    async def read_state(self) -> dict[str, Any]:
+        dialog = await self._dialog()
+        if dialog is None:
+            return {"archived": False, "muted": False}
+        settings = dialog.get("notify_settings") if isinstance(dialog.get("notify_settings"), dict) else {}
+        mute_until = settings.get("mute_until") or 0
+        return {
+            "archived": isinstance(dialog.get("folder_id"), int) and dialog["folder_id"] != 0,
+            "muted": isinstance(mute_until, int) and mute_until > int(time.time()),
+        }
+
+    async def _folder_peer(self, folder_id: int) -> dict[str, Any]:
+        await self._resolve()
+        entity = self.app.mt.entity_usernames.get("botfather") or self.app.mt.entities.get(("user", BOTFATHER_ID)) or {}
+        access_hash = entity.get("access_hash") if isinstance(entity, dict) else 0
+        return {
+            "_": "inputFolderPeer",
+            "peer": {"_": "inputPeerUser", "user_id": BOTFATHER_ID, "access_hash": int(access_hash or 0)},
+            "folder_id": folder_id,
+        }
+
+    async def set_archived(self, archived: bool) -> None:
+        await self.app.mt_req(
+            "folders.editPeerFolders",
+            folder_peers=[await self._folder_peer(1 if archived else 0)],
+        )
+
+    async def set_muted(self, muted: bool) -> None:
+        peer = await self._resolve()
+        await self.app.mt_req(
+            "account.updateNotifySettings",
+            peer={"_": "inputNotifyPeer", "peer": peer},
+            settings={"_": "inputPeerNotifySettings", "mute_until": 2147483647 if muted else 0},
+        )
+
+    async def __aenter__(self) -> "BotFatherGuard":
+        try:
+            state = await self.read_state()
+            self._was_archived = state["archived"]
+            self._was_muted = state["muted"]
+            if not state["archived"]:
+                await self.set_archived(True)
+            if not state["muted"]:
+                await self.set_muted(True)
+        except Exception:
+            self._was_archived = None
+            self._was_muted = None
+        return self
+
+    async def __aexit__(self, *exc: Any) -> None:
+        try:
+            if self._was_archived is False:
+                await self.set_archived(False)
+            if self._was_muted is False:
+                await self.set_muted(False)
+        except Exception:
+            pass
+
+
 class InlineManager:
     def __init__(
         self,
@@ -215,7 +298,7 @@ class InlineManager:
         state = self.runtime.state
         wanted = state.get_setting("inline-bot-username") if state else None
         try:
-            async with BotFatherConversation(self.runtime.app) as conv:
+            async with BotFatherGuard(self.runtime.app), BotFatherConversation(self.runtime.app) as conv:
                 response = await conv.ask("/mybots")
                 markup = response.get("reply_markup")
                 rows = markup.get("rows") if isinstance(markup, dict) else None
@@ -251,7 +334,7 @@ class InlineManager:
             return None
 
     async def _create_bot(self) -> InlineBotInfo:
-        async with BotFatherConversation(self.runtime.app) as conv:
+        async with BotFatherGuard(self.runtime.app), BotFatherConversation(self.runtime.app) as conv:
             response = await conv.ask("/newbot")
             text = response.get("message", "")
             lowered = text.lower()
