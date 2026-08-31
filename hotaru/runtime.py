@@ -15,7 +15,8 @@ from .config import RuntimeConfig
 from .commands import CommandParser
 from goygram.types import InlineObj
 from .events import EventRouter
-from .inline import InlineManager
+from relay.inline import InlineManager
+from relay.sandbox import ModuleSandbox
 from .kernel import Kernel
 from .modules import ModuleStager
 from .activation import ModuleManager
@@ -48,6 +49,7 @@ class Runtime:
     inline: InlineManager | None = None
     supervisor: ConnectionSupervisor | None = None
     security: SecurityGate | None = None
+    sandbox: ModuleSandbox | None = None
     closed: bool = False
 
     @classmethod
@@ -100,6 +102,8 @@ class Runtime:
         self.modules = ModuleManager(tasks=self.tasks)
         self.stager = ModuleStager(self.modules.loader)
         self.inline = InlineManager(self)
+        self.sandbox = ModuleSandbox(self)
+        self.kernel.sandbox = self.sandbox
         self.kernel.context_factory = self.context_factory
         self.kernel.registry.register("ver", self._command_ver, kernel=True, module_id=self.KERNEL_MODULE_ID)
         self.kernel.registry.register("st", self._command_st, kernel=True, module_id=self.KERNEL_MODULE_ID)
@@ -665,7 +669,7 @@ class Runtime:
         if self.modules is None or self.kernel is None:
             raise RuntimeError("build the runtime before activating modules")
         self._backup_before_activation(path)
-        result = await self.modules.activate_source(path, self.kernel, health=health)
+        result = await self.modules.activate_source(path, self.kernel, health=health, sandbox=self.sandbox)
         module_id = result.loaded.manifest.module_id
         namespace = self.state.namespace(module_id) if self.state is not None else None
         if namespace is not None:
@@ -678,6 +682,8 @@ class Runtime:
     async def deactivate_module(self, module_id: str) -> bool:
         if self.modules is None:
             raise RuntimeError("build the runtime before deactivating modules")
+        if self.sandbox is not None:
+            self.sandbox.stop_module(module_id)
         return await self.modules.deactivate(module_id)
 
     async def restore_backup(self, plan: Any, activate: Any, *, rollback: Any | None = None, timeout: float = 10.0) -> Any:
@@ -799,6 +805,8 @@ class Runtime:
                 await self.modules.deactivate(active.loaded.manifest.module_id)
         if self.tasks is not None:
             await self.tasks.close()
+        if self.sandbox is not None:
+            self.sandbox.stop_all()
         if self.app is not None:
             await self.app.close()
         if self.state is not None:

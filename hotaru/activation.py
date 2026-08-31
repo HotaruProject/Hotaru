@@ -43,7 +43,12 @@ class ModuleBinder:
         bound: list[str] = []
         try:
             for name, handler in handlers:
-                kernel.register_module_command(loaded.manifest.module_id, name, handler)
+                kernel.registry.register(
+                    name,
+                    handler,
+                    module_id=loaded.manifest.module_id,
+                    sandbox=loaded.manifest.sandbox,
+                )
                 bound.append(name)
         except Exception as exc:
             for name in bound:
@@ -54,6 +59,19 @@ class ModuleBinder:
     def unbind(self, loaded: LoadedModule, commands: tuple[str, ...], kernel: Any) -> None:
         for name in commands:
             kernel.unregister_module_command(loaded.manifest.module_id, name)
+
+    def bind_sandbox(self, loaded: LoadedModule, kernel: Any) -> tuple[str, ...]:
+        for name in loaded.manifest.commands:
+            if not name.isidentifier():
+                raise ActivationError(f"module command is invalid: {name}")
+        for name in loaded.manifest.commands:
+            kernel.registry.register(
+                name,
+                None,
+                module_id=loaded.manifest.module_id,
+                sandbox=True,
+            )
+        return tuple(loaded.manifest.commands)
 
 
 class ModuleManager:
@@ -107,8 +125,22 @@ class ModuleManager:
         kernel: Any,
         *,
         health: Callable[[ModuleInstance], Any] | None = None,
+        sandbox: Any = None,
     ) -> ActiveModule:
         loaded = self.loader.load(path)
+        if loaded.manifest.sandbox and sandbox is not None:
+            await sandbox.start_module(loaded.manifest.module_id, loaded.source, list(loaded.manifest.commands))
+            for name in loaded.manifest.commands:
+                if not name.isidentifier():
+                    raise ActivationError(f"module command is invalid: {name}")
+            commands = self.binder.bind_sandbox(loaded, kernel)
+            instance = ModuleInstance(loaded, {"__sandbox__": True}, commands)
+            active = ActiveModule(loaded, instance)
+            if loaded.manifest.module_id in self._active:
+                raise ActivationError(f"module is already active: {loaded.manifest.module_id}")
+            self._active[loaded.manifest.module_id] = active
+            self._bindings[loaded.manifest.module_id] = (kernel, commands)
+            return active
         namespace: dict[str, Any] = {
             "__name__": f"hotaru_module_{loaded.manifest.module_id}",
             "__file__": str(loaded.path),

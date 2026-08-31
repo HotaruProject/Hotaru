@@ -33,6 +33,7 @@ class Kernel:
         self.response_service = response_service
         self.command_timeout = command_timeout
         self.security: SecurityGate | None = None
+        self.sandbox: Any = None
         self._seen: OrderedDict[tuple[str, int | str | None, int], None] = OrderedDict()
         self._seen_limit = seen_limit
         self._running: dict[tuple[int | str | None, int], asyncio.Task[Any]] = {}
@@ -119,6 +120,8 @@ class Kernel:
     async def _invoke(self, spec: Any, invocation: CommandInvocation, message: Any) -> object:
         if spec.kernel:
             result = spec.handler(invocation)
+        elif self.sandbox is not None and spec.sandbox:
+            result = await self.sandbox_dispatch(spec, invocation)
         else:
             if self.context_factory is None:
                 raise RuntimeError("module context factory is not configured")
@@ -127,6 +130,19 @@ class Kernel:
         if inspect.isawaitable(result):
             return await result
         return result
+
+    async def sandbox_dispatch(self, spec: Any, invocation: CommandInvocation) -> object:
+        result = await self.sandbox.call(
+            spec.module_id,
+            invocation.name,
+            list(invocation.args),
+            {},
+        )
+        if isinstance(result, str):
+            return result
+        if result is None:
+            return None
+        return str(result)
 
     def running(self) -> int:
         return sum(1 for task in self._running.values() if not task.done())
