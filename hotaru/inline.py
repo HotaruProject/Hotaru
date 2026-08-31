@@ -32,6 +32,7 @@ class BotFatherConversation:
         self.timeout = timeout
         self._peer: Any = None
         self._last_id = 0
+        self._self_id = getattr(getattr(app, "mt", None), "self_id", None) or getattr(app, "self_id", None) or 0
 
     async def __aenter__(self) -> "BotFatherConversation":
         self._peer = await self.app.mt.resolve_peer(BOTFATHER)
@@ -63,6 +64,17 @@ class BotFatherConversation:
             random_id=secrets.randbits(63),
         )
 
+    def _is_mine(self, message: dict[str, Any]) -> bool:
+        if message.get("out"):
+            return True
+        sender = message.get("from_id")
+        if isinstance(sender, int):
+            return sender == self._self_id
+        if isinstance(sender, dict):
+            user_id = sender.get("user_id")
+            return isinstance(user_id, int) and user_id == self._self_id
+        return False
+
     async def response(self, *, since: int | None = None) -> dict[str, Any]:
         floor = since if since is not None else self._last_id
         deadline = time.monotonic() + self.timeout
@@ -85,7 +97,8 @@ class BotFatherConversation:
                     continue
                 if message.get("id", 0) <= floor:
                     continue
-                if message.get("out"):
+                if self._is_mine(message):
+                    self._last_id = max(self._last_id, message["id"])
                     continue
                 self._last_id = max(self._last_id, message["id"])
                 return message
@@ -112,7 +125,8 @@ class BotFatherConversation:
             for message in messages or []:
                 if not isinstance(message, dict):
                     continue
-                if message.get("out"):
+                if self._is_mine(message):
+                    self._last_id = max(self._last_id, message.get("id", 0))
                     continue
                 self._last_id = max(self._last_id, message.get("id", 0))
                 stale = message
