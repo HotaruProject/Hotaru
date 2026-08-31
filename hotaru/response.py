@@ -105,6 +105,12 @@ class ModuleContext:
             raise ResponseError("capabilities are not available")
         return await self.cap_host.call(self.module_id, capability, payload or {})
 
+    async def mt(self, method: str, **kwargs: Any) -> Any:
+        return await self.cap("mt", {"method": method, "kwargs": kwargs})
+
+    async def net(self, url: str, *, data: dict[str, Any] | None = None, timeout: float = 10.0) -> dict[str, Any]:
+        return await self.cap("net", {"url": url, "data": data, "timeout": timeout})
+
     async def answer(self, **kwargs: Any) -> Response:
         return await self.responses.answer(self.message, **kwargs)
 
