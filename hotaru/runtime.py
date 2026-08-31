@@ -123,9 +123,8 @@ class Runtime:
         self.kernel.registry.register("rl", self._command_rl, kernel=True, module_id=self.KERNEL_MODULE_ID)
         self.kernel.registry.register("rm", self._command_rm, kernel=True, module_id=self.KERNEL_MODULE_ID)
         self.kernel.registry.register("bk", self._command_bk, kernel=True, module_id=self.KERNEL_MODULE_ID)
-        self.kernel.registry.register("on", self._command_on, kernel=True, module_id=self.KERNEL_MODULE_ID)
-        self.kernel.registry.register("off", self._command_off, kernel=True, module_id=self.KERNEL_MODULE_ID)
         self.kernel.registry.register("bot", self._command_bot, kernel=True, module_id=self.KERNEL_MODULE_ID)
+        self.kernel.registry.register("trust", self._command_trust, kernel=True, module_id=self.KERNEL_MODULE_ID)
         self.callbacks.register("remove_confirm", self._remove_confirm)
         self.inline.on_inline(self._on_inline_query)
         self.inline.on_callback(self._on_inline_callback)
@@ -293,25 +292,17 @@ class Runtime:
 
     async def _command_bot(self, invocation: Any) -> str:
         if self.inline is None:
-            return "inline bot: disabled"
+            return "inline bot: unavailable"
         info = self.inline.info
         if info is None:
-            if not self.config.inline_enabled:
-                return "inline bot: disabled (enable with !bot on)"
             try:
                 info = await self.inline.ensure_bot()
             except Exception as exc:
                 return f"inline bot provisioning failed: {type(exc).__name__}"
-        if invocation.args and invocation.args[0].casefold() == "off":
-            await self.inline.stop()
-            return "inline bot: stopped"
-        if invocation.args and invocation.args[0].casefold() == "on":
-            if self.inline._task is None or self.inline._task.done():
-                await self.inline.start()
-            return f"inline bot: @{info.username} running"
+        if self.inline._task is None or self.inline._task.done():
+            await self.inline.start()
         running = self.inline._task is not None and not self.inline._task.done()
-        status = "running" if running else "stopped"
-        return f"inline bot: @{info.username} ({status})\nusage: !bot [on|off]"
+        return f"inline bot: @{info.username} ({'running' if running else 'starting'})"
 
     def stage_module_url(self, source: str, destination: str | Path | None = None) -> Any:
         if self.stager is None:
@@ -404,12 +395,27 @@ class Runtime:
         finally:
             if temporary is not None:
                 temporary.unlink(missing_ok=True)
-        if self.modules is not None and self.modules.get(loaded.manifest.module_id) is not None:
-            result = await self._command_rl(SimpleNamespace(args=(loaded.manifest.module_id,)))
-            if result.startswith("reloaded:"):
-                return f"updated: {loaded.manifest.module_id} {loaded.manifest.version}"
-            return result
-        return f"staged: {loaded.manifest.module_id} {loaded.manifest.version}"
+        fingerprint = self._caps_fingerprint(loaded.manifest)
+        if self._caps_consented(loaded.manifest.module_id, fingerprint):
+            if self.modules is not None and self.modules.get(loaded.manifest.module_id) is not None:
+                result = await self._command_rl(SimpleNamespace(args=(loaded.manifest.module_id,)))
+                if result.startswith("reloaded:"):
+                    return f"updated: {loaded.manifest.module_id} {loaded.manifest.version}"
+                return result
+            try:
+                await self.activate_module(loaded.loaded_path if hasattr(loaded, "loaded_path") else str(self.config.state_path.parent / "constellations" / f"{loaded.manifest.module_id}.hmod"))
+            except Exception as exc:
+                return f"staged (activation failed): {type(exc).__name__}"
+            return f"active: {loaded.manifest.module_id} {loaded.manifest.version}"
+        screen = await self._render_caps_screen(
+            loaded.manifest.module_id,
+            loaded.manifest,
+            invocation.chat_id,
+            invocation.message_id,
+        )
+        if isinstance(screen, tuple):
+            return f"staged: {loaded.manifest.module_id} {loaded.manifest.version}\n" + screen[0], screen[1]
+        return f"staged (untrusted): {loaded.manifest.module_id} {loaded.manifest.version}\n{screen}"
 
     async def _command_ul(self, invocation: Any) -> str:
         if len(invocation.args) != 1 or self.modules is None or self.state is None:
@@ -486,16 +492,31 @@ class Runtime:
             self.observatory.emit("modules", "update_applied", module=module_id, version=self.modules.get(module_id).loaded.manifest.version)
         return f"reloaded: {module_id}"
 
-    async def _command_off(self, invocation: Any) -> str:
+    async def _command_trust(self, invocation: Any) -> tuple[str, list[dict[str, str]]] | str:
         if len(invocation.args) != 1 or self.modules is None or self.state is None:
-            return "usage: !off <module-id>"
+            return "usage: !trust <module-id>"
         module_id = invocation.args[0].casefold()
-        if self.modules.get(module_id) is None:
-            return f"module not active: {module_id}"
-        if await self.deactivate_module(module_id):
-            self.state.namespace(module_id).set("enabled", False)
-            return f"disabled: {module_id}"
-        return f"module not active: {module_id}"
+        if self.modules.get(module_id) is not None:
+            return f"module already active: {module_id}"
+        namespace = self.state.namespace(module_id)
+        source_path = namespace.get("sourcepath")
+        if not isinstance(source_path, str):
+            candidate = self.config.state_path.parent / "constellations" / f"{module_id}.hmod"
+            if not candidate.is_file():
+                return f"module not found: {module_id}"
+            source_path = str(candidate)
+        try:
+            loaded = self.modules.loader.load(source_path)
+        except Exception as exc:
+            return f"trust failed: {type(exc).__name__}"
+        fingerprint = self._caps_fingerprint(loaded.manifest)
+        if not self._caps_consented(module_id, fingerprint):
+            return await self._render_caps_screen(module_id, loaded.manifest, invocation.chat_id, invocation.message_id)
+        try:
+            await self.activate_module(source_path)
+        except Exception as exc:
+            return f"trust failed: {type(exc).__name__}"
+        return f"active: {module_id}"
 
     def _caps_fingerprint(self, manifest: Any) -> str:
         import hashlib
@@ -513,39 +534,11 @@ class Runtime:
         if self.state is not None:
             self.state.namespace(module_id).set("caps-consent", fingerprint)
 
-    async def _command_on(self, invocation: Any) -> tuple[str, list[dict[str, str]]] | str:
-        if len(invocation.args) != 1 or self.modules is None or self.state is None:
-            return "usage: !on <module-id>"
-        module_id = invocation.args[0].casefold()
-        if self.modules.get(module_id) is not None:
-            return f"module already active: {module_id}"
-        namespace = self.state.namespace(module_id)
-        source_path = namespace.get("sourcepath")
-        if not isinstance(source_path, str):
-            candidate = self.config.state_path.parent / "constellations" / f"{module_id}.hmod"
-            if not candidate.is_file():
-                return f"module source unavailable: {module_id}"
-            source_path = str(candidate)
-        try:
-            loaded = self.modules.loader.load(source_path)
-        except Exception as exc:
-            return f"enable failed: {type(exc).__name__}"
-        if loaded.manifest.module_id != module_id:
-            return f"module id mismatch: {module_id}"
-        fingerprint = self._caps_fingerprint(loaded.manifest)
-        if not self._caps_consented(module_id, fingerprint):
-            return await self._render_caps_screen(module_id, loaded.manifest, invocation.chat_id, invocation.message_id)
-        try:
-            await self.activate_module(source_path)
-        except Exception as exc:
-            return f"enable failed: {type(exc).__name__}"
-        return f"enabled: {module_id}"
-
     async def _render_caps_screen(self, module_id: str, manifest: Any, chat_id: int | str | None, message_id: int) -> tuple[str, list[dict[str, str]]] | str:
         if self.callbacks is None or self.kernel is None or self.kernel.owner_id is None or chat_id is None:
             lines = [f"module {module_id} v{manifest.version} requests capabilities:"]
             lines.append(describe_caps(manifest.capabilities) or "none")
-            lines.append("re-run !on from your Saved Messages to confirm")
+            lines.append("re-run !trust from your Saved Messages to confirm")
             return "\n".join(lines)
         text = f"module {module_id} v{manifest.version} requests capabilities:\n" + (describe_caps(manifest.capabilities) or "none") + "\n\nenable?"
         handle = self.callbacks.store.issue(
@@ -565,21 +558,21 @@ class Runtime:
             candidate = self.config.state_path.parent / "constellations" / f"{module_id}.hmod"
             if not candidate.is_file():
                 await callback.answer("Source missing", alert=True)
-                return await callback.edit(f"module source unavailable: {module_id}")
+                return await callback.edit(f"module not found: {module_id}")
             source_path = str(candidate)
         try:
             loaded = self.modules.loader.load(source_path)
         except Exception as exc:
             await callback.answer("Load failed", alert=True)
-            return await callback.edit(f"enable failed: {type(exc).__name__}")
+            return await callback.edit(f"trust failed: {type(exc).__name__}")
         self._mark_caps_consent(module_id, self._caps_fingerprint(loaded.manifest))
         try:
             await self.activate_module(source_path)
         except Exception as exc:
             await callback.answer("Activation failed", alert=True)
-            return await callback.edit(f"enable failed: {type(exc).__name__}")
+            return await callback.edit(f"trust failed: {type(exc).__name__}")
         await callback.answer("Module enabled")
-        return await callback.edit(f"enabled: {module_id}")
+        return await callback.edit(f"active: {module_id}")
 
     def create_backup(self) -> Path:
         if self.backups is None or self.state is None or self.modules is None:
@@ -740,7 +733,6 @@ class Runtime:
         module_id = result.loaded.manifest.module_id
         namespace = self.state.namespace(module_id) if self.state is not None else None
         if namespace is not None:
-            namespace.set("enabled", True)
             namespace.set("sourcepath", str(result.loaded.path))
             namespace.set("moduleversion", result.loaded.manifest.version)
             namespace.delete("lasterror")
@@ -814,7 +806,8 @@ class Runtime:
                     namespace = self.state.namespace(module_id)
                     if self.modules.get(module_id) is not None:
                         continue
-                    if namespace.get("enabled") is not True:
+                    consent = namespace.get("caps-consent")
+                    if not isinstance(consent, str):
                         continue
                     source_path = namespace.get("sourcepath")
                     if not isinstance(source_path, str):
@@ -823,6 +816,8 @@ class Runtime:
                         loaded = self.modules.loader.load(source_path)
                         if loaded.manifest.module_id != module_id:
                             raise ValueError("module id mismatch")
+                        if self._caps_fingerprint(loaded.manifest) != consent:
+                            raise ValueError("capabilities changed; !trust required")
                         await self.activate_module(source_path)
                     except Exception as exc:
                         namespace.set("enabled", False)
@@ -841,7 +836,7 @@ class Runtime:
             self.build()
         assert self.app is not None
         await self.restore_enabled_modules()
-        if self.config.inline_enabled and self.inline is not None:
+        if self.inline is not None:
             try:
                 await self.inline.start()
                 if self.observatory is not None and self.inline.info is not None:

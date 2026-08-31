@@ -20,7 +20,6 @@ class RuntimeConfig:
     state_path: Path
     backup_keep: int
     command_timeout: float = 60.0
-    inline_enabled: bool = True
 
     @classmethod
     def from_database(cls, path: str | Path = DEFAULT_STATE_PATH) -> "RuntimeConfig":
@@ -63,7 +62,6 @@ class RuntimeConfig:
                 state_path=Path(path),
                 backup_keep=values["backup-keep"],
                 command_timeout=float(values["command-timeout"] if values["command-timeout"] is not None else 60.0),
-                inline_enabled=bool(values["inline-enabled"] if values["inline-enabled"] is not None else True),
             )
         finally:
             state.close()
