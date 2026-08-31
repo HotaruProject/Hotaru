@@ -56,13 +56,40 @@ class BotFatherConversation:
     async def __aexit__(self, *exc: Any) -> None:
         return None
 
-    async def say(self, text: str) -> None:
-        await self.app.mt_req(
+    async def say(self, text: str) -> int:
+        result = await self.app.mt_req(
             "messages.sendMessage",
             peer=self._peer,
             message=text,
             random_id=secrets.randbits(63),
         )
+        return self._extract_sent_id(result)
+
+    def _extract_sent_id(self, result: Any) -> int:
+        body = result.get("result") if isinstance(result, dict) and isinstance(result.get("result"), dict) else result
+        if isinstance(body, dict):
+            updates = body.get("updates")
+            if isinstance(updates, list):
+                for update in updates:
+                    if not isinstance(update, dict):
+                        continue
+                    kind = update.get("_")
+                    if kind in ("updateNewMessage", "updateMessageID"):
+                        message = update.get("message")
+                        if isinstance(message, dict) and isinstance(message.get("id"), int):
+                            return message["id"]
+                    if kind == "updateMessageID" and isinstance(update.get("id"), int):
+                        return update["id"]
+        return 0
+
+    async def _delete(self, *ids: int) -> None:
+        valid = [i for i in ids if isinstance(i, int) and i > 0]
+        if not valid:
+            return
+        try:
+            await self.app.mt_req("messages.deleteMessages", id=valid, revoke=True)
+        except Exception:
+            pass
 
     def _is_mine(self, message: dict[str, Any]) -> bool:
         if message.get("out"):
@@ -106,9 +133,7 @@ class BotFatherConversation:
         raise InlineError("BotFather response timeout")
 
     async def drain(self) -> None:
-        deadline = time.monotonic() + 2.0
-        while time.monotonic() < deadline:
-            stale = None
+        for _ in range(4):
             result = await self.app.mt_req(
                 "messages.getHistory",
                 peer=self._peer,
@@ -122,31 +147,24 @@ class BotFatherConversation:
             )
             body = result.get("result") if isinstance(result, dict) and isinstance(result.get("result"), dict) else result
             messages = body.get("messages") if isinstance(body, dict) else None
-            for message in messages or []:
-                if not isinstance(message, dict):
-                    continue
-                if self._is_mine(message):
-                    self._last_id = max(self._last_id, message.get("id", 0))
-                    continue
-                self._last_id = max(self._last_id, message.get("id", 0))
-                stale = message
-            if stale is None:
+            recent = [m for m in messages or [] if isinstance(m, dict) and m.get("id", 0) > self._last_id]
+            if not recent:
                 return
+            for message in recent:
+                self._last_id = max(self._last_id, message.get("id", 0))
+            await self._delete(*(m.get("id", 0) for m in recent))
             await asyncio.sleep(0.5)
 
     async def ask(self, text: str) -> dict[str, Any]:
         await self.drain()
-        await self.say(text)
-        return await self.response()
-
-    async def cleanup(self, *messages: dict[str, Any]) -> None:
-        ids = [m["id"] for m in messages if isinstance(m, dict) and isinstance(m.get("id"), int)]
-        if ids:
-            try:
-                await self.app.mt_req("messages.deleteMessages", id=ids, revoke=True)
-            except Exception:
-                pass
-
+        mine_id = await self.say(text)
+        try:
+            reply = await self.response()
+        except InlineError:
+            await self._delete(mine_id)
+            raise
+        await self._delete(mine_id, reply.get("id", 0))
+        return reply
 
 class InlineManager:
     def __init__(
@@ -215,7 +233,6 @@ class InlineManager:
                         if token is None:
                             continue
                         bot_id = int(token.split(":", 1)[0])
-                        await conv.cleanup(response)
                         return InlineBotInfo(token, candidate, bot_id)
         except InlineError:
             return None
@@ -225,13 +242,10 @@ class InlineManager:
 
     async def _fetch_token(self, conv: BotFatherConversation, username_button: str) -> str | None:
         try:
-            await conv.say("/token")
-            pick = await conv.response()
-            await conv.say(username_button)
-            answer = await conv.response()
+            await conv.ask("/token")
+            answer = await conv.ask(username_button)
             text = answer.get("message", "")
             match = TOKEN_RE.search(text)
-            await conv.cleanup(pick, answer)
             return match.group(0) if match else None
         except Exception:
             return None
@@ -239,9 +253,14 @@ class InlineManager:
     async def _create_bot(self) -> InlineBotInfo:
         async with BotFatherConversation(self.runtime.app) as conv:
             response = await conv.ask("/newbot")
-            text = response.get("message", "").lower()
-            if "cannot create" in text or "too many" in text or "20" in text:
-                raise InlineError("BotFather refused to create a bot (limit or spamban)")
+            text = response.get("message", "")
+            lowered = text.lower()
+            if "cannot create new bots" in lowered or "contact @spambot" in lowered or "cannot create" in lowered:
+                raise InlineError("BotFather spamban: account cannot create new bots, contact @SpamBot")
+            if "too many" in lowered or "up to 20" in lowered or "limit" in lowered:
+                raise InlineError("BotFather limit reached: max 20 bots per account")
+            if "a new bot" not in lowered:
+                raise InlineError("BotFather refused: " + text.splitlines()[0][:120] if text else "BotFather refused")
             await conv.ask(self.bot_name[:64])
             username, token = await self._pick_username(conv)
             bot_id = int(token.split(":", 1)[0])
