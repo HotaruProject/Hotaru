@@ -1,4 +1,6 @@
 import asyncio
+import hashlib
+import json
 import logging
 import os
 import tempfile
@@ -17,6 +19,7 @@ from goygram.types import InlineObj
 from .events import EventRouter
 from relay.inline import InlineManager
 from relay.sandbox import ModuleSandbox
+from relay.caps import CapabilityHost, describe as describe_caps
 from .kernel import Kernel
 from .modules import ModuleStager
 from .activation import ModuleManager
@@ -50,6 +53,7 @@ class Runtime:
     supervisor: ConnectionSupervisor | None = None
     security: SecurityGate | None = None
     sandbox: ModuleSandbox | None = None
+    cap_host: CapabilityHost | None = None
     closed: bool = False
 
     @classmethod
@@ -95,6 +99,8 @@ class Runtime:
         self.capabilities = CapabilityBroker()
         self.context_factory = ModuleContextFactory(self.state, self.responses)
         self.callbacks = CallbackRouter()
+        self.cap_host = CapabilityHost(self)
+        self.context_factory.cap_host = self.cap_host
         self.observatory = Observatory()
         self.event_router = EventRouter(self._event_error)
         self.backups = BackupService()
@@ -103,6 +109,8 @@ class Runtime:
         self.stager = ModuleStager(self.modules.loader)
         self.inline = InlineManager(self)
         self.sandbox = ModuleSandbox(self)
+        self.cap_host = CapabilityHost(self)
+        self.callbacks.register("caps_confirm", self._caps_confirm)
         self.kernel.sandbox = self.sandbox
         self.kernel.context_factory = self.context_factory
         self.kernel.registry.register("ver", self._command_ver, kernel=True, module_id=self.KERNEL_MODULE_ID)
@@ -489,7 +497,23 @@ class Runtime:
             return f"disabled: {module_id}"
         return f"module not active: {module_id}"
 
-    async def _command_on(self, invocation: Any) -> str:
+    def _caps_fingerprint(self, manifest: Any) -> str:
+        import hashlib
+
+        payload = json.dumps([manifest.module_id, manifest.version, sorted(manifest.capabilities)], separators=(",", ":"))
+        return hashlib.sha256(payload.encode()).hexdigest()[:16]
+
+    def _caps_consented(self, module_id: str, fingerprint: str) -> bool:
+        if self.state is None:
+            return False
+        namespace = self.state.namespace(module_id)
+        return namespace.get("caps-consent") == fingerprint
+
+    def _mark_caps_consent(self, module_id: str, fingerprint: str) -> None:
+        if self.state is not None:
+            self.state.namespace(module_id).set("caps-consent", fingerprint)
+
+    async def _command_on(self, invocation: Any) -> tuple[str, list[dict[str, str]]] | str:
         if len(invocation.args) != 1 or self.modules is None or self.state is None:
             return "usage: !on <module-id>"
         module_id = invocation.args[0].casefold()
@@ -508,11 +532,54 @@ class Runtime:
             return f"enable failed: {type(exc).__name__}"
         if loaded.manifest.module_id != module_id:
             return f"module id mismatch: {module_id}"
+        fingerprint = self._caps_fingerprint(loaded.manifest)
+        if not self._caps_consented(module_id, fingerprint):
+            return await self._render_caps_screen(module_id, loaded.manifest, invocation.chat_id, invocation.message_id)
         try:
             await self.activate_module(source_path)
         except Exception as exc:
             return f"enable failed: {type(exc).__name__}"
         return f"enabled: {module_id}"
+
+    async def _render_caps_screen(self, module_id: str, manifest: Any, chat_id: int | str | None, message_id: int) -> tuple[str, list[dict[str, str]]] | str:
+        if self.callbacks is None or self.kernel is None or self.kernel.owner_id is None or chat_id is None:
+            lines = [f"module {module_id} v{manifest.version} requests capabilities:"]
+            lines.append(describe_caps(manifest.capabilities) or "none")
+            lines.append("re-run !on from your Saved Messages to confirm")
+            return "\n".join(lines)
+        text = f"module {module_id} v{manifest.version} requests capabilities:\n" + (describe_caps(manifest.capabilities) or "none") + "\n\nenable?"
+        handle = self.callbacks.store.issue(
+            CallbackBinding(self.kernel.owner_id, chat_id, message_id),
+            {"action": "caps_confirm", "payload": module_id},
+        )
+        return (text, [{"text": "Confirm", "callback_data": handle}])
+
+    async def _caps_confirm(self, callback: Any, payload: Any) -> object:
+        if not isinstance(payload, str) or self.modules is None or self.state is None:
+            await callback.answer("Invalid request", alert=True)
+            return None
+        module_id = payload.casefold()
+        namespace = self.state.namespace(module_id)
+        source_path = namespace.get("sourcepath")
+        if not isinstance(source_path, str):
+            candidate = self.config.state_path.parent / "constellations" / f"{module_id}.hmod"
+            if not candidate.is_file():
+                await callback.answer("Source missing", alert=True)
+                return await callback.edit(f"module source unavailable: {module_id}")
+            source_path = str(candidate)
+        try:
+            loaded = self.modules.loader.load(source_path)
+        except Exception as exc:
+            await callback.answer("Load failed", alert=True)
+            return await callback.edit(f"enable failed: {type(exc).__name__}")
+        self._mark_caps_consent(module_id, self._caps_fingerprint(loaded.manifest))
+        try:
+            await self.activate_module(source_path)
+        except Exception as exc:
+            await callback.answer("Activation failed", alert=True)
+            return await callback.edit(f"enable failed: {type(exc).__name__}")
+        await callback.answer("Module enabled")
+        return await callback.edit(f"enabled: {module_id}")
 
     def create_backup(self) -> Path:
         if self.backups is None or self.state is None or self.modules is None:
@@ -711,6 +778,7 @@ class Runtime:
         finally:
             self.state = StateStore(self.config.state_path)
             self.context_factory = ModuleContextFactory(self.state, self.responses)
+            self.context_factory.cap_host = self.cap_host
             if self.kernel is not None:
                 self.kernel.context_factory = self.context_factory
             self.modules = ModuleManager(tasks=self.tasks)

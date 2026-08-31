@@ -98,6 +98,12 @@ class ModuleContext:
     message: Any
     state: StateNamespace
     responses: ResponseService
+    cap_host: Any = None
+
+    async def cap(self, capability: str, payload: dict[str, Any] | None = None) -> Any:
+        if self.cap_host is None:
+            raise ResponseError("capabilities are not available")
+        return await self.cap_host.call(self.module_id, capability, payload or {})
 
     async def answer(self, **kwargs: Any) -> Response:
         return await self.responses.answer(self.message, **kwargs)
@@ -225,6 +231,7 @@ class ModuleContextFactory:
     def __init__(self, state: Any, responses: ResponseService) -> None:
         self._state = state
         self._responses = responses
+        self.cap_host: Any = None
 
     def create(self, module_id: str, message: Any) -> ModuleContext:
-        return ModuleContext(module_id, message, self._state.namespace(module_id), self._responses)
+        return ModuleContext(module_id, message, self._state.namespace(module_id), self._responses, self.cap_host)
