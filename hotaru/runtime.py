@@ -93,6 +93,7 @@ class Runtime:
     _forms: dict[str, tuple[Any, Any, str, Any, dict[str, Any]]] | None = None
     _input_requests: dict[str, tuple[Any, Any, Any, float]] | None = None
     _form_expiry: dict[str, float] | None = None
+    _form_gc_task: asyncio.Task[None] | None = None
 
     @classmethod
     def from_database(cls, path: str | Path | None = None) -> "Runtime":
@@ -154,6 +155,7 @@ class Runtime:
         self._forms = {}
         self._input_requests = {}
         self._form_expiry = {}
+        self._form_gc_task = asyncio.create_task(self._form_gc_loop(), name="hotaru:form-gc")
         self.context_factory.inline_manager = self.inline
         self.context_factory.form_sender = self._send_form
         self.sandbox = ModuleSandbox(self)
@@ -394,6 +396,16 @@ class Runtime:
 
     def form_count(self) -> int:
         return len(self._forms or {})
+
+    async def _form_gc_loop(self) -> None:
+        while not self.closed:
+            try:
+                await asyncio.sleep(5.0)
+                self.purge_forms()
+            except asyncio.CancelledError:
+                return
+            except Exception:
+                await asyncio.sleep(1.0)
 
     def form_snapshot(self, handle: Any) -> dict[str, Any] | None:
         entry = (self._forms or {}).get(handle.key)
@@ -1266,6 +1278,10 @@ class Runtime:
     async def close(self) -> None:
         if self.closed:
             return
+        self.closed = True
+        if self._form_gc_task is not None and not self._form_gc_task.done():
+            self._form_gc_task.cancel()
+            await asyncio.gather(self._form_gc_task, return_exceptions=True)
         if self.inline is not None:
             await self.inline.stop()
         if self._forms is not None:
