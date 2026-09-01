@@ -2,7 +2,7 @@ HOTARU = {
     "id": "test-features",
     "version": "1.0.0",
     "description": "Hotaru proxy and capability test module",
-    "commands": ["tfstatus", "tfhistory", "tfstate", "tffile", "tfnet", "tfbutton", "tfmedia", "tfinlinerich"],
+    "commands": ["tfstatus", "tfhistory", "tfstate", "tffile", "tfnet", "tfbutton", "tfmedia", "tfinlinerich", "tfrichboth"],
     "capabilities": ["mt", "state", "files", "net"],
 }
 
@@ -60,3 +60,12 @@ async def command_tfinlinerich(ctx, invocation):
     button = ctx.ui.primary("Run callback", pressed)
     html = "<h1>Inline Rich test</h1><p><b>bold</b> <i>italic</i> <u>underline</u> <tg-spoiler>spoiler</tg-spoiler> <code>code</code> <a href=\"https://core.telegram.org\">docs</a></p><blockquote>inline bot + native inline result</blockquote><ul><li>HTML parser</li><li>inline message</li><li>callback edit</li></ul><details open><summary>Details</summary><p>Buttons and rich content are combined.</p></details><table><tr><td>mode</td><td>inline</td></tr><tr><td>format</td><td>HTML</td></tr></table><tg-button-row><tg-button type=\"callback_data\" data=\"kernel\">Native callback</tg-button><tg-button type=\"url\" url=\"https://telegram.org\">Telegram</tg-button></tg-button-row>"
     await ctx.inline_form(html, [button])
+
+
+async def command_tfrichboth(ctx, invocation):
+    rich = ctx.rich
+    html = '''<h1>Hotaru Rich dual transport</h1><p><b>User MTProto</b> + <b>Bot API</b></p><blockquote expandable><i>Один модуль, два транспорта</i></blockquote><ul><li>HTML</li><li>таблица</li><li>details</li><li>map</li><li>media</li></ul><ol><li>Parse HTML</li><li>Build RichMessage</li><li>Send</li></ol><details open><summary><b>Details</b></summary><p><code>ctx.rich</code> and <code>ctx.bot</code></p></details><table><tr><td><b>Transport</b></td><td><b>Status</b></td></tr><tr><td>MTProto</td><td>ready</td></tr><tr><td>Bot API</td><td>ready</td></tr></table><tg-map latitude="55.7558" longitude="37.6173" zoom="10" width="600" height="400"><b>Moscow</b></tg-map><pre><code>return rich</code></pre><tg-button-row align="center"><tg-button type="url" style="success" url="https://telegram.org">Telegram</tg-button><tg-button type="copy_text" text="copied">Copy</tg-button></tg-button-row>'''
+    user_result = await rich.send(html)
+    bot_result = await ctx.bot.rich_send(111040773, html)
+    await ctx.answer("<b>Rich dual test отправлен</b><br>user=ok<br>bot=ok")
+    return {"user": bool(user_result), "bot": bool(bot_result)}
