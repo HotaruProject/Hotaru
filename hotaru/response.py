@@ -258,7 +258,7 @@ class ResponseService:
         current = []
         stack = []
         size = 0
-        void = {"br", "hr", "img", "video", "audio", "tg-map", "tg-emoji"}
+        void = {"br", "hr", "img", "tg-emoji"}
         for token in tokens:
             chunks = [token]
             if not token.startswith("<") and len(token) > limit:
