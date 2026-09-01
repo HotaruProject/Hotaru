@@ -36,11 +36,19 @@ from .tasks import TaskSupervisor
 
 
 class InputContext:
-    def __init__(self, runtime: Any, source: Any, query: Any) -> None:
+    def __init__(self, runtime: Any, source: Any, query: Any, value: str, payload: Any) -> None:
         self.runtime = runtime
         self.source = source
         self.query = query
+        self.value = value
+        self.payload = payload
         self.inline_message_id = None
+
+    async def reject(self, text: str = "Invalid value") -> Any:
+        return await self.query.answer([], cache_time=0, is_personal=True)
+
+    async def submit(self, text: str | None = None, **kwargs: Any) -> Any:
+        return await self.answer(text, **kwargs)
 
     async def answer(self, text: str | None = None, **kwargs: Any) -> Any:
         if text:
@@ -603,7 +611,7 @@ class Runtime:
                     await query.answer([], cache_time=0, is_personal=True)
                     return
                 try:
-                    result = handler(InputContext(self, source, query), value, payload)
+                    result = handler(InputContext(self, source, query, value, payload), value, payload)
                     if hasattr(result, "__await__"):
                         await result
                 except Exception as exc:
