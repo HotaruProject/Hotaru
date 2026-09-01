@@ -254,7 +254,7 @@ class Runtime:
         handle._key = key
         record = dict(options)
         record["form_id"] = key
-        record["module_id"] = getattr(source, "module_id", "")
+        record["module_id"] = record.get("module_id") or getattr(source, "module_id", "")
         self._forms[key] = (handle, source, text, buttons, record)
         ttl = options.get("ttl")
         deadline = time.time() + float(ttl) if isinstance(ttl, (int, float)) and float(ttl) > 0 else None
@@ -263,10 +263,10 @@ class Runtime:
                 self._form_expiry = {}
             self._form_expiry[key] = time.monotonic() + float(ttl)
 
-        if self.state is not None:
+        if self.state is not None and record.get("module_id"):
             self.state.connection.execute(
                 "INSERT OR REPLACE INTO form_state(form_id,module_id,source,chat_id,message_id,inline_message_id,text,buttons,options,expires) VALUES (?,?,?,?,?,?,?,?,?,?)",
-                (key, record.get("module_id", ""), getattr(source, "src", "mt"), str(getattr(source, "chat_id", "")), getattr(source, "id", None), getattr(source, "inline_message_id", None), text, json.dumps(buttons, ensure_ascii=False, default=str), json.dumps(record, ensure_ascii=False, default=str), deadline),
+                (key, record["module_id"], getattr(source, "src", "mt"), str(getattr(source, "chat_id", "")), getattr(source, "id", None), getattr(source, "inline_message_id", None), text, json.dumps(buttons, ensure_ascii=False, default=str), json.dumps(record, ensure_ascii=False, default=str), deadline),
             )
             self.state.connection.commit()
 
@@ -474,7 +474,8 @@ class Runtime:
         self._inline_forms[nonce] = (text, inline_buttons)
         options["module_id"] = options.get("module_id", "")
         options["form_id"] = nonce
-        self._persist_inline_form(nonce, command, text, inline_buttons, options)
+        if options["module_id"]:
+            self._persist_inline_form(nonce, command, text, inline_buttons, options)
         if self.observatory is not None:
             self.observatory.emit("inline", "form_queued", nonce=nonce, chat=chat_id, rows=len(inline_buttons))
         with trusted_scope():
