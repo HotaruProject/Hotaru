@@ -401,6 +401,7 @@ class Runtime:
         next_text = old_text if text is None else text
         next_buttons = old_buttons if buttons is None else buttons
         options.update(kwargs)
+        options["delete_source"] = False
         value = await self._send_form(source, next_text, next_buttons, options)
         self._forms[handle.key] = (handle, source, next_text, next_buttons, options)
         self._persist_form(handle.key, source, next_text, next_buttons, options)
