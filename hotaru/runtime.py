@@ -91,7 +91,7 @@ class Runtime:
     closed: bool = False
     _inline_forms: dict[str, tuple[str, list[dict[str, str]]]] | None = None
     _forms: dict[str, tuple[Any, Any, str, Any, dict[str, Any]]] | None = None
-    _input_requests: dict[str, tuple[Any, Any, Any, float]] | None = None
+    _input_requests: dict[str, tuple[Any, Any, Any, float, str]] | None = None
     _form_expiry: dict[str, float] | None = None
     _form_gc_task: asyncio.Task[None] | None = None
 
@@ -458,7 +458,7 @@ class Runtime:
                     token = secrets.token_urlsafe(10)
                     if self._input_requests is None:
                         self._input_requests = {}
-                    self._input_requests[token] = (button["handler"], button.get("payload"), command, time.monotonic() + float(button.get("input_ttl", 300)))
+                    self._input_requests[token] = (button["handler"], button.get("payload"), command, time.monotonic() + float(button.get("input_ttl", 300)), str(button.get("input", "")))
                     current.append({"text": button.get("text", ""), "switch_inline_query_current_chat": "hotaru-input:" + token + " "})
                     continue
                 if callable(button.get("handler")) and "callback" not in button:
@@ -522,7 +522,10 @@ class Runtime:
             key, _, value = text.partition(" ")
             request = (self._input_requests or {}).get(key.split(":", 1)[1])
             if request is not None and value and request[3] > time.monotonic():
-                handler, payload, source, _ = request
+                handler, payload, source, _, placeholder = request
+                if value == placeholder:
+                    await query.answer([], cache_time=0, is_personal=True)
+                    return
                 try:
                     result = handler(InputContext(self, source, query), value, payload)
                     if hasattr(result, "__await__"):
