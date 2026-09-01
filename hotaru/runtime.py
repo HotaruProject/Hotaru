@@ -540,6 +540,8 @@ class Runtime:
                         button = {**button, "_action_id": action_id, "_payload": button.get("payload")}
                 handle = button.get("callback_data")
                 if isinstance(handle, str):
+                    if button.get("_action_id") and not any(item.get("action_id") == button["_action_id"] for item in action_records):
+                        action_records.append({"row": row_index, "column": column_index, "action_id": button["_action_id"], "payload": button.get("_payload")})
                     current.append({"text": button.get("text", ""), "callback_data": self.callbacks.store.rebind(handle, CallbackBinding(self.kernel.owner_id, None, 0))})
                 elif button.get("_action_id") and self.callbacks is not None:
                     payload = button.get("_payload")
