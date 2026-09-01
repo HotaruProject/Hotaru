@@ -549,7 +549,7 @@ class InlineManager:
         from goygram.types import InlineObj
 
         result = InlineObj.article("hotaru-form", "Hotaru form", text)
-        result["input_message_content"]["reply_markup"] = {"inline_keyboard": [buttons]}
+        result["reply_markup"] = {"inline_keyboard": [buttons]}
         return result
 
     async def _dispatch_callback(self, callback: Any) -> None:

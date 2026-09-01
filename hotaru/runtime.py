@@ -269,7 +269,7 @@ class Runtime:
                 return
             form_text, buttons = form
             result = InlineObj.article("hotaru-form", "Hotaru form", form_text)
-            result["input_message_content"]["reply_markup"] = {"inline_keyboard": [buttons]}
+            result["reply_markup"] = {"inline_keyboard": [buttons]}
             await query.answer([result], cache_time=0, is_personal=True)
             return
         from . import __version__
