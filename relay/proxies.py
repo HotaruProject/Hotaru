@@ -521,7 +521,7 @@ class UiHelper:
             CallbackBinding(self._owner_id or 0, self._chat_id or 0, self._message_id),
             payload,
         )
-        result = {"text": text, "callback_data": handle}
+        result = {"text": text, "callback_data": handle, "_action_id": action_id, "_payload": payload}
         if style is not None:
             if style not in {"primary", "success", "danger"}:
                 raise ValueError("button style is invalid")
