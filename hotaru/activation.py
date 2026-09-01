@@ -92,6 +92,18 @@ class ModuleManager:
         self.form_cleanup: Callable[[str], Any] | None = None
         self._active: dict[str, ActiveModule] = {}
         self._bindings: dict[str, tuple[Any, tuple[str, ...]]] = {}
+        self._rehydrators: dict[str, Callable[[dict[str, Any]], Any]] = {}
+
+    def _register_rehydrator(self, module_id: str, namespace: dict[str, Any]) -> None:
+        callback = namespace.get("rehydrate_form")
+        if callable(callback):
+            self._rehydrators[module_id] = callback
+
+    def rehydrate_form(self, module_id: str, payload: dict[str, Any]) -> Any:
+        callback = self._rehydrators.get(module_id)
+        if callback is None:
+            return None
+        return callback(payload)
 
     async def activate(
         self,
@@ -165,6 +177,7 @@ class ModuleManager:
                 raise ActivationError(f"module is already active: {loaded.manifest.module_id}")
             self._active[loaded.manifest.module_id] = active
             self._bindings[loaded.manifest.module_id] = (kernel, commands)
+            self._register_rehydrator(loaded.manifest.module_id, namespace)
             return active
         except Exception as exc:
             if "commands" in locals():
