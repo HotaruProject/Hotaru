@@ -74,6 +74,9 @@ class FormHandle:
             return None
         return self._runtime.form_snapshot(self)
 
+    def __bool__(self) -> bool:
+        return bool(self._value)
+
 
 class ResponseService:
     def __init__(self, rich_sender: Callable[..., Any] | None = None) -> None:
@@ -169,12 +172,19 @@ class ResponseService:
     async def split(self, message: Any, text: str, *, limit: int = 4096, **kwargs: Any) -> list[Any]:
         if limit < 1:
             raise ValueError("limit must be positive")
-        parts = [text[index:index + limit] for index in range(0, len(text), limit)] or [""]
+        parts = []
+        rest = text
+        while len(rest) > limit:
+            cut = max(rest.rfind("\n", 0, limit + 1), rest.rfind(" ", 0, limit + 1))
+            if cut < max(1, limit // 2):
+                cut = limit
+            parts.append(rest[:cut].rstrip())
+            rest = rest[cut:].lstrip()
+        parts.append(rest)
         result = []
         for index, part in enumerate(parts):
             options = dict(kwargs)
-            if index:
-                options["output"] = "reply"
+            options["output"] = "edit" if index == 0 and kwargs.get("output", "auto") == "auto" else kwargs.get("output", "reply")
             result.append(await self.answer(message, text=part, **options))
         return result
 
@@ -310,12 +320,14 @@ class ModuleContext:
             else:
                 kwargs.setdefault("media", content)
         buttons = kwargs.pop("buttons", None)
-        if kwargs.pop("inline", False):
+        inline = kwargs.pop("inline", False)
+        bot = kwargs.pop("bot", False)
+        if inline:
             result = await self.inline_form(kwargs.pop("text", ""), buttons, **kwargs)
             if delete_source:
                 await self._delete_source()
             return result
-        if kwargs.pop("bot", False):
+        if bot:
             if kwargs.get("rich_message") is not None:
                 return await self.bot.rich_send(getattr(self._source, "chat_id", None), kwargs.pop("rich_message"), buttons=buttons, **kwargs)
             if kwargs.get("media") is not None:
@@ -368,9 +380,10 @@ class ModuleContext:
 
     async def send_file(self, file: Any, caption: str | None = None, **kwargs: Any) -> Response:
         output = kwargs.pop("output", "reply")
+        mode = kwargs.pop("mode", output)
         if caption is None:
-            return await self.answer(media=file, output=output, **kwargs)
-        return await self.answer(text=caption, media=file, output=output, **kwargs)
+            return await self.respond(file, mode=mode, **kwargs)
+        return await self.respond(caption, media=file, mode=mode, **kwargs)
 
     async def send_media(self, media: Any, caption: str | None = None, **kwargs: Any) -> Response:
         return await self.send_file(media, caption, **kwargs)
@@ -402,6 +415,8 @@ class ModuleContext:
         for row in buttons:
             current = []
             for button in row:
+                if isinstance(button, dict) and callable(button.get("handler")) and "callback" not in button:
+                    button = {**button, "callback": button["handler"]}
                 if not isinstance(button, dict) or "callback" not in button:
                     current.append(button)
                     continue
