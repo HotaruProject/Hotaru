@@ -83,6 +83,153 @@ class Gateway:
         return _method
 
 
+class RichGateway:
+    def __init__(self, tg: Gateway, source: Any = None) -> None:
+        self._tg = tg
+        self._source = source
+
+    @staticmethod
+    def html(value: str, *, rtl: bool = False, noautolink: bool = False, files: Any = None) -> dict[str, Any]:
+        result: dict[str, Any] = {"_": "inputRichMessageHTML", "html": str(value)}
+        if rtl:
+            result["rtl"] = True
+        if noautolink:
+            result["noautolink"] = True
+        if files is not None:
+            result["files"] = files
+        return result
+
+    @staticmethod
+    def media(media_id: str, media: Any) -> dict[str, Any]:
+        return {"id": media_id, "media": media}
+
+    def input(self, value: str | dict[str, Any], **kwargs: Any) -> dict[str, Any]:
+        return value if isinstance(value, dict) else self.html(value, **kwargs)
+
+    async def send(self, html_text: str | dict[str, Any], *, peer: Any = None, reply_to: Any = None, buttons: Any = None, **kwargs: Any) -> Any:
+        data = {"rich_message": self.input(html_text), **kwargs}
+        target = peer if peer is not None else getattr(self._source, "chat_id", None)
+        if target is not None:
+            data["peer"] = target
+        if reply_to is not None:
+            data["reply_to"] = reply_to
+        if buttons is not None:
+            data["reply_markup"] = buttons
+        return await self._tg.call("messages.sendMessage", data)
+
+    async def send_draft(self, html_text: str | dict[str, Any], *, peer: Any = None, draft_id: int, **kwargs: Any) -> Any:
+        return await self.draft(html_text, peer=peer, draft_id=draft_id, **kwargs)
+
+    async def save(self, html_text: str | dict[str, Any], *, peer: Any = None, reply_to: Any = None, **kwargs: Any) -> Any:
+        return await self.save_draft(html_text, peer=peer, reply_to=reply_to, **kwargs)
+
+    async def edit(self, html_text: str | dict[str, Any], *, message_id: int | None = None, peer: Any = None, buttons: Any = None, **kwargs: Any) -> Any:
+        mid = message_id if message_id is not None else getattr(self._source, "id", None)
+        target = peer if peer is not None else getattr(self._source, "chat_id", None)
+        if mid is None or target is None:
+            raise ValueError("rich edit requires message_id and peer")
+        data = {"peer": target, "id": int(mid), "rich_message": self.input(html_text), **kwargs}
+        if buttons is not None:
+            data["reply_markup"] = buttons
+        return await self._tg.call("messages.editMessage", data)
+
+    async def update(self, html_text: str | dict[str, Any], **kwargs: Any) -> Any:
+        return await self.edit(html_text, **kwargs)
+
+    async def send_media(self, media: Any, html_text: str | dict[str, Any] = "", *, peer: Any = None, **kwargs: Any) -> Any:
+        target = peer if peer is not None else getattr(self._source, "chat_id", None)
+        data = {"peer": target, "media": media, "message": "", "rich_message": self.input(html_text), **kwargs}
+        return await self._tg.call("messages.sendMedia", data)
+
+    async def draft(self, html_text: str | dict[str, Any], *, peer: Any = None, draft_id: int, **kwargs: Any) -> Any:
+        target = peer if peer is not None else getattr(self._source, "chat_id", None)
+        return await self._tg.call("messages.sendMessageDraft", {"peer": target, "draft_id": draft_id, "rich_message": self.input(html_text), **kwargs})
+
+    async def save_draft(self, html_text: str | dict[str, Any], *, peer: Any = None, reply_to: Any = None, **kwargs: Any) -> Any:
+        target = peer if peer is not None else getattr(self._source, "chat_id", None)
+        data = {"peer": target, "rich_message": self.input(html_text), **kwargs}
+        if reply_to is not None:
+            data["reply_to"] = reply_to
+        return await self._tg.call("messages.saveDraft", data)
+
+    async def get(self, message_id: int | None = None, *, peer: Any = None) -> Any:
+        target = peer if peer is not None else getattr(self._source, "chat_id", None)
+        mid = message_id if message_id is not None else getattr(self._source, "id", None)
+        return await self._tg.call("messages.getRichMessage", {"peer": target, "id": mid})
+
+    async def translate(self, language: str, message_ids: list[int] | None = None, *, peer: Any = None, **kwargs: Any) -> Any:
+        target = peer if peer is not None else getattr(self._source, "chat_id", None)
+        ids = message_ids or [getattr(self._source, "id", 0)]
+        return await self._tg.call("messages.translateRichMessage", {"peer": target, "id": ids, "to_lang": language, **kwargs})
+
+    async def compose(self, html_text: str, **kwargs: Any) -> Any:
+        return await self._tg.call("messages.composeRichMessageWithAI", {"text": self.input(html_text), **kwargs})
+
+    async def typing(self, *, peer: Any = None, draft_id: int | None = None, **kwargs: Any) -> Any:
+        target = peer if peer is not None else getattr(self._source, "chat_id", None)
+        action = {"_": "inputSendMessageRichMessageDraftAction", "random_id": draft_id or secrets.randbits(63), "rich_message": self.html("<tg-thinking>Thinking...</tg-thinking>")}
+        return await self._tg.call("messages.setTyping", {"peer": target, "action": action, **kwargs})
+
+    async def ephemeral(self, html_text: str, *, peer: Any = None, receiver_id: Any = None, **kwargs: Any) -> Any:
+        target = peer if peer is not None else getattr(self._source, "chat_id", None)
+        return await self._tg.call("ephemeral.sendMessage", {"peer": target, "receiver_id": receiver_id or target, "message": "", "rich_message": self.html(html_text), "random_id": secrets.randbits(63), **kwargs})
+
+    async def edit_inline(self, inline_id: Any, html_text: str | dict[str, Any], *, buttons: Any = None, **kwargs: Any) -> Any:
+        data = {"id": inline_id, "rich_message": self.input(html_text), **kwargs}
+        if buttons is not None:
+            data["reply_markup"] = buttons
+        return await self._tg.call("messages.editInlineBotMessage", data)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._tg, name)
+
+
+class BotGateway:
+    def __init__(self, inline_manager: Any) -> None:
+        self._manager = inline_manager
+
+    async def call(self, method: str, **kwargs: Any) -> Any:
+        app = getattr(self._manager, "bot_app", None)
+        if app is None:
+            raise RuntimeError("inline bot is not ready")
+        return await app.bot_req(method, **kwargs)
+
+    async def send(self, method: str, **kwargs: Any) -> Any:
+        return await self.call(method, **kwargs)
+
+    async def rich_send(self, chat_id: int | str, html_text: str, *, buttons: Any = None, **kwargs: Any) -> Any:
+        data = {"chat_id": chat_id, "rich_message": {"_": "inputRichMessageHTML", "html": html_text}, **kwargs}
+        if buttons is not None:
+            data["reply_markup"] = buttons
+        return await self.call("sendRichMessage", **data)
+
+    async def rich_edit(self, chat_id: int | str, message_id: int, html_text: str, *, buttons: Any = None, **kwargs: Any) -> Any:
+        data = {"chat_id": chat_id, "message_id": message_id, "rich_message": {"_": "inputRichMessageHTML", "html": html_text}, **kwargs}
+        if buttons is not None:
+            data["reply_markup"] = buttons
+        return await self.call("editMessageText", **data)
+
+    async def rich_draft(self, chat_id: int | str, html_text: str, *, draft_id: int, **kwargs: Any) -> Any:
+        return await self.call("sendRichMessageDraft", chat_id=chat_id, draft_id=draft_id, rich_message={"_": "inputRichMessageHTML", "html": html_text}, **kwargs)
+
+    async def inline_answer(self, query: Any, results: list[dict[str, Any]], **kwargs: Any) -> Any:
+        return await query.answer(results, **kwargs)
+
+    async def inline_edit(self, inline_message_id: str, html_text: str, *, buttons: Any = None, **kwargs: Any) -> Any:
+        data = {"inline_message_id": inline_message_id, "rich_message": {"_": "inputRichMessageHTML", "html": html_text}, **kwargs}
+        if buttons is not None:
+            data["reply_markup"] = buttons
+        return await self.call("editMessageText", **data)
+
+    def reply(self, chat_id: int | str, message_id: int, text: str, **kwargs: Any) -> Any:
+        return self.send("sendMessage", chat_id=chat_id, text=text, **kwargs)
+
+    def __getattr__(self, name: str) -> Any:
+        async def method(**kwargs: Any) -> Any:
+            return await self.call(name, **kwargs)
+        return method
+
+
 class InlineHelper:
     """Convenience wrapper around the owner inline bot: answer queries with rich articles."""
 
