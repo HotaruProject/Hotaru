@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import inspect
 from collections import OrderedDict
+from relay.firewall import module_scope
 from typing import Any
 
 from .commands import CommandInvocation, CommandParser
@@ -126,9 +127,11 @@ class Kernel:
             if self.context_factory is None:
                 raise RuntimeError("module context factory is not configured")
             context = self.context_factory.create(spec.module_id, message)
-            result = spec.handler(context, invocation)
+            with module_scope():
+                result = spec.handler(context, invocation)
         if inspect.isawaitable(result):
-            return await result
+            with module_scope():
+                return await result
         return result
 
     async def sandbox_dispatch(self, spec: Any, invocation: CommandInvocation) -> object:

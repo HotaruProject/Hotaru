@@ -17,48 +17,6 @@ class ModuleValidationError(ValueError):
     pass
 
 
-FORBIDDEN_IMPORTS = frozenset({
-    "telethon",
-    "pyrogram",
-    "tgcrypto",
-    "herokutl",
-    "hikkatlobs",
-    "kurimypyrogram",
-    "mtproto",
-    "gramjs",
-    "telegram",
-    "aiogram",
-    "goygram",
-    "relay",
-    "hotaru",
-})
-
-FORBIDDEN_NAME_PARTS = (
-    "telethon",
-    "pyrogram",
-    "herokutl",
-    "gramjs",
-    "goygram-fork",
-    "goygram_fork",
-)
-
-
-def _module_chain(node: ast.Import | ast.ImportFrom) -> list[str]:
-    if isinstance(node, ast.Import):
-        return [alias.name for alias in node.names]
-    return [node.module] if node.module else []
-
-
-def _is_forbidden(chain: list[str]) -> bool:
-    for name in chain:
-        root = name.split(".")[0].casefold()
-        if root in FORBIDDEN_IMPORTS:
-            return True
-        if any(part in name.casefold() for part in FORBIDDEN_NAME_PARTS):
-            return True
-    return False
-
-
 @dataclass(frozen=True, slots=True)
 class ModuleManifest:
     module_id: str
@@ -99,22 +57,11 @@ class HmodLoader:
         try:
             tree = ast.parse(source, filename=str(candidate), mode="exec")
             manifest = self._manifest(tree)
-            self._validate_imports(tree)
             compile(tree, str(candidate), "exec")
         except (SyntaxError, ValueError, TypeError) as exc:
             raise ModuleValidationError("module failed validation") from exc
         digest = hashlib.sha256(source.encode("utf-8")).hexdigest()
         return LoadedModule(candidate, digest, source, manifest)
-
-    @staticmethod
-    def _validate_imports(tree: ast.Module) -> None:
-        for node in ast.walk(tree):
-            if isinstance(node, (ast.Import, ast.ImportFrom)):
-                if _is_forbidden(_module_chain(node)):
-                    raise ModuleValidationError(
-                        "module imports a Telegram client library that could hijack the session; "
-                        "use ctx.mt / cap('mt') instead"
-                    )
 
     def _validate_path(self, path: Path) -> None:
         if path.suffix != ".hmod":

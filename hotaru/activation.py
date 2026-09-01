@@ -8,6 +8,7 @@ from typing import Any, Awaitable, Callable
 
 from .modules import HmodLoader, LoadedModule
 from .tasks import TaskSupervisor
+from relay.firewall import module_scope
 
 
 class ActivationError(RuntimeError):
@@ -109,7 +110,8 @@ class ModuleManager:
             if health is not None:
                 result = health(context)
                 if inspect.isawaitable(result):
-                    result = await asyncio.wait_for(result, timeout=self.timeout)
+                    with module_scope():
+                        result = await asyncio.wait_for(result, timeout=self.timeout)
                 if result is False:
                     raise RuntimeError("health check returned false")
         except Exception as exc:
@@ -146,13 +148,15 @@ class ModuleManager:
             "__file__": str(loaded.path),
         }
         try:
-            exec(compile(loaded.source, str(loaded.path), "exec"), namespace, namespace)
+            with module_scope():
+                exec(compile(loaded.source, str(loaded.path), "exec"), namespace, namespace)
             commands = self.binder.bind(loaded, namespace, kernel)
             instance = ModuleInstance(loaded, namespace, commands)
             if health is not None:
                 result = health(instance)
                 if inspect.isawaitable(result):
-                    result = await asyncio.wait_for(result, timeout=self.timeout)
+                    with module_scope():
+                        result = await asyncio.wait_for(result, timeout=self.timeout)
                 if result is False:
                     raise RuntimeError("health check returned false")
             active = ActiveModule(loaded, instance)

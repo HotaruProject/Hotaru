@@ -5,6 +5,7 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 from typing import Any
+from .firewall import trusted_scope
 
 MT_READ_ONLY = frozenset({
     "get",
@@ -52,11 +53,6 @@ PROVIDERS: dict[str, dict[str, Any]] = {
     "mt": {
         "title": "Telegram API",
         "detail": "full userbot MTProto access (messages, media, dialogs, chats) with destructive and auth operations blocked",
-        "side_effect": "write",
-    },
-    "msg": {
-        "title": "Messages",
-        "detail": "send messages as the userbot",
         "side_effect": "write",
     },
     "files": {
@@ -123,16 +119,15 @@ class CapabilityHost:
         if not self._allowed(module_id, capability):
             raise PermissionError(f"capability not granted to module: {capability}")
         meta = PROVIDERS[capability]
-        if capability == "mt":
-            return await self._mt_call(module_id, payload, meta)
-        if capability == "msg":
-            return await self._send_message(module_id, payload, meta)
-        if capability == "files":
-            return self._file_op(module_id, payload, meta)
-        if capability == "net":
-            return self._net_fetch(module_id, payload, meta)
-        if capability == "state":
-            return self._state_op(module_id, payload, meta)
+        with trusted_scope():
+            if capability == "mt":
+                return await self._mt_call(module_id, payload, meta)
+            if capability == "files":
+                return self._file_op(module_id, payload, meta)
+            if capability == "net":
+                return self._net_fetch(module_id, payload, meta)
+            if capability == "state":
+                return self._state_op(module_id, payload, meta)
         raise PermissionError(f"capability not implemented: {capability}")
 
     async def _mt_call(self, module_id: str, payload: dict[str, Any], meta: dict[str, Any]) -> Any:
@@ -163,35 +158,6 @@ class CapabilityHost:
         if observatory is None:
             return
         observatory.emit("caps", "mt_call", module=module_id, method=method)
-
-    async def _send_message(self, module_id: str, payload: dict[str, Any], meta: dict[str, Any]) -> Any:
-        app = self.runtime.app
-        if app is None or app.mt is None:
-            raise PermissionError("userbot transport is not ready")
-        chat_id = payload.get("chat_id")
-        text = payload.get("text")
-        if not isinstance(chat_id, (int, str)) or not isinstance(text, str) or not text:
-            raise PermissionError("msg payload requires chat_id and text")
-        fanout_window = self.runtime.state.namespace(module_id).get("msg_fanout", [])
-        import time
-
-        now = time.time()
-        fanout_window = [t for t in fanout_window if now - t < 60.0][:19] if isinstance(fanout_window, list) else []
-        if len(fanout_window) >= 20:
-            raise PermissionError("msg rate limit: 20 messages per minute per module")
-        fanout_window.append(now)
-        self.runtime.state.namespace(module_id).set("msg_fanout", fanout_window)
-        peer = await app.mt.resolve_peer(chat_id)
-        import secrets
-
-        result = await app.mt_req(
-            "messages.sendMessage",
-            peer=peer,
-            message=text[:4096],
-            random_id=secrets.randbits(63),
-        )
-        body = result.get("result") if isinstance(result, dict) and isinstance(result.get("result"), dict) else result
-        return {"sent": True}
 
     def _file_op(self, module_id: str, payload: dict[str, Any], meta: dict[str, Any]) -> Any:
         op = payload.get("op", "read")

@@ -11,7 +11,7 @@ from .capabilities import BehaviorEnvelope, CapabilityBroker, CapabilityDenied, 
 from .callbacks import CallbackBinding, CallbackDenied, CallbackRouter, CallbackStore
 from .registry import CommandRegistry, CommandSpec
 from .runtime import Runtime
-from .response import Attachment, ModuleContext, ModuleContextFactory, Response, ResponseError, ResponseService
+from .response import Attachment, ModuleContext, ModuleContextFactory, ModuleMessage, Response, ResponseError, ResponseService
 from .observatory import Observatory
 from .events import EventRouter
 from .state import StateError, StateNamespace, StateStore
@@ -50,6 +50,7 @@ __all__ = [
     "Runtime",
     "RuntimeConfig",
     "Attachment",
+    "ModuleMessage",
     "ModuleContext",
     "ModuleContextFactory",
     "Response",

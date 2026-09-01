@@ -92,13 +92,64 @@ class Attachment:
     raw: Any
 
 
+class ModuleMessage:
+    def __init__(self, source: Any, responses: ResponseService) -> None:
+        self._source = source
+        self._responses = responses
+
+    def __getattr__(self, name: str) -> Any:
+        if name in {"app", "raw", "net", "_resolve_peer", "_source"}:
+            raise AttributeError(name)
+        if name in {"id", "msg_id", "chat_id", "from_id", "text", "is_me", "src"}:
+            return getattr(self._source, name, None)
+        raise AttributeError(name)
+
+    def get(self, key: str, default: Any = None) -> Any:
+        if key in {"raw", "app", "net", "_resolve_peer"}:
+            return default
+        return self._source.get(key, default) if hasattr(self._source, "get") else default
+
+    async def edit(self, text: str, **kwargs: Any) -> Any:
+        return await self._responses.answer(self._source, text=text, output="edit", **kwargs)
+
+    async def reply(self, text: str, **kwargs: Any) -> Any:
+        kwargs.setdefault("output", "reply")
+        return await self._responses.answer(self._source, text=text, **kwargs)
+
+    async def download(self, destination: str | Path | None = None) -> Any:
+        if not hasattr(self._source, "download"):
+            raise ResponseError("media download is unavailable")
+        return await self._source.download(destination)
+
+
 @dataclass(slots=True)
 class ModuleContext:
     module_id: str
-    message: Any
+    _source: Any
     state: StateNamespace
     responses: ResponseService
     cap_host: Any = None
+    callback_router: Any = None
+    inline_manager: Any = None
+
+    @property
+    def message(self) -> ModuleMessage:
+        return ModuleMessage(self._source, self.responses)
+
+    @property
+    def tg(self) -> Any:
+        from relay.proxies import Gateway
+        return Gateway(self.cap_host, self.module_id)
+
+    @property
+    def inline(self) -> Any:
+        from relay.proxies import InlineHelper
+        return InlineHelper(self.inline_manager)
+
+    @property
+    def ui(self) -> Any:
+        from relay.proxies import UiHelper
+        return UiHelper(self.module_id, self.callback_router.store, getattr(self._source, "from_id", None), getattr(self._source, "chat_id", None), getattr(self._source, "id", 0), self.callback_router)
 
     async def cap(self, capability: str, payload: dict[str, Any] | None = None) -> Any:
         if self.cap_host is None:
@@ -112,7 +163,7 @@ class ModuleContext:
         return await self.cap("net", {"url": url, "data": data, "timeout": timeout})
 
     async def answer(self, **kwargs: Any) -> Response:
-        return await self.responses.answer(self.message, **kwargs)
+        return await self.responses.answer(self._source, **kwargs)
 
     async def answer_file(self, media: Any, **kwargs: Any) -> Response:
         kwargs.setdefault("output", "reply")
@@ -212,7 +263,7 @@ class ModuleContext:
             raise ResponseError("attachment is not downloadable")
         file_id = document.get("file_id")
         if isinstance(file_id, str):
-            await self.message.app.download_file(file_id, str(path))
+            await self._source.app.download_file(file_id, str(path))
             return path
         if isinstance(document.get("id"), int) and isinstance(document.get("access_hash"), int):
             file_reference = document.get("file_reference", b"")
@@ -228,7 +279,7 @@ class ModuleContext:
                 "file_reference": bytes(file_reference),
                 "thumb_size": "",
             }
-            await self.message.app.mt.download_file(location, str(path), limit=524288)
+            await self._source.app.mt.download_file(location, str(path), limit=524288)
             return path
         raise ResponseError("attachment location is incomplete")
 
@@ -238,6 +289,8 @@ class ModuleContextFactory:
         self._state = state
         self._responses = responses
         self.cap_host: Any = None
+        self.callback_router: Any = None
+        self.inline_manager: Any = None
 
     def create(self, module_id: str, message: Any) -> ModuleContext:
-        return ModuleContext(module_id, message, self._state.namespace(module_id), self._responses, self.cap_host)
+        return ModuleContext(module_id, message, self._state.namespace(module_id), self._responses, self.cap_host, self.callback_router, self.inline_manager)
