@@ -155,6 +155,7 @@ class Runtime:
         self._forms = {}
         self._input_requests = {}
         self._form_expiry = {}
+        self._form_gc_task = None
         self._form_gc_task = asyncio.create_task(self._form_gc_loop(), name="hotaru:form-gc")
         self.context_factory.inline_manager = self.inline
         self.context_factory.form_sender = self._send_form
