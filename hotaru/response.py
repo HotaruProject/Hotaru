@@ -274,13 +274,14 @@ class ResponseService:
                 size += len(chunk)
             if not token.startswith("<"):
                 continue
-            opening = re.fullmatch(r"<([a-zA-Z][\\w-]*)(?:\\s[^>]*)?>", token)
-            closing = re.fullmatch(r"</([a-zA-Z][\\w-]*)>", token)
+            opening = re.fullmatch(r"<([a-zA-Z][\w-]*)(?:\s[^>]*)?>", token)
+            closing = re.fullmatch(r"</([a-zA-Z][\w-]*)>", token)
             if opening and opening.group(1).lower() not in void and not token.endswith("/>"):
                 stack.append(token)
             elif closing:
                 for index in range(len(stack) - 1, -1, -1):
-                    if re.match(r"<([a-zA-Z][\\w-]*)", stack[index]).group(1).lower() == closing.group(1).lower():
+                    match = re.match(r"<([a-zA-Z][\w-]*)", stack[index])
+                    if match is not None and match.group(1).lower() == closing.group(1).lower():
                         del stack[index]
                         break
         if current or not parts:
