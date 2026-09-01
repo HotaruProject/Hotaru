@@ -21,7 +21,7 @@ from .events import EventRouter
 from relay.inline import InlineManager
 from relay.sandbox import ModuleSandbox
 from relay.caps import CapabilityHost, describe as describe_caps
-from relay.firewall import install as install_firewall
+from relay.firewall import install as install_firewall, trusted_scope
 from .kernel import Kernel
 from .modules import ModuleStager
 from .activation import ModuleManager
@@ -116,6 +116,7 @@ class Runtime:
         self.inline = InlineManager(self)
         self._inline_forms = {}
         self.context_factory.inline_manager = self.inline
+        self.context_factory.form_sender = self._send_form
         self.sandbox = ModuleSandbox(self)
         self.kernel.sandbox = self.sandbox
         self.kernel.context_factory = self.context_factory
@@ -158,11 +159,17 @@ class Runtime:
         if self.inline is None:
             raise RuntimeError("inline bot form transport is unavailable")
         if self.inline.info is None:
-            await self.inline.ensure_bot()
+            with trusted_scope():
+                await self.inline.ensure_bot()
         if self.inline.bot_app is None:
-            await self.inline.start()
+            with trusted_scope():
+                await self.inline.start()
         if self.inline.info is None or self.inline.bot_app is None:
             raise RuntimeError("inline bot form transport is not ready")
+        try:
+            await asyncio.wait_for(self.inline.ready.wait(), timeout=10.0)
+        except asyncio.TimeoutError as exc:
+            raise RuntimeError("inline bot polling is not ready") from exc
         owner = self.kernel.owner_id if self.kernel is not None else None
         if owner is None:
             raise RuntimeError("form owner is missing")
@@ -214,15 +221,27 @@ class Runtime:
         if self._inline_forms is None:
             self._inline_forms = {}
         inline_buttons = []
-        for button in buttons:
-            handle = button.get("callback_data")
-            if isinstance(handle, str):
-                inline_buttons.append({"text": button.get("text", ""), "callback_data": self.callbacks.store.rebind(handle, CallbackBinding(self.kernel.owner_id, None, 0))})
-            elif isinstance(button.get("url"), str):
-                inline_buttons.append({"text": button.get("text", ""), "url": button["url"]})
+        for row in buttons:
+            if isinstance(row, dict):
+                row = [row]
+            current = []
+            for button in row:
+                if not isinstance(button, dict):
+                    continue
+                handle = button.get("callback_data")
+                if isinstance(handle, str):
+                    current.append({"text": button.get("text", ""), "callback_data": self.callbacks.store.rebind(handle, CallbackBinding(self.kernel.owner_id, None, 0))})
+                elif isinstance(button.get("url"), str):
+                    current.append({"text": button.get("text", ""), "url": button["url"]})
+                else:
+                    current.append({key: value for key, value in button.items() if key != "style"})
+            inline_buttons.append(current)
         self._inline_forms[nonce] = (text, inline_buttons)
-        bot = await self.app.mt.resolve_peer("@" + self.inline.info.username)
-        peer = await self.app.mt.resolve_peer(chat_id)
+        if self.observatory is not None:
+            self.observatory.emit("inline", "form_queued", nonce=nonce, chat=chat_id, rows=len(inline_buttons))
+        with trusted_scope():
+            bot = await self.app.mt.resolve_peer("@" + self.inline.info.username)
+            peer = await self.app.mt.resolve_peer(chat_id)
         result = await self.app.mt_req(
             "messages.getInlineBotResults",
             bot=bot,
@@ -264,13 +283,18 @@ class Runtime:
         if text.startswith("hotaru-form:"):
             nonce = text.split(":", 1)[1]
             form = self._inline_forms.get(nonce) if self._inline_forms is not None else None
+            if self.observatory is not None:
+                self.observatory.emit("inline", "form_lookup", nonce=nonce, found=form is not None)
             if form is None:
                 await query.answer([], cache_time=0, is_personal=True)
                 return
             form_text, buttons = form
-            result = InlineObj.article("hotaru-form", "Hotaru form", form_text, parse_mode="HTML")
-            result["reply_markup"] = {"inline_keyboard": [buttons]}
+            result = InlineObj.article("hotaru-form", "Hotaru form", form_text)
+            result["input_message_content"] = {"rich_message": {"_": "inputRichMessageHTML", "html": form_text}}
+            result["reply_markup"] = {"inline_keyboard": buttons}
             await query.answer([result], cache_time=0, is_personal=True)
+            if self.observatory is not None:
+                self.observatory.emit("inline", "form_answered", buttons=len(buttons))
             return
         from . import __version__
 

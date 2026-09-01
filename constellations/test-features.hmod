@@ -2,7 +2,7 @@ HOTARU = {
     "id": "test-features",
     "version": "1.0.0",
     "description": "Hotaru proxy and capability test module",
-    "commands": ["tfstatus", "tfhistory", "tfstate", "tffile", "tfnet", "tfbutton", "tfmedia"],
+    "commands": ["tfstatus", "tfhistory", "tfstate", "tffile", "tfnet", "tfbutton", "tfmedia", "tfinlinerich"],
     "capabilities": ["mt", "state", "files", "net"],
 }
 
@@ -50,3 +50,13 @@ async def command_tfbutton(ctx, invocation):
 async def command_tfmedia(ctx, invocation):
     attachment = ctx.attachment or ctx.reply_attachment
     await ctx.answer(text=f"media detected: {attachment.kind if attachment else 'none'}")
+
+
+async def command_tfinlinerich(ctx, invocation):
+    async def pressed(call, payload):
+        await call.answer("Inline callback accepted")
+        await call.edit("<h2>Inline Rich updated</h2><p><b>Callback worked</b></p><details open><summary>Result</summary><p><code>inline_message_id</code> path</p></details>")
+
+    button = ctx.ui.primary("Run callback", pressed)
+    html = "<h1>Inline Rich test</h1><p><b>bold</b> <i>italic</i> <u>underline</u> <tg-spoiler>spoiler</tg-spoiler> <code>code</code> <a href=\"https://core.telegram.org\">docs</a></p><blockquote>inline bot + native inline result</blockquote><ul><li>HTML parser</li><li>inline message</li><li>callback edit</li></ul><details open><summary>Details</summary><p>Buttons and rich content are combined.</p></details><table><tr><td>mode</td><td>inline</td></tr><tr><td>format</td><td>HTML</td></tr></table><tg-button-row><tg-button type=\"callback_data\" data=\"kernel\">Native callback</tg-button><tg-button type=\"url\" url=\"https://telegram.org\">Telegram</tg-button></tg-button-row>"
+    await ctx.inline_form(html, [button])

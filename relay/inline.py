@@ -269,6 +269,7 @@ class InlineManager:
         self._cb_handlers: list[Callable[[Any], Awaitable[Any]]] = []
         self._pm_handlers: list[Callable[[Any], Awaitable[Any]]] = []
         self._stop = asyncio.Event()
+        self.ready = asyncio.Event()
         self._create_attempts: list[float] = []
         self._provision_lock = asyncio.Lock()
 
@@ -469,6 +470,7 @@ class InlineManager:
         from goygram import GoyGram
 
         self._stop.clear()
+        self.ready.clear()
         self.bot_app = GoyGram(
             bot_token=self.info.token,
             bot_timeout=self.poll_timeout,
@@ -488,6 +490,7 @@ class InlineManager:
                 await app.core.bot.boot()
                 await app.bot_req("deleteWebhook", drop_pending_updates=False)
                 dispatch_task = asyncio.create_task(app.core.disp.consume(), name="hotaru:inline-dispatch")
+                self.ready.set()
                 await app.core.bot.spin()
                 return
             except asyncio.CancelledError:
@@ -542,7 +545,7 @@ class InlineManager:
                 await handler(query)
             except Exception as exc:
                 if self.runtime.observatory is not None:
-                    self.runtime.observatory.emit("inline", "handler_error", error=type(exc).__name__)
+                    self.runtime.observatory.emit("inline", "handler_error", error=type(exc).__name__, detail=str(exc)[:240])
 
     @staticmethod
     def _form_article(text: str, buttons: list[dict[str, str]]) -> dict[str, Any]:
