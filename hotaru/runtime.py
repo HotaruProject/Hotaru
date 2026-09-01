@@ -512,9 +512,14 @@ class Runtime:
                     result = handler(InputContext(self, source, query), value, payload)
                     if hasattr(result, "__await__"):
                         await result
+                except Exception as exc:
+                    if self.observatory is not None:
+                        self.observatory.emit("inline", "input_error", error=type(exc).__name__)
                 finally:
                     if self._input_requests is not None:
                         self._input_requests.pop(key.split(":", 1)[1], None)
+            elif request is not None and request[3] <= time.monotonic() and self._input_requests is not None:
+                self._input_requests.pop(key.split(":", 1)[1], None)
             await query.answer([], cache_time=0, is_personal=True)
             return
         if text.startswith("hotaru-form:"):
