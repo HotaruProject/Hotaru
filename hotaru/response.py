@@ -170,6 +170,18 @@ class ResponseService:
                 media = content
         if file is not None:
             media = file
+        if kwargs.get("topic_id") is None:
+            for name in ("topic_id", "message_thread_id", "top_msg_id"):
+                candidate = getattr(message, name, None)
+                if isinstance(candidate, int) and candidate > 0:
+                    kwargs["topic_id"] = candidate
+                    break
+                getter = getattr(message, "get", None)
+                if callable(getter):
+                    candidate = getter(name)
+                    if isinstance(candidate, int) and candidate > 0:
+                        kwargs["topic_id"] = candidate
+                        break
         if inline or form is not None or buttons is not None:
             data = form if isinstance(form, dict) else {"text": kwargs.pop("text", ""), "buttons": buttons}
             if hasattr(message, "form"):
@@ -211,6 +223,9 @@ class ResponseService:
             return await self.answer(message, media=path, output="reply", **kwargs)
         finally:
             path.unlink(missing_ok=True)
+
+    async def respond(self, message: Any, content: Any = None, **kwargs: Any) -> Any:
+        return await self.smart(message, content, **kwargs)
 
 
 @dataclass(frozen=True, slots=True)
@@ -320,8 +335,9 @@ class ModuleContext:
             return await self.form_sender(self._source, kwargs.get("text", ""), kwargs["buttons"], kwargs)
         if kwargs.get("text") is not None and kwargs.get("rich", True):
             value = kwargs.pop("text")
-            if len(value) > int(kwargs.pop("split_limit", 4096)):
-                return await self.responses.split(self._source, value, limit=4096, **kwargs)
+            limit = int(kwargs.pop("split_limit", 4096))
+            if len(value) > limit:
+                return await self.responses.split(self._source, value, limit=limit, **kwargs)
             return await self.send_rich(value, **kwargs)
         return await self.responses.answer(self._source, **kwargs)
 
