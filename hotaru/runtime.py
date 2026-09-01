@@ -267,6 +267,8 @@ class Runtime:
             for button in row:
                 if not isinstance(button, dict):
                     continue
+                if callable(button.get("handler")) and "callback" not in button:
+                    button = {**button, "callback": button["handler"]}
                 handle = button.get("callback_data")
                 if isinstance(handle, str):
                     current.append({"text": button.get("text", ""), "callback_data": self.callbacks.store.rebind(handle, CallbackBinding(self.kernel.owner_id, None, 0))})

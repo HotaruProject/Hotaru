@@ -588,7 +588,7 @@ class UiHelper:
         return {"inline_keyboard": [list(row) for row in rows]}
 
     def input(self, text: str, handler: Callable[[Any, Any], Any], payload: Any = None, *, placeholder: str = "", style: str | None = None) -> dict[str, Any]:
-        return {"text": text, "input": placeholder, "callback": handler, "payload": payload, "style": style}
+        return {"text": text, "input": placeholder, "handler": handler, "callback": handler, "payload": payload, "style": style}
 
     def actions(self) -> dict[str, Callable[[Any, Any], Any]]:
         return dict(self._actions)
