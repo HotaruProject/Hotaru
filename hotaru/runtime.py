@@ -3,6 +3,7 @@ import hashlib
 import json
 import logging
 import os
+import secrets
 import tempfile
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -56,6 +57,7 @@ class Runtime:
     sandbox: ModuleSandbox | None = None
     cap_host: CapabilityHost | None = None
     closed: bool = False
+    _inline_forms: dict[str, tuple[str, list[dict[str, str]]]] | None = None
 
     @classmethod
     def from_database(cls, path: str | Path | None = None) -> "Runtime":
@@ -112,6 +114,7 @@ class Runtime:
         self.modules = ModuleManager(tasks=self.tasks)
         self.stager = ModuleStager(self.modules.loader)
         self.inline = InlineManager(self)
+        self._inline_forms = {}
         self.context_factory.inline_manager = self.inline
         self.sandbox = ModuleSandbox(self)
         self.kernel.sandbox = self.sandbox
@@ -167,6 +170,8 @@ class Runtime:
         chat_id = getattr(command, "chat_id", None)
         if not isinstance(chat_id, (int, str)):
             raise RuntimeError("form target chat is missing")
+        if getattr(command, "src", None) != "bot":
+            return await self._insert_inline_form(command, text, buttons, options)
         reply_to = getattr(command, "id", None) or getattr(command, "message_id", None)
         topic_id = options.get("topic_id")
         if not isinstance(topic_id, int) and hasattr(command, "get"):
@@ -189,6 +194,65 @@ class Runtime:
         if hasattr(command, "delete"):
             await command.delete()
         return sent
+
+    async def _insert_inline_form(self, command: Any, text: str, buttons: list[dict[str, str]], options: dict[str, Any] | None = None) -> Any:
+        if self.inline is None or self.inline.info is None or self.app is None or self.app.mt is None:
+            raise RuntimeError("inline insertion transport is not ready")
+        chat_id = getattr(command, "chat_id", None)
+        message_id = getattr(command, "id", None) or getattr(command, "message_id", None)
+        if not isinstance(message_id, int):
+            raise RuntimeError("inline insertion source message is missing")
+        if not isinstance(options, dict):
+            options = {}
+        if not isinstance(options.get("topic_id"), int) and hasattr(command, "get"):
+            for key in ("message_thread_id", "topic_id", "topic"):
+                value = command.get(key)
+                if isinstance(value, int):
+                    options["topic_id"] = value
+                    break
+        nonce = secrets.token_urlsafe(12)
+        if self._inline_forms is None:
+            self._inline_forms = {}
+        self._inline_forms[nonce] = (text, buttons)
+        bot = await self.app.mt.resolve_peer("@" + self.inline.info.username)
+        peer = await self.app.mt.resolve_peer(chat_id)
+        result = await self.app.mt_req(
+            "messages.getInlineBotResults",
+            bot=bot,
+            peer=peer,
+            query="hotaru-form:" + nonce,
+            offset="",
+        )
+        body = result.get("result", result) if isinstance(result, dict) else result
+        if isinstance(body, dict) and isinstance(body.get("bot_results"), dict):
+            body = body["bot_results"]
+        if isinstance(body, dict) and isinstance(body.get("results"), dict):
+            body = body["results"]
+        if isinstance(body, dict) and isinstance(body.get("query"), dict):
+            body = body["query"]
+        query_id = body.get("query_id") if isinstance(body, dict) else None
+        results = body.get("results") if isinstance(body, dict) else None
+        if not isinstance(query_id, (int, str)) or not isinstance(results, list) or not results:
+            raise RuntimeError("inline bot returned no form result")
+        inline_buttons = []
+        for button in buttons:
+            handle = button.get("callback_data")
+            if isinstance(handle, str):
+                inline_buttons.append({"text": button.get("text", ""), "callback_data": self.callbacks.store.rebind(handle, CallbackBinding(self.kernel.owner_id, None, 0))})
+            elif isinstance(button.get("url"), str):
+                inline_buttons.append({"text": button.get("text", ""), "url": button["url"]})
+        self._inline_forms[nonce] = (text, inline_buttons)
+        await self.app.mt_req(
+            "messages.sendInlineBotResult",
+            peer=peer,
+            reply_to={"_": "inputReplyToMessage", "reply_to_msg_id": message_id, **({"top_msg_id": options.get("topic_id")} if isinstance(options, dict) and isinstance(options.get("topic_id"), int) else {})},
+            random_id=secrets.randbits(63),
+            query_id=query_id,
+            id=results[0].get("id"),
+            clear_draft=True,
+        )
+        await self.app.mt_req("messages.deleteMessages", id=[message_id], revoke=True)
+        return result
 
     async def _on_inline_query(self, query: Any) -> None:
         if self.security is not None:
@@ -584,7 +648,7 @@ class Runtime:
             return "\n".join(lines)
         text = f"module {module_id} v{manifest.version} requests capabilities:\n" + (describe_caps(manifest.capabilities) or "none") + "\n\nНажми кнопку Confirm ниже, чтобы загрузить модуль."
         handle = self.callbacks.store.issue(
-            CallbackBinding(self.kernel.owner_id, chat_id, message_id),
+            CallbackBinding(self.kernel.owner_id, chat_id, 0),
             {"action": "caps_confirm", "payload": module_id},
         )
         return (text, [{"text": "Confirm", "callback_data": handle}])
@@ -617,7 +681,10 @@ class Runtime:
             await callback.answer("Activation failed", alert=True)
             return await callback.edit(f"trust failed: {type(exc).__name__}: {str(exc)[:120]}")
         await callback.answer("Module loaded")
-        return await callback.edit(f"active: {module_id}")
+        text = f"active: {module_id}"
+        if getattr(callback, "inline_message_id", None) and getattr(callback, "app", None) is not None:
+            return await callback.app.bot_req("editMessageText", inline_message_id=callback.inline_message_id, text=text)
+        return await callback.edit(text)
 
     def create_backup(self) -> Path:
         if self.backups is None or self.state is None or self.modules is None:
