@@ -74,6 +74,12 @@ class StateStore:
             "key TEXT PRIMARY KEY, value TEXT NOT NULL)"
         )
         self.connection.execute(
+            "CREATE TABLE IF NOT EXISTS form_state ("
+            "form_id TEXT PRIMARY KEY, module_id TEXT NOT NULL, source TEXT NOT NULL, "
+            "chat_id TEXT, message_id INTEGER, inline_message_id TEXT, text TEXT NOT NULL, "
+            "buttons TEXT NOT NULL, options TEXT NOT NULL, expires REAL)"
+        )
+        self.connection.execute(
             "CREATE TABLE IF NOT EXISTS accounts ("
             "user_id INTEGER NOT NULL, account_number INTEGER NOT NULL, vault_name TEXT NOT NULL, "
             "session_dir TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1, "
