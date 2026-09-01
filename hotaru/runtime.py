@@ -368,6 +368,8 @@ class Runtime:
             self.state.connection.execute("DELETE FROM form_state WHERE form_id = ?", (handle.key,))
             self.state.connection.commit()
         _, source, _, _, options = entry
+        if getattr(source, "src", None) == "inline" and self._inline_forms is not None:
+            self._inline_forms.pop(options.get("form_id", handle.key), None)
         cleanup = options.get("on_unload")
         if callable(cleanup):
             value = cleanup(handle)
