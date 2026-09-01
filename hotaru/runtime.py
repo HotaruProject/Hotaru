@@ -304,13 +304,23 @@ class Runtime:
                 options = json.loads(row[8])
                 module_id = str(row[1] or options.get("module_id", ""))
                 actions = options.get("actions", []) if isinstance(options.get("actions"), list) else []
-                if actions and self.callbacks is not None:
-                    action_map = {str(item.get("action_id")): item.get("payload") for item in actions if isinstance(item, dict) and item.get("action_id")}
-                    for row_buttons in buttons:
-                        row_items = [row_buttons] if isinstance(row_buttons, dict) else row_buttons
-                        for button in row_items if isinstance(row_items, list) else []:
-                            if isinstance(button, dict) and button.get("_action_id") in action_map:
-                                button["callback_data"] = self.callbacks.issue_module(module_id, str(button["_action_id"]), CallbackBinding(int(self.kernel.owner_id or 0), None, 0), button.get("_payload", action_map[str(button["_action_id"])])) if self.kernel is not None else button.get("callback_data")
+                if actions and self.callbacks is not None and self.kernel is not None:
+                    for item in actions:
+                        if not isinstance(item, dict):
+                            continue
+                        row_index = item.get("row")
+                        column_index = item.get("column")
+                        if not isinstance(row_index, int) or not isinstance(column_index, int):
+                            continue
+                        if row_index >= len(buttons):
+                            continue
+                        row_items = [buttons[row_index]] if isinstance(buttons[row_index], dict) else buttons[row_index]
+                        if not isinstance(row_items, list) or column_index >= len(row_items):
+                            continue
+                        button = row_items[column_index]
+                        if not isinstance(button, dict):
+                            continue
+                        button["callback_data"] = self.callbacks.issue_module(module_id, str(item.get("action_id")), CallbackBinding(int(self.kernel.owner_id or 0), None, 0), item.get("payload"))
 
                 if not module_id or self.modules is None:
                     raise ValueError("restored form owner is unavailable")
@@ -492,11 +502,11 @@ class Runtime:
             self._inline_forms = {}
         inline_buttons = []
         action_records = []
-        for row in buttons:
+        for row_index, row in enumerate(buttons):
             if isinstance(row, dict):
                 row = [row]
             current = []
-            for button in row:
+            for column_index, button in enumerate(row):
                 if not isinstance(button, dict):
                     continue
                 if callable(button.get("handler")) and isinstance(button.get("input"), str):
@@ -509,13 +519,15 @@ class Runtime:
                 if callable(button.get("handler")) and "callback" not in button:
                     action_id = self.callbacks.register_module_action(options.get("module_id", ""), button["handler"]) if self.callbacks is not None else ""
                     if action_id:
+                        action_records.append({"row": row_index, "column": column_index, "action_id": action_id, "payload": button.get("payload")})
                         button = {**button, "_action_id": action_id, "_payload": button.get("payload")}
                 handle = button.get("callback_data")
                 if isinstance(handle, str):
                     current.append({"text": button.get("text", ""), "callback_data": self.callbacks.store.rebind(handle, CallbackBinding(self.kernel.owner_id, None, 0))})
                 elif button.get("_action_id") and self.callbacks is not None:
                     payload = button.get("_payload")
-                    action_records.append({"action_id": button["_action_id"], "payload": payload})
+                    if not any(item.get("action_id") == button["_action_id"] for item in action_records):
+                        action_records.append({"row": row_index, "column": column_index, "action_id": button["_action_id"], "payload": payload})
                     issued = self.callbacks.issue_module(options.get("module_id", ""), str(button["_action_id"]), CallbackBinding(int(getattr(self.kernel, "owner_id", 0) or 0), None, 0), payload)
                     current.append({"text": button.get("text", ""), "callback_data": issued})
                 elif isinstance(button.get("url"), str):
