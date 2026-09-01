@@ -597,7 +597,13 @@ class Runtime:
             clear_draft=True,
         )
         if options.get("delete_source", True):
-            await self.app.mt_req("messages.deleteMessages", id=[message_id], revoke=True)
+            deleter = getattr(command, "delete", None)
+            if callable(deleter):
+                value = deleter()
+                if asyncio.iscoroutine(value) or isinstance(value, asyncio.Future):
+                    await value
+            else:
+                await self.app.mt_req("messages.deleteMessages", id=[message_id], revoke=True)
         return result
 
     async def _on_inline_query(self, query: Any) -> None:
