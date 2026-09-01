@@ -151,9 +151,12 @@ class CallbackRouter:
     def register_module_action(self, module_id: str, handler: Any) -> str:
         if not module_id or not callable(handler):
             raise ValueError("module callback is invalid")
-        self._module_seq += 1
-        action_id = str(self._module_seq)
-        self._module_handlers.setdefault(module_id, {})[action_id] = handler
+        name = getattr(handler, "__qualname__", getattr(handler, "__name__", "handler"))
+        action_id = hashlib.sha256((module_id + ":" + name).encode()).hexdigest()[:24]
+        handlers = self._module_handlers.setdefault(module_id, {})
+        if action_id in handlers and handlers[action_id] is not handler:
+            action_id = hashlib.sha256((module_id + ":" + name + ":" + str(id(handler))).encode()).hexdigest()[:24]
+        handlers[action_id] = handler
         return action_id
 
     def unregister_module(self, module_id: str) -> None:
