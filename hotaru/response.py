@@ -463,6 +463,9 @@ class ModuleContext:
         for row in buttons:
             current = []
             for button in row:
+                if isinstance(button, dict) and callable(button.get("handler")) and isinstance(button.get("input"), str):
+                    current.append(button)
+                    continue
                 if isinstance(button, dict) and callable(button.get("handler")) and "callback" not in button:
                     button = {**button, "callback": button["handler"]}
                 if not isinstance(button, dict) or "callback" not in button:
