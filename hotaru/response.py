@@ -223,14 +223,20 @@ class ResponseService:
         size = 0
         void = {"br", "hr", "img", "video", "audio", "tg-map", "tg-emoji"}
         for token in tokens:
-            if size + len(token) > limit and current:
-                names = [re.match(r"<([a-zA-Z][\\w-]*)", tag) for tag in stack]
-                closing_tags = "".join("</" + match.group(1) + ">" for match in reversed(names) if match is not None)
-                parts.append("".join(current) + closing_tags)
-                current = list(stack)
-                size = sum(len(item) for item in current)
-            current.append(token)
-            size += len(token)
+            chunks = [token]
+            if not token.startswith("<") and len(token) > limit:
+                chunks = [token[index:index + limit] for index in range(0, len(token), limit)]
+            for chunk in chunks:
+                if size + len(chunk) > limit and current:
+                    names = [re.match(r"<([a-zA-Z][\\w-]*)", tag) for tag in stack]
+                    closing_tags = "".join("</" + match.group(1) + ">" for match in reversed(names) if match is not None)
+                    parts.append("".join(current) + closing_tags)
+                    current = list(stack)
+                    size = sum(len(item) for item in current)
+                current.append(chunk)
+                size += len(chunk)
+            if not token.startswith("<"):
+                continue
             opening = re.fullmatch(r"<([a-zA-Z][\\w-]*)(?:\\s[^>]*)?>", token)
             closing = re.fullmatch(r"</([a-zA-Z][\\w-]*)>", token)
             if opening and opening.group(1).lower() not in void and not token.endswith("/>"):
