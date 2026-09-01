@@ -591,7 +591,8 @@ class ModuleContext:
             value = self._normalize_buttons(value)
         kwargs.setdefault("module_id", self.module_id)
         result = await self.form_sender(self._source, text, value, kwargs)
-        handle = FormHandle(self.runtime, self._source, result)
+        key = getattr(self._source, "_hotaru_inline_form_id", None)
+        handle = FormHandle(self.runtime, self._source, result, key=key)
         if self.runtime is not None:
             self.runtime.register_form(handle, self._source, text, value, kwargs)
         return handle
