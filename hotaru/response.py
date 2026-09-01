@@ -427,7 +427,7 @@ class ModuleContext:
             kwargs["buttons"] = self._normalize_buttons(kwargs["buttons"])
         if kwargs.get("buttons") and self.form_sender is not None:
             return await self.form_sender(self._source, kwargs.get("text", ""), kwargs["buttons"], kwargs)
-        if kwargs.get("text") is not None and kwargs.get("rich", True):
+        if kwargs.get("text") is not None and kwargs.get("rich", True) and self.cap_host is not None:
             value = kwargs.pop("text")
             limit = int(kwargs.pop("split_limit", 4096))
             file_limit = int(kwargs.pop("file_limit", 200000))
@@ -438,6 +438,7 @@ class ModuleContext:
                     return await self.responses.split_html(self._source, value, limit=limit, **kwargs)
                 return await self.responses.split(self._source, value, limit=limit, **kwargs)
             return await self.send_rich(value, **kwargs)
+        kwargs.pop("parse_mode", None)
         return await self.responses.answer(self._source, **kwargs)
 
     async def respond(self, content: Any = None, **kwargs: Any) -> Any:
