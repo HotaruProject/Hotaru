@@ -44,7 +44,11 @@ class InlineHelper:
     def article(self, result_id: str, title: str, text: str, **kw: Any) -> dict[str, Any]:
         from goygram.types import InlineObj
 
-        return InlineObj.article(result_id, title, text, **kw)
+        kbd = kw.pop("kbd", kw.pop("reply_markup", None))
+        result = InlineObj.article(result_id, title, text, **kw)
+        if kbd is not None:
+            result["input_message_content"]["reply_markup"] = kbd.to_dict() if hasattr(kbd, "to_dict") else kbd
+        return result
 
     async def answer(self, query: Any, results: list[dict[str, Any]], **kw: Any) -> Any:
         return await query.answer(results, **kw)

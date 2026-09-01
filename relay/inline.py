@@ -548,7 +548,9 @@ class InlineManager:
     def _form_article(text: str, buttons: list[dict[str, str]]) -> dict[str, Any]:
         from goygram.types import InlineObj
 
-        return InlineObj.article("hotaru-form", "Hotaru form", text, kbd={"inline_keyboard": [buttons]})
+        result = InlineObj.article("hotaru-form", "Hotaru form", text)
+        result["input_message_content"]["reply_markup"] = {"inline_keyboard": [buttons]}
+        return result
 
     async def _dispatch_callback(self, callback: Any) -> None:
         security = getattr(self.runtime, "security", None)
