@@ -52,11 +52,21 @@ class FormHandle:
         return await self.delete()
 
     async def unload(self) -> bool:
+        if self._runtime is None:
+            return False
         return await self._runtime.delete_form(self)
 
     @property
     def value(self) -> Any:
         return self._value
+
+    @property
+    def message(self) -> Any:
+        return self._value
+
+    @property
+    def transport(self) -> str | None:
+        return getattr(self._source, "src", None)
 
 
 class ResponseService:
@@ -116,6 +126,39 @@ class ResponseService:
             return Response(False, "none", None)
         result = await message.reply(text or "", **payload)
         return Response(True, "reply", getattr(message, "src", None), result)
+
+    async def smart(
+        self,
+        message: Any,
+        content: Any = None,
+        *,
+        output: OutputMode = "auto",
+        inline: bool = False,
+        bot: bool = False,
+        form: Any = None,
+        buttons: Any = None,
+        file: Any = None,
+        media: Any = None,
+        rich_message: Any = None,
+        **kwargs: Any,
+    ) -> Any:
+        if content is not None:
+            if isinstance(content, str):
+                kwargs.setdefault("text", content)
+            elif isinstance(content, dict) and content.get("_") == "inputRichMessageHTML":
+                rich_message = content
+            else:
+                media = content
+        if file is not None:
+            media = file
+        if inline or form is not None or buttons is not None:
+            data = form if isinstance(form, dict) else {"text": kwargs.pop("text", ""), "buttons": buttons}
+            return await message.form(data.get("text", ""), data.get("buttons"), **kwargs) if hasattr(message, "form") else await self.answer(message, text=data.get("text", ""), buttons=data.get("buttons"), output="reply")
+        if bot:
+            return await kwargs.pop("bot_gateway").send_message(getattr(message, "chat_id", None), kwargs.pop("text", ""), buttons=buttons, **kwargs)
+        if rich_message is not None:
+            return await self.answer(message, rich_message=rich_message, output=output, **kwargs)
+        return await self.answer(message, text=kwargs.pop("text", None), media=media, output=output, buttons=buttons, **kwargs)
 
 
 @dataclass(frozen=True, slots=True)
@@ -236,15 +279,20 @@ class ModuleContext:
                 kwargs.setdefault("text", content)
             else:
                 kwargs.setdefault("media", content)
+        buttons = kwargs.pop("buttons", None)
         if kwargs.pop("inline", False):
-            return await self.inline_form(kwargs.pop("text", ""), kwargs.pop("buttons", None), **kwargs)
+            return await self.form(kwargs.pop("text", ""), buttons, **kwargs)
         if kwargs.pop("bot", False):
-            return await self.bot.rich_send(kwargs.pop("chat_id", self._source.chat_id), kwargs.pop("text", ""), buttons=kwargs.pop("buttons", None), **kwargs)
+            if kwargs.get("rich_message") is not None:
+                return await self.bot.rich_send(getattr(self._source, "chat_id", None), kwargs.pop("rich_message"), buttons=buttons, **kwargs)
+            if kwargs.get("media") is not None:
+                return await self.bot.send_photo(getattr(self._source, "chat_id", None), kwargs.pop("media"), caption=kwargs.pop("text", ""), buttons=buttons, **kwargs)
+            return await self.bot.send_message(getattr(self._source, "chat_id", None), kwargs.pop("text", ""), buttons=buttons, **kwargs)
         if kwargs.get("form") is not None:
             form = kwargs.pop("form")
             return await self.form(form.get("text", ""), form.get("buttons"), **kwargs)
-        if kwargs.get("buttons") is not None:
-            return await self.form(kwargs.pop("text", ""), kwargs.pop("buttons"), **kwargs)
+        if buttons is not None:
+            return await self.form(kwargs.pop("text", ""), buttons, **kwargs)
         if mode != "auto":
             kwargs["output"] = mode
         if kwargs.get("rich_message") is not None:
