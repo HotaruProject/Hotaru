@@ -54,6 +54,15 @@ class InputContext:
         return True
 
 
+class FormRecord:
+    def __init__(self, form_id: str, source: Any, text: str, buttons: Any, options: dict[str, Any]) -> None:
+        self.form_id = form_id
+        self.source = source
+        self.text = text
+        self.buttons = buttons
+        self.options = options
+
+
 @dataclass(slots=True)
 class Runtime:
     KERNEL_MODULE_ID = "kernel-core"
@@ -369,6 +378,13 @@ class Runtime:
             current = []
             for button in row:
                 if not isinstance(button, dict):
+                    continue
+                if callable(button.get("handler")) and isinstance(button.get("input"), str):
+                    token = secrets.token_urlsafe(10)
+                    if self._input_requests is None:
+                        self._input_requests = {}
+                    self._input_requests[token] = (button["handler"], button.get("payload"), command)
+                    current.append({"text": button.get("text", ""), "switch_inline_query_current_chat": "hotaru-input:" + token + " "})
                     continue
                 if callable(button.get("handler")) and "callback" not in button:
                     button = {**button, "callback": button["handler"]}
