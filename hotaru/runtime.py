@@ -320,7 +320,12 @@ class Runtime:
                         button = row_items[column_index]
                         if not isinstance(button, dict):
                             continue
-                        button["callback_data"] = self.callbacks.issue_module(module_id, str(item.get("action_id")), CallbackBinding(int(self.kernel.owner_id or 0), None, 0), item.get("payload"))
+                        action_id = str(item.get("action_id", ""))
+                        if not action_id or not self.callbacks.module_action_exists(module_id, action_id):
+                            continue
+                        button["_action_id"] = action_id
+                        button["_payload"] = item.get("payload")
+                        button["callback_data"] = self.callbacks.issue_module(module_id, action_id, CallbackBinding(int(self.kernel.owner_id or 0), None, 0), item.get("payload"))
 
                 if not module_id or self.modules is None:
                     raise ValueError("restored form owner is unavailable")
