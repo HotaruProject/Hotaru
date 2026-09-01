@@ -5,6 +5,7 @@ import secrets
 from typing import Any, Awaitable, Callable
 
 from .caps import MT_DESTRUCTIVE, MT_BLOCKED
+from .firewall import trusted_scope
 
 
 class HtmlHelper:
@@ -262,7 +263,8 @@ class BotGateway:
         app = getattr(self._manager, "bot_app", None)
         if app is None:
             raise RuntimeError("inline bot is not ready")
-        return await app.bot_req(method, **kwargs)
+        with trusted_scope():
+            return await app.bot_req(method, **kwargs)
 
     async def send(self, method: str, **kwargs: Any) -> Any:
         return await self.call(method, **kwargs)
