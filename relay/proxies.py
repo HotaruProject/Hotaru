@@ -107,7 +107,7 @@ class RichGateway:
         return value if isinstance(value, dict) else self.html(value, **kwargs)
 
     async def send(self, html_text: str | dict[str, Any], *, peer: Any = None, reply_to: Any = None, buttons: Any = None, **kwargs: Any) -> Any:
-        data = {"message": "", "rich_message": self.input(html_text), **kwargs}
+        data = {"message": "", "random_id": secrets.randbits(63), "rich_message": self.input(html_text), **kwargs}
         target = peer if peer is not None else getattr(self._source, "chat_id", None)
         if target is not None:
             data["peer"] = target
@@ -138,7 +138,7 @@ class RichGateway:
 
     async def send_media(self, media: Any, html_text: str | dict[str, Any] = "", *, peer: Any = None, **kwargs: Any) -> Any:
         target = peer if peer is not None else getattr(self._source, "chat_id", None)
-        data = {"peer": target, "media": media, "message": "", "rich_message": self.input(html_text), **kwargs}
+        data = {"peer": target, "media": media, "message": "", "random_id": secrets.randbits(63), "rich_message": self.input(html_text), **kwargs}
         return await self._tg.call("messages.sendMedia", data)
 
     async def draft(self, html_text: str | dict[str, Any], *, peer: Any = None, draft_id: int, **kwargs: Any) -> Any:

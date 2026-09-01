@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import secrets
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -268,7 +269,7 @@ class ModuleContext:
         peer = getattr(self._source, "chat_id", None)
         if peer is None:
             raise ResponseError("rich message target is missing")
-        data = {"peer": peer, "message": "", "rich_message": {"_": "inputRichMessageHTML", "html": html}}
+        data = {"peer": peer, "message": "", "random_id": secrets.randbits(63), "rich_message": {"_": "inputRichMessageHTML", "html": html}}
         kwargs.pop("parse_mode", None)
         reply_to = kwargs.pop("reply_to", None) or getattr(self._source, "id", None)
         if reply_to is not None:
