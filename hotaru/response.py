@@ -228,20 +228,27 @@ class ModuleContext:
         return await self.responses.answer(self._source, **kwargs)
 
     async def respond(self, content: Any = None, **kwargs: Any) -> Any:
+        mode = kwargs.pop("mode", kwargs.pop("output", "auto"))
         if content is not None:
             if isinstance(content, dict) and content.get("_") == "inputRichMessageHTML":
                 kwargs["rich_message"] = content
             elif isinstance(content, str):
-                kwargs["text"] = content
+                kwargs.setdefault("text", content)
             else:
-                kwargs["media"] = content
-        if kwargs.get("rich_message") is not None:
-            return await self.answer(rich_message=kwargs.pop("rich_message"), **kwargs)
+                kwargs.setdefault("media", content)
+        if kwargs.pop("inline", False):
+            return await self.inline_form(kwargs.pop("text", ""), kwargs.pop("buttons", None), **kwargs)
+        if kwargs.pop("bot", False):
+            return await self.bot.rich_send(kwargs.pop("chat_id", self._source.chat_id), kwargs.pop("text", ""), buttons=kwargs.pop("buttons", None), **kwargs)
         if kwargs.get("form") is not None:
             form = kwargs.pop("form")
             return await self.form(form.get("text", ""), form.get("buttons"), **kwargs)
         if kwargs.get("buttons") is not None:
             return await self.form(kwargs.pop("text", ""), kwargs.pop("buttons"), **kwargs)
+        if mode != "auto":
+            kwargs["output"] = mode
+        if kwargs.get("rich_message") is not None:
+            return await self.answer(rich_message=kwargs.pop("rich_message"), **kwargs)
         return await self.answer(**kwargs)
 
     async def send_file(self, file: Any, caption: str | None = None, **kwargs: Any) -> Response:
