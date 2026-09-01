@@ -143,6 +143,16 @@ class ModuleContext:
         return Gateway(self.cap_host, self.module_id)
 
     @property
+    def rich(self) -> Any:
+        from relay.proxies import RichGateway
+        return RichGateway(self.tg, self._source)
+
+    @property
+    def bot(self) -> Any:
+        from relay.proxies import BotGateway
+        return BotGateway(self.inline_manager)
+
+    @property
     def inline(self) -> Any:
         from relay.proxies import InlineHelper
         return InlineHelper(self.inline_manager)
@@ -178,7 +188,7 @@ class ModuleContext:
         if kwargs.get("buttons") and self.form_sender is not None:
             return await self.form_sender(self._source, kwargs.get("text", ""), kwargs["buttons"], kwargs)
         if kwargs.get("text") is not None and kwargs.get("rich", True):
-            return await self.rich(kwargs.pop("text"), **kwargs)
+            return await self.send_rich(kwargs.pop("text"), **kwargs)
         return await self.responses.answer(self._source, **kwargs)
 
     async def form(self, text: str, buttons: Any = None, *rows: Any, **kwargs: Any) -> Response:
@@ -242,7 +252,7 @@ class ModuleContext:
 
     async def answer_rich(self, rich_message: Any, **kwargs: Any) -> Response:
         if isinstance(rich_message, str):
-            return await self.rich(rich_message, **kwargs)
+            return await self.send_rich(rich_message, **kwargs)
         if not isinstance(rich_message, dict):
             raise ResponseError("rich_message must be HTML text or a native input object")
         buttons = kwargs.pop("buttons", None)
@@ -250,7 +260,7 @@ class ModuleContext:
             return await self.form_sender(self._source, rich_message, buttons, kwargs)
         return await self._context_tg_call("messages.sendMessage", {"peer": self._source.chat_id, "rich_message": rich_message, **kwargs})
 
-    async def rich(self, html: str, **kwargs: Any) -> Response:
+    async def send_rich(self, html: str, **kwargs: Any) -> Response:
         buttons = kwargs.pop("buttons", None)
         if buttons is not None and self.form_sender is not None:
             result = await self.form_sender(self._source, html, buttons, kwargs)
