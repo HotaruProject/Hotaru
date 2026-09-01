@@ -427,7 +427,7 @@ class Runtime:
         return len(self._forms or {})
 
     async def _form_gc_loop(self) -> None:
-        while not self.closed:
+        while not getattr(self, "closed", False):
             try:
                 await asyncio.sleep(5.0)
                 self.purge_forms()
