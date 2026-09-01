@@ -29,6 +29,7 @@ class FormHandle:
     def __init__(self, runtime: Any, source: Any, value: Any = None) -> None:
         self._runtime = runtime
         self._source = source
+        self._record = None
         self._value = value
 
     async def edit(self, text: str, buttons: Any = None, **kwargs: Any) -> "FormHandle":
@@ -67,6 +68,11 @@ class FormHandle:
     @property
     def transport(self) -> str | None:
         return getattr(self._source, "src", None)
+
+    def snapshot(self) -> dict[str, Any] | None:
+        if self._runtime is None:
+            return None
+        return self._runtime.form_snapshot(self)
 
 
 class ResponseService:
@@ -159,6 +165,18 @@ class ResponseService:
         if rich_message is not None:
             return await self.answer(message, rich_message=rich_message, output=output, **kwargs)
         return await self.answer(message, text=kwargs.pop("text", None), media=media, output=output, buttons=buttons, **kwargs)
+
+    async def split(self, message: Any, text: str, *, limit: int = 4096, **kwargs: Any) -> list[Any]:
+        if limit < 1:
+            raise ValueError("limit must be positive")
+        parts = [text[index:index + limit] for index in range(0, len(text), limit)] or [""]
+        result = []
+        for index, part in enumerate(parts):
+            options = dict(kwargs)
+            if index:
+                options["output"] = "reply"
+            result.append(await self.answer(message, text=part, **options))
+        return result
 
 
 @dataclass(frozen=True, slots=True)
@@ -293,7 +311,7 @@ class ModuleContext:
                 kwargs.setdefault("media", content)
         buttons = kwargs.pop("buttons", None)
         if kwargs.pop("inline", False):
-            result = await self.form(kwargs.pop("text", ""), buttons, **kwargs)
+            result = await self.inline_form(kwargs.pop("text", ""), buttons, **kwargs)
             if delete_source:
                 await self._delete_source()
             return result
@@ -402,7 +420,13 @@ class ModuleContext:
         value = list(rows) if buttons is None else ([buttons, *rows] if rows else buttons)
         if value and isinstance(value[0], dict):
             value = [value]
-        return await self.form_sender(self._source, text, value, kwargs)
+        if self.callback_router is not None:
+            value = self._normalize_buttons(value)
+        result = await self.form_sender(self._source, text, value, kwargs)
+        handle = FormHandle(self.runtime, self._source, result)
+        if self.runtime is not None:
+            self.runtime.register_form(handle, self._source, text, value, kwargs)
+        return handle
 
     async def reply_html(self, text: str, **kwargs: Any) -> Response:
         kwargs.setdefault("output", "reply")
