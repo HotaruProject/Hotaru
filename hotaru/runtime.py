@@ -261,10 +261,19 @@ class Runtime:
             verdict = self.security.check(query, transport="inline")
             if verdict is not AccessVerdict.ALLOW:
                 return
+        text = (query.query or "").strip()
+        if text.startswith("hotaru-form:"):
+            nonce = text.split(":", 1)[1]
+            form = self._inline_forms.get(nonce) if self._inline_forms is not None else None
+            if form is None:
+                await query.answer([], cache_time=0, is_personal=True)
+                return
+            form_text, buttons = form
+            await query.answer([InlineObj.article("hotaru-form", "Hotaru form", form_text, kbd={"inline_keyboard": [buttons]})], cache_time=0, is_personal=True)
+            return
         from . import __version__
 
         results = []
-        text = (query.query or "").strip()
         lowered = text.casefold()
         if not lowered or "ping" in lowered:
             results.append(InlineObj.article("hotaru-ping", "Ping", "pong!", description="Measure roundtrip"))
@@ -276,6 +285,17 @@ class Runtime:
         if not lowered or "ver" in lowered:
             results.append(InlineObj.article("hotaru-ver", "Version", f"Hotaru {__version__}", description="Kernel version"))
         await query.answer(results, cache_time=0, is_personal=True)
+
+    async def _render_inline_form(self, query: Any) -> None:
+        text = str(query.query or "")
+        if not text.startswith("hotaru-form:") or self._inline_forms is None:
+            return
+        form = self._inline_forms.get(text.split(":", 1)[1])
+        if form is None:
+            await query.answer([], cache_time=0, is_personal=True)
+            return
+        body, buttons = form
+        await query.answer([InlineObj.article("hotaru-form", "Hotaru form", body, kbd={"inline_keyboard": [buttons]})], cache_time=0, is_personal=True)
 
     async def _on_inline_callback(self, callback: Any) -> None:
         if self.security is None or self.callbacks is None:
