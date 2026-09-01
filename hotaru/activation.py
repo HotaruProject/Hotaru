@@ -89,6 +89,7 @@ class ModuleManager:
         self.binder = ModuleBinder()
         self.timeout = timeout
         self.tasks = tasks
+        self.form_cleanup: Callable[[str], Any] | None = None
         self._active: dict[str, ActiveModule] = {}
         self._bindings: dict[str, tuple[Any, tuple[str, ...]]] = {}
 
@@ -192,6 +193,10 @@ class ModuleManager:
                 await asyncio.wait_for(result, timeout=self.timeout)
         if self.tasks is not None:
             await self.tasks.cancel_module(module_id)
+        if hasattr(self, "form_cleanup") and self.form_cleanup is not None:
+            result = self.form_cleanup(module_id)
+            if inspect.isawaitable(result):
+                await asyncio.wait_for(result, timeout=self.timeout)
         binding = self._bindings.pop(module_id, None)
         if binding is not None:
             self.binder.unbind(active.loaded, binding[1], binding[0])

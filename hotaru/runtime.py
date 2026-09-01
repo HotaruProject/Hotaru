@@ -88,7 +88,7 @@ class Runtime:
     closed: bool = False
     _inline_forms: dict[str, tuple[str, list[dict[str, str]]]] | None = None
     _forms: dict[str, tuple[Any, Any, str, Any, dict[str, Any]]] | None = None
-    _input_requests: dict[str, tuple[Any, Any, Any]] | None = None
+    _input_requests: dict[str, tuple[Any, Any, Any, float]] | None = None
     _form_expiry: dict[str, float] | None = None
 
     @classmethod
@@ -144,6 +144,7 @@ class Runtime:
         self.backups = BackupService()
         self.tasks = TaskSupervisor()
         self.modules = ModuleManager(tasks=self.tasks)
+        self.modules.form_cleanup = self.unload_module_forms
         self.stager = ModuleStager(self.modules.loader)
         self.inline = InlineManager(self)
         self._inline_forms = {}
@@ -209,6 +210,10 @@ class Runtime:
         if owner is None:
             raise RuntimeError("form owner is missing")
         options = options or {}
+        if isinstance(options.get("module_id"), str) and options["module_id"]:
+            module_id = options["module_id"]
+        else:
+            module_id = ""
         chat_id = getattr(command, "chat_id", None)
         if not isinstance(chat_id, (int, str)):
             raise RuntimeError("form target chat is missing")
@@ -263,26 +268,43 @@ class Runtime:
     async def restore_forms(self) -> int:
         if self.state is None:
             return 0
+        if self._forms is None:
+            self._forms = {}
+        if self._form_expiry is None:
+            self._form_expiry = {}
         rows = self.state.connection.execute("SELECT form_id, module_id, source, chat_id, message_id, inline_message_id, text, buttons, options, expires FROM form_state").fetchall()
         restored = 0
         for row in rows:
             if row[9] is not None and row[9] <= time.time():
                 self.state.connection.execute("DELETE FROM form_state WHERE form_id = ?", (row[0],))
                 continue
-            if row[2] != "mt":
-                continue
             try:
-                source = SimpleNamespace(src=row[2], chat_id=int(row[3]) if row[3] else None, id=row[4], inline_message_id=row[5])
+                source = SimpleNamespace(src=row[2], chat_id=int(row[3]) if row[3] else None, id=row[4], inline_message_id=row[5], module_id=row[1])
                 handle = FormHandle(self, source, key=row[0])
                 handle._key = row[0]
                 buttons = json.loads(row[7])
                 options = json.loads(row[8])
-                self.register_form(handle, source, row[6], buttons, options)
+                self._forms[row[0]] = (handle, source, row[6], buttons, options)
+                if row[9] is not None:
+                    self._form_expiry[row[0]] = time.monotonic() + max(0.0, row[9] - time.time())
+                if row[1] and self.callbacks is not None:
+                    self.callbacks.unregister_module(row[1])
                 restored += 1
             except Exception:
                 continue
         self.state.connection.commit()
         return restored
+
+    async def unload_module_forms(self, module_id: str) -> int:
+        if self._forms is None:
+            return 0
+        handles = []
+        for handle, source, text, buttons, options in tuple(self._forms.values()):
+            if options.get("module_id") == module_id:
+                handles.append(handle)
+        for handle in handles:
+            await self.delete_form(handle)
+        return len(handles)
 
     async def restore_form_state(self) -> int:
         return await self.restore_forms()
@@ -323,7 +345,12 @@ class Runtime:
         if self.state is not None:
             self.state.connection.execute("DELETE FROM form_state WHERE form_id = ?", (handle.key,))
             self.state.connection.commit()
-        _, source, _, _, _ = entry
+        _, source, _, _, options = entry
+        cleanup = options.get("on_unload")
+        if callable(cleanup):
+            value = cleanup(handle)
+            if asyncio.iscoroutine(value) or isinstance(value, asyncio.Future):
+                await value
         if getattr(source, "src", None) == "bot":
             chat_id = getattr(source, "chat_id", None)
             message_id = getattr(source, "id", None) or getattr(source, "message_id", None)
@@ -383,19 +410,12 @@ class Runtime:
                     token = secrets.token_urlsafe(10)
                     if self._input_requests is None:
                         self._input_requests = {}
-                    self._input_requests[token] = (button["handler"], button.get("payload"), command)
+                    self._input_requests[token] = (button["handler"], button.get("payload"), command, time.monotonic() + float(button.get("input_ttl", 300)))
                     current.append({"text": button.get("text", ""), "switch_inline_query_current_chat": "hotaru-input:" + token + " "})
                     continue
                 if callable(button.get("handler")) and "callback" not in button:
                     button = {**button, "callback": button["handler"]}
                 handle = button.get("callback_data")
-                if callable(button.get("handler")) and isinstance(button.get("input"), str):
-                    token = secrets.token_urlsafe(10)
-                    if self._input_requests is None:
-                        self._input_requests = {}
-                    self._input_requests[token] = (button["handler"], button.get("payload"), command)
-                    current.append({"text": button.get("text", ""), "switch_inline_query_current_chat": "hotaru-input:" + token + " "})
-                    continue
                 if isinstance(handle, str):
                     current.append({"text": button.get("text", ""), "callback_data": self.callbacks.store.rebind(handle, CallbackBinding(self.kernel.owner_id, None, 0))})
                 elif isinstance(button.get("url"), str):
@@ -450,8 +470,8 @@ class Runtime:
         if text.startswith("hotaru-input:"):
             key, _, value = text.partition(" ")
             request = (self._input_requests or {}).pop(key.split(":", 1)[1], None)
-            if request is not None and value:
-                handler, payload, source = request
+            if request is not None and value and request[3] > time.monotonic():
+                handler, payload, source, _ = request
                 result = handler(InputContext(self, source, query), value, payload)
                 if hasattr(result, "__await__"):
                     await result
@@ -1114,6 +1134,7 @@ class Runtime:
             if self.kernel is not None:
                 self.kernel.context_factory = self.context_factory
             self.modules = ModuleManager(tasks=self.tasks)
+            self.modules.form_cleanup = self.unload_module_forms
 
     def status(self) -> dict[str, Any]:
         return {
