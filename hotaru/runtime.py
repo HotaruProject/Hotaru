@@ -515,7 +515,7 @@ class Runtime:
         options["module_id"] = options.get("module_id", "")
         options["form_id"] = nonce
         options["actions"] = self._form_actions(buttons)
-        if options["module_id"]:
+        if options["module_id"] and self.state is not None:
             self._persist_inline_form(nonce, command, text, inline_buttons, options)
         if self.observatory is not None:
             self.observatory.emit("inline", "form_queued", nonce=nonce, chat=chat_id, rows=len(inline_buttons))
