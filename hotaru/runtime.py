@@ -58,6 +58,7 @@ class Runtime:
     cap_host: CapabilityHost | None = None
     closed: bool = False
     _inline_forms: dict[str, tuple[str, list[dict[str, str]]]] | None = None
+    _forms: dict[int, tuple[Any, Any, str, Any, dict[str, Any]]] | None = None
 
     @classmethod
     def from_database(cls, path: str | Path | None = None) -> "Runtime":
@@ -102,7 +103,7 @@ class Runtime:
         self.kernel.security = self.security
         self.state = StateStore(self.config.state_path)
         self.capabilities = CapabilityBroker()
-        self.context_factory = ModuleContextFactory(self.state, self.responses)
+        self.context_factory = ModuleContextFactory(self.state, self.responses, self)
         self.callbacks = CallbackRouter()
         self.cap_host = CapabilityHost(self)
         self.context_factory.cap_host = self.cap_host
@@ -115,6 +116,7 @@ class Runtime:
         self.stager = ModuleStager(self.modules.loader)
         self.inline = InlineManager(self)
         self._inline_forms = {}
+        self._forms = {}
         self.context_factory.inline_manager = self.inline
         self.context_factory.form_sender = self._send_form
         self.sandbox = ModuleSandbox(self)
@@ -201,6 +203,36 @@ class Runtime:
         if hasattr(command, "delete"):
             await command.delete()
         return sent
+
+    def register_form(self, handle: Any, source: Any, text: str, buttons: Any, options: dict[str, Any]) -> None:
+        if self._forms is None:
+            self._forms = {}
+        self._forms[id(handle)] = (handle, source, text, buttons, dict(options))
+
+    async def edit_form(self, handle: Any, text: str | None, buttons: Any = None, **kwargs: Any) -> Any:
+        entry = (self._forms or {}).get(id(handle))
+        if entry is None:
+            raise RuntimeError("form is not registered")
+        _, source, old_text, old_buttons, options = entry
+        next_text = old_text if text is None else text
+        next_buttons = old_buttons if buttons is None else buttons
+        options.update(kwargs)
+        value = await self._send_form(source, next_text, next_buttons, options)
+        self._forms[id(handle)] = (handle, source, next_text, next_buttons, options)
+        return value
+
+    async def delete_form(self, handle: Any) -> bool:
+        entry = (self._forms or {}).pop(id(handle), None)
+        if entry is None:
+            return False
+        _, source, _, _, _ = entry
+        if getattr(source, "src", None) == "bot":
+            chat_id = getattr(source, "chat_id", None)
+            message_id = getattr(source, "id", None) or getattr(source, "message_id", None)
+            if self.inline is not None and self.inline.bot_app is not None and chat_id is not None and isinstance(message_id, int):
+                with trusted_scope():
+                    await self.inline.bot_app.bot_req("deleteMessage", chat_id=chat_id, message_id=message_id)
+        return True
 
     async def _insert_inline_form(self, command: Any, text: str, buttons: list[dict[str, str]], options: dict[str, Any] | None = None) -> Any:
         if self.inline is None or self.inline.info is None or self.app is None or self.app.mt is None:
@@ -930,7 +962,7 @@ class Runtime:
             )
         finally:
             self.state = StateStore(self.config.state_path)
-            self.context_factory = ModuleContextFactory(self.state, self.responses)
+            self.context_factory = ModuleContextFactory(self.state, self.responses, self)
             self.context_factory.cap_host = self.cap_host
             self.context_factory.callback_router = self.callbacks
             self.context_factory.inline_manager = self.inline

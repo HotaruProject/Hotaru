@@ -36,7 +36,7 @@ class HtmlHelper:
 
 
 class Gateway:
-    """Single funnel every module-side Telegram action goes through."""
+
 
     def __init__(self, host: Any, module_id: str) -> None:
         self._host = host
@@ -133,8 +133,13 @@ class RichGateway:
         rows = [[self.block("table_cell", text=cell) if isinstance(cell, str) else cell for cell in row] for row in cells]
         return self.block("table", cells=rows, is_bordered=bordered, is_striped=striped, is_compact=compact, caption=caption)
 
+    def location(self, latitude: float, longitude: float, *, zoom: int = 15, width: int | None = None, height: int | None = None, caption: Any = None) -> dict[str, Any]:
+        return self.map(latitude, longitude, zoom=zoom, width=width, height=height, caption=caption)
+
     def map(self, latitude: float, longitude: float, *, zoom: int = 15, width: int | None = None, height: int | None = None, caption: Any = None) -> dict[str, Any]:
         result = self.block("map", location={"latitude": latitude, "longitude": longitude}, zoom=zoom)
+        result["latitude"] = latitude
+        result["longitude"] = longitude
         if width is not None:
             result["width"] = width
         if height is not None:
@@ -180,7 +185,64 @@ class RichGateway:
 
     async def send_blocks(self, blocks: list[dict[str, Any]], *, peer: Any = None, **kwargs: Any) -> Any:
         target = peer if peer is not None else getattr(self._source, "chat_id", None)
-        return await self._tg.call("messages.sendMessage", {"peer": target, "message": "", "random_id": secrets.randbits(63), "rich_message": {"_": "inputRichMessage", "blocks": blocks}, **kwargs})
+        return await self.send(self._blocks_html(blocks), peer=target, **kwargs)
+
+    def _blocks_html(self, blocks: list[dict[str, Any]]) -> str:
+        result = []
+        for block in blocks:
+            kind = block.get("type")
+            if kind == "section_heading":
+                result.append(f"<h{max(1, min(6, int(block.get('level', 1))))}>{block.get('text', '')}</h{max(1, min(6, int(block.get('level', 1))))}>")
+            elif kind == "paragraph":
+                result.append(f"<p>{block.get('text', '')}</p>")
+            elif kind == "preformatted":
+                result.append(f"<pre><code>{html.escape(str(block.get('text', '')), quote=False)}</code></pre>")
+            elif kind == "divider":
+                result.append("<hr>")
+            elif kind == "list":
+                tag = "ol" if block.get("ordered") else "ul"
+                items = "".join(f"<li>{item.get('text', '') if isinstance(item, dict) else item}</li>" for item in block.get("items", []))
+                result.append(f"<{tag}>{items}</{tag}>")
+            elif kind in {"block_quotation", "expandable_block_quotation"}:
+                attr = " expandable" if kind.startswith("expandable") else ""
+                result.append(f"<blockquote{attr}>{block.get('text', '')}</blockquote>")
+            elif kind == "details":
+                attr = " open" if block.get("is_open") else ""
+                result.append(f"<details{attr}><summary>{block.get('summary', '')}</summary>{self._blocks_html(block.get('blocks', []))}</details>")
+            elif kind == "table":
+                rows = []
+                for row in block.get("cells", []):
+                    cells = "".join(f"<td>{cell.get('text', '') if isinstance(cell, dict) else cell}</td>" for cell in row)
+                    rows.append(f"<tr>{cells}</tr>")
+                result.append(f"<table>{''.join(rows)}</table>")
+            elif kind == "map":
+                loc = block.get("location", {})
+                result.append(f"<tg-map latitude=\"{block.get('latitude', loc.get('latitude'))}\" longitude=\"{block.get('longitude', loc.get('longitude'))}\" zoom=\"{block.get('zoom', 15)}\">{block.get('caption') or ''}</tg-map>")
+            elif kind == "photo":
+                result.append(f"<img src=\"{html.escape(str(block.get('photo', '')), quote=True)}\">{block.get('caption') or ''}")
+            elif kind == "video":
+                result.append(f"<video src=\"{html.escape(str(block.get('video', '')), quote=True)}\">{block.get('caption') or ''}</video>")
+            elif kind == "audio":
+                result.append(f"<audio src=\"{html.escape(str(block.get('audio', '')), quote=True)}\">{block.get('caption') or ''}</audio>")
+            elif kind == "document":
+                result.append(f"<tg-document src=\"{html.escape(str(block.get('document', '')), quote=True)}\">{block.get('caption') or ''}</tg-document>")
+            elif kind == "buttons":
+                result.append("<tg-button-row>" + "".join(str(item) for item in block.get("buttons", [])) + "</tg-button-row>")
+            else:
+                result.append(str(block.get("text", "")))
+        return "".join(result)
+
+    async def send_photo(self, photo: Any, caption: str = "", **kwargs: Any) -> Any:
+        return await self.send_media(photo, caption, **kwargs)
+
+    async def send_video(self, video: Any, caption: str = "", **kwargs: Any) -> Any:
+        return await self.send_media(video, caption, **kwargs)
+
+    async def send_audio(self, audio: Any, caption: str = "", **kwargs: Any) -> Any:
+        return await self.send_media(audio, caption, **kwargs)
+
+    async def send_document(self, document: Any, caption: str = "", **kwargs: Any) -> Any:
+        return await self.send_media(document, caption, **kwargs)
 
     async def send_html(self, html_text: str, *, peer: Any = None, **kwargs: Any) -> Any:
         return await self.send(html_text, peer=peer, **kwargs)
@@ -303,7 +365,7 @@ class BotGateway:
 
 
 class InlineHelper:
-    """Convenience wrapper around the owner inline bot: answer queries with rich articles."""
+
 
     def __init__(self, inline_manager: Any = None) -> None:
         self._inline = inline_manager
@@ -318,8 +380,43 @@ class InlineHelper:
             result["reply_markup"] = kbd.to_dict() if hasattr(kbd, "to_dict") else kbd
         return result
 
+    def rich_article(self, title: str, html_text: str, *, result_id: str | None = None, description: str | None = None, buttons: Any = None, **kw: Any) -> dict[str, Any]:
+        return self.rich(result_id or secrets.token_urlsafe(10), title, html_text, buttons=buttons, description=description, **kw)
+
     async def answer(self, query: Any, results: list[dict[str, Any]], **kw: Any) -> Any:
         return await query.answer(results, **kw)
+
+    def photo(self, result_id: str, title: str, photo: str, *, caption: str = "", buttons: Any = None, **kw: Any) -> dict[str, Any]:
+        result = {"type": "photo", "id": result_id, "title": title, "photo_url": photo, "thumbnail_url": photo, "caption": caption, "parse_mode": "HTML", **kw}
+        if buttons is not None:
+            result["reply_markup"] = {"inline_keyboard": buttons}
+        return result
+
+    def video(self, result_id: str, title: str, video: str, *, mime: str = "video/mp4", thumb: str | None = None, caption: str = "", buttons: Any = None, **kw: Any) -> dict[str, Any]:
+        result = {"type": "video", "id": result_id, "title": title, "video_url": video, "mime_type": mime, "thumbnail_url": thumb or video, "caption": caption, "parse_mode": "HTML", **kw}
+        if buttons is not None:
+            result["reply_markup"] = {"inline_keyboard": buttons}
+        return result
+
+    def document(self, result_id: str, title: str, document: str, *, mime: str = "application/octet-stream", caption: str = "", buttons: Any = None, **kw: Any) -> dict[str, Any]:
+        result = {"type": "document", "id": result_id, "title": title, "document_url": document, "mime_type": mime, "caption": caption, "parse_mode": "HTML", **kw}
+        if buttons is not None:
+            result["reply_markup"] = {"inline_keyboard": buttons}
+        return result
+
+    def gallery(self, items: list[dict[str, Any]], **kw: Any) -> list[dict[str, Any]]:
+        return items
+
+    def paginate(self, items: list[Any], page: int = 0, size: int = 5) -> tuple[list[Any], bool]:
+        if size < 1 or page < 0:
+            raise ValueError("page and size must be non-negative and positive")
+        start = page * size
+        return items[start:start + size], start + size < len(items)
+
+    async def error(self, code: int, text: str, *, query: Any = None) -> Any:
+        if query is None:
+            raise ValueError("query is required")
+        return await self.show(query, f"Error {code}", f"<b>{code}</b> {self.escape(text)}")
 
     def rich(self, result_id: str, title: str, html_text: str, *, buttons: Any = None, **kw: Any) -> dict[str, Any]:
         from goygram.types import InlineObj
@@ -354,7 +451,7 @@ class InlineHelper:
 
 
 class UiHelper:
-    """Build keyboards whose callback data is sealed by the kernel; modules never touch raw handles."""
+
 
     def __init__(self, module_id: str, store: Any, owner_id: int | None, chat_id: int | str | None, message_id: int, router: Any = None) -> None:
         self._module_id = module_id
@@ -454,6 +551,9 @@ class UiHelper:
 
     def keyboard(self, *rows: list[dict[str, str]]) -> dict[str, Any]:
         return {"inline_keyboard": [list(row) for row in rows]}
+
+    def input(self, text: str, handler: Callable[[Any, Any], Any], payload: Any = None, *, placeholder: str = "", style: str | None = None) -> dict[str, Any]:
+        return {"text": text, "input": placeholder, "callback": handler, "payload": payload, "style": style}
 
     def actions(self) -> dict[str, Callable[[Any, Any], Any]]:
         return dict(self._actions)

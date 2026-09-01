@@ -25,6 +25,40 @@ class Response:
     message: Any = None
 
 
+class FormHandle:
+    def __init__(self, runtime: Any, source: Any, value: Any = None) -> None:
+        self._runtime = runtime
+        self._source = source
+        self._value = value
+
+    async def edit(self, text: str, buttons: Any = None, **kwargs: Any) -> "FormHandle":
+        if self._runtime is None:
+            raise ResponseError("form runtime is unavailable")
+        self._value = await self._runtime.edit_form(self, text, buttons, **kwargs)
+        return self
+
+    async def edit_buttons(self, buttons: Any) -> "FormHandle":
+        if self._runtime is None:
+            raise ResponseError("form runtime is unavailable")
+        self._value = await self._runtime.edit_form(self, None, buttons)
+        return self
+
+    async def delete(self) -> bool:
+        if self._runtime is None:
+            return False
+        return await self._runtime.delete_form(self)
+
+    async def close(self) -> bool:
+        return await self.delete()
+
+    async def unload(self) -> bool:
+        return await self._runtime.delete_form(self)
+
+    @property
+    def value(self) -> Any:
+        return self._value
+
+
 class ResponseService:
     def __init__(self, rich_sender: Callable[..., Any] | None = None) -> None:
         self.rich_sender = rich_sender
@@ -133,6 +167,7 @@ class ModuleContext:
     callback_router: Any = None
     inline_manager: Any = None
     form_sender: Any = None
+    runtime: Any = None
 
     @property
     def message(self) -> ModuleMessage:
@@ -192,7 +227,33 @@ class ModuleContext:
             return await self.send_rich(kwargs.pop("text"), **kwargs)
         return await self.responses.answer(self._source, **kwargs)
 
-    async def form(self, text: str, buttons: Any = None, *rows: Any, **kwargs: Any) -> Response:
+    async def respond(self, content: Any = None, **kwargs: Any) -> Any:
+        if content is not None:
+            if isinstance(content, dict) and content.get("_") == "inputRichMessageHTML":
+                kwargs["rich_message"] = content
+            elif isinstance(content, str):
+                kwargs["text"] = content
+            else:
+                kwargs["media"] = content
+        if kwargs.get("rich_message") is not None:
+            return await self.answer(rich_message=kwargs.pop("rich_message"), **kwargs)
+        if kwargs.get("form") is not None:
+            form = kwargs.pop("form")
+            return await self.form(form.get("text", ""), form.get("buttons"), **kwargs)
+        if kwargs.get("buttons") is not None:
+            return await self.form(kwargs.pop("text", ""), kwargs.pop("buttons"), **kwargs)
+        return await self.answer(**kwargs)
+
+    async def send_file(self, file: Any, caption: str | None = None, **kwargs: Any) -> Response:
+        output = kwargs.pop("output", "reply")
+        if caption is None:
+            return await self.answer(media=file, output=output, **kwargs)
+        return await self.answer(text=caption, media=file, output=output, **kwargs)
+
+    async def send_media(self, media: Any, caption: str | None = None, **kwargs: Any) -> Response:
+        return await self.send_file(media, caption, **kwargs)
+
+    async def form(self, text: str, buttons: Any = None, *rows: Any, **kwargs: Any) -> FormHandle:
         if isinstance(buttons, dict) and "buttons" in buttons:
             text = str(buttons.get("text", text))
             buttons = buttons["buttons"]
@@ -205,7 +266,11 @@ class ModuleContext:
         buttons = self._normalize_buttons(buttons)
         kwargs["buttons"] = buttons
         kwargs["text"] = text
-        return await self.answer(**kwargs)
+        result = await self.answer(**kwargs)
+        handle = FormHandle(self.runtime, self._source, result)
+        if self.runtime is not None:
+            self.runtime.register_form(handle, self._source, text, buttons, kwargs)
+        return handle
 
     def _normalize_buttons(self, buttons: Any) -> Any:
         if not buttons or self.callback_router is None:
@@ -406,13 +471,16 @@ class ModuleContext:
 
 
 class ModuleContextFactory:
-    def __init__(self, state: Any, responses: ResponseService) -> None:
+    def __init__(self, state: Any, responses: ResponseService, runtime: Any = None) -> None:
         self._state = state
         self._responses = responses
+        self._runtime = runtime
+        self.runtime = runtime
         self.cap_host: Any = None
         self.callback_router: Any = None
         self.inline_manager: Any = None
         self.form_sender: Any = None
+        self.runtime: Any = runtime
 
     def create(self, module_id: str, message: Any) -> ModuleContext:
-        return ModuleContext(module_id, message, self._state.namespace(module_id), self._responses, self.cap_host, self.callback_router, self.inline_manager, self.form_sender)
+        return ModuleContext(module_id, message, self._state.namespace(module_id), self._responses, self.cap_host, self.callback_router, self.inline_manager, self.form_sender, self.runtime)
