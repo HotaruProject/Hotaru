@@ -21,8 +21,8 @@ class CallbackDenied(PermissionError):
 @dataclass(frozen=True, slots=True)
 class CallbackBinding:
     actor: int | str
-    chat_id: int | str
-    message_id: int
+    chat_id: int | str | None
+    message_id: int | None
 
 
 @dataclass(slots=True)
@@ -71,7 +71,9 @@ class CallbackStore:
         self._purge()
         entry = self._items.get(handle)
         decoded = self._unseal(handle)
-        if entry is None or entry.binding != binding or not isinstance(decoded, bytes):
+        chat_ok = entry is not None and (entry.binding.chat_id in (None, 0) or entry.binding.chat_id == binding.chat_id)
+        message_ok = entry is not None and (entry.binding.message_id in (None, 0) or entry.binding.message_id == binding.message_id)
+        if entry is None or entry.binding.actor != binding.actor or not chat_ok or not message_ok or not isinstance(decoded, bytes):
             raise CallbackDenied("callback is invalid or expired")
         del self._items[handle]
         return entry.value
@@ -137,8 +139,8 @@ class CallbackRouter:
     async def dispatch(self, callback: Any) -> object:
         binding = CallbackBinding(
             actor=self._required(callback, "from_id"),
-            chat_id=self._required(callback, "chat_id"),
-            message_id=self._required(callback, "msg_id"),
+            chat_id=self._optional(callback, "chat_id"),
+            message_id=self._optional(callback, "msg_id"),
         )
         value = self.store.consume(getattr(callback, "data", ""), binding)
         if not isinstance(value, dict):
@@ -162,3 +164,8 @@ class CallbackRouter:
         if value is None:
             raise CallbackDenied("callback identity is incomplete")
         return value
+
+    @staticmethod
+    def _optional(callback: Any, name: str) -> int | str | None:
+        value = getattr(callback, name, None)
+        return value if isinstance(value, (int, str)) else None

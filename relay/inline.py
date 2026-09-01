@@ -531,12 +531,26 @@ class InlineManager:
         self._task = None
 
     async def _dispatch_inline(self, query: Any) -> None:
+        if str(query.query or "").startswith("hotaru-form:"):
+            renderer = getattr(self.runtime, "_inline_forms", None)
+            nonce = query.query.split(":", 1)[1]
+            form = renderer.get(nonce) if renderer is not None else None
+            if form is not None:
+                text, buttons = form
+                await query.answer([self._form_article(text, buttons)], cache_time=0, is_personal=True)
+                return
         for handler in tuple(self._handlers):
             try:
                 await handler(query)
             except Exception as exc:
                 if self.runtime.observatory is not None:
                     self.runtime.observatory.emit("inline", "handler_error", error=type(exc).__name__)
+
+    @staticmethod
+    def _form_article(text: str, buttons: list[dict[str, str]]) -> dict[str, Any]:
+        from goygram.types import InlineObj
+
+        return InlineObj.article("hotaru-form", "Hotaru form", text, kbd={"inline_keyboard": [buttons]})
 
     async def _dispatch_callback(self, callback: Any) -> None:
         security = getattr(self.runtime, "security", None)
