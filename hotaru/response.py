@@ -212,6 +212,43 @@ class ResponseService:
             result.append(await self.answer(message, text=part, **options))
         return result
 
+    async def split_html(self, message: Any, text: str, *, limit: int = 4096, **kwargs: Any) -> list[Any]:
+        import re
+        if limit < 256:
+            raise ValueError("limit must be at least 256")
+        tokens = re.findall(r"<[^>]+>|[^<]+", text)
+        parts = []
+        current = []
+        stack = []
+        size = 0
+        void = {"br", "hr", "img", "video", "audio", "tg-map", "tg-emoji"}
+        for token in tokens:
+            if size + len(token) > limit and current:
+                names = [re.match(r"<([a-zA-Z][\\w-]*)", tag) for tag in stack]
+                closing_tags = "".join("</" + match.group(1) + ">" for match in reversed(names) if match is not None)
+                parts.append("".join(current) + closing_tags)
+                current = list(stack)
+                size = sum(len(item) for item in current)
+            current.append(token)
+            size += len(token)
+            opening = re.fullmatch(r"<([a-zA-Z][\\w-]*)(?:\\s[^>]*)?>", token)
+            closing = re.fullmatch(r"</([a-zA-Z][\\w-]*)>", token)
+            if opening and opening.group(1).lower() not in void and not token.endswith("/>"):
+                stack.append(token)
+            elif closing:
+                for index in range(len(stack) - 1, -1, -1):
+                    if re.match(r"<([a-zA-Z][\\w-]*)", stack[index]).group(1).lower() == closing.group(1).lower():
+                        del stack[index]
+                        break
+        if current or not parts:
+            parts.append("".join(current))
+        result = []
+        for index, part in enumerate(parts):
+            options = dict(kwargs)
+            options["output"] = "edit" if index == 0 and kwargs.get("output", "auto") == "auto" else "reply"
+            result.append(await self.answer(message, text=part, **options))
+        return result
+
     async def fallback_file(self, message: Any, text: str, *, filename: str = "response.html", **kwargs: Any) -> Any:
         fd, raw = tempfile.mkstemp(prefix="hotaru-response-", suffix=".html")
         os.close(fd)
@@ -223,6 +260,13 @@ class ResponseService:
             return await self.answer(message, media=path, output="reply", **kwargs)
         finally:
             path.unlink(missing_ok=True)
+
+    async def smart_split(self, message: Any, text: str, *, limit: int = 4096, file_limit: int = 200000, filename: str = "response.html", **kwargs: Any) -> Any:
+        if len(text) <= limit:
+            return [await self.answer(message, text=text, **kwargs)]
+        if len(text) > file_limit:
+            return await self.fallback_file(message, text, filename=filename, **kwargs)
+        return await self.split(message, text, limit=limit, **kwargs)
 
     async def respond(self, message: Any, content: Any = None, **kwargs: Any) -> Any:
         return await self.smart(message, content, **kwargs)
@@ -336,7 +380,12 @@ class ModuleContext:
         if kwargs.get("text") is not None and kwargs.get("rich", True):
             value = kwargs.pop("text")
             limit = int(kwargs.pop("split_limit", 4096))
+            file_limit = int(kwargs.pop("file_limit", 200000))
+            if len(value) > file_limit:
+                return await self.responses.fallback_file(self._source, value, filename=kwargs.pop("filename", "response.html"), **kwargs)
             if len(value) > limit:
+                if kwargs.pop("preserve_html", True):
+                    return await self.responses.split_html(self._source, value, limit=limit, **kwargs)
                 return await self.responses.split(self._source, value, limit=limit, **kwargs)
             return await self.send_rich(value, **kwargs)
         return await self.responses.answer(self._source, **kwargs)
@@ -449,6 +498,7 @@ class ModuleContext:
         buttons = self._normalize_buttons(buttons)
         kwargs["buttons"] = buttons
         kwargs["text"] = text
+        kwargs.setdefault("module_id", self.module_id)
         result = await self.answer(**kwargs)
         handle = FormHandle(self.runtime, self._source, result)
         if self.runtime is not None:
@@ -488,6 +538,7 @@ class ModuleContext:
             value = [value]
         if self.callback_router is not None:
             value = self._normalize_buttons(value)
+        kwargs.setdefault("module_id", self.module_id)
         result = await self.form_sender(self._source, text, value, kwargs)
         handle = FormHandle(self.runtime, self._source, result)
         if self.runtime is not None:
