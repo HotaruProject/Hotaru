@@ -258,7 +258,7 @@ class ModuleContext:
         buttons = kwargs.pop("buttons", None)
         if buttons is not None and self.form_sender is not None:
             return await self.form_sender(self._source, rich_message, buttons, kwargs)
-        return await self._context_tg_call("messages.sendMessage", {"peer": self._source.chat_id, "rich_message": rich_message, **kwargs})
+        return await self._context_tg_call("messages.sendMessage", {"peer": self._source.chat_id, "message": "", "rich_message": rich_message, **kwargs})
 
     async def send_rich(self, html: str, **kwargs: Any) -> Response:
         buttons = kwargs.pop("buttons", None)
@@ -268,7 +268,7 @@ class ModuleContext:
         peer = getattr(self._source, "chat_id", None)
         if peer is None:
             raise ResponseError("rich message target is missing")
-        data = {"peer": peer, "rich_message": {"_": "inputRichMessageHTML", "html": html}}
+        data = {"peer": peer, "message": "", "rich_message": {"_": "inputRichMessageHTML", "html": html}}
         kwargs.pop("parse_mode", None)
         reply_to = kwargs.pop("reply_to", None) or getattr(self._source, "id", None)
         if reply_to is not None:

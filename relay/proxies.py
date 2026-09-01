@@ -107,7 +107,7 @@ class RichGateway:
         return value if isinstance(value, dict) else self.html(value, **kwargs)
 
     async def send(self, html_text: str | dict[str, Any], *, peer: Any = None, reply_to: Any = None, buttons: Any = None, **kwargs: Any) -> Any:
-        data = {"rich_message": self.input(html_text), **kwargs}
+        data = {"message": "", "rich_message": self.input(html_text), **kwargs}
         target = peer if peer is not None else getattr(self._source, "chat_id", None)
         if target is not None:
             data["peer"] = target
