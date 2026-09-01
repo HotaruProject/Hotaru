@@ -126,6 +126,7 @@ class Runtime:
         self.kernel.registry.register("rm", self._command_rm, kernel=True, module_id=self.KERNEL_MODULE_ID)
         self.kernel.registry.register("bk", self._command_bk, kernel=True, module_id=self.KERNEL_MODULE_ID)
         self.kernel.registry.register("bot", self._command_bot, kernel=True, module_id=self.KERNEL_MODULE_ID)
+        self.kernel.registry.register("trust", self._command_trust, kernel=True, module_id=self.KERNEL_MODULE_ID)
         self.inline.on_inline(self._on_inline_query)
         self.inline.on_callback(self._on_inline_callback)
         self.callbacks.register("help_page", self._help_page)
@@ -257,9 +258,9 @@ class Runtime:
             known = set(self.state.module_ids()) if self.state is not None else set()
             for module_id in sorted(set(active) | known):
                 if module_id in active:
-                    entries.append(f"{module_id} [on] v{active[module_id]}")
+                    entries.append(f"{module_id} [loaded] v{active[module_id]}")
                 else:
-                    entries.append(f"{module_id} [off]")
+                    entries.append(f"{module_id} [untrusted]")
                 entry_ids.append(module_id)
         if not entries:
             entries = [f"{self.config.prefix}{name}" for name in names]
@@ -390,7 +391,9 @@ class Runtime:
                 await self._download_module_message(invocation.message, temporary)
                 loaded = self.stage_module(temporary)
         except Exception as exc:
-            return f"load failed: {type(exc).__name__}"
+            if self.observatory is not None:
+                self.observatory.emit("modules", "load_error", error=type(exc).__name__, detail=str(exc)[:240])
+            return f"load failed: {type(exc).__name__}: {str(exc)[:160]}"
         finally:
             if temporary is not None:
                 temporary.unlink(missing_ok=True)
@@ -402,7 +405,7 @@ class Runtime:
                     return f"updated: {loaded.manifest.module_id} {loaded.manifest.version}"
                 return result
             try:
-                await self.activate_module(loaded.loaded_path if hasattr(loaded, "loaded_path") else str(self.config.state_path.parent / "constellations" / f"{loaded.manifest.module_id}.hmod"))
+                await self.activate_module(str(loaded.path))
             except Exception as exc:
                 return f"staged (activation failed): {type(exc).__name__}"
             return f"active: {loaded.manifest.module_id} {loaded.manifest.version}"
@@ -564,13 +567,16 @@ class Runtime:
         except Exception as exc:
             await callback.answer("Load failed", alert=True)
             return await callback.edit(f"trust failed: {type(exc).__name__}")
-        self._mark_caps_consent(module_id, self._caps_fingerprint(loaded.manifest))
         try:
+            self._mark_caps_consent(module_id, self._caps_fingerprint(loaded.manifest))
             await self.activate_module(source_path)
         except Exception as exc:
+            namespace.set("lasterror", f"{type(exc).__name__}: {str(exc)[:240]}")
+            if self.observatory is not None:
+                self.observatory.emit("modules", "activation_error", module=module_id, error=type(exc).__name__, detail=str(exc)[:240])
             await callback.answer("Activation failed", alert=True)
-            return await callback.edit(f"trust failed: {type(exc).__name__}")
-        await callback.answer("Module enabled")
+            return await callback.edit(f"trust failed: {type(exc).__name__}: {str(exc)[:120]}")
+        await callback.answer("Module loaded")
         return await callback.edit(f"active: {module_id}")
 
     def create_backup(self) -> Path:
@@ -823,10 +829,9 @@ class Runtime:
                             raise ValueError("capabilities changed; !trust required")
                         await self.activate_module(source_path)
                     except Exception as exc:
-                        namespace.set("enabled", False)
-                        namespace.set("lasterror", type(exc).__name__)
+                        namespace.set("lasterror", f"{type(exc).__name__}: {str(exc)[:240]}")
                         if self.observatory is not None:
-                            self.observatory.emit("modules", "restore_error", module=module_id, error=type(exc).__name__)
+                            self.observatory.emit("modules", "restore_error", module=module_id, error=type(exc).__name__, detail=str(exc)[:240])
                         continue
                     restored.append(module_id)
         except TimeoutError:
