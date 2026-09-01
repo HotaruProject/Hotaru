@@ -94,6 +94,7 @@ class Runtime:
             parser=CommandParser(self.config.prefix),
             owner_id=self.config.owner_id,
             response_service=self.responses,
+            form_sender=self._send_form,
             command_timeout=self.config.command_timeout,
         )
         self.kernel.security = self.security
@@ -149,6 +150,30 @@ class Runtime:
             return await self.callbacks.dispatch(callback)
         except CallbackDenied:
             return None
+
+    async def _send_form(self, command: Any, text: str, buttons: list[dict[str, str]]) -> Any:
+        if self.inline is None or self.inline.info is None or self.inline.bot_app is None:
+            return await self.responses.answer(command, text=text, buttons=buttons, output="edit")
+        owner = self.kernel.owner_id if self.kernel is not None else None
+        if owner is None:
+            return await self.responses.answer(command, text=text, buttons=buttons, output="edit")
+        if hasattr(command, "delete"):
+            try:
+                await command.delete()
+            except Exception:
+                pass
+        sent = await self.inline.bot_app.send_msg(owner, text)
+        body = sent.get("result", sent) if isinstance(sent, dict) else sent
+        form_id = body.get("message_id") if isinstance(body, dict) else getattr(body, "message_id", None)
+        if not isinstance(form_id, int):
+            raise RuntimeError("inline form message id is missing")
+        rebound = []
+        for button in buttons:
+            handle = button.get("callback_data")
+            if isinstance(handle, str):
+                rebound.append({"text": button.get("text", ""), "callback_data": self.callbacks.store.rebind(handle, CallbackBinding(owner, owner, form_id))})
+        await self.inline.bot_app.bot_req("editMessageText", chat_id=owner, message_id=form_id, text=text, reply_markup={"inline_keyboard": [rebound]})
+        return sent
 
     async def _on_inline_query(self, query: Any) -> None:
         if self.security is not None:
@@ -542,7 +567,7 @@ class Runtime:
             lines.append(describe_caps(manifest.capabilities) or "none")
             lines.append("re-run !trust from your Saved Messages to confirm")
             return "\n".join(lines)
-        text = f"module {module_id} v{manifest.version} requests capabilities:\n" + (describe_caps(manifest.capabilities) or "none") + "\n\nenable?"
+        text = f"module {module_id} v{manifest.version} requests capabilities:\n" + (describe_caps(manifest.capabilities) or "none") + "\n\nНажми кнопку Confirm ниже, чтобы загрузить модуль."
         handle = self.callbacks.store.issue(
             CallbackBinding(self.kernel.owner_id, chat_id, message_id),
             {"action": "caps_confirm", "payload": module_id},

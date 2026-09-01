@@ -76,6 +76,13 @@ class CallbackStore:
         del self._items[handle]
         return entry.value
 
+    def rebind(self, handle: str, binding: CallbackBinding) -> str:
+        self._purge()
+        entry = self._items.get(handle)
+        if entry is None or not isinstance(self._unseal(handle), bytes):
+            raise CallbackDenied("callback is invalid or expired")
+        return self.issue(binding, entry.value)
+
     def _purge(self) -> None:
         now = time.monotonic()
         for handle, entry in tuple(self._items.items()):
