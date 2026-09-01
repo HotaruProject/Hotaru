@@ -213,7 +213,14 @@ class Runtime:
         nonce = secrets.token_urlsafe(12)
         if self._inline_forms is None:
             self._inline_forms = {}
-        self._inline_forms[nonce] = (text, buttons)
+        inline_buttons = []
+        for button in buttons:
+            handle = button.get("callback_data")
+            if isinstance(handle, str):
+                inline_buttons.append({"text": button.get("text", ""), "callback_data": self.callbacks.store.rebind(handle, CallbackBinding(self.kernel.owner_id, chat_id, 0))})
+            elif isinstance(button.get("url"), str):
+                inline_buttons.append({"text": button.get("text", ""), "url": button["url"]})
+        self._inline_forms[nonce] = (text, inline_buttons)
         bot = await self.app.mt.resolve_peer("@" + self.inline.info.username)
         peer = await self.app.mt.resolve_peer(chat_id)
         result = await self.app.mt_req(
@@ -234,14 +241,6 @@ class Runtime:
         results = body.get("results") if isinstance(body, dict) else None
         if not isinstance(query_id, (int, str)) or not isinstance(results, list) or not results:
             raise RuntimeError("inline bot returned no form result")
-        inline_buttons = []
-        for button in buttons:
-            handle = button.get("callback_data")
-            if isinstance(handle, str):
-                inline_buttons.append({"text": button.get("text", ""), "callback_data": self.callbacks.store.rebind(handle, CallbackBinding(self.kernel.owner_id, None, 0))})
-            elif isinstance(button.get("url"), str):
-                inline_buttons.append({"text": button.get("text", ""), "url": button["url"]})
-        self._inline_forms[nonce] = (text, inline_buttons)
         await self.app.mt_req(
             "messages.sendInlineBotResult",
             peer=peer,
@@ -269,7 +268,9 @@ class Runtime:
                 await query.answer([], cache_time=0, is_personal=True)
                 return
             form_text, buttons = form
-            await query.answer([InlineObj.article("hotaru-form", "Hotaru form", form_text, kbd={"inline_keyboard": [buttons]})], cache_time=0, is_personal=True)
+            result = InlineObj.article("hotaru-form", "Hotaru form", form_text)
+            result["input_message_content"]["reply_markup"] = {"inline_keyboard": [buttons]}
+            await query.answer([result], cache_time=0, is_personal=True)
             return
         from . import __version__
 
