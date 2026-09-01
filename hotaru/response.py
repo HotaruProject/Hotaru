@@ -272,6 +272,18 @@ class ModuleContext:
 
     async def respond(self, content: Any = None, **kwargs: Any) -> Any:
         mode = kwargs.pop("mode", kwargs.pop("output", "auto"))
+        if mode == "auto":
+            mode = "edit" if self._outgoing else "reply"
+        if mode not in {"edit", "reply"}:
+            raise ResponseError("response mode must be edit, reply, or auto")
+        delete_source = kwargs.pop("delete_source", False)
+        if kwargs.pop("force_reply", False):
+            mode = "reply"
+        topic_id = kwargs.pop("topic_id", None)
+        if topic_id is None:
+            topic_id = self.topic_id
+        if topic_id is not None:
+            kwargs["topic_id"] = topic_id
         if content is not None:
             if isinstance(content, dict) and content.get("_") == "inputRichMessageHTML":
                 kwargs["rich_message"] = content
@@ -281,7 +293,10 @@ class ModuleContext:
                 kwargs.setdefault("media", content)
         buttons = kwargs.pop("buttons", None)
         if kwargs.pop("inline", False):
-            return await self.form(kwargs.pop("text", ""), buttons, **kwargs)
+            result = await self.form(kwargs.pop("text", ""), buttons, **kwargs)
+            if delete_source:
+                await self._delete_source()
+            return result
         if kwargs.pop("bot", False):
             if kwargs.get("rich_message") is not None:
                 return await self.bot.rich_send(getattr(self._source, "chat_id", None), kwargs.pop("rich_message"), buttons=buttons, **kwargs)
@@ -292,12 +307,46 @@ class ModuleContext:
             form = kwargs.pop("form")
             return await self.form(form.get("text", ""), form.get("buttons"), **kwargs)
         if buttons is not None:
-            return await self.form(kwargs.pop("text", ""), buttons, **kwargs)
-        if mode != "auto":
-            kwargs["output"] = mode
+            result = await self.form(kwargs.pop("text", ""), buttons, output=mode, **kwargs)
+            if delete_source:
+                await self._delete_source()
+            return result
+        kwargs["output"] = mode
         if kwargs.get("rich_message") is not None:
             return await self.answer(rich_message=kwargs.pop("rich_message"), **kwargs)
-        return await self.answer(**kwargs)
+        result = await self.answer(**kwargs)
+        if delete_source:
+            await self._delete_source()
+        return result
+
+    @property
+    def _outgoing(self) -> bool:
+        value = getattr(self._source, "is_me", None)
+        if isinstance(value, bool):
+            return value
+        value = getattr(self._source, "out", None)
+        return bool(value)
+
+    @property
+    def topic_id(self) -> int | None:
+        for name in ("topic_id", "message_thread_id", "top_msg_id"):
+            value = getattr(self._source, name, None)
+            if isinstance(value, int) and value > 0:
+                return value
+        getter = getattr(self._source, "get", None)
+        if callable(getter):
+            for name in ("topic_id", "message_thread_id", "top_msg_id"):
+                value = getter(name)
+                if isinstance(value, int) and value > 0:
+                    return value
+        return None
+
+    async def _delete_source(self) -> None:
+        deleter = getattr(self._source, "delete", None)
+        if callable(deleter):
+            result = deleter()
+            if hasattr(result, "__await__"):
+                await result
 
     async def send_file(self, file: Any, caption: str | None = None, **kwargs: Any) -> Response:
         output = kwargs.pop("output", "reply")
