@@ -265,6 +265,7 @@ class Runtime:
         record = dict(options)
         record["form_id"] = key
         record["module_id"] = record.get("module_id") or getattr(source, "module_id", "")
+        record["actions"] = self._form_actions(buttons)
         self._forms[key] = (handle, source, text, buttons, record)
         ttl = options.get("ttl")
         deadline = time.time() + float(ttl) if isinstance(ttl, (int, float)) and float(ttl) > 0 else None
@@ -451,6 +452,15 @@ class Runtime:
         )
         self.state.connection.commit()
 
+    def _form_actions(self, buttons: Any) -> list[dict[str, Any]]:
+        result = []
+        for row in buttons or []:
+            row = [row] if isinstance(row, dict) else row
+            for button in row:
+                if isinstance(button, dict) and button.get("_action_id"):
+                    result.append({"action_id": button["_action_id"], "payload": button.get("_payload")})
+        return result
+
     async def _insert_inline_form(self, command: Any, text: str, buttons: list[dict[str, str]], options: dict[str, Any] | None = None) -> Any:
         if self.inline is None or self.inline.info is None or self.app is None or self.app.mt is None:
             raise RuntimeError("inline insertion transport is not ready")
@@ -497,6 +507,7 @@ class Runtime:
         self._inline_forms[nonce] = (text, inline_buttons)
         options["module_id"] = options.get("module_id", "")
         options["form_id"] = nonce
+        options["actions"] = self._form_actions(buttons)
         if options["module_id"]:
             self._persist_inline_form(nonce, command, text, inline_buttons, options)
         if self.observatory is not None:
