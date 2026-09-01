@@ -308,8 +308,10 @@ class Runtime:
                 rehydrated = self.modules.rehydrate_form(module_id, {"form_id": row[0], "text": row[6], "buttons": buttons, "options": options})
                 if asyncio.iscoroutine(rehydrated) or isinstance(rehydrated, asyncio.Future):
                     rehydrated = await rehydrated
+                if rehydrated is None:
+                    rehydrated = {"text": row[6], "buttons": buttons}
                 if not isinstance(rehydrated, dict):
-                    raise ValueError("restored form rehydrator is unavailable")
+                    raise ValueError("restored form rehydrator is invalid")
                 row_text = str(rehydrated.get("text", row[6]))
                 row_buttons = rehydrated.get("buttons", buttons)
                 if isinstance(rehydrated.get("options"), dict):
