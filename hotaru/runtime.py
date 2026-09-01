@@ -214,7 +214,8 @@ class Runtime:
         owner = self.kernel.owner_id if self.kernel is not None else None
         if owner is None:
             raise RuntimeError("form owner is missing")
-        options = options or {}
+        options = dict(options or {})
+        options.setdefault("delete_source", True)
         if isinstance(options.get("module_id"), str) and options["module_id"]:
             module_id = options["module_id"]
         else:
@@ -510,7 +511,8 @@ class Runtime:
             id=results[0].get("id"),
             clear_draft=True,
         )
-        await self.app.mt_req("messages.deleteMessages", id=[message_id], revoke=True)
+        if options.get("delete_source", True):
+            await self.app.mt_req("messages.deleteMessages", id=[message_id], revoke=True)
         return result
 
     async def _on_inline_query(self, query: Any) -> None:
