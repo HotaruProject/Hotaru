@@ -1,0 +1,52 @@
+HOTARU = {
+    "id": "test-features",
+    "version": "1.0.0",
+    "description": "Hotaru proxy and capability test module",
+    "commands": ["tfstatus", "tfhistory", "tfstate", "tffile", "tfnet", "tfbutton", "tfmedia"],
+    "capabilities": ["mt", "state", "files", "net"],
+}
+
+import asyncio
+
+
+async def command_tfstatus(ctx, invocation):
+    result = await ctx.tg.get("updates.getState")
+    await ctx.answer(text=f"dynamic MTProto works: {result}")
+
+
+async def command_tfhistory(ctx, invocation):
+    result = await ctx.tg.get("messages.getHistory", peer="me", limit=5, offset_id=0, offset_date=0, add_offset=0, max_id=0, min_id=0, hash=0)
+    items = result.get("messages", []) if isinstance(result, dict) else []
+    await ctx.answer(text=f"history items: {len(items)}")
+
+
+async def command_tfstate(ctx, invocation):
+    current = ctx.state.get("runs", 0) or 0
+    ctx.state.set("runs", current + 1)
+    await ctx.answer(text=f"state runs: {current + 1}")
+
+
+async def command_tffile(ctx, invocation):
+    await ctx.cap("files", {"op": "write", "name": "test.txt", "content": "file proxy works"})
+    value = await ctx.cap("files", {"op": "read", "name": "test.txt"})
+    await ctx.answer(text=str(value))
+
+
+async def command_tfnet(ctx, invocation):
+    result = await ctx.net("https://api.github.com", timeout=10)
+    await ctx.answer(text=f"network status: {result.get('status')}")
+
+
+async def command_tfbutton(ctx, invocation):
+    async def pressed(callback, payload):
+        await callback.answer("callback accepted")
+        await callback.edit("encrypted callback executed")
+
+    action_id = ctx.ui.on(pressed)
+    button = ctx.ui.button("Run encrypted callback", action_id, {"source": "test-features"})
+    await ctx.answer(text="kernel callback proxy works", buttons=[[button]])
+
+
+async def command_tfmedia(ctx, invocation):
+    attachment = ctx.attachment or ctx.reply_attachment
+    await ctx.answer(text=f"media detected: {attachment.kind if attachment else 'none'}")

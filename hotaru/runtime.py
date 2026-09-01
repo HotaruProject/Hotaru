@@ -20,13 +20,14 @@ from .events import EventRouter
 from relay.inline import InlineManager
 from relay.sandbox import ModuleSandbox
 from relay.caps import CapabilityHost, describe as describe_caps
+from relay.firewall import install as install_firewall
 from .kernel import Kernel
 from .modules import ModuleStager
 from .activation import ModuleManager
 from .observatory import Observatory
 from .registry import Handler
 from .response import ModuleContextFactory, ResponseService
-from .security import ModulePolicy, SecurityGate
+from .security import SecurityGate
 from .state import StateStore
 from .supervisor import ConnectionSupervisor, Health
 from .tasks import TaskSupervisor
@@ -69,6 +70,7 @@ class Runtime:
         from goygram import GoyGram
 
         self.config.session_dir.mkdir(parents=True, exist_ok=True)
+        install_firewall(self.config.session_dir, self.config.session_dir / f"{self.config.session_name}.vault", self.config.session_dir / f"{self.config.session_name}.session")
         session_name = str(self.config.session_dir / self.config.session_name)
         previous_disable = logging.root.manager.disable
         logging.disable(logging.INFO)
@@ -101,16 +103,16 @@ class Runtime:
         self.callbacks = CallbackRouter()
         self.cap_host = CapabilityHost(self)
         self.context_factory.cap_host = self.cap_host
-        self.observatory = Observatory()
+        self.context_factory.callback_router = self.callbacks
+        self.callbacks.register("caps_confirm", self._caps_confirm)
         self.event_router = EventRouter(self._event_error)
         self.backups = BackupService()
         self.tasks = TaskSupervisor()
         self.modules = ModuleManager(tasks=self.tasks)
         self.stager = ModuleStager(self.modules.loader)
         self.inline = InlineManager(self)
+        self.context_factory.inline_manager = self.inline
         self.sandbox = ModuleSandbox(self)
-        self.cap_host = CapabilityHost(self)
-        self.callbacks.register("caps_confirm", self._caps_confirm)
         self.kernel.sandbox = self.sandbox
         self.kernel.context_factory = self.context_factory
         self.kernel.registry.register("ver", self._command_ver, kernel=True, module_id=self.KERNEL_MODULE_ID)
@@ -124,11 +126,8 @@ class Runtime:
         self.kernel.registry.register("rm", self._command_rm, kernel=True, module_id=self.KERNEL_MODULE_ID)
         self.kernel.registry.register("bk", self._command_bk, kernel=True, module_id=self.KERNEL_MODULE_ID)
         self.kernel.registry.register("bot", self._command_bot, kernel=True, module_id=self.KERNEL_MODULE_ID)
-        self.kernel.registry.register("trust", self._command_trust, kernel=True, module_id=self.KERNEL_MODULE_ID)
-        self.callbacks.register("remove_confirm", self._remove_confirm)
         self.inline.on_inline(self._on_inline_query)
         self.inline.on_callback(self._on_inline_callback)
-        self.callbacks.register("restore_confirm", self._restore_confirm)
         self.callbacks.register("help_page", self._help_page)
         self.callbacks.register("module_detail", self._module_detail)
         self.kernel.attach(self.app)
@@ -743,6 +742,8 @@ class Runtime:
             raise RuntimeError("build the runtime before deactivating modules")
         if self.sandbox is not None:
             self.sandbox.stop_module(module_id)
+        if self.callbacks is not None:
+            self.callbacks.unregister_module(module_id)
         return await self.modules.deactivate(module_id)
 
     async def restore_backup(self, plan: Any, activate: Any, *, rollback: Any | None = None, timeout: float = 10.0) -> Any:
@@ -771,6 +772,8 @@ class Runtime:
             self.state = StateStore(self.config.state_path)
             self.context_factory = ModuleContextFactory(self.state, self.responses)
             self.context_factory.cap_host = self.cap_host
+            self.context_factory.callback_router = self.callbacks
+            self.context_factory.inline_manager = self.inline
             if self.kernel is not None:
                 self.kernel.context_factory = self.context_factory
             self.modules = ModuleManager(tasks=self.tasks)

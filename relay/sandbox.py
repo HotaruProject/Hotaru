@@ -20,6 +20,22 @@ import os
 import resource
 import socket
 import sys
+from pathlib import Path
+
+
+def install_firewall(protected):
+    roots = [str(Path(item).resolve()) for item in protected]
+    def audit(event, args):
+        if event == "import" and args and str(args[0]).split(".", 1)[0].casefold() in {"goygram", "hotaru", "relay"}:
+            raise PermissionError("module cannot import Hotaru/GoyGram internals; use capability proxies")
+        if event in {"open", "os.open"} and args and isinstance(args[0], (str, bytes)):
+            value = str(Path(os.fsdecode(args[0])).resolve())
+            if value.endswith((".vault", ".session")) or any(value == root or value.startswith(root + os.sep) for root in roots):
+                raise PermissionError("module access to Telegram session storage is denied")
+        if event in {"subprocess.Popen", "os.system", "os.posix_spawn", "ctypes.dlopen", "multiprocessing.Process"}:
+            raise PermissionError("module process escape is denied")
+    sys.addaudithook(audit)
+
 
 def apply_limits(mem_mb, file_mb, nofile, net_blocked):
     if net_blocked:
@@ -67,6 +83,7 @@ def _net_call(url, data=None, timeout=10.0):
 
 def main():
     cfg = json.loads(sys.stdin.readline())
+    install_firewall(cfg.get("protected", []))
     apply_limits(cfg.get("mem_mb", 128), cfg.get("file_mb", 16), cfg.get("nofile", 64), cfg.get("net_blocked", True))
     ns = {"__name__": cfg.get("module_id", "sandbox"), "cap": _cap_call, "mt": _mt_call, "net": _net_call}
     try:
@@ -146,6 +163,7 @@ class ModuleSandbox:
             "file_mb": self.file_mb,
             "nofile": self.nofile,
             "net_blocked": True,
+            "protected": [str(self.runtime.config.session_dir), str(self.runtime.config.session_dir / f"{self.runtime.config.session_name}.vault"), str(self.runtime.config.session_dir / f"{self.runtime.config.session_name}.session")],
         }
         assert process.stdin is not None and process.stdout is not None
         process.stdin.write((json.dumps(hello) + "\n").encode("utf-8"))
