@@ -8,7 +8,7 @@ from .config import RuntimeConfig
 from .activation import ActivationError, ActiveModule, ModuleBinder, ModuleInstance, ModuleManager
 from .backup import BackupError, BackupService, RestorePlan
 from .capabilities import BehaviorEnvelope, CapabilityBroker, CapabilityDenied, CapabilityProvider
-from .callbacks import CallbackBinding, CallbackDenied, CallbackRouter, CallbackStore
+from .callbacks import CallbackBinding, CallbackContext, CallbackDenied, CallbackRouter, CallbackStore
 from .registry import CommandRegistry, CommandSpec
 from .runtime import Runtime
 from .response import Attachment, ModuleContext, ModuleContextFactory, ModuleMessage, Response, ResponseError, ResponseService
@@ -63,6 +63,7 @@ __all__ = [
     "CapabilityDenied",
     "CapabilityProvider",
     "CallbackBinding",
+    "CallbackContext",
     "CallbackDenied",
     "CallbackRouter",
     "CallbackStore",
