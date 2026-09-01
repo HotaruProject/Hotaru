@@ -389,6 +389,9 @@ class Runtime:
             self.state.connection.commit()
         return len(expired)
 
+    def form_count(self) -> int:
+        return len(self._forms or {})
+
     def form_snapshot(self, handle: Any) -> dict[str, Any] | None:
         entry = (self._forms or {}).get(handle.key)
         if entry is None:

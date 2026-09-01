@@ -268,6 +268,9 @@ class ResponseService:
             return await self.fallback_file(message, text, filename=filename, **kwargs)
         return await self.split(message, text, limit=limit, **kwargs)
 
+    async def dispatch(self, message: Any, content: Any = None, **kwargs: Any) -> Any:
+        return await self.smart(message, content, **kwargs)
+
     async def respond(self, message: Any, content: Any = None, **kwargs: Any) -> Any:
         return await self.smart(message, content, **kwargs)
 
