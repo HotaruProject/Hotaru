@@ -5,6 +5,7 @@ import logging
 import os
 import secrets
 import tempfile
+import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -13,7 +14,7 @@ from typing import Any
 
 from .capabilities import CapabilityBroker
 from .backup import BackupService
-from .callbacks import CallbackBinding, CallbackDenied, CallbackRouter
+from .callbacks import CallbackBinding, CallbackContext, CallbackDenied, CallbackRouter
 from .config import RuntimeConfig
 from .commands import CommandParser
 from goygram.types import InlineObj
@@ -59,6 +60,8 @@ class Runtime:
     closed: bool = False
     _inline_forms: dict[str, tuple[str, list[dict[str, str]]]] | None = None
     _forms: dict[int, tuple[Any, Any, str, Any, dict[str, Any]]] | None = None
+    _input_requests: dict[str, tuple[Any, Any, Any]] | None = None
+    _form_expiry: dict[int, float] | None = None
 
     @classmethod
     def from_database(cls, path: str | Path | None = None) -> "Runtime":
@@ -117,6 +120,8 @@ class Runtime:
         self.inline = InlineManager(self)
         self._inline_forms = {}
         self._forms = {}
+        self._input_requests = {}
+        self._form_expiry = {}
         self.context_factory.inline_manager = self.inline
         self.context_factory.form_sender = self._send_form
         self.sandbox = ModuleSandbox(self)
@@ -207,9 +212,19 @@ class Runtime:
     def register_form(self, handle: Any, source: Any, text: str, buttons: Any, options: dict[str, Any]) -> None:
         if self._forms is None:
             self._forms = {}
+        key = getattr(handle, "key", None) or secrets.token_urlsafe(12)
+        handle._key = key
         self._forms[id(handle)] = (handle, source, text, buttons, dict(options))
+        ttl = options.get("ttl")
+        if isinstance(ttl, (int, float)) and ttl > 0:
+            if self._form_expiry is None:
+                self._form_expiry = {}
+            self._form_expiry[id(handle)] = time.monotonic() + float(ttl)
 
     async def edit_form(self, handle: Any, text: str | None, buttons: Any = None, **kwargs: Any) -> Any:
+        if self._form_expiry and self._form_expiry.get(id(handle), 0) <= time.monotonic():
+            await self.delete_form(handle)
+            raise RuntimeError("form has expired")
         entry = (self._forms or {}).get(id(handle))
         if entry is None:
             raise RuntimeError("form is not registered")
@@ -223,6 +238,8 @@ class Runtime:
 
     async def delete_form(self, handle: Any) -> bool:
         entry = (self._forms or {}).pop(id(handle), None)
+        if self._form_expiry is not None:
+            self._form_expiry.pop(id(handle), None)
         if entry is None:
             return False
         _, source, _, _, _ = entry
@@ -233,6 +250,16 @@ class Runtime:
                 with trusted_scope():
                     await self.inline.bot_app.bot_req("deleteMessage", chat_id=chat_id, message_id=message_id)
         return True
+
+    def purge_forms(self) -> int:
+        if not self._form_expiry:
+            return 0
+        expired = [key for key, deadline in self._form_expiry.items() if deadline <= time.monotonic()]
+        for key in expired:
+            if self._forms is not None:
+                self._forms.pop(key, None)
+            self._form_expiry.pop(key, None)
+        return len(expired)
 
     def form_snapshot(self, handle: Any) -> dict[str, Any] | None:
         entry = (self._forms or {}).get(id(handle))
@@ -270,6 +297,13 @@ class Runtime:
                 if callable(button.get("handler")) and "callback" not in button:
                     button = {**button, "callback": button["handler"]}
                 handle = button.get("callback_data")
+                if callable(button.get("handler")) and isinstance(button.get("input"), str):
+                    token = secrets.token_urlsafe(10)
+                    if self._input_requests is None:
+                        self._input_requests = {}
+                    self._input_requests[token] = (button["handler"], button.get("payload"), command)
+                    current.append({"text": button.get("text", ""), "switch_inline_query_current_chat": "hotaru-input:" + token + " "})
+                    continue
                 if isinstance(handle, str):
                     current.append({"text": button.get("text", ""), "callback_data": self.callbacks.store.rebind(handle, CallbackBinding(self.kernel.owner_id, None, 0))})
                 elif isinstance(button.get("url"), str):
@@ -321,6 +355,16 @@ class Runtime:
             if verdict is not AccessVerdict.ALLOW:
                 return
         text = (query.query or "").strip()
+        if text.startswith("hotaru-input:"):
+            key, _, value = text.partition(" ")
+            request = (self._input_requests or {}).pop(key.split(":", 1)[1], None)
+            if request is not None and value:
+                handler, payload, source = request
+                result = handler(CallbackContext(query), value, payload)
+                if hasattr(result, "__await__"):
+                    await result
+            await query.answer([], cache_time=0, is_personal=True)
+            return
         if text.startswith("hotaru-form:"):
             nonce = text.split(":", 1)[1]
             form = self._inline_forms.get(nonce) if self._inline_forms is not None else None

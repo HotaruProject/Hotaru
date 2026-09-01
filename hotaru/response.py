@@ -31,6 +31,7 @@ class FormHandle:
         self._source = source
         self._record = None
         self._value = value
+        self._key = secrets.token_urlsafe(12)
 
     async def edit(self, text: str, buttons: Any = None, **kwargs: Any) -> "FormHandle":
         if self._runtime is None:
@@ -73,6 +74,10 @@ class FormHandle:
         if self._runtime is None:
             return None
         return self._runtime.form_snapshot(self)
+
+    @property
+    def key(self) -> str | None:
+        return self._key
 
     def __bool__(self) -> bool:
         return bool(self._value)
@@ -167,7 +172,9 @@ class ResponseService:
             media = file
         if inline or form is not None or buttons is not None:
             data = form if isinstance(form, dict) else {"text": kwargs.pop("text", ""), "buttons": buttons}
-            return await message.form(data.get("text", ""), data.get("buttons"), **kwargs) if hasattr(message, "form") else await self.answer(message, text=data.get("text", ""), buttons=data.get("buttons"), output="reply")
+            if hasattr(message, "form"):
+                return await message.form(data.get("text", ""), data.get("buttons"), **kwargs)
+            return await self.answer(message, text=data.get("text", ""), buttons=data.get("buttons"), output="reply")
         if bot:
             return await kwargs.pop("bot_gateway").send_message(getattr(message, "chat_id", None), kwargs.pop("text", ""), buttons=buttons, **kwargs)
         if rich_message is not None:
@@ -192,6 +199,18 @@ class ResponseService:
             options["output"] = "edit" if index == 0 and kwargs.get("output", "auto") == "auto" else kwargs.get("output", "reply")
             result.append(await self.answer(message, text=part, **options))
         return result
+
+    async def fallback_file(self, message: Any, text: str, *, filename: str = "response.html", **kwargs: Any) -> Any:
+        fd, raw = tempfile.mkstemp(prefix="hotaru-response-", suffix=".html")
+        os.close(fd)
+        path = Path(raw)
+        path.write_text(text, encoding="utf-8")
+        try:
+            if hasattr(message, "reply"):
+                return await message.reply(path, filename=filename, **kwargs)
+            return await self.answer(message, media=path, output="reply", **kwargs)
+        finally:
+            path.unlink(missing_ok=True)
 
 
 @dataclass(frozen=True, slots=True)
@@ -290,7 +309,7 @@ class ModuleContext:
     async def net(self, url: str, *, data: dict[str, Any] | None = None, timeout: float = 10.0) -> dict[str, Any]:
         return await self.cap("net", {"url": url, "data": data, "timeout": timeout})
 
-    async def answer(self, text: str | None = None, **kwargs: Any) -> Response:
+    async def answer(self, text: str | None = None, **kwargs: Any) -> Any:
         if text is not None:
             kwargs["text"] = text
         if kwargs.get("text") is not None:
@@ -300,7 +319,10 @@ class ModuleContext:
         if kwargs.get("buttons") and self.form_sender is not None:
             return await self.form_sender(self._source, kwargs.get("text", ""), kwargs["buttons"], kwargs)
         if kwargs.get("text") is not None and kwargs.get("rich", True):
-            return await self.send_rich(kwargs.pop("text"), **kwargs)
+            value = kwargs.pop("text")
+            if len(value) > int(kwargs.pop("split_limit", 4096)):
+                return await self.responses.split(self._source, value, limit=4096, **kwargs)
+            return await self.send_rich(value, **kwargs)
         return await self.responses.answer(self._source, **kwargs)
 
     async def respond(self, content: Any = None, **kwargs: Any) -> Any:
@@ -331,6 +353,7 @@ class ModuleContext:
                 kwargs.setdefault("media", content)
         buttons = kwargs.pop("buttons", None)
         if kwargs.pop("inline", False):
+            self.runtime.purge_forms() if self.runtime is not None else None
             result = await self.inline_form(kwargs.pop("text", ""), buttons, **kwargs)
         elif kwargs.pop("bot", False):
             chat_id = kwargs.pop("chat_id", getattr(self._source, "chat_id", None))
