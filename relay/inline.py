@@ -483,9 +483,11 @@ class InlineManager:
         assert app is not None
         delay = 1.0
         while not self._stop.is_set():
+            dispatch_task = None
             try:
                 await app.core.bot.boot()
                 await app.bot_req("deleteWebhook", drop_pending_updates=False)
+                dispatch_task = asyncio.create_task(app.core.disp.consume(), name="hotaru:inline-dispatch")
                 await app.core.bot.spin()
                 return
             except asyncio.CancelledError:
@@ -510,6 +512,10 @@ class InlineManager:
                 except asyncio.TimeoutError:
                     pass
                 delay = min(delay * 2, 60.0)
+            finally:
+                if dispatch_task is not None and not dispatch_task.done():
+                    dispatch_task.cancel()
+                    await asyncio.gather(dispatch_task, return_exceptions=True)
 
     @staticmethod
     def _is_auth_failure(exc: Exception) -> bool:
@@ -531,14 +537,6 @@ class InlineManager:
         self._task = None
 
     async def _dispatch_inline(self, query: Any) -> None:
-        if str(query.query or "").startswith("hotaru-form:"):
-            renderer = getattr(self.runtime, "_inline_forms", None)
-            nonce = query.query.split(":", 1)[1]
-            form = renderer.get(nonce) if renderer is not None else None
-            if form is not None:
-                text, buttons = form
-                await query.answer([self._form_article(text, buttons)], cache_time=0, is_personal=True)
-                return
         for handler in tuple(self._handlers):
             try:
                 await handler(query)
