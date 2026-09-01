@@ -20,6 +20,7 @@ class Kernel:
         owner_id: int | None = None,
         context_factory: Any = None,
         response_service: Any = None,
+        form_sender: Any = None,
         seen_limit: int = 4096,
         command_timeout: float = 60.0,
     ) -> None:
@@ -32,6 +33,7 @@ class Kernel:
         self.owner_id = owner_id
         self.context_factory = context_factory
         self.response_service = response_service
+        self.form_sender = form_sender
         self.command_timeout = command_timeout
         self.security: SecurityGate | None = None
         self.sandbox: Any = None
@@ -113,6 +115,8 @@ class Kernel:
             return None
         if spec.kernel and self.response_service is not None:
             if isinstance(result, tuple) and len(result) == 2:
+                if self.form_sender is not None and result[1]:
+                    return await self.form_sender(message, result[0], result[1])
                 return await self.response_service.answer(message, text=result[0], buttons=result[1], output="edit")
             if isinstance(result, str):
                 return await self.response_service.answer(message, text=result, output="edit")
