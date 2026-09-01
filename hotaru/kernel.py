@@ -171,9 +171,14 @@ class Kernel:
         return self.registry.unregister(name, module_id=module_id)
 
     def _is_owner(self, message: Any) -> bool:
-        if self.owner_id is not None:
-            return getattr(message, "from_id", None) == self.owner_id or bool(getattr(message, "is_me", False))
-        return bool(getattr(message, "is_me", False))
+        if bool(getattr(message, "is_me", False)):
+            return True
+        if self.owner_id is None:
+            return False
+        if getattr(message, "from_id", None) == self.owner_id:
+            return True
+        chat_id = getattr(message, "chat_id", None)
+        return chat_id == self.owner_id
 
     @staticmethod
     def _is_group(message: Any) -> bool:
