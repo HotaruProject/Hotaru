@@ -309,6 +309,7 @@ class Runtime:
                     self._form_expiry[row[0]] = time.monotonic() + max(0.0, row[9] - time.time())
                 restored += 1
             except Exception:
+                self.state.connection.execute("DELETE FROM form_state WHERE form_id = ?", (row[0],))
                 continue
         self.state.connection.commit()
         return restored
