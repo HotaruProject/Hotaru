@@ -262,6 +262,8 @@ class Runtime:
             if self._form_expiry is None:
                 self._form_expiry = {}
             self._form_expiry[key] = time.monotonic() + float(ttl)
+            if self._form_gc_task is None or self._form_gc_task.done():
+                self._form_gc_task = asyncio.create_task(self._form_gc_loop(), name="hotaru:form-gc")
 
         if self.state is not None and record.get("module_id"):
             self.state.connection.execute(
