@@ -28,11 +28,30 @@ from .modules import ModuleStager
 from .activation import ModuleManager
 from .observatory import Observatory
 from .registry import Handler
-from .response import ModuleContextFactory, ResponseService
+from .response import FormHandle, ModuleContextFactory, ResponseService
 from .security import SecurityGate
 from .state import StateStore
 from .supervisor import ConnectionSupervisor, Health
 from .tasks import TaskSupervisor
+
+
+class InputContext:
+    def __init__(self, runtime: Any, source: Any, query: Any) -> None:
+        self.runtime = runtime
+        self.source = source
+        self.query = query
+        self.inline_message_id = None
+
+    async def answer(self, text: str | None = None, **kwargs: Any) -> Any:
+        if text:
+            return await self.query.answer([], cache_time=0, is_personal=True)
+        return None
+
+    async def edit(self, text: str, **kwargs: Any) -> Any:
+        return await self.runtime._send_form(self.source, text, kwargs.pop("buttons", None) or [], kwargs)
+
+    async def delete(self) -> bool:
+        return True
 
 
 @dataclass(slots=True)
@@ -59,9 +78,9 @@ class Runtime:
     cap_host: CapabilityHost | None = None
     closed: bool = False
     _inline_forms: dict[str, tuple[str, list[dict[str, str]]]] | None = None
-    _forms: dict[int, tuple[Any, Any, str, Any, dict[str, Any]]] | None = None
+    _forms: dict[str, tuple[Any, Any, str, Any, dict[str, Any]]] | None = None
     _input_requests: dict[str, tuple[Any, Any, Any]] | None = None
-    _form_expiry: dict[int, float] | None = None
+    _form_expiry: dict[str, float] | None = None
 
     @classmethod
     def from_database(cls, path: str | Path | None = None) -> "Runtime":
@@ -214,18 +233,67 @@ class Runtime:
             self._forms = {}
         key = getattr(handle, "key", None) or secrets.token_urlsafe(12)
         handle._key = key
-        self._forms[id(handle)] = (handle, source, text, buttons, dict(options))
+        record = dict(options)
+        record["form_id"] = key
+        record["module_id"] = getattr(source, "module_id", "")
+        self._forms[key] = (handle, source, text, buttons, record)
         ttl = options.get("ttl")
-        if isinstance(ttl, (int, float)) and ttl > 0:
+        deadline = time.time() + float(ttl) if isinstance(ttl, (int, float)) and float(ttl) > 0 else None
+        if deadline is not None:
             if self._form_expiry is None:
                 self._form_expiry = {}
-            self._form_expiry[id(handle)] = time.monotonic() + float(ttl)
+            self._form_expiry[key] = time.monotonic() + float(ttl)
+
+        if self.state is not None:
+            self.state.connection.execute(
+                "INSERT OR REPLACE INTO form_state(form_id,module_id,source,chat_id,message_id,inline_message_id,text,buttons,options,expires) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                (key, record.get("module_id", ""), getattr(source, "src", "mt"), str(getattr(source, "chat_id", "")), getattr(source, "id", None), getattr(source, "inline_message_id", None), text, json.dumps(buttons, ensure_ascii=False, default=str), json.dumps(record, ensure_ascii=False, default=str), deadline),
+            )
+            self.state.connection.commit()
+
+    async def restore_forms(self) -> int:
+        if self.state is None:
+            return 0
+        rows = self.state.connection.execute("SELECT form_id, module_id, source, chat_id, message_id, inline_message_id, text, buttons, options, expires FROM form_state").fetchall()
+        restored = 0
+        for row in rows:
+            if row[9] is not None and row[9] <= time.time():
+                self.state.connection.execute("DELETE FROM form_state WHERE form_id = ?", (row[0],))
+                continue
+            if row[2] != "mt":
+                continue
+            try:
+                source = SimpleNamespace(src=row[2], chat_id=int(row[3]) if row[3] else None, id=row[4], inline_message_id=row[5])
+                handle = FormHandle(self, source, key=row[0])
+                handle._key = row[0]
+                buttons = json.loads(row[7])
+                options = json.loads(row[8])
+                self.register_form(handle, source, row[6], buttons, options)
+                restored += 1
+            except Exception:
+                continue
+        self.state.connection.commit()
+        return restored
+
+    async def restore_form_state(self) -> int:
+        return await self.restore_forms()
+
+    def _persist_form(self, key: str, source: Any, text: str, buttons: Any, options: dict[str, Any]) -> None:
+        if self.state is None:
+            return
+        ttl = options.get("ttl")
+        expires = time.time() + float(ttl) if isinstance(ttl, (int, float)) and float(ttl) > 0 else None
+        self.state.connection.execute(
+            "UPDATE form_state SET text = ?, buttons = ?, options = ?, expires = ? WHERE form_id = ?",
+            (text, json.dumps(buttons, ensure_ascii=False, default=str), json.dumps(options, ensure_ascii=False, default=str), expires, key),
+        )
+        self.state.connection.commit()
 
     async def edit_form(self, handle: Any, text: str | None, buttons: Any = None, **kwargs: Any) -> Any:
-        if self._form_expiry and self._form_expiry.get(id(handle), 0) <= time.monotonic():
+        if self._form_expiry and self._form_expiry.get(handle.key, 0) <= time.monotonic():
             await self.delete_form(handle)
             raise RuntimeError("form has expired")
-        entry = (self._forms or {}).get(id(handle))
+        entry = (self._forms or {}).get(handle.key)
         if entry is None:
             raise RuntimeError("form is not registered")
         _, source, old_text, old_buttons, options = entry
@@ -233,15 +301,19 @@ class Runtime:
         next_buttons = old_buttons if buttons is None else buttons
         options.update(kwargs)
         value = await self._send_form(source, next_text, next_buttons, options)
-        self._forms[id(handle)] = (handle, source, next_text, next_buttons, options)
+        self._forms[handle.key] = (handle, source, next_text, next_buttons, options)
+        self._persist_form(handle.key, source, next_text, next_buttons, options)
         return value
 
     async def delete_form(self, handle: Any) -> bool:
-        entry = (self._forms or {}).pop(id(handle), None)
+        entry = (self._forms or {}).pop(handle.key, None)
         if self._form_expiry is not None:
-            self._form_expiry.pop(id(handle), None)
+            self._form_expiry.pop(handle.key, None)
         if entry is None:
             return False
+        if self.state is not None:
+            self.state.connection.execute("DELETE FROM form_state WHERE form_id = ?", (handle.key,))
+            self.state.connection.commit()
         _, source, _, _, _ = entry
         if getattr(source, "src", None) == "bot":
             chat_id = getattr(source, "chat_id", None)
@@ -258,11 +330,15 @@ class Runtime:
         for key in expired:
             if self._forms is not None:
                 self._forms.pop(key, None)
+            if self.state is not None:
+                self.state.connection.execute("DELETE FROM form_state WHERE form_id = ?", (key,))
             self._form_expiry.pop(key, None)
+        if self.state is not None and expired:
+            self.state.connection.commit()
         return len(expired)
 
     def form_snapshot(self, handle: Any) -> dict[str, Any] | None:
-        entry = (self._forms or {}).get(id(handle))
+        entry = (self._forms or {}).get(handle.key)
         if entry is None:
             return None
         _, source, text, buttons, options = entry
@@ -360,7 +436,7 @@ class Runtime:
             request = (self._input_requests or {}).pop(key.split(":", 1)[1], None)
             if request is not None and value:
                 handler, payload, source = request
-                result = handler(CallbackContext(query), value, payload)
+                result = handler(InputContext(self, source, query), value, payload)
                 if hasattr(result, "__await__"):
                     await result
             await query.answer([], cache_time=0, is_personal=True)
@@ -1083,6 +1159,7 @@ class Runtime:
             self.build()
         assert self.app is not None
         await self.restore_enabled_modules()
+        await self.restore_forms()
         if self.inline is not None:
             try:
                 await self.inline.start()

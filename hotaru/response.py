@@ -26,12 +26,12 @@ class Response:
 
 
 class FormHandle:
-    def __init__(self, runtime: Any, source: Any, value: Any = None) -> None:
+    def __init__(self, runtime: Any, source: Any, value: Any = None, key: str | None = None) -> None:
         self._runtime = runtime
         self._source = source
         self._record = None
         self._value = value
-        self._key = secrets.token_urlsafe(12)
+        self._key = key or secrets.token_urlsafe(12)
 
     async def edit(self, text: str, buttons: Any = None, **kwargs: Any) -> "FormHandle":
         if self._runtime is None:
