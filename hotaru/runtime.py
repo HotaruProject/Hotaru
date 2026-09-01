@@ -234,6 +234,13 @@ class Runtime:
                     await self.inline.bot_app.bot_req("deleteMessage", chat_id=chat_id, message_id=message_id)
         return True
 
+    def form_snapshot(self, handle: Any) -> dict[str, Any] | None:
+        entry = (self._forms or {}).get(id(handle))
+        if entry is None:
+            return None
+        _, source, text, buttons, options = entry
+        return {"source": source, "text": text, "buttons": buttons, "options": dict(options)}
+
     async def _insert_inline_form(self, command: Any, text: str, buttons: list[dict[str, str]], options: dict[str, Any] | None = None) -> Any:
         if self.inline is None or self.inline.info is None or self.app is None or self.app.mt is None:
             raise RuntimeError("inline insertion transport is not ready")
