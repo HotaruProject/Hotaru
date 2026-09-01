@@ -303,6 +303,15 @@ class Runtime:
                 buttons = json.loads(row[7])
                 options = json.loads(row[8])
                 module_id = str(row[1] or options.get("module_id", ""))
+                actions = options.get("actions", []) if isinstance(options.get("actions"), list) else []
+                if actions and self.callbacks is not None:
+                    action_map = {str(item.get("action_id")): item.get("payload") for item in actions if isinstance(item, dict) and item.get("action_id")}
+                    for row_buttons in buttons:
+                        row_items = [row_buttons] if isinstance(row_buttons, dict) else row_buttons
+                        for button in row_items if isinstance(row_items, list) else []:
+                            if isinstance(button, dict) and button.get("_action_id") in action_map:
+                                button["callback_data"] = self.callbacks.issue_module(module_id, str(button["_action_id"]), CallbackBinding(int(self.kernel.owner_id or 0), None, 0), button.get("_payload", action_map[str(button["_action_id"])])) if self.kernel is not None else button.get("callback_data")
+
                 if not module_id or self.modules is None:
                     raise ValueError("restored form owner is unavailable")
                 rehydrated = self.modules.rehydrate_form(module_id, {"form_id": row[0], "text": row[6], "buttons": buttons, "options": options})
