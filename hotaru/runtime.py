@@ -1253,6 +1253,10 @@ class Runtime:
             return
         if self.inline is not None:
             await self.inline.stop()
+        if self._forms is not None:
+            for key in tuple(self._forms):
+                handle = self._forms[key][0]
+                await self.delete_form(handle)
         if self.kernel is not None:
             await self.kernel.cancel_all()
         if self.modules is not None:
