@@ -396,6 +396,17 @@ class Runtime:
         _, source, text, buttons, options = entry
         return {"source": source, "text": text, "buttons": buttons, "options": dict(options)}
 
+    def _persist_inline_form(self, key: str, source: Any, text: str, buttons: Any, options: dict[str, Any]) -> None:
+        if self.state is None:
+            return
+        ttl = options.get("ttl")
+        expires = time.time() + float(ttl) if isinstance(ttl, (int, float)) and float(ttl) > 0 else None
+        self.state.connection.execute(
+            "INSERT OR REPLACE INTO form_state(form_id,module_id,source,chat_id,message_id,inline_message_id,text,buttons,options,expires) VALUES (?,?,?,?,?,?,?,?,?,?)",
+            ("inline:" + key, str(options.get("module_id", "")), "inline", str(getattr(source, "chat_id", "")), getattr(source, "id", None), None, text, json.dumps(buttons, ensure_ascii=False, default=str), json.dumps(options, ensure_ascii=False, default=str), expires),
+        )
+        self.state.connection.commit()
+
     async def _insert_inline_form(self, command: Any, text: str, buttons: list[dict[str, str]], options: dict[str, Any] | None = None) -> Any:
         if self.inline is None or self.inline.info is None or self.app is None or self.app.mt is None:
             raise RuntimeError("inline insertion transport is not ready")
@@ -440,6 +451,9 @@ class Runtime:
                     current.append({key: value for key, value in button.items() if key != "style"})
             inline_buttons.append(current)
         self._inline_forms[nonce] = (text, inline_buttons)
+        options["module_id"] = options.get("module_id", "")
+        options["form_id"] = nonce
+        self._persist_inline_form(nonce, command, text, inline_buttons, options)
         if self.observatory is not None:
             self.observatory.emit("inline", "form_queued", nonce=nonce, chat=chat_id, rows=len(inline_buttons))
         with trusted_scope():
