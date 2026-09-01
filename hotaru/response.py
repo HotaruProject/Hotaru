@@ -309,6 +309,8 @@ class ResponseService:
             return [await self.answer(message, text=text, **kwargs)]
         if len(text) > file_limit:
             return await self.fallback_file(message, text, filename=filename, **kwargs)
+        if kwargs.pop("preserve_html", True):
+            return await self.split_html(message, text, limit=limit, **kwargs)
         return await self.split(message, text, limit=limit, **kwargs)
 
     async def dispatch(self, message: Any, content: Any = None, **kwargs: Any) -> Any:
