@@ -497,10 +497,15 @@ class Runtime:
                     current.append({"text": button.get("text", ""), "switch_inline_query_current_chat": "hotaru-input:" + token + " "})
                     continue
                 if callable(button.get("handler")) and "callback" not in button:
-                    button = {**button, "callback": button["handler"]}
+                    action_id = self.callbacks.register_module_action(options.get("module_id", ""), button["handler"]) if self.callbacks is not None else ""
+                    if action_id:
+                        button = {**button, "_action_id": action_id, "_payload": button.get("payload")}
                 handle = button.get("callback_data")
                 if isinstance(handle, str):
                     current.append({"text": button.get("text", ""), "callback_data": self.callbacks.store.rebind(handle, CallbackBinding(self.kernel.owner_id, None, 0))})
+                elif button.get("_action_id") and self.callbacks is not None:
+                    issued = self.callbacks.issue_module(options.get("module_id", ""), str(button["_action_id"]), CallbackBinding(int(getattr(self.kernel, "owner_id", 0) or 0), None, 0), button.get("_payload"))
+                    current.append({"text": button.get("text", ""), "callback_data": issued})
                 elif isinstance(button.get("url"), str):
                     current.append({"text": button.get("text", ""), "url": button["url"]})
                 else:
