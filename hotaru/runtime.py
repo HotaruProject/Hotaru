@@ -156,7 +156,6 @@ class Runtime:
         self._input_requests = {}
         self._form_expiry = {}
         self._form_gc_task = None
-        self._form_gc_task = asyncio.create_task(self._form_gc_loop(), name="hotaru:form-gc")
         self.context_factory.inline_manager = self.inline
         self.context_factory.form_sender = self._send_form
         self.sandbox = ModuleSandbox(self)
@@ -1262,6 +1261,8 @@ class Runtime:
         assert self.app is not None
         await self.restore_enabled_modules()
         await self.restore_forms()
+        if self._form_gc_task is None or self._form_gc_task.done():
+            self._form_gc_task = asyncio.create_task(self._form_gc_loop(), name="hotaru:form-gc")
         if self.inline is not None:
             try:
                 await self.inline.start()
