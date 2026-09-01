@@ -1195,6 +1195,7 @@ class Runtime:
                 self.kernel.context_factory = self.context_factory
             self.modules = ModuleManager(tasks=self.tasks)
             self.modules.form_cleanup = self.unload_module_forms
+            self.stager = ModuleStager(self.modules.loader)
 
     def status(self) -> dict[str, Any]:
         return {
