@@ -558,6 +558,10 @@ class Runtime:
         options["actions"] = action_records or self._form_actions(buttons)
         if options["module_id"] and self.state is not None:
             self._persist_inline_form(nonce, command, text, inline_buttons, options)
+        try:
+            setattr(command, "_hotaru_inline_form_id", "inline:" + nonce)
+        except Exception:
+            pass
         if self.observatory is not None:
             self.observatory.emit("inline", "form_queued", nonce=nonce, chat=chat_id, rows=len(inline_buttons))
         with trusted_scope():
