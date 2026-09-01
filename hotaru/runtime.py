@@ -597,13 +597,24 @@ class Runtime:
             clear_draft=True,
         )
         if options.get("delete_source", True):
+            await self._delete_inline_source(command, chat_id, message_id)
+        return result
+
+    async def _delete_inline_source(self, command: Any, chat_id: int | str, message_id: int) -> None:
+        if getattr(command, "src", None) == "bot":
             deleter = getattr(command, "delete", None)
             if callable(deleter):
                 value = deleter()
                 if asyncio.iscoroutine(value) or isinstance(value, asyncio.Future):
                     await value
-            await self.app.mt_req("messages.deleteMessages", id=[message_id], revoke=True)
-        return result
+            return
+        if isinstance(chat_id, int) and chat_id <= -1000000000000:
+            entity = self.app.mt.entities.get(("chat", -chat_id - 1000000000000)) if self.app is not None and self.app.mt is not None else None
+            access_hash = entity.get("access_hash", 0) if isinstance(entity, dict) else 0
+            channel = await self.app.mt.resolve_peer({"chat_id": chat_id, "access_hash": access_hash})
+            await self.app.mt_req("channels.deleteMessages", channel=channel, id=[message_id])
+            return
+        await self.app.mt_req("messages.deleteMessages", id=[message_id], revoke=True)
 
     async def _on_inline_query(self, query: Any) -> None:
         if self.security is not None:
