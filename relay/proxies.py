@@ -100,6 +100,20 @@ class UiHelper:
     def row(self, *buttons: dict[str, str]) -> list[dict[str, str]]:
         return [b for b in buttons]
 
+    def rows(self, *rows: list[dict[str, str]]) -> list[list[dict[str, str]]]:
+        return [list(row) for row in rows]
+
+    def button_url(self, text: str, url: str) -> dict[str, str]:
+        if not url.startswith(("https://", "tg://")):
+            raise ValueError("button URL must use https or tg scheme")
+        return {"text": text, "url": url}
+
+    def close(self, text: str = "Close") -> dict[str, str]:
+        async def handler(callback: Any, payload: Any) -> Any:
+            return await callback.delete()
+
+        return self.button(text, handler)
+
     def actions(self) -> dict[str, Callable[[Any, Any], Any]]:
         return dict(self._actions)
 

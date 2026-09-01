@@ -151,18 +151,31 @@ class Runtime:
         except CallbackDenied:
             return None
 
-    async def _send_form(self, command: Any, text: str, buttons: list[dict[str, str]]) -> Any:
-        if self.inline is None or self.inline.info is None or self.inline.bot_app is None:
-            return await self.responses.answer(command, text=text, buttons=buttons, output="edit")
+    async def _send_form(self, command: Any, text: str, buttons: list[dict[str, str]], options: dict[str, Any] | None = None) -> Any:
+        if self.inline is None:
+            raise RuntimeError("inline bot form transport is unavailable")
+        if self.inline.info is None:
+            await self.inline.ensure_bot()
+        if self.inline.bot_app is None:
+            await self.inline.start()
+        if self.inline.info is None or self.inline.bot_app is None:
+            raise RuntimeError("inline bot form transport is not ready")
         owner = self.kernel.owner_id if self.kernel is not None else None
         if owner is None:
-            return await self.responses.answer(command, text=text, buttons=buttons, output="edit")
-        if hasattr(command, "delete"):
-            try:
-                await command.delete()
-            except Exception:
-                pass
-        sent = await self.inline.bot_app.send_msg(owner, text)
+            raise RuntimeError("form owner is missing")
+        options = options or {}
+        chat_id = getattr(command, "chat_id", None)
+        if not isinstance(chat_id, (int, str)):
+            raise RuntimeError("form target chat is missing")
+        reply_to = getattr(command, "id", None) or getattr(command, "message_id", None)
+        topic_id = options.get("topic_id")
+        if not isinstance(topic_id, int) and hasattr(command, "get"):
+            for key in ("message_thread_id", "topic_id", "topic"):
+                value = command.get(key)
+                if isinstance(value, int):
+                    topic_id = value
+                    break
+        sent = await self.inline.bot_app.send_msg(chat_id, text, reply_to=reply_to if isinstance(reply_to, int) else None, topic_id=topic_id if isinstance(topic_id, int) else None)
         body = sent.get("result", sent) if isinstance(sent, dict) else sent
         form_id = body.get("message_id") if isinstance(body, dict) else getattr(body, "message_id", None)
         if not isinstance(form_id, int):
@@ -171,8 +184,10 @@ class Runtime:
         for button in buttons:
             handle = button.get("callback_data")
             if isinstance(handle, str):
-                rebound.append({"text": button.get("text", ""), "callback_data": self.callbacks.store.rebind(handle, CallbackBinding(owner, owner, form_id))})
-        await self.inline.bot_app.bot_req("editMessageText", chat_id=owner, message_id=form_id, text=text, reply_markup={"inline_keyboard": [rebound]})
+                rebound.append({"text": button.get("text", ""), "callback_data": self.callbacks.store.rebind(handle, CallbackBinding(owner, chat_id, form_id))})
+        await self.inline.bot_app.bot_req("editMessageText", chat_id=chat_id, message_id=form_id, text=text, reply_markup={"inline_keyboard": [rebound]})
+        if hasattr(command, "delete"):
+            await command.delete()
         return sent
 
     async def _on_inline_query(self, query: Any) -> None:

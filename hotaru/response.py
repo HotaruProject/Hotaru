@@ -131,6 +131,7 @@ class ModuleContext:
     cap_host: Any = None
     callback_router: Any = None
     inline_manager: Any = None
+    form_sender: Any = None
 
     @property
     def message(self) -> ModuleMessage:
@@ -163,7 +164,14 @@ class ModuleContext:
         return await self.cap("net", {"url": url, "data": data, "timeout": timeout})
 
     async def answer(self, **kwargs: Any) -> Response:
+        if kwargs.get("buttons") and self.form_sender is not None:
+            return await self.form_sender(self._source, kwargs.get("text", ""), kwargs["buttons"], kwargs)
         return await self.responses.answer(self._source, **kwargs)
+
+    async def form(self, text: str, buttons: Any, **kwargs: Any) -> Response:
+        kwargs["buttons"] = buttons
+        kwargs["text"] = text
+        return await self.answer(**kwargs)
 
     async def answer_file(self, media: Any, **kwargs: Any) -> Response:
         kwargs.setdefault("output", "reply")
@@ -291,6 +299,7 @@ class ModuleContextFactory:
         self.cap_host: Any = None
         self.callback_router: Any = None
         self.inline_manager: Any = None
+        self.form_sender: Any = None
 
     def create(self, module_id: str, message: Any) -> ModuleContext:
-        return ModuleContext(module_id, message, self._state.namespace(module_id), self._responses, self.cap_host, self.callback_router, self.inline_manager)
+        return ModuleContext(module_id, message, self._state.namespace(module_id), self._responses, self.cap_host, self.callback_router, self.inline_manager, self.form_sender)
