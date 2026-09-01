@@ -239,11 +239,20 @@ class Runtime:
         if not isinstance(form_id, int):
             raise RuntimeError("inline form message id is missing")
         rebound = []
-        for button in buttons:
-            handle = button.get("callback_data")
-            if isinstance(handle, str):
-                rebound.append({"text": button.get("text", ""), "callback_data": self.callbacks.store.rebind(handle, CallbackBinding(owner, chat_id, form_id))})
-        await self.inline.bot_app.bot_req("editMessageText", chat_id=chat_id, message_id=form_id, text=text, parse_mode="HTML", reply_markup={"inline_keyboard": [rebound]})
+        for row in buttons:
+            if isinstance(row, dict):
+                row = [row]
+            current = []
+            for button in row:
+                if not isinstance(button, dict):
+                    continue
+                handle = button.get("callback_data")
+                if isinstance(handle, str) and self.callbacks is not None:
+                    current.append({"text": button.get("text", ""), "callback_data": self.callbacks.store.rebind(handle, CallbackBinding(owner, chat_id, form_id))})
+                elif isinstance(button.get("url"), str):
+                    current.append({"text": button.get("text", ""), "url": button["url"]})
+            rebound.append(current)
+        await self.inline.bot_app.bot_req("editMessageText", chat_id=chat_id, message_id=form_id, text=text, parse_mode="HTML", reply_markup={"inline_keyboard": rebound})
         if hasattr(command, "delete"):
             await command.delete()
         return sent
@@ -307,6 +316,10 @@ class Runtime:
                 if not isinstance(row_buttons, list):
                     raise ValueError("restored form buttons are invalid")
                 self._forms[row[0]] = (handle, source, row_text, row_buttons, options)
+                if str(row[0]).startswith("inline:"):
+                    if self._inline_forms is None:
+                        self._inline_forms = {}
+                    self._inline_forms[str(row[0]).split(":", 1)[1]] = (row_text, row_buttons)
                 if row[9] is not None:
                     self._form_expiry[row[0]] = time.monotonic() + max(0.0, row[9] - time.time())
                 restored += 1
@@ -335,10 +348,15 @@ class Runtime:
         return await self.restore_forms()
 
     def _persist_form(self, key: str, source: Any, text: str, buttons: Any, options: dict[str, Any]) -> None:
-        if self.state is None:
-            return
         ttl = options.get("ttl")
         expires = time.time() + float(ttl) if isinstance(ttl, (int, float)) and float(ttl) > 0 else None
+        if self._form_expiry is not None:
+            if expires is None:
+                self._form_expiry.pop(key, None)
+            else:
+                self._form_expiry[key] = time.monotonic() + float(ttl) if isinstance(ttl, (int, float)) else time.monotonic()
+        if self.state is None:
+            return
         self.state.connection.execute(
             "UPDATE form_state SET text = ?, buttons = ?, options = ?, expires = ? WHERE form_id = ?",
             (text, json.dumps(buttons, ensure_ascii=False, default=str), json.dumps(options, ensure_ascii=False, default=str), expires, key),
@@ -359,6 +377,8 @@ class Runtime:
         value = await self._send_form(source, next_text, next_buttons, options)
         self._forms[handle.key] = (handle, source, next_text, next_buttons, options)
         self._persist_form(handle.key, source, next_text, next_buttons, options)
+        if str(handle.key).startswith("inline:") and self._inline_forms is not None:
+            self._inline_forms[str(handle.key).split(":", 1)[1]] = (next_text, next_buttons)
         return value
 
     async def delete_form(self, handle: Any) -> bool:
