@@ -33,11 +33,48 @@ class FormHandle:
         self._value = value
         self._key = key or secrets.token_urlsafe(12)
 
-    async def edit(self, text: str, buttons: Any = None, **kwargs: Any) -> "FormHandle":
+    async def edit(self, text: str | None = None, buttons: Any = None, **kwargs: Any) -> "FormHandle":
         if self._runtime is None:
             raise ResponseError("form runtime is unavailable")
         self._value = await self._runtime.edit_form(self, text, buttons, **kwargs)
         return self
+
+    async def refresh(self) -> "FormHandle":
+        if self._runtime is None:
+            raise ResponseError("form runtime is unavailable")
+        await self._runtime.edit_form(self, None, None)
+        return self
+
+    async def replace(self, text: str, buttons: Any = None, **kwargs: Any) -> "FormHandle":
+        return await self.edit(text, buttons, **kwargs)
+
+    async def expire(self) -> bool:
+        return await self.unload()
+
+    async def is_alive(self) -> bool:
+        return self.snapshot() is not None
+
+    async def set_ttl(self, ttl: float) -> "FormHandle":
+        await self.edit(None, None, ttl=ttl)
+        return self
+
+    async def update(self, text: str | None = None, buttons: Any = None, **kwargs: Any) -> "FormHandle":
+        return await self.edit(text, buttons, **kwargs)
+
+    async def show(self) -> "FormHandle":
+        return await self.refresh()
+
+    async def hide(self) -> bool:
+        return await self.delete()
+
+    async def close_and_delete(self) -> bool:
+        return await self.delete()
+
+    async def set_buttons(self, buttons: Any) -> "FormHandle":
+        return await self.edit_buttons(buttons)
+
+    async def set_text(self, text: str) -> "FormHandle":
+        return await self.edit(text)
 
     async def edit_buttons(self, buttons: Any) -> "FormHandle":
         if self._runtime is None:
