@@ -53,6 +53,9 @@ class InputContext:
     async def delete(self) -> bool:
         return True
 
+    async def cancel(self) -> bool:
+        return await self.delete()
+
 
 class FormRecord:
     def __init__(self, form_id: str, source: Any, text: str, buttons: Any, options: dict[str, Any]) -> None:
@@ -502,12 +505,16 @@ class Runtime:
         text = (query.query or "").strip()
         if text.startswith("hotaru-input:"):
             key, _, value = text.partition(" ")
-            request = (self._input_requests or {}).pop(key.split(":", 1)[1], None)
+            request = (self._input_requests or {}).get(key.split(":", 1)[1])
             if request is not None and value and request[3] > time.monotonic():
                 handler, payload, source, _ = request
-                result = handler(InputContext(self, source, query), value, payload)
-                if hasattr(result, "__await__"):
-                    await result
+                try:
+                    result = handler(InputContext(self, source, query), value, payload)
+                    if hasattr(result, "__await__"):
+                        await result
+                finally:
+                    if self._input_requests is not None:
+                        self._input_requests.pop(key.split(":", 1)[1], None)
             await query.answer([], cache_time=0, is_personal=True)
             return
         if text.startswith("hotaru-form:"):
