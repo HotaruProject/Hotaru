@@ -103,6 +103,66 @@ class RichGateway:
     def media(media_id: str, media: Any) -> dict[str, Any]:
         return {"id": media_id, "media": media}
 
+    @staticmethod
+    def block(kind: str, **fields: Any) -> dict[str, Any]:
+        return {"type": kind, **fields}
+
+    def paragraph(self, html_text: str) -> dict[str, Any]:
+        return self.block("paragraph", text=html_text)
+
+    def heading(self, html_text: str, *, level: int = 1) -> dict[str, Any]:
+        return self.block("section_heading", text=html_text, level=level)
+
+    def preformatted(self, text: str, *, language: str = "") -> dict[str, Any]:
+        return self.block("preformatted", text=text, language=language)
+
+    def divider(self) -> dict[str, Any]:
+        return self.block("divider")
+
+    def list(self, items: list[Any], *, ordered: bool = False) -> dict[str, Any]:
+        return self.block("list", items=[self.block("list_item", text=item) if isinstance(item, str) else item for item in items], ordered=ordered)
+
+    def quote(self, html_text: str, *, expandable: bool = False) -> dict[str, Any]:
+        return self.block("expandable_block_quotation" if expandable else "block_quotation", text=html_text)
+
+    def details(self, summary: str, blocks: list[dict[str, Any]], *, open: bool = False) -> dict[str, Any]:
+        return self.block("details", summary=summary, blocks=blocks, is_open=open)
+
+    def table(self, cells: list[list[Any]], *, bordered: bool = True, striped: bool = False, compact: bool = False, caption: Any = None) -> dict[str, Any]:
+        rows = [[self.block("table_cell", text=cell) if isinstance(cell, str) else cell for cell in row] for row in cells]
+        return self.block("table", cells=rows, is_bordered=bordered, is_striped=striped, is_compact=compact, caption=caption)
+
+    def map(self, latitude: float, longitude: float, *, zoom: int = 15, width: int | None = None, height: int | None = None, caption: Any = None) -> dict[str, Any]:
+        result = self.block("map", location={"latitude": latitude, "longitude": longitude}, zoom=zoom)
+        if width is not None:
+            result["width"] = width
+        if height is not None:
+            result["height"] = height
+        if caption is not None:
+            result["caption"] = caption
+        return result
+
+    def photo(self, media: Any, *, caption: Any = None) -> dict[str, Any]:
+        return self.block("photo", photo=media, caption=caption)
+
+    def video(self, media: Any, *, caption: Any = None) -> dict[str, Any]:
+        return self.block("video", video=media, caption=caption)
+
+    def audio(self, media: Any, *, caption: Any = None) -> dict[str, Any]:
+        return self.block("audio", audio=media, caption=caption)
+
+    def document(self, media: Any, *, caption: Any = None) -> dict[str, Any]:
+        return self.block("document", document=media, caption=caption)
+
+    def collage(self, items: list[Any]) -> dict[str, Any]:
+        return self.block("collage", items=items)
+
+    def slideshow(self, items: list[Any], *, autoplay: bool = False) -> dict[str, Any]:
+        return self.block("slideshow", items=items, autoplay=autoplay)
+
+    def buttons(self, buttons: list[Any], *, align: str = "left") -> dict[str, Any]:
+        return self.block("buttons", buttons=buttons, align=align)
+
     def input(self, value: str | dict[str, Any], **kwargs: Any) -> dict[str, Any]:
         return value if isinstance(value, dict) else self.html(value, **kwargs)
 
@@ -116,6 +176,16 @@ class RichGateway:
         if buttons is not None:
             data["reply_markup"] = buttons
         return await self._tg.call("messages.sendMessage", data)
+
+    async def send_blocks(self, blocks: list[dict[str, Any]], *, peer: Any = None, **kwargs: Any) -> Any:
+        target = peer if peer is not None else getattr(self._source, "chat_id", None)
+        return await self._tg.call("messages.sendMessage", {"peer": target, "message": "", "random_id": secrets.randbits(63), "rich_message": {"_": "inputRichMessage", "blocks": blocks}, **kwargs})
+
+    async def send_html(self, html_text: str, *, peer: Any = None, **kwargs: Any) -> Any:
+        return await self.send(html_text, peer=peer, **kwargs)
+
+    async def edit_html(self, html_text: str, **kwargs: Any) -> Any:
+        return await self.edit(html_text, **kwargs)
 
     async def send_draft(self, html_text: str | dict[str, Any], *, peer: Any = None, draft_id: int, **kwargs: Any) -> Any:
         return await self.draft(html_text, peer=peer, draft_id=draft_id, **kwargs)
