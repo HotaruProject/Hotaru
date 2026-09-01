@@ -265,7 +265,8 @@ class Runtime:
         record = dict(options)
         record["form_id"] = key
         record["module_id"] = record.get("module_id") or getattr(source, "module_id", "")
-        record["actions"] = self._form_actions(buttons)
+        saved_actions = options.get("actions")
+        record["actions"] = saved_actions if isinstance(saved_actions, list) else self._form_actions(buttons)
         self._forms[key] = (handle, source, text, buttons, record)
         ttl = options.get("ttl")
         deadline = time.time() + float(ttl) if isinstance(ttl, (int, float)) and float(ttl) > 0 else None
