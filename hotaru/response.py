@@ -308,8 +308,9 @@ class ResponseService:
         if len(text) <= limit:
             return [await self.answer(message, text=text, **kwargs)]
         if len(text) > file_limit:
+            kwargs.pop("preserve_html", None)
             return await self.fallback_file(message, text, filename=filename, **kwargs)
-        if kwargs.pop("preserve_html", True):
+        if kwargs.pop("preserve_html", True) and limit >= 256:
             return await self.split_html(message, text, limit=limit, **kwargs)
         return await self.split(message, text, limit=limit, **kwargs)
 
