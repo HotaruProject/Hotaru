@@ -438,7 +438,7 @@ class InlineManager:
         at = f"@{username}"
         for step in (
             ("/setinline", at, self.inline_placeholder),
-            ("/setinlinefeedback", at, "Enabled"),
+            ("/setinlinefeedback", at, "100"),
         ):
             retried = False
             for message in step:
@@ -555,7 +555,7 @@ class InlineManager:
     async def _dispatch_callback(self, callback: Any) -> None:
         security = getattr(self.runtime, "security", None)
         if security is not None:
-            from .security import AccessVerdict
+            from hotaru.security import AccessVerdict
 
             verdict = security.check_callback(callback, transport="inline")
             if verdict is not AccessVerdict.ALLOW:
@@ -565,12 +565,12 @@ class InlineManager:
                 await handler(callback)
             except Exception as exc:
                 if self.runtime.observatory is not None:
-                    self.runtime.observatory.emit("inline", "callback_error", error=type(exc).__name__)
+                    self.runtime.observatory.emit("inline", "callback_error", error=type(exc).__name__, detail=str(exc)[:240])
 
     async def _dispatch_bot_pm(self, message: Any) -> None:
         security = getattr(self.runtime, "security", None)
         if security is not None:
-            from .security import AccessVerdict
+            from hotaru.security import AccessVerdict
 
             verdict = security.check(message, transport="bot-pm")
             if verdict is not AccessVerdict.ALLOW:

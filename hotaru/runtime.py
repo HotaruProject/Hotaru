@@ -217,7 +217,7 @@ class Runtime:
         for button in buttons:
             handle = button.get("callback_data")
             if isinstance(handle, str):
-                inline_buttons.append({"text": button.get("text", ""), "callback_data": self.callbacks.store.rebind(handle, CallbackBinding(self.kernel.owner_id, chat_id, 0))})
+                inline_buttons.append({"text": button.get("text", ""), "callback_data": self.callbacks.store.rebind(handle, CallbackBinding(self.kernel.owner_id, None, 0))})
             elif isinstance(button.get("url"), str):
                 inline_buttons.append({"text": button.get("text", ""), "url": button["url"]})
         self._inline_forms[nonce] = (text, inline_buttons)
@@ -312,7 +312,9 @@ class Runtime:
             return None
         try:
             return await self.callbacks.dispatch(callback)
-        except Exception:
+        except Exception as exc:
+            if self.observatory is not None:
+                self.observatory.emit("inline", "callback_error", error=type(exc).__name__, detail=str(exc)[:240])
             return None
 
     def _command_ver(self, invocation: Any) -> str:

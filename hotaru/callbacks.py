@@ -18,6 +18,38 @@ class CallbackDenied(PermissionError):
     pass
 
 
+class CallbackContext:
+    def __init__(self, callback: Any) -> None:
+        self._callback = callback
+        for name in ("src", "raw", "app", "id", "chat_id", "from_id", "msg_id", "data", "text", "inline_message_id"):
+            if hasattr(callback, name):
+                setattr(self, name, getattr(callback, name))
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._callback, name)
+
+    async def answer(self, text: str | None = None, **kwargs: Any) -> Any:
+        return await self._callback.answer(text, **kwargs)
+
+    async def edit(self, text: str, **kwargs: Any) -> Any:
+        if getattr(self, "inline_message_id", None) and getattr(self, "app", None) is not None:
+            data = dict(kwargs)
+            kbd = data.pop("kbd", None)
+            if kbd is not None:
+                data["reply_markup"] = kbd.to_dict() if hasattr(kbd, "to_dict") else kbd
+            return await self.app.bot_req("editMessageText", inline_message_id=self.inline_message_id, text=text, **data)
+        return await self._callback.edit(text, **kwargs)
+
+    async def delete(self) -> Any:
+        if getattr(self, "inline_message_id", None):
+            if getattr(self, "app", None) is not None:
+                return await self.app.bot_req("editMessageText", inline_message_id=self.inline_message_id, text="")
+            return None
+        if hasattr(self._callback, "delete"):
+            return await self._callback.delete()
+        return None
+
+
 @dataclass(frozen=True, slots=True)
 class CallbackBinding:
     actor: int | str
@@ -153,7 +185,7 @@ class CallbackRouter:
         if handler is None:
             raise CallbackDenied("callback action is unavailable")
         with module_scope():
-            result = handler(callback, value.get("payload"))
+            result = handler(CallbackContext(callback), value.get("payload"))
             if inspect.isawaitable(result):
                 return await result
             return result
