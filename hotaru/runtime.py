@@ -612,7 +612,7 @@ class Runtime:
                     return
                 try:
                     result = handler(InputContext(self, source, query, value, payload), value, payload)
-                    if hasattr(result, "__await__"):
+                    if asyncio.iscoroutine(result) or isinstance(result, asyncio.Future):
                         await result
                 except Exception as exc:
                     if self.observatory is not None:
