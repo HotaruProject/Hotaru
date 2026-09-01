@@ -337,6 +337,30 @@ class BotGateway:
             data["reply_markup"] = buttons
         return await self.call("sendRichMessage", **data)
 
+    async def send_message(self, chat_id: int | str, text: str, *, buttons: Any = None, **kwargs: Any) -> Any:
+        data = {"chat_id": chat_id, "text": text, "parse_mode": "HTML", **kwargs}
+        if buttons is not None:
+            data["reply_markup"] = buttons
+        return await self.call("sendMessage", **data)
+
+    async def send_photo(self, chat_id: int | str, photo: Any, *, caption: str = "", buttons: Any = None, **kwargs: Any) -> Any:
+        data = {"chat_id": chat_id, "photo": photo, "caption": caption, "parse_mode": "HTML", **kwargs}
+        if buttons is not None:
+            data["reply_markup"] = buttons
+        return await self.call("sendPhoto", **data)
+
+    async def send_video(self, chat_id: int | str, video: Any, *, caption: str = "", buttons: Any = None, **kwargs: Any) -> Any:
+        data = {"chat_id": chat_id, "video": video, "caption": caption, "parse_mode": "HTML", **kwargs}
+        if buttons is not None:
+            data["reply_markup"] = buttons
+        return await self.call("sendVideo", **data)
+
+    async def send_document(self, chat_id: int | str, document: Any, *, caption: str = "", buttons: Any = None, **kwargs: Any) -> Any:
+        data = {"chat_id": chat_id, "document": document, "caption": caption, "parse_mode": "HTML", **kwargs}
+        if buttons is not None:
+            data["reply_markup"] = buttons
+        return await self.call("sendDocument", **data)
+
     async def rich_edit(self, chat_id: int | str, message_id: int, html_text: str, *, buttons: Any = None, **kwargs: Any) -> Any:
         data = {"chat_id": chat_id, "message_id": message_id, "rich_message": {"_": "inputRichMessageHTML", "html": html_text}, **kwargs}
         if buttons is not None:
@@ -388,21 +412,22 @@ class InlineHelper:
 
     def photo(self, result_id: str, title: str, photo: str, *, caption: str = "", buttons: Any = None, **kw: Any) -> dict[str, Any]:
         result = {"type": "photo", "id": result_id, "title": title, "photo_url": photo, "thumbnail_url": photo, "caption": caption, "parse_mode": "HTML", **kw}
+        self._attach(result, buttons)
+        return result
+
+    @staticmethod
+    def _attach(result: dict[str, Any], buttons: Any) -> dict[str, Any]:
         if buttons is not None:
             result["reply_markup"] = {"inline_keyboard": buttons}
         return result
 
     def video(self, result_id: str, title: str, video: str, *, mime: str = "video/mp4", thumb: str | None = None, caption: str = "", buttons: Any = None, **kw: Any) -> dict[str, Any]:
         result = {"type": "video", "id": result_id, "title": title, "video_url": video, "mime_type": mime, "thumbnail_url": thumb or video, "caption": caption, "parse_mode": "HTML", **kw}
-        if buttons is not None:
-            result["reply_markup"] = {"inline_keyboard": buttons}
-        return result
+        return self._attach(result, buttons)
 
     def document(self, result_id: str, title: str, document: str, *, mime: str = "application/octet-stream", caption: str = "", buttons: Any = None, **kw: Any) -> dict[str, Any]:
         result = {"type": "document", "id": result_id, "title": title, "document_url": document, "mime_type": mime, "caption": caption, "parse_mode": "HTML", **kw}
-        if buttons is not None:
-            result["reply_markup"] = {"inline_keyboard": buttons}
-        return result
+        return self._attach(result, buttons)
 
     def gallery(self, items: list[dict[str, Any]], **kw: Any) -> list[dict[str, Any]]:
         return items
