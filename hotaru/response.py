@@ -148,6 +148,11 @@ class ModuleContext:
         return InlineHelper(self.inline_manager)
 
     @property
+    def html(self) -> Any:
+        from relay.proxies import HtmlHelper
+        return HtmlHelper()
+
+    @property
     def ui(self) -> Any:
         from relay.proxies import UiHelper
         return UiHelper(self.module_id, self.callback_router.store, getattr(self._source, "from_id", None), getattr(self._source, "chat_id", None), getattr(self._source, "id", 0), self.callback_router)
@@ -164,14 +169,43 @@ class ModuleContext:
         return await self.cap("net", {"url": url, "data": data, "timeout": timeout})
 
     async def answer(self, **kwargs: Any) -> Response:
+        if kwargs.get("text") is not None:
+            kwargs.setdefault("parse_mode", "HTML")
         if kwargs.get("buttons") and self.form_sender is not None:
             return await self.form_sender(self._source, kwargs.get("text", ""), kwargs["buttons"], kwargs)
         return await self.responses.answer(self._source, **kwargs)
 
-    async def form(self, text: str, buttons: Any, **kwargs: Any) -> Response:
+    async def form(self, text: str, buttons: Any = None, *rows: Any, **kwargs: Any) -> Response:
+        if buttons is None:
+            buttons = list(rows)
+        elif rows:
+            buttons = [buttons, *rows]
+        if buttons and isinstance(buttons[0], dict):
+            buttons = [buttons]
         kwargs["buttons"] = buttons
         kwargs["text"] = text
         return await self.answer(**kwargs)
+
+    @staticmethod
+    def escape(value: Any) -> str:
+        from html import escape
+        return escape(str(value), quote=False)
+
+    async def inline_form(self, text: str, buttons: Any = None, *rows: Any, **kwargs: Any) -> Any:
+        if self.form_sender is None:
+            raise ResponseError("inline form transport is not available")
+        value = list(rows) if buttons is None else ([buttons, *rows] if rows else buttons)
+        if value and isinstance(value[0], dict):
+            value = [value]
+        return await self.form_sender(self._source, text, value, kwargs)
+
+    async def reply_html(self, text: str, **kwargs: Any) -> Response:
+        kwargs.setdefault("output", "reply")
+        return await self.answer(text=text, **kwargs)
+
+    async def edit_html(self, text: str, **kwargs: Any) -> Response:
+        kwargs.setdefault("output", "edit")
+        return await self.answer(text=text, **kwargs)
 
     async def answer_file(self, media: Any, **kwargs: Any) -> Response:
         kwargs.setdefault("output", "reply")
@@ -183,6 +217,13 @@ class ModuleContext:
 
     async def answer_rich(self, rich_message: Any, **kwargs: Any) -> Response:
         return await self.answer(rich_message=rich_message, **kwargs)
+
+    async def send(self, text: str, **kwargs: Any) -> Response:
+        kwargs.setdefault("output", "reply")
+        return await self.answer(text=text, **kwargs)
+
+    async def edit(self, text: str, **kwargs: Any) -> Response:
+        return await self.answer(text=text, output="edit", **kwargs)
 
     @property
     def reply_message(self) -> Any | None:

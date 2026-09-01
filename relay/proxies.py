@@ -1,9 +1,37 @@
 from __future__ import annotations
 
+import html
 import secrets
 from typing import Any, Awaitable, Callable
 
 from .caps import MT_DESTRUCTIVE, MT_BLOCKED
+
+
+class HtmlHelper:
+    def escape(self, value: Any) -> str:
+        return html.escape(str(value), quote=False)
+
+    def bold(self, value: Any) -> str:
+        return f"<b>{self.escape(value)}</b>"
+
+    def italic(self, value: Any) -> str:
+        return f"<i>{self.escape(value)}</i>"
+
+    def code(self, value: Any) -> str:
+        return f"<code>{self.escape(value)}</code>"
+
+    def underline(self, value: Any) -> str:
+        return f"<u>{self.escape(value)}</u>"
+
+    def quote(self, value: Any) -> str:
+        return f"<blockquote>{self.escape(value)}</blockquote>"
+
+    def link(self, label: Any, url: str) -> str:
+        return f'<a href="{html.escape(url, quote=True)}">{self.escape(label)}</a>'
+
+    def pre(self, value: Any, language: str | None = None) -> str:
+        attr = f' class="language-{html.escape(language, quote=True)}"' if language else ""
+        return f"<pre{attr}>{self.escape(value)}</pre>"
 
 
 class Gateway:
@@ -45,6 +73,7 @@ class InlineHelper:
         from goygram.types import InlineObj
 
         kbd = kw.pop("kbd", kw.pop("reply_markup", None))
+        kw.setdefault("parse_mode", "HTML")
         result = InlineObj.article(result_id, title, text, **kw)
         if kbd is not None:
             result["reply_markup"] = kbd.to_dict() if hasattr(kbd, "to_dict") else kbd
@@ -61,6 +90,17 @@ class InlineHelper:
 
     async def from_query(self, query: Any, title: str, text: str, **kw: Any) -> Any:
         return await self.show(query, title, text, **kw)
+
+    def form(self, text: str, buttons: Any = None, **kw: Any) -> dict[str, Any]:
+        kw.setdefault("parse_mode", "HTML")
+        result = self.article(secrets.token_hex(6), "Hotaru form", text, **kw)
+        if buttons is not None:
+            result["reply_markup"] = {"inline_keyboard": buttons}
+        return result
+
+    @staticmethod
+    def escape(value: Any) -> str:
+        return html.escape(str(value), quote=False)
 
 
 class UiHelper:
@@ -82,7 +122,7 @@ class UiHelper:
         self._actions[action_id] = handler
         return action_id
 
-    def button(self, text: str, action: str | Callable[[Any, Any], Any], payload: Any = None) -> dict[str, str]:
+    def button(self, text: str, action: str | Callable[[Any, Any], Any], payload: Any = None, *, style: str | None = None) -> dict[str, str]:
         from hotaru.callbacks import CallbackBinding
 
         if callable(action):
@@ -99,7 +139,24 @@ class UiHelper:
             CallbackBinding(self._owner_id or 0, self._chat_id or 0, self._message_id),
             payload,
         )
-        return {"text": text, "callback_data": handle}
+        result = {"text": text, "callback_data": handle}
+        if style is not None:
+            if style not in {"primary", "success", "danger"}:
+                raise ValueError("button style is invalid")
+            result["style"] = style
+        return result
+
+    def callback(self, text: str, handler: Callable[[Any, Any], Any], payload: Any = None, *, style: str | None = None) -> dict[str, str]:
+        return self.button(text, handler, payload, style=style)
+
+    def primary(self, text: str, handler: Callable[[Any, Any], Any], payload: Any = None) -> dict[str, str]:
+        return self.button(text, handler, payload, style="primary")
+
+    def success(self, text: str, handler: Callable[[Any, Any], Any], payload: Any = None) -> dict[str, str]:
+        return self.button(text, handler, payload, style="success")
+
+    def danger(self, text: str, handler: Callable[[Any, Any], Any], payload: Any = None) -> dict[str, str]:
+        return self.button(text, handler, payload, style="danger")
 
     def row(self, *buttons: dict[str, str]) -> list[dict[str, str]]:
         return [b for b in buttons]
@@ -112,11 +169,38 @@ class UiHelper:
             raise ValueError("button URL must use https or tg scheme")
         return {"text": text, "url": url}
 
+    def url(self, text: str, url: str) -> dict[str, str]:
+        return self.button_url(text, url)
+
     def close(self, text: str = "Close") -> dict[str, str]:
         async def handler(callback: Any, payload: Any) -> Any:
             return await callback.delete()
 
-        return self.button(text, handler)
+        return self.button(text, handler, style="danger")
+
+    def back(self, text: str, handler: Callable[[Any, Any], Any], payload: Any = None) -> dict[str, str]:
+        return self.button(text, handler, payload)
+
+    def confirm(self, text: str, handler: Callable[[Any, Any], Any], payload: Any = None) -> dict[str, str]:
+        return self.button(text, handler, payload, style="success")
+
+    def cancel(self, text: str, handler: Callable[[Any, Any], Any], payload: Any = None) -> dict[str, str]:
+        return self.button(text, handler, payload, style="danger")
+
+    def form(self, text: str, *rows: Any) -> dict[str, Any]:
+        normalized = [list(row) if isinstance(row, (list, tuple)) else [row] for row in rows]
+        return {"text": text, "buttons": normalized}
+
+    def switch(self, text: str, query: str, *, same_chat: bool = True) -> dict[str, str]:
+        return {"text": text, "switch_inline_query_current_chat" if same_chat else "switch_inline_query": query}
+
+    def grid(self, *buttons: dict[str, str], columns: int = 2) -> list[list[dict[str, str]]]:
+        if columns < 1:
+            raise ValueError("columns must be positive")
+        return [list(buttons[i:i + columns]) for i in range(0, len(buttons), columns)]
+
+    def keyboard(self, *rows: list[dict[str, str]]) -> dict[str, Any]:
+        return {"inline_keyboard": [list(row) for row in rows]}
 
     def actions(self) -> dict[str, Callable[[Any, Any], Any]]:
         return dict(self._actions)

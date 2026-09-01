@@ -438,7 +438,7 @@ class InlineManager:
         at = f"@{username}"
         for step in (
             ("/setinline", at, self.inline_placeholder),
-            ("/setinlinefeedback", at, "100"),
+            ("/setinlinefeedback", at, "Enabled"),
         ):
             retried = False
             for message in step:

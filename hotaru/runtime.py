@@ -180,7 +180,7 @@ class Runtime:
                 if isinstance(value, int):
                     topic_id = value
                     break
-        sent = await self.inline.bot_app.send_msg(chat_id, text, reply_to=reply_to if isinstance(reply_to, int) else None, topic_id=topic_id if isinstance(topic_id, int) else None)
+        sent = await self.inline.bot_app.send_msg(chat_id, text, reply_to=reply_to if isinstance(reply_to, int) else None, topic_id=topic_id if isinstance(topic_id, int) else None, parse_mode="HTML")
         body = sent.get("result", sent) if isinstance(sent, dict) else sent
         form_id = body.get("message_id") if isinstance(body, dict) else getattr(body, "message_id", None)
         if not isinstance(form_id, int):
@@ -190,7 +190,7 @@ class Runtime:
             handle = button.get("callback_data")
             if isinstance(handle, str):
                 rebound.append({"text": button.get("text", ""), "callback_data": self.callbacks.store.rebind(handle, CallbackBinding(owner, chat_id, form_id))})
-        await self.inline.bot_app.bot_req("editMessageText", chat_id=chat_id, message_id=form_id, text=text, reply_markup={"inline_keyboard": [rebound]})
+        await self.inline.bot_app.bot_req("editMessageText", chat_id=chat_id, message_id=form_id, text=text, parse_mode="HTML", reply_markup={"inline_keyboard": [rebound]})
         if hasattr(command, "delete"):
             await command.delete()
         return sent
@@ -268,7 +268,7 @@ class Runtime:
                 await query.answer([], cache_time=0, is_personal=True)
                 return
             form_text, buttons = form
-            result = InlineObj.article("hotaru-form", "Hotaru form", form_text)
+            result = InlineObj.article("hotaru-form", "Hotaru form", form_text, parse_mode="HTML")
             result["reply_markup"] = {"inline_keyboard": [buttons]}
             await query.answer([result], cache_time=0, is_personal=True)
             return
