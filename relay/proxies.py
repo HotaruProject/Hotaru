@@ -438,10 +438,20 @@ class InlineHelper:
         start = page * size
         return items[start:start + size], start + size < len(items)
 
-    async def error(self, code: int, text: str, *, query: Any = None) -> Any:
-        if query is None:
-            raise ValueError("query is required")
+    async def error(self, code: int, text: str, *, query: Any) -> Any:
         return await self.show(query, f"Error {code}", f"<b>{code}</b> {self.escape(text)}")
+
+    async def e400(self, query: Any, text: str = "Bad request") -> Any:
+        return await self.error(400, text, query=query)
+
+    async def e403(self, query: Any, text: str = "Forbidden") -> Any:
+        return await self.error(403, text, query=query)
+
+    async def e404(self, query: Any, text: str = "Not found") -> Any:
+        return await self.error(404, text, query=query)
+
+    async def e500(self, query: Any, text: str = "Internal error") -> Any:
+        return await self.error(500, text, query=query)
 
     def rich(self, result_id: str, title: str, html_text: str, *, buttons: Any = None, **kw: Any) -> dict[str, Any]:
         from goygram.types import InlineObj
