@@ -47,7 +47,7 @@ class InlineHelper:
         kbd = kw.pop("kbd", kw.pop("reply_markup", None))
         result = InlineObj.article(result_id, title, text, **kw)
         if kbd is not None:
-            result["input_message_content"]["reply_markup"] = kbd.to_dict() if hasattr(kbd, "to_dict") else kbd
+            result["reply_markup"] = kbd.to_dict() if hasattr(kbd, "to_dict") else kbd
         return result
 
     async def answer(self, query: Any, results: list[dict[str, Any]], **kw: Any) -> Any:
