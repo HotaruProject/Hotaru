@@ -358,7 +358,6 @@ class Runtime:
                     if self._inline_forms is None:
                         self._inline_forms = {}
                     self._inline_forms[str(row[0]).split(":", 1)[1]] = (row_text, row_buttons)
-
                 if row[9] is not None:
                     self._form_expiry[row[0]] = time.monotonic() + max(0.0, row[9] - time.time())
                 restored += 1
