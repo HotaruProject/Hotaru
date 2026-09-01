@@ -491,6 +491,7 @@ class Runtime:
         if self._inline_forms is None:
             self._inline_forms = {}
         inline_buttons = []
+        action_records = []
         for row in buttons:
             if isinstance(row, dict):
                 row = [row]
@@ -513,7 +514,9 @@ class Runtime:
                 if isinstance(handle, str):
                     current.append({"text": button.get("text", ""), "callback_data": self.callbacks.store.rebind(handle, CallbackBinding(self.kernel.owner_id, None, 0))})
                 elif button.get("_action_id") and self.callbacks is not None:
-                    issued = self.callbacks.issue_module(options.get("module_id", ""), str(button["_action_id"]), CallbackBinding(int(getattr(self.kernel, "owner_id", 0) or 0), None, 0), button.get("_payload"))
+                    payload = button.get("_payload")
+                    action_records.append({"action_id": button["_action_id"], "payload": payload})
+                    issued = self.callbacks.issue_module(options.get("module_id", ""), str(button["_action_id"]), CallbackBinding(int(getattr(self.kernel, "owner_id", 0) or 0), None, 0), payload)
                     current.append({"text": button.get("text", ""), "callback_data": issued})
                 elif isinstance(button.get("url"), str):
                     current.append({"text": button.get("text", ""), "url": button["url"]})
@@ -523,7 +526,7 @@ class Runtime:
         self._inline_forms[nonce] = (text, inline_buttons)
         options["module_id"] = options.get("module_id", "")
         options["form_id"] = nonce
-        options["actions"] = self._form_actions(buttons)
+        options["actions"] = action_records or self._form_actions(buttons)
         if options["module_id"] and self.state is not None:
             self._persist_inline_form(nonce, command, text, inline_buttons, options)
         if self.observatory is not None:
