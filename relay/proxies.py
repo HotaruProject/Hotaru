@@ -56,6 +56,26 @@ class Gateway:
     async def get(self, method: str, **kwargs: Any) -> Any:
         return await self.call(method, kwargs)
 
+    async def send_message(self, text: str, **kwargs: Any) -> Any:
+        return await self.call("messages.sendMessage", {"message": text, **kwargs})
+
+    async def send_media(self, media: Any, caption: str = "", **kwargs: Any) -> Any:
+        return await self.call("messages.sendMedia", {"media": media, "message": caption, **kwargs})
+
+    async def send_rich(self, html_text: str | dict[str, Any], **kwargs: Any) -> Any:
+        rich = {"_": "inputRichMessageHTML", "html": html_text} if isinstance(html_text, str) else html_text
+        return await self.call("messages.sendMessage", {"rich_message": rich, **kwargs})
+
+    async def edit_message(self, message_id: int, text: str, **kwargs: Any) -> Any:
+        return await self.call("messages.editMessage", {"id": message_id, "message": text, **kwargs})
+
+    async def edit_rich(self, message_id: int, html_text: str | dict[str, Any], **kwargs: Any) -> Any:
+        rich = {"_": "inputRichMessageHTML", "html": html_text} if isinstance(html_text, str) else html_text
+        return await self.call("messages.editMessage", {"id": message_id, "rich_message": rich, **kwargs})
+
+    async def delete_message(self, message_id: int, **kwargs: Any) -> Any:
+        return await self.call("messages.deleteMessages", {"id": [message_id], **kwargs})
+
     def __getattr__(self, name: str) -> Callable[..., Awaitable[Any]]:
         async def _method(**kwargs: Any) -> Any:
             return await self.call(name, kwargs)
@@ -66,7 +86,7 @@ class Gateway:
 class InlineHelper:
     """Convenience wrapper around the owner inline bot: answer queries with rich articles."""
 
-    def __init__(self, inline_manager: Any) -> None:
+    def __init__(self, inline_manager: Any = None) -> None:
         self._inline = inline_manager
 
     def article(self, result_id: str, title: str, text: str, **kw: Any) -> dict[str, Any]:
@@ -81,6 +101,14 @@ class InlineHelper:
 
     async def answer(self, query: Any, results: list[dict[str, Any]], **kw: Any) -> Any:
         return await query.answer(results, **kw)
+
+    def rich(self, result_id: str, title: str, html_text: str, *, buttons: Any = None, **kw: Any) -> dict[str, Any]:
+        from goygram.types import InlineObj
+        result = InlineObj.article(result_id, title, html_text)
+        result["input_message_content"] = {"rich_message": {"_": "inputRichMessageHTML", "html": html_text}}
+        if buttons is not None:
+            result["reply_markup"] = {"inline_keyboard": buttons}
+        return result
 
     def command(self, result_id: str, title: str, text: str, **kw: Any) -> dict[str, Any]:
         return self.article(result_id, title, text, **kw)
@@ -97,6 +125,9 @@ class InlineHelper:
         if buttons is not None:
             result["reply_markup"] = {"inline_keyboard": buttons}
         return result
+
+    def html(self, text: str, **kw: Any) -> dict[str, Any]:
+        return self.rich("hotaru", "Hotaru", text, **kw)
 
     @staticmethod
     def escape(value: Any) -> str:
@@ -190,6 +221,9 @@ class UiHelper:
     def form(self, text: str, *rows: Any) -> dict[str, Any]:
         normalized = [list(row) if isinstance(row, (list, tuple)) else [row] for row in rows]
         return {"text": text, "buttons": normalized}
+
+    def screen(self, text: str, *rows: Any) -> dict[str, Any]:
+        return self.form(text, *rows)
 
     def switch(self, text: str, query: str, *, same_chat: bool = True) -> dict[str, str]:
         return {"text": text, "switch_inline_query_current_chat" if same_chat else "switch_inline_query": query}
