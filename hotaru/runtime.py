@@ -284,16 +284,32 @@ class Runtime:
                 handle._key = row[0]
                 buttons = json.loads(row[7])
                 options = json.loads(row[8])
-                self._forms[row[0]] = (handle, source, row[6], buttons, options)
+                module_id = str(row[1] or options.get("module_id", ""))
+                if not module_id or self.modules is None:
+                    raise ValueError("restored form owner is unavailable")
+                rehydrated = self.modules.rehydrate_form(module_id, {"form_id": row[0], "text": row[6], "buttons": buttons, "options": options})
+                if asyncio.iscoroutine(rehydrated) or isinstance(rehydrated, asyncio.Future):
+                    rehydrated = await rehydrated
+                if not isinstance(rehydrated, dict):
+                    raise ValueError("restored form rehydrator is unavailable")
+                row_text = str(rehydrated.get("text", row[6]))
+                row_buttons = rehydrated.get("buttons", buttons)
+                if isinstance(rehydrated.get("options"), dict):
+                    options.update(rehydrated["options"])
+                if not isinstance(row_buttons, list):
+                    raise ValueError("restored form buttons are invalid")
+                self._forms[row[0]] = (handle, source, row_text, row_buttons, options)
                 if row[9] is not None:
                     self._form_expiry[row[0]] = time.monotonic() + max(0.0, row[9] - time.time())
-                if row[1] and self.callbacks is not None:
-                    self.callbacks.unregister_module(row[1])
                 restored += 1
             except Exception:
                 continue
         self.state.connection.commit()
         return restored
+
+    async def refresh_forms(self) -> int:
+        self.purge_forms()
+        return await self.restore_forms()
 
     async def unload_module_forms(self, module_id: str) -> int:
         if self._forms is None:
@@ -1200,6 +1216,7 @@ class Runtime:
         if self.inline is not None:
             try:
                 await self.inline.start()
+                await self.refresh_forms()
                 if self.observatory is not None and self.inline.info is not None:
                     self.observatory.emit("inline", "started", username=self.inline.info.username)
             except Exception as exc:
