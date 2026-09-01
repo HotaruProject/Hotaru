@@ -168,23 +168,48 @@ class ModuleContext:
     async def net(self, url: str, *, data: dict[str, Any] | None = None, timeout: float = 10.0) -> dict[str, Any]:
         return await self.cap("net", {"url": url, "data": data, "timeout": timeout})
 
-    async def answer(self, **kwargs: Any) -> Response:
+    async def answer(self, text: str | None = None, **kwargs: Any) -> Response:
+        if text is not None:
+            kwargs["text"] = text
         if kwargs.get("text") is not None:
             kwargs.setdefault("parse_mode", "HTML")
+        if kwargs.get("buttons"):
+            kwargs["buttons"] = self._normalize_buttons(kwargs["buttons"])
         if kwargs.get("buttons") and self.form_sender is not None:
             return await self.form_sender(self._source, kwargs.get("text", ""), kwargs["buttons"], kwargs)
+        if kwargs.get("text") is not None and kwargs.get("rich", True):
+            return await self.rich(kwargs.pop("text"), **kwargs)
         return await self.responses.answer(self._source, **kwargs)
 
     async def form(self, text: str, buttons: Any = None, *rows: Any, **kwargs: Any) -> Response:
+        if isinstance(buttons, dict) and "buttons" in buttons:
+            text = str(buttons.get("text", text))
+            buttons = buttons["buttons"]
         if buttons is None:
             buttons = list(rows)
         elif rows:
             buttons = [buttons, *rows]
         if buttons and isinstance(buttons[0], dict):
             buttons = [buttons]
+        buttons = self._normalize_buttons(buttons)
         kwargs["buttons"] = buttons
         kwargs["text"] = text
         return await self.answer(**kwargs)
+
+    def _normalize_buttons(self, buttons: Any) -> Any:
+        if not buttons or self.callback_router is None:
+            return buttons
+        ui = self.ui
+        result = []
+        for row in buttons:
+            current = []
+            for button in row:
+                if not isinstance(button, dict) or "callback" not in button:
+                    current.append(button)
+                    continue
+                current.append(ui.button(str(button.get("text", "")), button["callback"], button.get("payload"), style=button.get("style")))
+            result.append(current)
+        return result
 
     @staticmethod
     def escape(value: Any) -> str:
@@ -216,7 +241,43 @@ class ModuleContext:
         return await self.answer(media=media, **kwargs)
 
     async def answer_rich(self, rich_message: Any, **kwargs: Any) -> Response:
-        return await self.answer(rich_message=rich_message, **kwargs)
+        if isinstance(rich_message, str):
+            return await self.rich(rich_message, **kwargs)
+        if not isinstance(rich_message, dict):
+            raise ResponseError("rich_message must be HTML text or a native input object")
+        buttons = kwargs.pop("buttons", None)
+        if buttons is not None and self.form_sender is not None:
+            return await self.form_sender(self._source, rich_message, buttons, kwargs)
+        return await self._context_tg_call("messages.sendMessage", {"peer": self._source.chat_id, "rich_message": rich_message, **kwargs})
+
+    async def rich(self, html: str, **kwargs: Any) -> Response:
+        buttons = kwargs.pop("buttons", None)
+        if buttons is not None and self.form_sender is not None:
+            result = await self.form_sender(self._source, html, buttons, kwargs)
+            return result if isinstance(result, Response) else Response(True, "reply", getattr(self._source, "src", None), result)
+        peer = getattr(self._source, "chat_id", None)
+        if peer is None:
+            raise ResponseError("rich message target is missing")
+        data = {"peer": peer, "rich_message": {"_": "inputRichMessageHTML", "html": html}}
+        kwargs.pop("parse_mode", None)
+        reply_to = kwargs.pop("reply_to", None) or getattr(self._source, "id", None)
+        if reply_to is not None:
+            data["reply_to"] = {"_": "inputReplyToMessage", "reply_to_msg_id": int(reply_to)}
+        output = kwargs.pop("output", "reply")
+        if output == "edit" and getattr(self._source, "id", None) is not None:
+            data["id"] = int(self._source.id)
+            data.pop("peer", None)
+            result = await self._context_tg_call("messages.editMessage", {"peer": peer, **data})
+            return Response(True, "edit", getattr(self._source, "src", None), result)
+        data.update(kwargs)
+        result = await self._context_tg_call("messages.sendMessage", data)
+        return Response(True, "reply", getattr(self._source, "src", None), result)
+
+    async def _context_tg_call(self, method: str, data: dict[str, Any]) -> Any:
+        host = getattr(self, "cap_host", None)
+        if host is None:
+            raise ResponseError("capabilities are not available")
+        return await host.call(self.module_id, "mt", {"method": method, "kwargs": data})
 
     async def send(self, text: str, **kwargs: Any) -> Response:
         kwargs.setdefault("output", "reply")
