@@ -430,7 +430,31 @@ class InlineHelper:
         return self._attach(result, buttons)
 
     def gallery(self, items: list[dict[str, Any]], **kw: Any) -> list[dict[str, Any]]:
-        return items
+        return list(items)
+
+    def animation(self, result_id: str, title: str, animation: str, *, thumb: str | None = None, caption: str = "", buttons: Any = None, **kw: Any) -> dict[str, Any]:
+        result = {"type": "mpeg4_gif", "id": result_id, "title": title, "mpeg4_url": animation, "mpeg4_width": kw.pop("width", 0), "mpeg4_height": kw.pop("height", 0), "mpeg4_duration": kw.pop("duration", 0), "thumbnail_url": thumb or animation, "caption": caption, "parse_mode": "HTML", **kw}
+        return self._attach(result, buttons)
+
+    def audio(self, result_id: str, title: str, audio: str, *, caption: str = "", buttons: Any = None, **kw: Any) -> dict[str, Any]:
+        result = {"type": "audio", "id": result_id, "title": title, "audio_url": audio, "caption": caption, "parse_mode": "HTML", **kw}
+        return self._attach(result, buttons)
+
+    def voice(self, result_id: str, title: str, voice: str, *, caption: str = "", buttons: Any = None, **kw: Any) -> dict[str, Any]:
+        result = {"type": "voice", "id": result_id, "title": title, "voice_url": voice, "caption": caption, "parse_mode": "HTML", **kw}
+        return self._attach(result, buttons)
+
+    def location(self, result_id: str, title: str, latitude: float, longitude: float, *, buttons: Any = None, **kw: Any) -> dict[str, Any]:
+        result = {"type": "location", "id": result_id, "title": title, "latitude": latitude, "longitude": longitude, **kw}
+        return self._attach(result, buttons)
+
+    def contact(self, result_id: str, title: str, phone: str, first_name: str, *, last_name: str = "", buttons: Any = None, **kw: Any) -> dict[str, Any]:
+        result = {"type": "contact", "id": result_id, "title": title, "phone_number": phone, "first_name": first_name, "last_name": last_name, **kw}
+        return self._attach(result, buttons)
+
+    def venue(self, result_id: str, title: str, latitude: float, longitude: float, address: str, *, provider: str = "", venue_id: str = "", buttons: Any = None, **kw: Any) -> dict[str, Any]:
+        result = {"type": "venue", "id": result_id, "title": title, "latitude": latitude, "longitude": longitude, "address": address, "provider": provider, "venue_id": venue_id, **kw}
+        return self._attach(result, buttons)
 
     def paginate(self, items: list[Any], page: int = 0, size: int = 5) -> tuple[list[Any], bool]:
         if size < 1 or page < 0:
