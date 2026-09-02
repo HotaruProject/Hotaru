@@ -10,17 +10,23 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+from . import toolkit as _toolkit
+
+_TOOLKIT_SOURCE = Path(_toolkit.__file__).read_text(encoding="utf-8")
+
 SANDBOX_BASE_ROOT = "/run/hotaru-sandbox"
 SANDBOX_UID = 65534
 SANDBOX_GID = 65534
 
 WORKER_SOURCE = r'''
+import asyncio
 import json
 import os
 import resource
 import socket
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 SECCOMP_CFG = {"allow": set(), "errno": set(), "kill": set()}
 CLONE_NR = 56
@@ -117,11 +123,21 @@ def install_firewall(protected):
 
 def apply_limits(mem_mb, file_mb, nofile, cpu_seconds, net_blocked):
     if net_blocked:
-        class NetBlocked(socket.socket):
+        real_socket = socket.socket
+
+        class NetBlocked(real_socket):
             def __init__(self, *a, **k):
                 raise OSError("network is blocked in sandbox")
 
+        def _real_socketpair(family=None, type=socket.SOCK_STREAM, proto=0):
+            import _socket as raw_socket
+            if family is None:
+                family = getattr(socket, "AF_UNIX", socket.AF_INET)
+            a, b = raw_socket.socketpair(family, type, proto)
+            return real_socket(family, type, proto, a.detach()), real_socket(family, type, proto, b.detach())
+
         socket.socket = NetBlocked
+        socket.socketpair = _real_socketpair
         socket.create_connection = lambda *a, **k: (_ for _ in ()).throw(OSError("network is blocked"))
         socket.getaddrinfo = lambda *a, **k: (_ for _ in ()).throw(OSError("network is blocked"))
     try:
@@ -162,6 +178,81 @@ def _net_call(url, data=None, timeout=10.0):
     return _cap_call("net", {"url": url, "data": data, "timeout": timeout})
 
 
+def _respond_call(payload):
+    req = json.dumps({"respond": payload})
+    sys.stdout.write(req + "\n")
+    sys.stdout.flush()
+    while True:
+        line = sys.stdin.readline()
+        if not line:
+            raise OSError("host closed the sandbox channel")
+        resp = json.loads(line)
+        if resp.get("kind") != "respond_result":
+            continue
+        if not resp.get("ok"):
+            raise PermissionError(resp.get("error", "respond failed"))
+        return resp.get("result")
+
+
+class _StateProxy:
+    def get(self, key, default=None):
+        try:
+            value = _cap_call("state", {"op": "get", "key": key})
+        except PermissionError:
+            return default
+        return default if value is None else value
+
+    def set(self, key, value):
+        return _cap_call("state", {"op": "set", "key": key, "value": value})
+
+    def delete(self, key):
+        return _cap_call("state", {"op": "delete", "key": key})
+
+    def keys(self):
+        return _cap_call("state", {"op": "keys"})
+
+
+class SandboxContext:
+    def __init__(self, tools, payload):
+        self.tools = tools
+        payload = payload or {}
+        self.chat_id = payload.get("chat_id")
+        self.message_id = payload.get("message_id")
+        self.args = list(payload.get("args") or [])
+        self.state = _StateProxy()
+
+    def args_list(self):
+        return list(self.args)
+
+    async def respond(self, content=None, **kwargs):
+        return _respond_call({"content": content, "kwargs": kwargs})
+
+    async def answer(self, text=None, **kwargs):
+        if text is not None:
+            kwargs["text"] = text
+        value = kwargs.pop("text", "")
+        kwargs.setdefault("rich", True)
+        return _respond_call({"content": value, "kwargs": kwargs})
+
+    async def send_rich(self, html, **kwargs):
+        kwargs["rich"] = True
+        return _respond_call({"content": html, "kwargs": kwargs})
+
+    async def send_file(self, media, caption=None, **kwargs):
+        kwargs["media"] = media
+        return _respond_call({"content": caption or "", "kwargs": kwargs})
+
+
+def _build_tools(source):
+    ns = {}
+    exec(compile(source, "hotaru_toolkit", "exec"), ns, ns)
+    func_map = ns.get("TOOLKIT_FUNCS") or {}
+    tools = {}
+    for name, func in func_map.items():
+        tools[name] = func
+    return SimpleNamespace(**tools)
+
+
 def main():
     cfg = json.loads(sys.stdin.readline())
     policy = cfg.get("seccomp") or {}
@@ -186,7 +277,8 @@ def main():
         cfg.get("cpu_seconds", 1800),
         cfg.get("net_blocked", True),
     )
-    ns = {"__name__": cfg.get("module_id", "sandbox"), "cap": _cap_call, "mt": _mt_call, "net": _net_call}
+    tools = _build_tools(cfg.get("toolkit_source", ""))
+    ns = {"__name__": cfg.get("module_id", "sandbox"), "cap": _cap_call, "mt": _mt_call, "net": _net_call, "tools": tools}
     try:
         exec(compile(cfg["source"], cfg.get("module_id", "sandbox"), "exec"), ns, ns)
     except BaseException as exc:
@@ -202,7 +294,19 @@ def main():
             if handler is None:
                 out = {"ok": False, "error": "unknown_command"}
             else:
-                result = handler(req.get("args") or [], req.get("payload") or {})
+                payload = req.get("payload") or {}
+                args = req.get("args") or []
+                ctx = SandboxContext(tools, {**payload, "args": args})
+                invocation = SimpleNamespace(
+                    name=req.get("command"),
+                    args=tuple(args),
+                    source=payload.get("source", "command"),
+                    message_id=payload.get("message_id"),
+                    chat_id=payload.get("chat_id"),
+                )
+                result = handler(ctx, invocation)
+                if asyncio.iscoroutine(result):
+                    result = asyncio.run(result)
                 out = {"ok": True, "result": result}
         except BaseException as exc:
             out = {"ok": False, "error": type(exc).__name__}
@@ -313,11 +417,11 @@ _ALLOW_NAMES = {
     "statx", "close_range", "getrandom", "memfd_create", "rseq",
     "membarrier", "mlock", "munlock", "mlockall", "munlockall", "mlock2",
     "tkill", "tgkill", "copy_file_range", "eventfd2", "sync", "syncfs",
-    "signalfd4", "inotify_init1",
+    "signalfd4", "inotify_init1", "socket", "socketpair",
 }
 
 _ERRNO_NAMES = {
-    "socket", "connect", "accept", "accept4", "sendto", "recvfrom", "sendmsg",
+    "connect", "accept", "accept4", "sendto", "recvfrom", "sendmsg",
     "recvmsg", "shutdown", "bind", "listen", "getsockname", "getpeername",
     "socketpair", "setsockopt", "getsockopt", "sendmmsg", "recvmmsg",
     "inotify_init", "inotify_add_watch", "inotify_rm_watch", "eventfd",
@@ -384,6 +488,7 @@ class ModuleSandbox:
         self.call_timeout = call_timeout
         self._workers: dict[str, subprocess.Popen] = {}
         self._booted: dict[str, bool] = {}
+        self._respond_sources: dict[str, Any] = {}
         self._python = os.path.realpath(sys.executable)
         self._stdlib = sysconfig.get_paths()["stdlib"]
         self._stdlib_dst = f"/opt/py/lib/python{sys.version_info.major}.{sys.version_info.minor}"
@@ -521,6 +626,7 @@ class ModuleSandbox:
             "module_id": module_id,
             "source": source,
             "commands": commands,
+            "toolkit_source": _TOOLKIT_SOURCE,
             "mem_mb": self.mem_mb,
             "file_mb": self.file_mb,
             "nofile": self.nofile,
@@ -573,8 +679,14 @@ class ModuleSandbox:
         process = await loop.run_in_executor(None, lambda: self._spawn(module_id, source, commands))
         return process is not None
 
-    async def call(self, module_id: str, command: str, args: list[str], payload: dict[str, Any]) -> Any:
-        result = await self.roundtrip(module_id, {"command": command, "args": args, "payload": payload})
+    async def call(self, module_id: str, command: str, args: list[str], payload: dict[str, Any], source: Any = None) -> Any:
+        if source is not None:
+            self._respond_sources[module_id] = source
+        try:
+            result = await self.roundtrip(module_id, {"command": command, "args": args, "payload": payload})
+        finally:
+            if source is not None:
+                self._respond_sources.pop(module_id, None)
         if not isinstance(result, dict) or not result.get("ok"):
             raise SandboxError(f"sandbox call failed: {result.get('error') if isinstance(result, dict) else 'malformed'}")
         return result.get("result")
@@ -590,6 +702,7 @@ class ModuleSandbox:
         if process is None or process.poll() is not None:
             raise SandboxError(f"sandbox worker is not running: {module_id}")
         loop = asyncio.get_running_loop()
+        self._respond_pending = getattr(self, "_respond_pending", [])
 
         def _roundtrip() -> Any:
             assert process.stdin is not None
@@ -603,6 +716,9 @@ class ModuleSandbox:
                 if isinstance(message, dict) and "cap" in message:
                     self._pending_caps.append(message)
                     continue
+                if isinstance(message, dict) and "respond" in message:
+                    self._respond_pending.append(message)
+                    continue
                 return message
 
         self._pending_caps = getattr(self, "_pending_caps", [])
@@ -613,6 +729,8 @@ class ModuleSandbox:
             except asyncio.TimeoutError:
                 if self._pending_caps:
                     await self._serve_caps(module_id)
+                if self._respond_pending:
+                    await self._serve_respond(module_id)
                 continue
             except Exception:
                 task.cancel()
@@ -636,6 +754,121 @@ class ModuleSandbox:
             if process is not None and process.poll() is None and process.stdin is not None:
                 process.stdin.write((json.dumps(reply) + "\n").encode("utf-8"))
                 process.stdin.flush()
+
+    async def _serve_respond(self, module_id: str) -> None:
+        pending = self._respond_pending
+        self._respond_pending = []
+        source = self._respond_sources.get(module_id)
+        for message in pending:
+            payload = message.get("respond") or {}
+            reply = {"kind": "respond_result", "ok": False, "error": "respond failed"}
+            try:
+                result = await self._trusted_respond(module_id, source, payload)
+                reply = {"kind": "respond_result", "ok": True, "result": result}
+            except Exception as exc:
+                reply = {"kind": "respond_result", "ok": False, "error": f"{type(exc).__name__}: {exc}"[:200]}
+            process = self._workers.get(module_id)
+            if process is not None and process.poll() is None and process.stdin is not None:
+                process.stdin.write((json.dumps(reply) + "\n").encode("utf-8"))
+                process.stdin.flush()
+
+    async def _trusted_respond(self, module_id: str, source: Any, payload: dict[str, Any]) -> Any:
+        import secrets as _secrets
+
+        from .firewall import trusted_scope
+
+        content = payload.get("content")
+        kwargs = dict(payload.get("kwargs") or {})
+        if source is None:
+            raise PermissionError("no message source is bound to this call")
+        app = getattr(self.runtime, "app", None)
+        if app is None or getattr(app, "mt", None) is None:
+            raise PermissionError("userbot transport is not ready")
+        if kwargs.get("buttons"):
+            raise PermissionError("sandbox respond does not support inline buttons yet")
+        rich = bool(kwargs.pop("rich", False))
+        output = kwargs.pop("output", "auto")
+        media = kwargs.pop("media", None)
+        text = kwargs.pop("text", None)
+        if text is None and isinstance(content, str):
+            text = content
+        kwargs.pop("parse_mode", None)
+        kwargs.pop("split_limit", None)
+        kwargs.pop("file_limit", None)
+        kwargs.pop("filename", None)
+        kwargs.pop("preserve_html", None)
+        chat_id = getattr(source, "chat_id", None)
+        message_id = getattr(source, "id", None)
+        is_out = bool(getattr(source, "is_me", False) or getattr(source, "out", False))
+        if output == "auto":
+            output = "edit" if is_out else "reply"
+        topic_id = None
+        for name in ("topic_id", "message_thread_id", "top_msg_id"):
+            value = getattr(source, name, None)
+            if isinstance(value, int) and value > 0:
+                topic_id = value
+                break
+
+        async def send_plain(value: str, *, mode: str) -> Any:
+            if mode == "edit" and message_id is not None:
+                with trusted_scope():
+                    return await app.mt_req("messages.editMessage", id=int(message_id), message=value)
+            data: dict[str, Any] = {"peer": chat_id, "message": value, "random_id": _secrets.randbits(63)}
+            if topic_id is not None:
+                data["reply_to"] = {"_": "inputReplyToMessage", "reply_to_msg_id": int(message_id), "top_msg_id": topic_id} if message_id is not None else None
+                if data["reply_to"] is None:
+                    data.pop("reply_to")
+            elif message_id is not None and mode == "reply":
+                data["reply_to"] = {"_": "inputReplyToMessage", "reply_to_msg_id": int(message_id)}
+            with trusted_scope():
+                return await app.mt_req("messages.sendMessage", **data)
+
+        async def send_rich_html(html: str, *, mode: str) -> Any:
+            rich_message = {"_": "inputRichMessageHTML", "html": html}
+            if mode == "edit" and message_id is not None:
+                with trusted_scope():
+                    return await app.mt_req("messages.editMessage", id=int(message_id), message="", rich_message=rich_message)
+            data = {"peer": chat_id, "message": "", "random_id": _secrets.randbits(63), "rich_message": rich_message}
+            if message_id is not None:
+                reply_to = {"_": "inputReplyToMessage", "reply_to_msg_id": int(message_id)}
+                if topic_id is not None:
+                    reply_to["top_msg_id"] = topic_id
+                data["reply_to"] = reply_to
+            with trusted_scope():
+                return await app.mt_req("messages.sendMessage", **data)
+
+        if media is not None:
+            raise PermissionError("sandbox respond media must go through files capability")
+        if rich:
+            if not isinstance(text, str):
+                raise PermissionError("rich respond requires string content")
+            try:
+                return await send_rich_html(text, mode=output)
+            except Exception as exc:
+                marker = str(exc).lower()
+                if "length" in marker or "too long" in marker or "MESSAGE_TOO_LONG" in str(exc):
+                    parts = []
+                    limit = 3800
+                    rest = text
+                    while len(rest) > limit:
+                        cut = rest.rfind("\n", 0, limit + 1)
+                        if cut < limit // 2:
+                            cut = limit
+                        parts.append(rest[:cut])
+                        rest = rest[cut:].lstrip("\n")
+                    parts.append(rest)
+                    last = None
+                    for index, part in enumerate(parts):
+                        mode = "edit" if index == 0 and output == "edit" else "reply"
+                        last = await send_rich_html(part, mode=mode)
+                    return last
+                raise
+        if isinstance(text, str):
+            limit = 4096
+            if len(text) > limit:
+                return await self.runtime.responses.smart_split(source, text)
+            return await send_plain(text, mode=output)
+        raise PermissionError("sandbox respond requires text content")
 
     def stop_module(self, module_id: str) -> bool:
         process = self._workers.pop(module_id, None)

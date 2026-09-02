@@ -142,11 +142,21 @@ class Kernel:
         return result
 
     async def sandbox_dispatch(self, spec: Any, invocation: CommandInvocation) -> object:
+        payload: dict[str, Any] = {
+            "source": invocation.source,
+            "message_id": invocation.message_id,
+            "chat_id": invocation.chat_id,
+        }
+        message = invocation.message
+        topic_id = getattr(message, "topic_id", None) or getattr(message, "message_thread_id", None)
+        if isinstance(topic_id, int) and topic_id > 0:
+            payload["topic_id"] = topic_id
         result = await self.sandbox.call(
             spec.module_id,
             invocation.name,
             list(invocation.args),
-            {},
+            payload,
+            source=message,
         )
         if isinstance(result, str):
             return result

@@ -249,43 +249,118 @@ class ResponseService:
             result.append(await self.answer(message, text=part, **options))
         return result
 
-    async def split_html(self, message: Any, text: str, *, limit: int = 4096, **kwargs: Any) -> list[Any]:
+    async def split_html(self, message: Any, text: str, *, limit: int = 4096, max_parts: int = 20, **kwargs: Any) -> list[Any]:
         import re
         if limit < 256:
             raise ValueError("limit must be at least 256")
+        units = lambda s: len(s.encode("utf-16-le")) // 2
         tokens = re.findall(r"<[^>]+>|[^<]+", text)
-        parts = []
-        current = []
-        stack = []
-        size = 0
-        void = {"br", "hr", "img", "tg-emoji"}
+        parts: list[str] = []
+        stack: list[str] = []
+
+        def open_tags() -> str:
+            names = []
+            for tag in stack:
+                match = re.match(r"<([a-zA-Z][\w-]*)", tag)
+                if match is not None:
+                    names.append(match.group(1))
+            return "".join(f"<{name}>" for name in names)
+
+        def close_tags() -> str:
+            names = []
+            for tag in stack:
+                match = re.match(r"<([a-zA-Z][\w-]*)", tag)
+                if match is not None:
+                    names.append(match.group(1))
+            return "".join(f"</{name}>" for name in reversed(names))
+
+        def close_units() -> int:
+            total = 0
+            for tag in stack:
+                match = re.match(r"<([a-zA-Z][\w-]*)", tag)
+                if match is not None:
+                    total += units(f"</{match.group(1)}>")
+            return total
+
+        current = [open_tags()]
+        size = units(current[0])
+
+        def budget() -> int:
+            return max(limit - size - close_units(), 1)
+
+        def fits(extra_units: int) -> bool:
+            return size + extra_units + close_units() <= limit
+
+        def flush(force_close: bool) -> None:
+            nonlocal current, size
+            chunk_text = "".join(current)
+            if not force_close:
+                chunk_text += close_tags()
+            parts.append(chunk_text)
+            current = [open_tags()]
+            size = units(current[0])
+
         for token in tokens:
-            chunks = [token]
-            if not token.startswith("<") and len(token) > limit:
-                chunks = [token[index:index + limit] for index in range(0, len(token), limit)]
-            for chunk in chunks:
-                if size + len(chunk) > limit and current:
-                    names = [re.match(r"<([a-zA-Z][\\w-]*)", tag) for tag in stack]
-                    closing_tags = "".join("</" + match.group(1) + ">" for match in reversed(names) if match is not None)
-                    parts.append("".join(current) + closing_tags)
-                    current = list(stack)
-                    size = sum(len(item) for item in current)
-                current.append(chunk)
-                size += len(chunk)
-            if not token.startswith("<"):
+            if token.startswith("<"):
+                opening = re.fullmatch(r"<([a-zA-Z][\w-]*)(?:\s[^>]*)?>", token)
+                closing = re.fullmatch(r"</([a-zA-Z][\w-]*)>", token)
+                token_units = units(token)
+                if not fits(token_units) and len(current) > 1:
+                    flush(force_close=False)
+                current.append(token)
+                size += token_units
+                if opening and not token.endswith("/>") and opening.group(1).lower() not in {"br", "hr", "img", "tg-emoji"}:
+                    stack.append(token)
+                elif closing:
+                    for index in range(len(stack) - 1, -1, -1):
+                        match = re.match(r"<([a-zA-Z][\w-]*)", stack[index])
+                        if match is not None and match.group(1).lower() == closing.group(1).lower():
+                            del stack[index]
+                            break
                 continue
-            opening = re.fullmatch(r"<([a-zA-Z][\w-]*)(?:\s[^>]*)?>", token)
-            closing = re.fullmatch(r"</([a-zA-Z][\w-]*)>", token)
-            if opening and opening.group(1).lower() not in void and not token.endswith("/>"):
-                stack.append(token)
-            elif closing:
-                for index in range(len(stack) - 1, -1, -1):
-                    match = re.match(r"<([a-zA-Z][\w-]*)", stack[index])
-                    if match is not None and match.group(1).lower() == closing.group(1).lower():
-                        del stack[index]
-                        break
-        if current or not parts:
-            parts.append("".join(current))
+            for separator in ("\n", " "):
+                pieces = token.split(separator)
+                joined = [separator.join(pieces[:1])]
+                for piece in pieces[1:]:
+                    joined.append(separator + piece if piece else separator)
+                pieces = [p for p in joined if p]
+                if len(pieces) > 1:
+                    break
+            else:
+                pieces = [token]
+            for piece in pieces:
+                piece_units = units(piece)
+                if piece_units > limit - size - close_units():
+                    if len(current) > 1:
+                        flush(force_close=False)
+                        piece_units = units(piece)
+                if piece_units > budget():
+                    remaining = piece
+                    while remaining:
+                        room = budget()
+                        fragment = []
+                        frag_units = 0
+                        cut_at = 0
+                        for char in remaining:
+                            char_units = units(char)
+                            if frag_units + char_units > room and fragment:
+                                break
+                            fragment.append(char)
+                            frag_units += char_units
+                            cut_at += 1
+                        current.append("".join(fragment))
+                        flush(force_close=False)
+                        remaining = remaining[cut_at:]
+                    continue
+                if not fits(piece_units) and len(current) > 1:
+                    flush(force_close=False)
+                current.append(piece)
+                size += piece_units
+        if len(current) > 1 or not parts:
+            flush(force_close=True)
+        parts = [part for part in parts if part.strip()]
+        if len(parts) > max_parts:
+            return await self.fallback_file(message, text, **kwargs)
         result = []
         for index, part in enumerate(parts):
             options = dict(kwargs)
@@ -401,6 +476,11 @@ class ModuleContext:
     def html(self) -> Any:
         from relay.proxies import HtmlHelper
         return HtmlHelper()
+
+    @property
+    def tools(self) -> Any:
+        from relay.toolkit import TOOLS
+        return TOOLS
 
     @property
     def ui(self) -> Any:
