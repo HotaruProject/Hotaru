@@ -4,7 +4,7 @@ import html
 import secrets
 from typing import Any, Awaitable, Callable
 
-from .caps import MT_BLOCKED, MT_METHOD_CHARS
+from .caps import MT_BLOCKED
 from .denylist import payload_hits_blocked
 from .firewall import trusted_scope
 
@@ -44,9 +44,9 @@ class Gateway:
         self._module_id = module_id
 
     def _check(self, method: str) -> None:
-        lowered = str(method).strip().lower()
-        if not lowered or not all(ch in MT_METHOD_CHARS for ch in lowered):
-            raise PermissionError("mt method name is malformed")
+        if not isinstance(method, str) or not method.strip():
+            raise PermissionError("mt method name is required")
+        lowered = method.strip().lower()
         if lowered.startswith(("auth.", "phone.")) or lowered in MT_BLOCKED:
             raise PermissionError(f"mt method is blocked by policy: {method}")
 
