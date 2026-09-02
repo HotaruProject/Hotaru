@@ -5,6 +5,7 @@ import secrets
 from typing import Any, Awaitable, Callable
 
 from .caps import MT_BLOCKED, MT_METHOD_CHARS
+from .denylist import payload_hits_blocked
 from .firewall import trusted_scope
 
 
@@ -51,6 +52,8 @@ class Gateway:
 
     async def call(self, method: str, kwargs: dict[str, Any] | None = None) -> Any:
         self._check(method)
+        if payload_hits_blocked(kwargs):
+            raise PermissionError("mt kwargs target a denied peer")
         return await self._host.call(self._module_id, "mt", {"method": method, "kwargs": kwargs or {}})
 
     async def send(self, method: str, **kwargs: Any) -> Any:
