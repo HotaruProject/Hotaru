@@ -10,7 +10,7 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-SANDBOX_BASE = "/run/hotaru-sandbox"
+SANDBOX_BASE_ROOT = "/run/hotaru-sandbox"
 SANDBOX_UID = 65534
 SANDBOX_GID = 65534
 
@@ -386,10 +386,20 @@ class ModuleSandbox:
         self._booted: dict[str, bool] = {}
         self._python = os.path.realpath(sys.executable)
         self._stdlib = sysconfig.get_paths()["stdlib"]
+        self._stdlib_dst = f"/opt/py/lib/python{sys.version_info.major}.{sys.version_info.minor}"
+        self._rootless = os.geteuid() != 0
+        if self._rootless:
+            self._sandbox_base = os.path.join(tempfile.gettempdir(), f"hotaru-sandbox-{os.getuid()}")
+        else:
+            self._sandbox_base = SANDBOX_BASE_ROOT
+        os.makedirs(self._sandbox_base, exist_ok=True)
+        os.chmod(self._sandbox_base, 0o700)
 
     def _make_preexec(self):
         python_path = self._python
         stdlib_path = self._stdlib
+        stdlib_dst = self._stdlib_dst
+        sandbox_base = self._sandbox_base
         mem_mb = self.mem_mb
         file_mb = self.file_mb
         nofile = self.nofile
@@ -403,6 +413,7 @@ class ModuleSandbox:
             import tempfile
 
             libc = ctypes.CDLL(None, use_errno=True)
+            CLONE_NEWUSER = 0x10000000
             CLONE_NEWNS = 0x00020000
             CLONE_NEWIPC = 0x08000000
             CLONE_NEWUTS = 0x04000000
@@ -424,28 +435,41 @@ class ModuleSandbox:
                 os.setsid()
             except Exception:
                 pass
+            outer_uid = os.getuid()
+            outer_gid = os.getgid()
+            rootless = outer_uid != 0
+            if rootless:
+                if libc.unshare(CLONE_NEWUSER) != 0:
+                    raise OSError(ctypes.get_errno(), "unshare user namespace failed")
+                with open("/proc/self/setgroups", "w") as _f:
+                    _f.write("deny")
+                with open("/proc/self/uid_map", "w") as _f:
+                    _f.write(f"0 {outer_uid} 1")
+                with open("/proc/self/gid_map", "w") as _f:
+                    _f.write(f"0 {outer_gid} 1")
             if libc.unshare(CLONE_NEWNS | CLONE_NEWIPC | CLONE_NEWUTS | CLONE_NEWNET) != 0:
                 raise OSError(ctypes.get_errno(), "unshare failed")
             mount(b"none", b"/", None, MS_REC | MS_PRIVATE)
-            os.makedirs(SANDBOX_BASE, exist_ok=True)
-            for entry in os.listdir(SANDBOX_BASE):
-                candidate = os.path.join(SANDBOX_BASE, entry)
+            os.makedirs(sandbox_base, exist_ok=True)
+            for entry in os.listdir(sandbox_base):
+                candidate = os.path.join(sandbox_base, entry)
                 try:
                     if os.path.isdir(candidate) and not os.listdir(candidate):
                         os.rmdir(candidate)
                 except OSError:
                     pass
-            newroot = tempfile.mkdtemp(prefix="root.", dir=SANDBOX_BASE)
+            newroot = tempfile.mkdtemp(prefix="root.", dir=sandbox_base)
             mount(b"tmpfs", newroot.encode(), b"tmpfs", MS_NOSUID | MS_NODEV, b"size=8m,mode=0755")
 
             def bind_ro(src: str, dst: str, is_dir: bool, dev: bool = False) -> None:
                 dst_abs = os.path.join(newroot, dst.lstrip("/"))
-                if is_dir:
-                    os.makedirs(dst_abs, exist_ok=True)
-                else:
-                    os.makedirs(os.path.dirname(dst_abs), exist_ok=True)
-                    with open(dst_abs, "wb"):
-                        pass
+                if not os.path.exists(dst_abs):
+                    if is_dir:
+                        os.makedirs(dst_abs, exist_ok=True)
+                    else:
+                        os.makedirs(os.path.dirname(dst_abs), exist_ok=True)
+                        with open(dst_abs, "wb"):
+                            pass
                 remount_flags = MS_BIND | MS_REC | MS_REMOUNT | MS_RDONLY | MS_NOSUID
                 if not dev:
                     remount_flags |= MS_NODEV
@@ -453,7 +477,7 @@ class ModuleSandbox:
                 mount(src.encode(), dst_abs.encode(), None, remount_flags)
 
             bind_ro(python_path, "/usr/bin/python3", False)
-            bind_ro(stdlib_path, "/install/lib/python3.11", True)
+            bind_ro(stdlib_path, stdlib_dst, True)
             bind_ro("/usr/lib", "/usr/lib", True)
             if os.path.isdir("/usr/lib64"):
                 bind_ro("/usr/lib64", "/usr/lib64", True)
@@ -485,9 +509,10 @@ class ModuleSandbox:
             resource.setrlimit(resource.RLIMIT_NPROC, (nproc, nproc))
             resource.setrlimit(resource.RLIMIT_CPU, (cpu_seconds, cpu_seconds))
             resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
-            os.setgroups([])
-            os.setgid(SANDBOX_GID)
-            os.setuid(SANDBOX_UID)
+            if not rootless:
+                os.setgroups([])
+                os.setgid(SANDBOX_GID)
+                os.setuid(SANDBOX_UID)
 
         return preexec
 
@@ -509,12 +534,12 @@ class ModuleSandbox:
             ],
         }
         process = subprocess.Popen(
-            ["/usr/bin/python3", "-I", "-c", WORKER_SOURCE],
+            ["/usr/bin/python3", "-s", "-c", WORKER_SOURCE],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             cwd="/",
-            env={"PATH": "/usr/bin:/bin", "HOME": "/tmp", "PYTHONPATH": ""},
+            env={"PATH": "/usr/bin:/bin", "HOME": "/tmp", "PYTHONPATH": "", "PYTHONHOME": "/opt/py"},
             preexec_fn=self._make_preexec(),
         )
         assert process.stdin is not None and process.stdout is not None
