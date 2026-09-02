@@ -24,30 +24,78 @@ MT_READ_ONLY = frozenset({
     "getfullchat",
 })
 
-MT_DESTRUCTIVE = frozenset({
-    "deleteaccount",
-    "resetauthorization",
-    "resetauthorizations",
-    "log_out",
-    "logout",
-    "updatestatus",
+MT_BLOCKED = frozenset({
+    "account.deleteaccount",
+    "account.resetauthorization",
+    "account.resetauthorizations",
+    "account.updatepasswordsettings",
+    "account.setpasswordemail",
+    "account.confirmpasswordemail",
+    "account.resendpasswordemail",
+    "account.changephone",
+    "account.invalidatesignincodes",
+    "account.registerdevice",
+    "account.unregisterdevice",
+    "account.updatedevicelocked",
     "account.resetnotifysettings",
-    "auth.resetauthorizations",
+    "account.setaccountttl",
+    "account.getpassword",
+    "account.getpasswordsettings",
+    "account.gettmppassword",
+    "account.getauthorizations",
+    "account.setglobalprivacysettings",
+    "account.setprivacypremiumrequired",
+    "account.updateusername",
+    "account.updateprofile",
+    "account.updatestatus",
+    "account.updatenotifysettings",
+    "account.setprivacy",
+    "account.setcontactsignupnotification",
+    "account.updateemojistatus",
+    "account.saveautodownloadsettings",
+    "account.reportpeer",
+    "account.updatetheme",
+    "account.installwallpaper",
+    "account.savewallpaper",
+    "payments.sendpaymentform",
+    "payments.validaterequestedinfo",
+    "payments.clearsavedinfo",
+    "users.setsecurevalueerrors",
+    "channels.deletechannel",
+    "channels.deletehistory",
+    "channels.editadmin",
+    "channels.editbanned",
+    "channels.editcreator",
+    "channels.updateusername",
+    "channels.toggleprehistoryhidden",
+    "channels.edittitle",
+    "channels.editphoto",
+    "channels.joinchannel",
+    "channels.leavechannel",
+    "channels.togglesignatures",
+    "messages.deletechat",
+    "messages.deletechatuser",
+    "messages.deletehistory",
+    "messages.deletephonecall",
+    "messages.deletescheduledmessages",
+    "messages.editchatadmin",
+    "messages.editchattitle",
+    "messages.editchatphoto",
+    "messages.editchatabout",
+    "messages.editchatdefaultbannedrights",
+    "messages.addchatuser",
+    "messages.setbotshippingresults",
+    "messages.setbotprecheckoutresults",
+    "messages.accepturlauth",
+    "messages.hidepeersettingsinmenu",
+    "contacts.deletecontacts",
+    "contacts.block",
+    "contacts.deletebyphones",
+    "contacts.resetsaved",
+    "contacts.editclosefriends",
 })
 
-MT_BLOCKED = frozenset({
-    "sendcode",
-    "sendsms",
-    "sendsmscode",
-    "firerauth",
-    "requestpasswordrecovery",
-    "recoverpassword",
-    "importauthorization",
-    "importbotauthorization",
-    "bindtempauthkey",
-    "acceptauthorization",
-    "cancelcode",
-})
+MT_METHOD_CHARS = frozenset("abcdefghijklmnopqrstuvwxyz0123456789_.")
 
 PROVIDERS: dict[str, dict[str, Any]] = {
     "mt": {
@@ -137,19 +185,22 @@ class CapabilityHost:
         method = payload.get("method")
         if not isinstance(method, str) or not method:
             raise PermissionError("mt payload requires a method")
-        lowered = method.lower()
-        if lowered in MT_DESTRUCTIVE or lowered in MT_BLOCKED:
+        lowered = method.strip().lower()
+        if not lowered or not all(ch in MT_METHOD_CHARS for ch in lowered):
+            raise PermissionError("mt method name is malformed")
+        if lowered.startswith(("auth.", "phone.")) or lowered in MT_BLOCKED:
             raise PermissionError(f"mt method is blocked by policy: {method}")
         if not lowered.startswith(("get", "search")) and lowered not in MT_READ_ONLY:
-            self._audit_mt(module_id, method, payload)
+            self._audit_mt(module_id, lowered, payload)
         kwargs = payload.get("kwargs") or {}
         if not isinstance(kwargs, dict):
             raise PermissionError("mt kwargs must be a mapping")
+        kwargs = {k: v for k, v in kwargs.items() if isinstance(k, str) and k not in ("api_id", "api_hash")}
         if lowered.startswith(("messages.gethistory",)):
             limit = kwargs.get("limit", 100)
             if isinstance(limit, (int, float)) and int(limit) > 500:
                 kwargs = dict(kwargs, limit=500)
-        result = await app.mt_req(method, **kwargs)
+        result = await app.mt_req(lowered, **kwargs)
         body = result.get("result") if isinstance(result, dict) and isinstance(result.get("result"), dict) else result
         return body
 
@@ -162,7 +213,7 @@ class CapabilityHost:
     def _file_op(self, module_id: str, payload: dict[str, Any], meta: dict[str, Any]) -> Any:
         op = payload.get("op", "read")
         name = payload.get("name")
-        if not isinstance(name, str) or not name or "/" in name or ".." in name or name.startswith("."):
+        if not isinstance(name, str) or not name or "/" in name or "\\" in name or ".." in name or name.startswith(".") or "\x00" in name or len(name) > 190:
             raise PermissionError("file name must be a simple relative name")
         root = self.runtime.config.state_path.parent / "workspaces" / module_id
         root.mkdir(parents=True, exist_ok=True)
@@ -192,6 +243,22 @@ class CapabilityHost:
             raise PermissionError("net url must be plain https without credentials")
         if (parsed.port or 443) != 443:
             raise PermissionError("net capability allows port 443 only")
+        hostname = parsed.hostname
+        if not hostname:
+            raise PermissionError("net url must contain a hostname")
+        try:
+            import ipaddress
+            import socket
+            for info in socket.getaddrinfo(hostname, 443, proto=socket.IPPROTO_TCP):
+                addr = ipaddress.ip_address(info[4][0])
+                if addr.is_private or addr.is_loopback or addr.is_link_local or addr.is_reserved or addr.is_multicast or addr.is_unspecified:
+                    raise PermissionError("net url resolves to a non-public address")
+        except PermissionError:
+            raise
+        except ValueError as exc:
+            raise PermissionError("net url contains an invalid address") from exc
+        except Exception as exc:
+            raise PermissionError("net url could not be resolved") from exc
         data = payload.get("data")
         timeout = payload.get("timeout", 10)
         try:
@@ -205,9 +272,17 @@ class CapabilityHost:
                 )
             else:
                 request = urllib.request.Request(url, headers={"User-Agent": f"hotaru/{module_id}"}, method="GET")
-            with urllib.request.urlopen(request, timeout=min(float(timeout), 15.0)) as response:
+
+            class _NoRedirect(urllib.request.HTTPRedirectHandler):
+                def redirect_request(self, req, fp, code, msg, headers, newurl):
+                    raise PermissionError("net capability does not follow redirects")
+
+            opener = urllib.request.build_opener(_NoRedirect())
+            with opener.open(request, timeout=min(float(timeout), 15.0)) as response:
                 raw = response.read(1024 * 512)
                 return {"status": response.status, "body": raw.decode("utf-8", errors="replace")}
+        except PermissionError:
+            raise
         except Exception as exc:
             raise PermissionError(f"net fetch failed: {type(exc).__name__}")
 
@@ -217,8 +292,8 @@ class CapabilityHost:
             raise PermissionError("state store is not ready")
         op = payload.get("op", "get")
         key = payload.get("key")
-        if not isinstance(key, str) or not key:
-            raise PermissionError("state op requires a key")
+        if not isinstance(key, str) or not key or "\x00" in key or len(key) > 1024:
+            raise PermissionError("state op requires a valid key")
         namespace = state.namespace(module_id)
         if op == "get":
             return namespace.get(key)
