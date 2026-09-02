@@ -5,6 +5,8 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 from typing import Any
+
+from .denylist import is_blocked_host, payload_hits_blocked
 from .firewall import trusted_scope
 
 MT_READ_ONLY = frozenset({
@@ -190,6 +192,8 @@ class CapabilityHost:
             raise PermissionError("mt method name is malformed")
         if lowered.startswith(("auth.", "phone.")) or lowered in MT_BLOCKED:
             raise PermissionError(f"mt method is blocked by policy: {method}")
+        if payload_hits_blocked(payload):
+            raise PermissionError("mt payload targets a denied peer")
         if not lowered.startswith(("get", "search")) and lowered not in MT_READ_ONLY:
             self._audit_mt(module_id, lowered, payload)
         kwargs = payload.get("kwargs") or {}
@@ -246,6 +250,9 @@ class CapabilityHost:
         hostname = parsed.hostname
         if not hostname:
             raise PermissionError("net url must contain a hostname")
+        hostname = urllib.parse.unquote(hostname)
+        if is_blocked_host(hostname):
+            raise PermissionError("net url targets a denied host")
         try:
             import ipaddress
             import socket

@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import inspect
 from collections import OrderedDict
+from relay.denylist import is_blocked_peer
 from relay.firewall import module_scope
 from typing import Any
 
@@ -52,6 +53,8 @@ class Kernel:
         return await self.dispatch(message, source="new")
 
     async def dispatch(self, message: Any, *, source: str) -> object | None:
+        if self._is_blocked_peer(message):
+            return None
         if not self._is_owner(message):
             return None
         if self.security is not None:
@@ -179,6 +182,10 @@ class Kernel:
             return True
         chat_id = getattr(message, "chat_id", None)
         return chat_id == self.owner_id
+
+    @staticmethod
+    def _is_blocked_peer(message: Any) -> bool:
+        return is_blocked_peer(getattr(message, "from_id", None)) or is_blocked_peer(getattr(message, "chat_id", None))
 
     @staticmethod
     def _is_group(message: Any) -> bool:
