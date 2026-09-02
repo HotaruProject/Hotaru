@@ -97,6 +97,19 @@ MT_BLOCKED = frozenset({
     "contacts.editclosefriends",
 })
 
+
+def normalize_method(name: str) -> str:
+    if "." in name:
+        return name
+    parts = name.split("_")
+    if len(parts) < 2:
+        return name
+    namespace = parts[0]
+    first = parts[1]
+    tail = "".join(part[:1].upper() + part[1:] for part in parts[2:])
+    return f"{namespace}.{first}{tail}"
+
+
 PROVIDERS: dict[str, dict[str, Any]] = {
     "mt": {
         "title": "Telegram API",
@@ -187,7 +200,8 @@ class CapabilityHost:
             raise PermissionError("mt payload requires a method")
         method = method.strip()
         lowered = method.lower()
-        if lowered.startswith(("auth.", "phone.")) or lowered in MT_BLOCKED:
+        canonical = normalize_method(lowered).lower()
+        if canonical.startswith(("auth.", "phone.")) or canonical in MT_BLOCKED:
             raise PermissionError(f"mt method is blocked by policy: {method}")
         if payload_hits_blocked(payload):
             raise PermissionError("mt payload targets a denied peer")

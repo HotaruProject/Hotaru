@@ -4,7 +4,7 @@ import html
 import secrets
 from typing import Any, Awaitable, Callable
 
-from .caps import MT_BLOCKED
+from .caps import MT_BLOCKED, normalize_method
 from .denylist import payload_hits_blocked
 from .firewall import trusted_scope
 
@@ -47,7 +47,8 @@ class Gateway:
         if not isinstance(method, str) or not method.strip():
             raise PermissionError("mt method name is required")
         lowered = method.strip().lower()
-        if lowered.startswith(("auth.", "phone.")) or lowered in MT_BLOCKED:
+        canonical = normalize_method(lowered).lower()
+        if canonical.startswith(("auth.", "phone.")) or canonical in MT_BLOCKED:
             raise PermissionError(f"mt method is blocked by policy: {method}")
 
     async def call(self, method: str, kwargs: dict[str, Any] | None = None) -> Any:
