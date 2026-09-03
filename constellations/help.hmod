@@ -67,15 +67,13 @@ async def _show_help(ctx, invocation):
     text = "<b>✨ 💎 Hotaru Core Help 💎 ✨</b>\n\n"
     
     if k_count > 0:
-        text += f"<blockquote expandable>\n<b>🔥 Kernel Modules ({k_count})</b>:\n"
+        text += f"<details>\n<summary><b>🔥 Kernel Modules ({k_count})</b></summary>\n"
         text += "\n".join(kernel_modules)
-        text += "\n</blockquote>\n\n"
+        text += "\n</details>\n\n"
         
     if u_count > 0:
-        text += f"<blockquote expandable>\n<b>🌟 User Modules ({u_count})</b>:\n"
+        text += f"<details>\n<summary><b>🌟 User Modules ({u_count})</b></summary>\n"
         text += "\n".join(user_modules)
-        text += "\n</blockquote>\n"
-
-    buttons = [[ctx.ui.close("❌ Close")]]
+        text += "\n</details>\n"
     
-    await ctx.respond(text=text, buttons=buttons, parse_mode="HTML")
+    await ctx.respond(text=text, parse_mode="HTML")
