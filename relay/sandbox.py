@@ -214,12 +214,15 @@ class _StateProxy:
 
 class SandboxContext:
     def __init__(self, tools, payload):
-        self.tools = tools
         payload = payload or {}
         self.chat_id = payload.get("chat_id")
         self.message_id = payload.get("message_id")
         self.args = list(payload.get("args") or [])
         self.state = _StateProxy()
+        for name, func in (tools or {}).items():
+            if name not in self.__dict__:
+                setattr(self, name, func)
+        self.tools = SimpleNamespace(**{k: v for k, v in (tools or {}).items()})
 
     def args_list(self):
         return list(self.args)
@@ -247,10 +250,7 @@ def _build_tools(source):
     ns = {}
     exec(compile(source, "hotaru_toolkit", "exec"), ns, ns)
     func_map = ns.get("TOOLKIT_FUNCS") or {}
-    tools = {}
-    for name, func in func_map.items():
-        tools[name] = func
-    return SimpleNamespace(**tools)
+    return dict(func_map)
 
 
 def main():
@@ -278,7 +278,7 @@ def main():
         cfg.get("net_blocked", True),
     )
     tools = _build_tools(cfg.get("toolkit_source", ""))
-    ns = {"__name__": cfg.get("module_id", "sandbox"), "cap": _cap_call, "mt": _mt_call, "net": _net_call, "tools": tools}
+    ns = {"__name__": cfg.get("module_id", "sandbox"), "cap": _cap_call, "mt": _mt_call, "net": _net_call, "tools": SimpleNamespace(**tools)}
     try:
         exec(compile(cfg["source"], cfg.get("module_id", "sandbox"), "exec"), ns, ns)
     except BaseException as exc:
