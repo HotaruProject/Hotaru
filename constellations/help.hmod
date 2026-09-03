@@ -18,69 +18,64 @@ async def _show_help(ctx, invocation):
         await ctx.respond("<b>⚠️ Runtime unavailable</b>", parse_mode="HTML")
         return
         
-    page = 0
     if invocation.args:
         if len(invocation.args) != 1:
-            await ctx.respond("<b>📖 Usage:</b> <code>!hlp [page]</code> or <code>!hlp <module-id></code>", parse_mode="HTML")
+            await ctx.respond("<b>📖 Usage:</b> <code>!hlp</code> or <code>!hlp &lt;module-id&gt;</code>", parse_mode="HTML")
             return
-        if not invocation.args[0].isdigit():
-            if runtime.modules is None:
-                await ctx.respond("<b>⚠️ Module manager unavailable</b>", parse_mode="HTML")
-                return
-            await ctx.respond(f"<b>📦 Module Details</b>\n\n{runtime._module_detail_text(invocation.args[0].casefold())}", parse_mode="HTML")
+        if runtime.modules is None:
+            await ctx.respond("<b>⚠️ Module manager unavailable</b>", parse_mode="HTML")
             return
-        page = int(invocation.args[0])
+        await ctx.respond(f"<b>📦 Module Details</b>\n\n{runtime._module_detail_text(invocation.args[0].casefold())}", parse_mode="HTML")
+        return
 
-    handle = [None]
-
-    def build_help_page(current_page):
-        names = sorted(runtime.kernel.registry.names())
-        entries = []
-        entry_ids = []
-        if runtime.modules is not None:
-            active = {item.loaded.manifest.module_id: item.loaded.manifest.version for item in runtime.modules.items()}
-            known = set(runtime.state.module_ids()) if runtime.state is not None else set()
-            for module_id in sorted(set(active) | known):
-                if module_id in active:
-                    entries.append(f"🟢 <b>{module_id}</b> <code>v{active[module_id]}</code>")
+    kernel_modules = []
+    user_modules = []
+    
+    if runtime.modules is not None:
+        active = {item.loaded.manifest.module_id: item for item in runtime.modules.items()}
+        known = set(runtime.state.module_ids()) if runtime.state is not None else set()
+        
+        for module_id in sorted(set(active.keys()) | known):
+            if module_id in active:
+                item = active[module_id]
+                manifest = item.loaded.manifest
+                cmds = [f"{runtime.config.prefix}{c}" for c in manifest.commands]
+                cmds_str = f" ({', '.join(cmds)})" if cmds else ""
+                
+                # Determine if kernel
+                is_kernel = False
+                if module_id in runtime.modules._bindings:
+                    is_kernel = runtime.modules._bindings[module_id][2]
+                
+                line = f"🔮 <b>{module_id}</b>{cmds_str}"
+                if is_kernel:
+                    kernel_modules.append(line)
                 else:
-                    entries.append(f"🔴 <b>{module_id}</b> <i>(untrusted)</i>")
-                entry_ids.append(module_id)
-        
-        if not entries:
-            entries = [f"<code>{runtime.config.prefix}{name}</code>" for name in names]
-            entry_ids = [None] * len(entries)
-            
-        page_size = 10
-        start = current_page * page_size
-        if start >= len(entries) and entries:
-            return {"text": "<b>📖 End of catalog</b>", "buttons": [[ctx.ui.close("❌ Close")]], "inline": True}
-            
-        current = entries[start : start + page_size]
-        
-        text = f"<b>✨ Hotaru Core Help ✨</b>\n<i>Page {current_page + 1}</i>\n\n"
-        text += "\n".join(current)
-        
-        buttons = []
-        
-        nav_buttons = []
-        if current_page > 0:
-            async def prev_page(c, p):
-                if handle[0]:
-                    await handle[0].replace(**build_help_page(current_page - 1))
-            nav_buttons.append(ctx.ui.button("◀️ Prev", prev_page))
-            
-        if start + page_size < len(entries):
-            async def next_page(c, p):
-                if handle[0]:
-                    await handle[0].replace(**build_help_page(current_page + 1))
-            nav_buttons.append(ctx.ui.button("Next ▶️", next_page))
-            
-        if nav_buttons:
-            buttons.append(nav_buttons)
-            
-        buttons.append([ctx.ui.close("❌ Close")])
-        
-        return {"text": text, "buttons": buttons, "inline": True}
+                    user_modules.append(line)
+            else:
+                line = f"🔴 <b>{module_id}</b> <i>(untrusted)</i>"
+                user_modules.append(line)  # Assume untrusted are user modules
 
-    handle[0] = await ctx.respond(**build_help_page(page))
+    else:
+        names = sorted(runtime.kernel.registry.names())
+        entries = [f"🔮 <code>{runtime.config.prefix}{name}</code>" for name in names]
+        user_modules.extend(entries)
+
+    k_count = len(kernel_modules)
+    u_count = len(user_modules)
+    
+    text = "<b>✨ 💎 Hotaru Core Help 💎 ✨</b>\n\n"
+    
+    if k_count > 0:
+        text += f"<blockquote expandable>\n<b>🔥 Kernel Modules ({k_count})</b>:\n"
+        text += "\n".join(kernel_modules)
+        text += "\n</blockquote>\n\n"
+        
+    if u_count > 0:
+        text += f"<blockquote expandable>\n<b>🌟 User Modules ({u_count})</b>:\n"
+        text += "\n".join(user_modules)
+        text += "\n</blockquote>\n"
+
+    buttons = [[ctx.ui.close("❌ Close")]]
+    
+    await ctx.respond(text=text, buttons=buttons, parse_mode="HTML")
