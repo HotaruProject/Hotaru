@@ -14,18 +14,93 @@ async def command_config(ctx, invocation):
 
 async def _show_config(ctx, invocation):
     runtime = ctx.runtime
-    if len(invocation.args) != 1:
-        await ctx.respond("<b>⚠️ Usage:</b> <code>!conf &lt;module-id&gt;</code>", parse_mode="HTML")
+
+    if len(invocation.args) == 0:
+        await _show_directory(ctx)
         return
+
     module_id = invocation.args[0].casefold()
+    form = _build_module_config_form(ctx, module_id, None)
+    if form:
+        await ctx.respond(**form)
+    else:
+        await ctx.respond("<b>❌ Module not active or has no configuration</b>", parse_mode="HTML")
+
+
+async def _show_directory(ctx):
+    runtime = ctx.runtime
+    
+    modules_with_config = []
+    if runtime.modules:
+        for mod_id, mod in runtime.modules.items():
+            if mod.loaded and mod.loaded.manifest and mod.loaded.manifest.config_schema:
+                modules_with_config.append(mod_id)
+                
+    modules_with_config.sort()
+    
+    ITEMS_PER_PAGE = 5
+    
+    def build_page(page=0):
+        total_pages = max(1, (len(modules_with_config) + ITEMS_PER_PAGE - 1) // ITEMS_PER_PAGE)
+        
+        if not modules_with_config:
+            return {"text": "<b>ℹ️ No configurable modules found</b>", "buttons": [[ctx.ui.close("❌ Close")]], "inline": True}
+            
+        page = max(0, min(page, total_pages - 1))
+        start_idx = page * ITEMS_PER_PAGE
+        end_idx = start_idx + ITEMS_PER_PAGE
+        
+        page_modules = modules_with_config[start_idx:end_idx]
+        
+        text = f"🗂 <b>Configuration Directory</b>\n"
+        text += f"<i>Page {page + 1} of {total_pages}</i>\n\n"
+        text += f"Select a module to configure:\n"
+        
+        buttons = []
+        for mod_id in page_modules:
+            def make_mod_handler(m_id):
+                async def handler(c, p):
+                    form = _build_module_config_form(ctx, m_id, lambda: build_page(page))
+                    if form:
+                        await c.edit(**form)
+                    else:
+                        await c.answer("Module no longer available", alert=True)
+                return handler
+            
+            buttons.append([ctx.ui.button(f"📦 {m_id}", make_mod_handler(mod_id))])
+            
+        nav_buttons = []
+        if page > 0:
+            def make_prev(p):
+                async def handler(c, p_load):
+                    await c.edit(**build_page(p - 1))
+                return handler
+            nav_buttons.append(ctx.ui.button("◀️ Prev", make_prev(page)))
+            
+        if page < total_pages - 1:
+            def make_next(p):
+                async def handler(c, p_load):
+                    await c.edit(**build_page(p + 1))
+                return handler
+            nav_buttons.append(ctx.ui.button("Next ▶️", make_next(page)))
+            
+        if nav_buttons:
+            buttons.append(nav_buttons)
+            
+        buttons.append([ctx.ui.close("❌ Close Settings")])
+        return {"text": text, "buttons": buttons, "inline": True}
+        
+    await ctx.respond(**build_page(0))
+
+
+def _build_module_config_form(ctx, module_id, back_builder):
+    runtime = ctx.runtime
     active = runtime.modules.get(module_id) if runtime.modules else None
     if not active:
-        await ctx.respond("<b>❌ Module not active</b>", parse_mode="HTML")
-        return
+        return None
     schema = active.loaded.manifest.config_schema
     if not schema:
-        await ctx.respond("<b>ℹ️ Module has no configuration</b>", parse_mode="HTML")
-        return
+        return None
     
     namespace = runtime.state.namespace(module_id)
     
@@ -60,7 +135,13 @@ async def _show_config(ctx, invocation):
                 
             buttons.append([ctx.ui.input(f"✏️ Edit {key}", make_handler(key, spec), placeholder=f"Enter new value for {key}")])
             
-        buttons.append([ctx.ui.close("❌ Close Settings")])
+        if back_builder:
+            async def back_handler(c, p):
+                await c.edit(**back_builder())
+            buttons.append([ctx.ui.button("🔙 Back to Directory", back_handler), ctx.ui.close("❌ Close Settings")])
+        else:
+            buttons.append([ctx.ui.close("❌ Close Settings")])
+            
         return {"text": text, "buttons": buttons, "inline": True}
-
-    await ctx.respond(**build_form())
+        
+    return build_form()
