@@ -218,17 +218,33 @@ class SandboxContext:
         self.chat_id = payload.get("chat_id")
         self.message_id = payload.get("message_id")
         self.args = list(payload.get("args") or [])
+        self.topic_id = payload.get("topic_id")
         self.state = _StateProxy()
-        for name, func in (tools or {}).items():
-            if name not in self.__dict__:
-                setattr(self, name, func)
         self.tools = SimpleNamespace(**{k: v for k, v in (tools or {}).items()})
+        self._msg = payload
+
+    @property
+    def message(self):
+        return SimpleNamespace(
+            chat_id=self.chat_id,
+            id=self.message_id,
+            is_me=self._msg.get("out", False),
+            out=self._msg.get("out", False),
+        )
 
     def args_list(self):
         return list(self.args)
 
+    @staticmethod
+    def escape(value):
+        import html as _html
+        return _html.escape(str(value), quote=False)
+
     async def respond(self, content=None, **kwargs):
         return _respond_call({"content": content, "kwargs": kwargs})
+
+    async def smart_answer(self, content=None, **kwargs):
+        return await self.respond(content, **kwargs)
 
     async def answer(self, text=None, **kwargs):
         if text is not None:
@@ -237,6 +253,24 @@ class SandboxContext:
         kwargs.setdefault("rich", True)
         return _respond_call({"content": value, "kwargs": kwargs})
 
+    async def reply_html(self, text, **kwargs):
+        kwargs.setdefault("output", "reply")
+        return await self.answer(text, **kwargs)
+
+    async def edit_html(self, text, **kwargs):
+        kwargs.setdefault("output", "edit")
+        return await self.answer(text, **kwargs)
+
+    async def answer_file(self, media, **kwargs):
+        return await self.send_file(media, kwargs.pop("caption", None), **kwargs)
+
+    async def answer_media(self, media, **kwargs):
+        kwargs.setdefault("output", "reply")
+        return await self.send_file(media, **kwargs)
+
+    async def answer_rich(self, rich_message, **kwargs):
+        return await self.send_rich(rich_message, **kwargs)
+
     async def send_rich(self, html, **kwargs):
         kwargs["rich"] = True
         return _respond_call({"content": html, "kwargs": kwargs})
@@ -244,6 +278,119 @@ class SandboxContext:
     async def send_file(self, media, caption=None, **kwargs):
         kwargs["media"] = media
         return _respond_call({"content": caption or "", "kwargs": kwargs})
+
+    async def cap(self, capability, payload=None):
+        return _cap_call(capability, payload or {})
+
+    async def mt(self, method, **kwargs):
+        return _mt_call(method, **kwargs)
+
+    async def net(self, url, *, data=None, timeout=10.0):
+        return _net_call(url, data=data, timeout=timeout)
+
+    @property
+    def tg(self):
+        return _TgProxy()
+
+    @property
+    def html(self):
+        return _HtmlHelper()
+
+    @property
+    def inline(self):
+        return _InlineProxy()
+
+
+class _TgProxy:
+    async def call(self, method, kwargs=None):
+        return _mt_call(method, **(kwargs or {}))
+
+    async def send(self, method, **kwargs):
+        return await self.call(method, kwargs)
+
+    async def get(self, method, **kwargs):
+        return await self.call(method, kwargs)
+
+    async def send_message(self, text, **kwargs):
+        return await self.call("messages.sendMessage", {"message": text, **kwargs})
+
+    async def send_media(self, media, caption="", **kwargs):
+        return await self.call("messages.sendMedia", {"media": media, "message": caption, **kwargs})
+
+    async def send_rich(self, html_text, **kwargs):
+        rich = {"_": "inputRichMessageHTML", "html": html_text} if isinstance(html_text, str) else html_text
+        return await self.call("messages.sendMessage", {"rich_message": rich, **kwargs})
+
+    async def edit_message(self, message_id, text, **kwargs):
+        return await self.call("messages.editMessage", {"id": message_id, "message": text, **kwargs})
+
+    async def edit_rich(self, message_id, html_text, **kwargs):
+        rich = {"_": "inputRichMessageHTML", "html": html_text} if isinstance(html_text, str) else html_text
+        return await self.call("messages.editMessage", {"id": message_id, "rich_message": rich, **kwargs})
+
+    async def delete_message(self, message_id, **kwargs):
+        return await self.call("messages.deleteMessages", {"id": [message_id], **kwargs})
+
+    def __getattr__(self, name):
+        async def _call(**kwargs):
+            return await self.call(name, kwargs)
+        return _call
+
+
+class _HtmlHelper:
+    @staticmethod
+    def escape(value):
+        import html as _html
+        return _html.escape(str(value), quote=False)
+
+    @staticmethod
+    def bold(value):
+        import html as _html
+        return f"<b>{_html.escape(str(value), quote=False)}</b>"
+
+    @staticmethod
+    def italic(value):
+        import html as _html
+        return f"<i>{_html.escape(str(value), quote=False)}</i>"
+
+    @staticmethod
+    def code(value):
+        import html as _html
+        return f"<code>{_html.escape(str(value), quote=False)}</code>"
+
+    @staticmethod
+    def underline(value):
+        import html as _html
+        return f"<u>{_html.escape(str(value), quote=False)}</u>"
+
+    @staticmethod
+    def quote(value):
+        import html as _html
+        return f"<blockquote>{_html.escape(str(value), quote=False)}</blockquote>"
+
+    @staticmethod
+    def link(label, url):
+        import html as _html
+        return f'<a href="{_html.escape(str(url), quote=True)}">{_html.escape(str(label), quote=False)}</a>'
+
+    @staticmethod
+    def pre(value, language=None):
+        import html as _html
+        safe = _html.escape(str(value), quote=False)
+        if language:
+            return f'<pre class="language-{_html.escape(str(language), quote=True)}">{safe}</pre>'
+        return f"<pre>{safe}</pre>"
+
+
+class _InlineProxy:
+    async def query(self, text, **kwargs):
+        return _cap_call("inline", {"op": "query", "text": text, "kwargs": kwargs})
+
+    async def send(self, peer, text, **kwargs):
+        return _cap_call("inline", {"op": "send", "peer": peer, "text": text, "kwargs": kwargs})
+
+    async def form(self, text, buttons=None, **kwargs):
+        return _cap_call("inline", {"op": "form", "text": text, "buttons": buttons, "kwargs": kwargs})
 
 
 def _build_tools(source):
