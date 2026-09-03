@@ -300,6 +300,10 @@ class SandboxContext:
     def inline(self):
         return _InlineProxy()
 
+    @property
+    def modules(self):
+        return _ModulesProxy()
+
 
 class _TgProxy:
     async def call(self, method, kwargs=None):
@@ -391,6 +395,33 @@ class _InlineProxy:
 
     async def form(self, text, buttons=None, **kwargs):
         return _cap_call("inline", {"op": "form", "text": text, "buttons": buttons, "kwargs": kwargs})
+
+
+class _ModulesProxy:
+    async def list(self):
+        return _cap_call("modules", {"op": "list"})
+
+    async def info(self, module_id):
+        return _cap_call("modules", {"op": "info", "module_id": module_id})
+
+    async def hashes(self):
+        return _cap_call("modules", {"op": "hashes"})
+
+    async def load(self, url=None, text=None, source=None):
+        payload = {"op": "load"}
+        if url is not None:
+            payload["url"] = url
+        if text is not None:
+            payload["text"] = text
+        if source is not None:
+            payload["source"] = source
+        return _cap_call("modules", payload)
+
+    async def unload(self, module_id):
+        return _cap_call("modules", {"op": "unload", "module_id": module_id})
+
+    async def reload(self, module_id):
+        return _cap_call("modules", {"op": "reload", "module_id": module_id})
 
 
 def _build_tools(source):

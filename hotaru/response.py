@@ -483,6 +483,11 @@ class ModuleContext:
         return TOOLS
 
     @property
+    def modules(self) -> Any:
+        from relay.proxies import ModulesHelper
+        return ModulesHelper(self)
+
+    @property
     def ui(self) -> Any:
         from relay.proxies import UiHelper
         return UiHelper(self.module_id, self.callback_router.store, getattr(self._source, "from_id", None), getattr(self._source, "chat_id", None), getattr(self._source, "id", 0), self.callback_router)
