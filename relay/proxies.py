@@ -80,14 +80,14 @@ class Gateway:
         return await self.call("messages.sendMedia", {"media": media, "message": caption, **kwargs})
 
     async def send_rich(self, html_text: str | dict[str, Any], **kwargs: Any) -> Any:
-        rich = {"_": "inputRichMessageHTML", "html": html_text} if isinstance(html_text, str) else html_text
+        rich = {"_": "inputRichMessageHTML", "html": __import__("re").sub(r"\n(?![^<]*>)", "<br>", html_text)} if isinstance(html_text, str) else html_text
         return await self.call("messages.sendMessage", {"rich_message": rich, **kwargs})
 
     async def edit_message(self, message_id: int, text: str, **kwargs: Any) -> Any:
         return await self.call("messages.editMessage", {"id": message_id, "message": text, **kwargs})
 
     async def edit_rich(self, message_id: int, html_text: str | dict[str, Any], **kwargs: Any) -> Any:
-        rich = {"_": "inputRichMessageHTML", "html": html_text} if isinstance(html_text, str) else html_text
+        rich = {"_": "inputRichMessageHTML", "html": __import__("re").sub(r"\n(?![^<]*>)", "<br>", html_text)} if isinstance(html_text, str) else html_text
         return await self.call("messages.editMessage", {"id": message_id, "rich_message": rich, **kwargs})
 
     async def delete_message(self, message_id: int, **kwargs: Any) -> Any:
@@ -107,7 +107,7 @@ class RichGateway:
 
     @staticmethod
     def html(value: str, *, rtl: bool = False, noautolink: bool = False, files: Any = None) -> dict[str, Any]:
-        result: dict[str, Any] = {"_": "inputRichMessageHTML", "html": str(value)}
+        result: dict[str, Any] = {"_": "inputRichMessageHTML", "html": __import__("re").sub(r"\n(?![^<]*>)", "<br>", str(value))}
         if rtl:
             result["rtl"] = True
         if noautolink:
@@ -348,7 +348,7 @@ class BotGateway:
         return await self.call(method, **kwargs)
 
     async def rich_send(self, chat_id: int | str, html_text: str, *, buttons: Any = None, **kwargs: Any) -> Any:
-        data = {"chat_id": chat_id, "rich_message": {"_": "inputRichMessageHTML", "html": html_text}, **kwargs}
+        data = {"chat_id": chat_id, "rich_message": {"_": "inputRichMessageHTML", "html": __import__("re").sub(r"\n(?![^<]*>)", "<br>", html_text)}, **kwargs}
         if buttons is not None:
             data["reply_markup"] = buttons
         return await self.call("sendRichMessage", **data)
@@ -378,19 +378,19 @@ class BotGateway:
         return await self.call("sendDocument", **data)
 
     async def rich_edit(self, chat_id: int | str, message_id: int, html_text: str, *, buttons: Any = None, **kwargs: Any) -> Any:
-        data = {"chat_id": chat_id, "message_id": message_id, "rich_message": {"_": "inputRichMessageHTML", "html": html_text}, **kwargs}
+        data = {"chat_id": chat_id, "message_id": message_id, "rich_message": {"_": "inputRichMessageHTML", "html": __import__("re").sub(r"\n(?![^<]*>)", "<br>", html_text)}, **kwargs}
         if buttons is not None:
             data["reply_markup"] = buttons
         return await self.call("editMessageText", **data)
 
     async def rich_draft(self, chat_id: int | str, html_text: str, *, draft_id: int, **kwargs: Any) -> Any:
-        return await self.call("sendRichMessageDraft", chat_id=chat_id, draft_id=draft_id, rich_message={"_": "inputRichMessageHTML", "html": html_text}, **kwargs)
+        return await self.call("sendRichMessageDraft", chat_id=chat_id, draft_id=draft_id, rich_message={"_": "inputRichMessageHTML", "html": __import__("re").sub(r"\n(?![^<]*>)", "<br>", html_text)}, **kwargs)
 
     async def inline_answer(self, query: Any, results: list[dict[str, Any]], **kwargs: Any) -> Any:
         return await query.answer(results, **kwargs)
 
     async def inline_edit(self, inline_message_id: str, html_text: str, *, buttons: Any = None, **kwargs: Any) -> Any:
-        data = {"inline_message_id": inline_message_id, "rich_message": {"_": "inputRichMessageHTML", "html": html_text}, **kwargs}
+        data = {"inline_message_id": inline_message_id, "rich_message": {"_": "inputRichMessageHTML", "html": __import__("re").sub(r"\n(?![^<]*>)", "<br>", html_text)}, **kwargs}
         if buttons is not None:
             data["reply_markup"] = buttons
         return await self.call("editMessageText", **data)
@@ -496,7 +496,7 @@ class InlineHelper:
     def rich(self, result_id: str, title: str, html_text: str, *, buttons: Any = None, **kw: Any) -> dict[str, Any]:
         from goygram.types import InlineObj
         result = InlineObj.article(result_id, title, html_text)
-        result["input_message_content"] = {"rich_message": {"_": "inputRichMessageHTML", "html": html_text}}
+        result["input_message_content"] = {"rich_message": {"_": "inputRichMessageHTML", "html": __import__("re").sub(r"\n(?![^<]*>)", "<br>", html_text)}}
         if buttons is not None:
             result["reply_markup"] = {"inline_keyboard": buttons}
         return result
