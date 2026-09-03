@@ -132,9 +132,19 @@ PROVIDERS: dict[str, dict[str, Any]] = {
         "detail": "persistent key-value state in the module namespace",
         "side_effect": "write",
     },
+    "inline": {
+        "title": "Inline bots",
+        "detail": "query and interact with inline bots",
+        "side_effect": "write",
+    },
     "modules": {
         "title": "Module management",
         "detail": "load, unload, reload, list, and inspect installed modules; hashes and manifest info",
+        "side_effect": "write",
+    },
+    "assets": {
+        "title": "Assets",
+        "detail": "access to hidden assets storage",
         "side_effect": "write",
     },
 }
@@ -199,8 +209,12 @@ class CapabilityHost:
                 return self._net_fetch(module_id, payload, meta)
             if capability == "state":
                 return self._state_op(module_id, payload, meta)
+            if capability == "inline":
+                return await self._inline_op(module_id, payload, meta)
             if capability == "modules":
                 return await self._modules_op(module_id, payload, meta)
+            if capability == "assets":
+                return await self._assets_op(module_id, payload, meta)
         raise PermissionError(f"capability not implemented: {capability}")
 
     async def _mt_call(self, module_id: str, payload: dict[str, Any], meta: dict[str, Any]) -> Any:
@@ -483,3 +497,48 @@ class CapabilityHost:
             raise PermissionError(f"module not active: {module_id}")
         result = await runtime._command_rl(SimpleNamespace(args=(module_id, "force")))
         return {"module_id": module_id, "action": "reloaded", "detail": result}
+
+    async def _assets_op(self, module_id: str, payload: dict[str, Any], meta: dict[str, Any]) -> Any:
+        import os
+        from .sandbox import SANDBOX_BASE_ROOT
+
+        op = payload.get("op")
+        client = self.runtime.kernel.client
+        if client is None:
+            raise PermissionError("telegram client unavailable")
+
+        sandbox_root = os.path.join(SANDBOX_BASE_ROOT, module_id)
+        
+        if op == "upload":
+            file_path = str(payload.get("file", ""))
+            filename = str(payload.get("filename") or "")
+            path = os.path.abspath(os.path.join(sandbox_root, file_path))
+            if not path.startswith(sandbox_root) or not os.path.isfile(path):
+                raise PermissionError("invalid file path")
+            result = await client.send_media(path, message=filename, peer="me")
+            return {"id": getattr(result, "id", None)}
+            
+        if op == "download":
+            msg_dict = payload.get("message") or {}
+            destination = payload.get("destination")
+            if destination:
+                dest_path = os.path.abspath(os.path.join(sandbox_root, str(destination)))
+                if not dest_path.startswith(sandbox_root):
+                    raise PermissionError("invalid destination path")
+            else:
+                dest_path = sandbox_root + "/"
+                
+            chat_id = msg_dict.get("chat_id")
+            msg_id = msg_dict.get("id") or msg_dict.get("message_id")
+            if not chat_id or not msg_id:
+                raise PermissionError("invalid message object")
+                
+            messages = await client.get_messages(chat_id, ids=[msg_id])
+            if not messages:
+                raise PermissionError("message not found")
+            msg = messages[0]
+            
+            result_path = await msg.download(dest_path)
+            if result_path and isinstance(result_path, str) and result_path.startswith(sandbox_root):
+                return os.path.relpath(result_path, sandbox_root)
+            return result_path

@@ -165,6 +165,12 @@ class CallbackRouter:
     def module_action_exists(self, module_id: str, action_id: str) -> bool:
         return action_id in self._module_handlers.get(module_id, {})
 
+    def register_module_action_id(self, module_id: str, action_id: str, handler: Any) -> str:
+        if not module_id or not action_id or not callable(handler):
+            raise ValueError("module callback is invalid")
+        self._module_handlers.setdefault(module_id, {})[action_id] = handler
+        return action_id
+
     def issue_module(self, module_id: str, action_id: str, binding: CallbackBinding, payload: Any = None) -> str:
         handlers = self._module_handlers.get(module_id, {})
         if action_id not in handlers:

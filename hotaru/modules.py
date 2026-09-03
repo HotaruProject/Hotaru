@@ -24,6 +24,18 @@ class ModuleManifest:
     description: str
     commands: tuple[str, ...]
     capabilities: tuple[str, ...]
+    watchers: tuple[str, ...] = ()
+    tasks: dict[str, dict[str, Any]] = None
+    aliases: dict[str, str] = None
+    config_schema: dict[str, Any] = None
+
+    def __post_init__(self):
+        if self.tasks is None:
+            object.__setattr__(self, "tasks", {})
+        if self.aliases is None:
+            object.__setattr__(self, "aliases", {})
+        if self.config_schema is None:
+            object.__setattr__(self, "config_schema", {})
 
 
 @dataclass(frozen=True, slots=True)
@@ -109,7 +121,34 @@ class HmodLoader:
             raise ModuleValidationError("manifest description is invalid")
         if not HmodLoader._strings(commands) or not HmodLoader._strings(capabilities):
             raise ModuleValidationError("manifest lists must contain strings")
-        return ModuleManifest(module_id, version, description, tuple(commands), tuple(capabilities))
+
+        watchers = raw.get("watchers", [])
+        if not HmodLoader._strings(watchers):
+            raise ModuleValidationError("manifest watchers must contain strings")
+
+        tasks = raw.get("tasks", {})
+        if not isinstance(tasks, dict):
+            raise ModuleValidationError("manifest tasks must be a dictionary")
+
+        aliases = raw.get("aliases", {})
+        if not isinstance(aliases, dict) or not all(isinstance(k, str) and isinstance(v, str) for k, v in aliases.items()):
+            raise ModuleValidationError("manifest aliases must be a string to string dictionary")
+
+        config_schema = raw.get("config_schema", {})
+        if not isinstance(config_schema, dict):
+            raise ModuleValidationError("manifest config_schema must be a dictionary")
+
+        return ModuleManifest(
+            module_id, 
+            version, 
+            description, 
+            tuple(commands), 
+            tuple(capabilities),
+            tuple(watchers),
+            tasks,
+            aliases,
+            config_schema
+        )
 
     @staticmethod
     def _strings(value: Any) -> bool:

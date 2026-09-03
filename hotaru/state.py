@@ -11,10 +11,34 @@ class StateError(ValueError):
     pass
 
 
+class StatePointer:
+    def __init__(self, namespace: "StateNamespace", key: str, default: Any = None) -> None:
+        self.namespace = namespace
+        self.key = key
+        self.default = default
+
+    def get(self) -> Any:
+        return self.namespace.get(self.key, self.default)
+
+    def set(self, value: Any) -> None:
+        self.namespace.set(self.key, value)
+
+    @property
+    def value(self) -> Any:
+        return self.get()
+
+    @value.setter
+    def value(self, val: Any) -> None:
+        self.set(val)
+
+
 class StateNamespace:
     def __init__(self, connection: sqlite3.Connection, module_id: str) -> None:
         self._connection = connection
         self.module_id = module_id
+
+    def pointer(self, key: str, default: Any = None) -> StatePointer:
+        return StatePointer(self, key, default)
 
     def get(self, key: str, default: Any = None) -> Any:
         self._validate_key(key)

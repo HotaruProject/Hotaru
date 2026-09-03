@@ -483,6 +483,11 @@ class ModuleContext:
         return TOOLS
 
     @property
+    def assets(self) -> Any:
+        from relay.proxies import AssetsHelper
+        return AssetsHelper(self)
+
+    @property
     def modules(self) -> Any:
         from relay.proxies import ModulesHelper
         return ModulesHelper(self)
@@ -742,7 +747,7 @@ class ModuleContext:
         rich_message = {"_": "inputRichMessageHTML", "html": html}
         if output == "edit" and message_id is not None:
             with trusted_scope():
-                result = await app.mt_req("messages.editMessage", id=int(message_id), message="", rich_message=rich_message)
+                result = await app.mt_req("messages.editMessage", peer=peer, id=int(message_id), message="", rich_message=rich_message)
             return Response(True, "edit", getattr(self._source, "src", None), result)
         reply_to = kwargs.pop("reply_to", None) or message_id
         topic_id = kwargs.pop("topic_id", None) or self.topic_id
