@@ -5,7 +5,7 @@ HOTARU = {
     "commands": [
         "ver", "st", "ls", "mi",
         "ld", "ul", "rl", "rm", "bk",
-        "bot", "trust", "untrust", "conf",
+        "bot", "trust", "untrust",
         "alias", "unalias"
     ],
     "capabilities": [],
@@ -150,59 +150,6 @@ async def command_untrust(ctx, invocation):
         return
     result = await runtime._command_untrust(invocation)
     await ctx.respond(result)
-
-async def command_conf(ctx, invocation):
-    runtime = ctx.runtime
-    if len(invocation.args) != 1:
-        await ctx.respond("<b>⚠️ Usage:</b> <code>!conf &lt;module-id&gt;</code>", parse_mode="HTML")
-        return
-    module_id = invocation.args[0].casefold()
-    active = runtime.modules.get(module_id) if runtime.modules else None
-    if not active:
-        await ctx.respond("<b>❌ Module not active</b>", parse_mode="HTML")
-        return
-    schema = active.loaded.manifest.config_schema
-    if not schema:
-        await ctx.respond("<b>ℹ️ Module has no configuration</b>", parse_mode="HTML")
-        return
-    
-    namespace = runtime.state.namespace(module_id)
-    
-    def build_form():
-        text = f"⚙️ <b>Configuration Control</b>\n"
-        text += f"📦 <b>Module:</b> <code>{module_id}</code>\n\n"
-        
-        buttons = []
-        
-        for key, spec in schema.items():
-            val = namespace.get(key, spec.get("default"))
-            type_lbl = spec.get("type", "str")
-            text += f"🔹 <b>{key}</b> [<code>{type_lbl}</code>]: <b>{val}</b>\n"
-            if "description" in spec:
-                text += f"   <i>{spec['description']}</i>\n"
-            text += "\n"
-                
-            def make_handler(k, s):
-                async def handler(c, p):
-                    new_val = c.value
-                    if s.get("type") == "int":
-                        try:
-                            new_val = int(new_val)
-                        except ValueError:
-                            await c.answer("⚠️ Must be an integer", alert=True)
-                            return
-                    elif s.get("type") == "bool":
-                        new_val = new_val.lower() in ("true", "1", "yes", "y", "on")
-                    namespace.set(k, new_val)
-                    await c.edit(**build_form())
-                return handler
-                
-            buttons.append([ctx.ui.input(f"✏️ Edit {key}", make_handler(key, spec), placeholder=f"Enter new value for {key}")])
-            
-        buttons.append([ctx.ui.close("❌ Close Settings")])
-        return {"text": text, "buttons": buttons, "inline": True}
-
-    await ctx.respond(**build_form())
 
 async def command_alias(ctx, invocation):
     runtime = ctx.runtime
