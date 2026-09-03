@@ -32,9 +32,9 @@ async def _show_directory(ctx):
     
     modules_with_config = []
     if runtime.modules:
-        for mod_id, mod in runtime.modules.items():
+        for mod in runtime.modules.items():
             if mod.loaded and mod.loaded.manifest and mod.loaded.manifest.config_schema:
-                modules_with_config.append(mod_id)
+                modules_with_config.append(mod.loaded.manifest.module_id)
                 
     modules_with_config.sort()
     
