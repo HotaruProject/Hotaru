@@ -67,7 +67,7 @@ async def _show_directory(ctx):
                         await c.answer("Module no longer available", alert=True)
                 return handler
             
-            buttons.append([ctx.ui.button(f"📦 {m_id}", make_mod_handler(mod_id))])
+            buttons.append([ctx.ui.button(f"📦 {mod_id}", make_mod_handler(mod_id))])
             
         nav_buttons = []
         if page > 0:
