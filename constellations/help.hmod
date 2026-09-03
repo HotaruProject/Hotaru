@@ -63,7 +63,7 @@ async def _show_help(ctx, invocation):
                 item = active[module_id]
                 manifest = item.loaded.manifest
                 # Use current prefix as requested
-                cmds = [f"{runtime.config.prefix}{c}" for c in manifest.commands]
+                cmds = [c for c in manifest.commands]
                 cmds_str = f": ( {' | '.join(cmds)} )" if cmds else ""
                 
                 # Determine if kernel
@@ -93,13 +93,13 @@ async def _show_help(ctx, invocation):
     text = "<b>✨ 💎 Hotaru Core Help 💎 ✨</b>\n\n"
     
     if k_count > 0:
-        text += f"<details>\n<summary><b>🔥 Kernel Modules ({k_count})</b></summary>\n"
+        text += f"<details><summary><b>🔥 Kernel Modules ({k_count})</b></summary>"
         text += "".join(kernel_modules)
-        text += "\n</details>\n"
+        text += "</details>"
         
     if u_count > 0:
-        text += f"<details>\n<summary><b>🌟 User Modules ({u_count})</b></summary>\n"
+        text += f"<details><summary><b>🌟 User Modules ({u_count})</b></summary>"
         text += "".join(user_modules)
-        text += "\n</details>\n"
+        text += "</details>"
     
     await ctx.respond(text=text, parse_mode="HTML")
