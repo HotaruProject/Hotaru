@@ -25,7 +25,30 @@ async def _show_help(ctx, invocation):
         if runtime.modules is None:
             await ctx.respond("<b>⚠️ Module manager unavailable</b>", parse_mode="HTML")
             return
-        await ctx.respond(f"<b>📦 Module Details</b>\n\n{runtime._module_detail_text(invocation.args[0].casefold())}", parse_mode="HTML")
+            
+        module_id = invocation.args[0].casefold()
+        active = runtime.modules.get(module_id)
+        if active is None:
+            # Check if it's disabled or untrusted
+            if runtime.state is not None and module_id in runtime.state.module_ids():
+                lasterror = runtime.state.namespace(module_id).get('lasterror', 'none')
+                await ctx.respond(f"<tg-emoji emoji-id=5404553572727660202>❌</tg-emoji> <b>Module disabled:</b> <code>{module_id}</code>\n<i>Error: {lasterror}</i>", parse_mode="HTML")
+            else:
+                await ctx.respond(f"<b>❌ Module not active:</b> <code>{module_id}</code>", parse_mode="HTML")
+            return
+            
+        manifest = active.loaded.manifest
+        cmds = [f"{runtime.config.prefix}{c}" for c in manifest.commands]
+        cmds_str = " | ".join(cmds) if cmds else "None"
+        caps = ", ".join(manifest.capabilities) if manifest.capabilities else "None"
+        
+        text = f"<tg-emoji emoji-id=5134452506935427991>🪐</tg-emoji> <b>{manifest.module_id}</b> (v{manifest.version}):\n"
+        if manifest.description:
+            text += f"<i><tg-emoji emoji-id=5879813604068298387>ℹ️</tg-emoji> {manifest.description}</i>\n\n"
+            
+        text += f"<tg-emoji emoji-id=5456197350416486261>1️⃣</tg-emoji> <b>Commands:</b> {cmds_str}\n"
+        text += f"<tg-emoji emoji-id=5456261689026581678>2️⃣</tg-emoji> <b>Capabilities:</b> {caps}"
+        await ctx.respond(text, parse_mode="HTML")
         return
 
     kernel_modules = []
@@ -39,26 +62,29 @@ async def _show_help(ctx, invocation):
             if module_id in active:
                 item = active[module_id]
                 manifest = item.loaded.manifest
+                # Use current prefix as requested
                 cmds = [f"{runtime.config.prefix}{c}" for c in manifest.commands]
-                cmds_str = f" ({', '.join(cmds)})" if cmds else ""
+                cmds_str = f": ( {' | '.join(cmds)} )" if cmds else ""
                 
                 # Determine if kernel
                 is_kernel = False
                 if module_id in runtime.modules._bindings:
                     is_kernel = runtime.modules._bindings[module_id][2]
                 
-                line = f"🔮 <b>{module_id}</b>{cmds_str}"
+                # Applying the requested tg-emoji format
+                line = f"<tg-emoji emoji-id=4974508259839836856>🛑</tg-emoji> <code>{module_id}</code>{cmds_str}"
+                
                 if is_kernel:
                     kernel_modules.append(line)
                 else:
                     user_modules.append(line)
             else:
-                line = f"🔴 <b>{module_id}</b> <i>(untrusted)</i>"
-                user_modules.append(line)  # Assume untrusted are user modules
+                line = f"<tg-emoji emoji-id=5404553572727660202>❌</tg-emoji> <code>{module_id}</code> <i>(untrusted)</i>"
+                user_modules.append(line)
 
     else:
         names = sorted(runtime.kernel.registry.names())
-        entries = [f"🔮 <code>{runtime.config.prefix}{name}</code>" for name in names]
+        entries = [f"<tg-emoji emoji-id=4974508259839836856>🛑</tg-emoji> <code>{runtime.config.prefix}{name}</code>" for name in names]
         user_modules.extend(entries)
 
     k_count = len(kernel_modules)
