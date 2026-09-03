@@ -649,7 +649,7 @@ class Runtime:
                 return
             form_text, buttons = form
             result = InlineObj.article("hotaru-form", "Hotaru form", form_text)
-            result["input_message_content"] = {"rich_message": {"_": "inputRichMessageHTML", "html": form_text}}
+            result["input_message_content"] = {"rich_message": {"_": "inputRichMessageHTML", "html": __import__("re").sub(r"\n(?![^<]*>)", "<br>", form_text)}}
             result["reply_markup"] = {"inline_keyboard": buttons}
             await query.answer([result], cache_time=0, is_personal=True)
             if self.observatory is not None:

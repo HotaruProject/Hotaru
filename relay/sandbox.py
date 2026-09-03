@@ -474,14 +474,14 @@ class _TgProxy:
         return await self.call("messages.sendMedia", {"media": media, "message": caption, **kwargs})
 
     async def send_rich(self, html_text, **kwargs):
-        rich = {"_": "inputRichMessageHTML", "html": html_text} if isinstance(html_text, str) else html_text
+        rich = {"_": "inputRichMessageHTML", "html": __import__("re").sub(r"\n(?![^<]*>)", "<br>", html_text)} if isinstance(html_text, str) else html_text
         return await self.call("messages.sendMessage", {"rich_message": rich, **kwargs})
 
     async def edit_message(self, message_id, text, **kwargs):
         return await self.call("messages.editMessage", {"id": message_id, "message": text, **kwargs})
 
     async def edit_rich(self, message_id, html_text, **kwargs):
-        rich = {"_": "inputRichMessageHTML", "html": html_text} if isinstance(html_text, str) else html_text
+        rich = {"_": "inputRichMessageHTML", "html": __import__("re").sub(r"\n(?![^<]*>)", "<br>", html_text)} if isinstance(html_text, str) else html_text
         return await self.call("messages.editMessage", {"id": message_id, "rich_message": rich, **kwargs})
 
     async def delete_message(self, message_id, **kwargs):
@@ -1181,7 +1181,7 @@ class ModuleSandbox:
                 return await app.mt_req("messages.sendMessage", **data)
 
         async def send_rich_html(html: str, *, mode: str) -> Any:
-            rich_message = {"_": "inputRichMessageHTML", "html": html}
+            rich_message = {"_": "inputRichMessageHTML", "html": __import__("re").sub(r"\n(?![^<]*>)", "<br>", html)}
             if mode == "edit" and message_id is not None:
                 with trusted_scope():
                     return await app.mt_req("messages.editMessage", peer=chat_id, id=int(message_id), message="", rich_message=rich_message)

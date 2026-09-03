@@ -725,7 +725,7 @@ class ModuleContext:
         message_id = getattr(self._source, "id", None)
         if self.runtime is not None and getattr(self.runtime, "app", None) is not None:
             return await self._trusted_send_rich(html, peer, output=output, message_id=message_id, **kwargs)
-        data = {"peer": peer, "message": "", "random_id": secrets.randbits(63), "rich_message": {"_": "inputRichMessageHTML", "html": html}}
+        data = {"peer": peer, "message": "", "random_id": secrets.randbits(63), "rich_message": {"_": "inputRichMessageHTML", "html": __import__("re").sub(r"\n(?![^<]*>)", "<br>", html)}}
         kwargs.pop("parse_mode", None)
         if output == "edit" and message_id is not None:
             data["id"] = int(message_id)
@@ -744,7 +744,7 @@ class ModuleContext:
         from relay.firewall import trusted_scope
         import secrets as _secrets
         app = self.runtime.app
-        rich_message = {"_": "inputRichMessageHTML", "html": html}
+        rich_message = {"_": "inputRichMessageHTML", "html": __import__("re").sub(r"\n(?![^<]*>)", "<br>", html)}
         if output == "edit" and message_id is not None:
             with trusted_scope():
                 result = await app.mt_req("messages.editMessage", peer=peer, id=int(message_id), message="", rich_message=rich_message)
