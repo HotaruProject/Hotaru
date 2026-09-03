@@ -1001,7 +1001,7 @@ class Runtime:
                 if self.stager is None:
                     raise RuntimeError("module stager is unavailable")
                 self.stager.stage_text(old_source, old_path.parent)
-                await self.modules.activate_source(old_path, self.kernel)
+                await self.modules.activate_source(old_path, self.kernel, sandbox=self.sandbox)
             except Exception:
                 return f"reload failed: {type(exc).__name__}; rollback failed"
             if self.observatory is not None:
@@ -1169,7 +1169,7 @@ class Runtime:
         try:
             path.unlink()
         except OSError:
-            await self.modules.activate_source(path, self.kernel)
+            await self.modules.activate_source(path, self.kernel, sandbox=self.sandbox)
             await callback.answer("Removal failed", alert=True)
             return await callback.edit(f"removal failed: {payload}")
         await callback.answer("Module removed", alert=True)
