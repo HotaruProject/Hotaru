@@ -43,7 +43,7 @@ class CallbackContext:
     async def delete(self) -> Any:
         if getattr(self, "inline_message_id", None):
             if getattr(self, "app", None) is not None:
-                return await self.app.bot_req("editMessageText", inline_message_id=self.inline_message_id, text="<i>Closed</i>", parse_mode="HTML")
+                return await self.app.bot_req("editMessageText", inline_message_id=self.inline_message_id, text="\u200b", parse_mode="HTML")
             return None
         if hasattr(self._callback, "delete"):
             return await self._callback.delete()
