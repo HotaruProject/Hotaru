@@ -98,6 +98,8 @@ async def _show_help(ctx, invocation):
         text += "</details>"
         
     if u_count > 0:
+        if k_count > 0:
+            text += "\n"
         text += f"<details><summary><b>🌟 User Modules ({u_count})</b></summary>"
         text += "".join(user_modules)
         text += "</details>"
