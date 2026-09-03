@@ -512,7 +512,8 @@ class ModuleContext:
             kwargs["buttons"] = self._normalize_buttons(kwargs["buttons"])
         if kwargs.get("buttons") and self.form_sender is not None:
             return await self.form_sender(self._source, kwargs.get("text", ""), kwargs["buttons"], kwargs)
-        if kwargs.get("text") is not None and kwargs.get("rich", True) and self.cap_host is not None:
+        rich = kwargs.pop("rich", False)
+        if kwargs.get("text") is not None and rich and self.cap_host is not None:
             value = kwargs.pop("text")
             limit = int(kwargs.pop("split_limit", 4096))
             file_limit = int(kwargs.pop("file_limit", 200000))
@@ -524,6 +525,9 @@ class ModuleContext:
                 return await self.responses.split(self._source, value, limit=limit, **kwargs)
             return await self.send_rich(value, **kwargs)
         kwargs.pop("parse_mode", None)
+        kwargs.setdefault("output", "auto")
+        if kwargs["output"] == "auto":
+            kwargs["output"] = "edit" if self._outgoing else "reply"
         return await self.responses.answer(self._source, **kwargs)
 
     async def respond(self, content: Any = None, **kwargs: Any) -> Any:
@@ -716,7 +720,9 @@ class ModuleContext:
         peer = getattr(self._source, "chat_id", None)
         if peer is None:
             raise ResponseError("rich message target is missing")
-        output = kwargs.pop("output", "reply")
+        output = kwargs.pop("output", "auto")
+        if output == "auto":
+            output = "edit" if self._outgoing else "reply"
         message_id = getattr(self._source, "id", None)
         if self.runtime is not None and getattr(self.runtime, "app", None) is not None:
             return await self._trusted_send_rich(html, peer, output=output, message_id=message_id, **kwargs)
