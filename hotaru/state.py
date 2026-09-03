@@ -76,7 +76,7 @@ class StateNamespace:
 
     @staticmethod
     def _validate_key(key: str) -> None:
-        if not isinstance(key, str) or not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9:.-]{0,127}", key):
+        if not isinstance(key, str) or not re.fullmatch(r"[a-zA-Z0-9_][a-zA-Z0-9_:.-]{0,127}", key):
             raise StateError("state key is invalid")
 
 
@@ -141,13 +141,13 @@ class StateStore:
         return tuple(AccountProfile(row[0], row[1], row[2], Path(row[3]), bool(row[4])) for row in rows)
 
     def get_setting(self, key: str, default: Any = None) -> Any:
-        if not isinstance(key, str) or not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9:.-]{0,127}", key):
+        if not isinstance(key, str) or not re.fullmatch(r"[a-zA-Z0-9_][a-zA-Z0-9_:.-]{0,127}", key):
             raise StateError("setting key is invalid")
         row = self.connection.execute("SELECT value FROM runtime_settings WHERE key = ?", (key,)).fetchone()
         return default if row is None else json.loads(row[0])
 
     def set_setting(self, key: str, value: Any) -> None:
-        if not isinstance(key, str) or not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9:.-]{0,127}", key):
+        if not isinstance(key, str) or not re.fullmatch(r"[a-zA-Z0-9_][a-zA-Z0-9_:.-]{0,127}", key):
             raise StateError("setting key is invalid")
         encoded = json.dumps(value, ensure_ascii=False, separators=(",", ":"))
         with self.connection:
