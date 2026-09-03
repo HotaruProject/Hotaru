@@ -211,6 +211,89 @@ class _StateProxy:
     def keys(self):
         return _cap_call("state", {"op": "keys"})
 
+    def pointer(self, key, default=None):
+        return _StatePointer(self, key, default)
+
+class _StatePointer:
+    def __init__(self, namespace, key, default):
+        self.namespace = namespace
+        self.key = key
+        self.default = default
+
+    @property
+    def value(self):
+        return self.namespace.get(self.key, self.default)
+
+    def set(self, val):
+        self.namespace.set(self.key, val)
+
+    @value.setter
+    def value(self, val):
+        self.set(val)
+
+
+_sandbox_callbacks = {}
+
+
+def _cb_respond_call(data):
+    sys.stdout.write(json.dumps({"cb_respond": data}) + "\n")
+    sys.stdout.flush()
+    for line in sys.stdin:
+        line = line.strip()
+        if not line:
+            continue
+        msg = json.loads(line)
+        if "cb_respond_result" in msg:
+            result = msg["cb_respond_result"]
+            if not result.get("ok"):
+                raise PermissionError(result.get("error", "cb_respond failed"))
+            return result.get("result")
+
+
+class SandboxCallbackProxy:
+    def __init__(self, cb_data):
+        self._data = cb_data
+
+    async def answer(self, text="", alert=False):
+        return _cb_respond_call({"action": "answer", "text": str(text), "alert": bool(alert)})
+
+    async def edit(self, text, **kwargs):
+        return _cb_respond_call({"action": "edit", "text": str(text), **{k: v for k, v in kwargs.items() if isinstance(v, (str, int, float, bool, type(None)))}})
+
+    @property
+    def chat_id(self):
+        return self._data.get("chat_id")
+
+    @property
+    def message_id(self):
+        return self._data.get("message_id")
+
+    @property
+    def from_id(self):
+        return self._data.get("from_id")
+
+    @property
+    def inline_message_id(self):
+        return self._data.get("inline_message_id")
+
+
+class SandboxAttachment:
+    __slots__ = ("kind", "file_name", "mime_type", "size")
+
+    def __init__(self, data):
+        data = data or {}
+        self.kind = data.get("kind")
+        self.file_name = data.get("file_name")
+        self.mime_type = data.get("mime_type")
+        self.size = data.get("size")
+
+    @property
+    def name(self):
+        return self.file_name
+
+    def __repr__(self):
+        return f"SandboxAttachment(kind={self.kind!r}, file_name={self.file_name!r})"
+
 
 class SandboxContext:
     def __init__(self, tools, payload):
@@ -231,6 +314,20 @@ class SandboxContext:
             is_me=self._msg.get("out", False),
             out=self._msg.get("out", False),
         )
+
+    @property
+    def has_media(self) -> bool:
+        return self.attachment is not None
+
+    @property
+    def attachment(self):
+        data = self._msg.get("attachment")
+        return SandboxAttachment(data) if data else None
+
+    @property
+    def reply_attachment(self):
+        data = self._msg.get("reply_attachment")
+        return SandboxAttachment(data) if data else None
 
     def args_list(self):
         return list(self.args)
@@ -274,6 +371,17 @@ class SandboxContext:
         kwargs["rich"] = True
         return _respond_call({"content": html, "kwargs": kwargs})
 
+    async def inline_form(self, text, buttons=None, **kwargs):
+        return _respond_call({"content": text, "kwargs": {"buttons": buttons, "output": "inline", **kwargs}})
+
+    @property
+    def rich(self):
+        return _RichProxy()
+
+    @property
+    def ui(self):
+        return _UiProxy()
+
     async def send_file(self, media, caption=None, **kwargs):
         kwargs["media"] = media
         return _respond_call({"content": caption or "", "kwargs": kwargs})
@@ -302,6 +410,51 @@ class SandboxContext:
     @property
     def modules(self):
         return _ModulesProxy()
+
+    @property
+    def assets(self):
+        return _AssetsProxy()
+
+class _AssetsProxy:
+    async def upload(self, file, filename=None):
+        return await _cap_call("assets", {"op": "upload", "file": file, "filename": filename})
+        
+    async def download(self, message, destination=None):
+        return await _cap_call("assets", {"op": "download", "message": message, "destination": destination})
+
+
+class _RichProxy:
+    async def send(self, html, **kwargs):
+        return _respond_call({"content": html, "kwargs": {"rich": True, **kwargs}})
+
+    async def edit(self, message_id, html, **kwargs):
+        return _respond_call({"content": html, "kwargs": {"rich": True, "output": "edit", "message_id": message_id, **kwargs}})
+
+    async def answer(self, html, **kwargs):
+        return self.send(html, **kwargs)
+
+
+class _UiProxy:
+    @staticmethod
+    def button(text, action_id, payload=None):
+        return {"text": text, "action_id": action_id, "payload": payload}
+
+    @staticmethod
+    def primary(text, callback, payload=None):
+        import secrets as _secrets
+        action_id = _secrets.token_hex(8)
+        _sandbox_callbacks[action_id] = callback
+        return {"text": text, "action_id": action_id, "payload": payload}
+
+    @staticmethod
+    def url(text, url):
+        return {"text": text, "url": url}
+
+    def on(self, callback):
+        import secrets as _secrets
+        action_id = _secrets.token_hex(8)
+        _sandbox_callbacks[action_id] = callback
+        return action_id
 
 
 class _TgProxy:
@@ -466,10 +619,29 @@ def main():
     sys.stdout.flush()
     for line in sys.stdin:
         req = json.loads(line)
+        if "cb" in req:
+            cb_data = req["cb"]
+            action_id = cb_data.get("action_id")
+            cb_handler = _sandbox_callbacks.get(action_id)
+            if cb_handler is None:
+                out = {"ok": False, "error": "no_callback_handler"}
+            else:
+                cb_proxy = SandboxCallbackProxy(cb_data)
+                try:
+                    result = cb_handler(cb_proxy, cb_data.get("payload"))
+                    if asyncio.iscoroutine(result):
+                        result = asyncio.run(result)
+                    out = {"ok": True, "result": result}
+                except BaseException as exc:
+                    out = {"ok": False, "error": type(exc).__name__}
+            sys.stdout.write(json.dumps(out) + "\n")
+            sys.stdout.flush()
+            continue
         try:
-            handler = ns.get("command_" + req["command"])
+            target = req.get("target") or ("command_" + req["command"])
+            handler = ns.get(target)
             if handler is None:
-                out = {"ok": False, "error": "unknown_command"}
+                out = {"ok": False, "error": f"unknown_target:{target}"}
             else:
                 payload = req.get("payload") or {}
                 args = req.get("args") or []
@@ -856,11 +1028,11 @@ class ModuleSandbox:
         process = await loop.run_in_executor(None, lambda: self._spawn(module_id, source, commands))
         return process is not None
 
-    async def call(self, module_id: str, command: str, args: list[str], payload: dict[str, Any], source: Any = None) -> Any:
+    async def call(self, module_id: str, command: str, args: list[str], payload: dict[str, Any], source: Any = None, target: str | None = None) -> Any:
         if source is not None:
             self._respond_sources[module_id] = source
         try:
-            result = await self.roundtrip(module_id, {"command": command, "args": args, "payload": payload})
+            result = await self.roundtrip(module_id, {"command": command, "args": args, "payload": payload, "target": target})
         finally:
             if source is not None:
                 self._respond_sources.pop(module_id, None)
@@ -961,20 +1133,28 @@ class ModuleSandbox:
         app = getattr(self.runtime, "app", None)
         if app is None or getattr(app, "mt", None) is None:
             raise PermissionError("userbot transport is not ready")
-        if kwargs.get("buttons"):
-            raise PermissionError("sandbox respond does not support inline buttons yet")
-        rich = bool(kwargs.pop("rich", False))
-        output = kwargs.pop("output", "auto")
-        media = kwargs.pop("media", None)
+        chat_id = getattr(source, "chat_id", None)
         text = kwargs.pop("text", None)
         if text is None and isinstance(content, str):
             text = content
+        if kwargs.get("buttons"):
+            buttons = kwargs.pop("buttons")
+            kwargs.pop("output", None)
+            buttons = self._sandbox_buttons(module_id, buttons, chat_id)
+            options = dict(kwargs.pop("module_options", {}))
+            options.setdefault("module_id", module_id)
+            form_sender = getattr(self.runtime, "form_sender", None)
+            if form_sender is None:
+                raise PermissionError("form transport is unavailable")
+            return await form_sender(source, text or "", buttons, options)
+        rich = bool(kwargs.pop("rich", False))
+        output = kwargs.pop("output", "auto")
+        media = kwargs.pop("media", None)
         kwargs.pop("parse_mode", None)
         kwargs.pop("split_limit", None)
         kwargs.pop("file_limit", None)
         kwargs.pop("filename", None)
         kwargs.pop("preserve_html", None)
-        chat_id = getattr(source, "chat_id", None)
         message_id = getattr(source, "id", None)
         is_out = bool(getattr(source, "is_me", False) or getattr(source, "out", False))
         if output == "auto":
@@ -1046,6 +1226,65 @@ class ModuleSandbox:
                 return await self.runtime.responses.smart_split(source, text)
             return await send_plain(text, mode=output)
         raise PermissionError("sandbox respond requires text content")
+
+    def _sandbox_buttons(self, module_id: str, buttons: Any, chat_id: Any) -> Any:
+        router = getattr(self.runtime, "callbacks", None)
+        owner = getattr(getattr(self.runtime, "kernel", None), "owner_id", None)
+        normalized: list[Any] = []
+        rows = buttons if isinstance(buttons, list) and buttons and isinstance(buttons[0], list) else [buttons]
+        for row in rows:
+            if not isinstance(row, list):
+                row = [row]
+            out_row: list[Any] = []
+            for btn in row:
+                if not isinstance(btn, dict):
+                    continue
+                item = {"text": btn.get("text", "")}
+                if btn.get("url"):
+                    item["url"] = btn["url"]
+                elif btn.get("action_id"):
+                    action_id = str(btn["action_id"])
+                    if router is not None:
+                        if not router.module_action_exists(module_id, action_id):
+                            router.register_module_action_id(module_id, action_id, self._make_sandbox_cb(module_id, action_id))
+                        binding = CallbackBinding(int(owner or 0), None, 0)
+                        item["callback_data"] = router.issue_module(module_id, action_id, binding, btn.get("payload"))
+                    else:
+                        raise PermissionError("callback store is unavailable")
+                out_row.append(item)
+            normalized.append(out_row)
+        return normalized
+
+    def _make_sandbox_cb(self, module_id: str, action_id: str) -> Any:
+        async def handler(callback: Any, payload: Any) -> object:
+            process = self._workers.get(module_id)
+            if process is None or process.poll() is not None or process.stdin is None:
+                raise PermissionError("sandbox callback worker is not running")
+            request = {
+                "cb": {
+                    "module_id": module_id,
+                    "action_id": action_id,
+                    "payload": payload,
+                    "chat_id": getattr(callback, "chat_id", None),
+                    "message_id": getattr(callback, "msg_id", None),
+                    "from_id": getattr(callback, "from_id", None),
+                    "inline_message_id": getattr(callback, "inline_message_id", None),
+                }
+            }
+            loop = asyncio.get_running_loop()
+            future: asyncio.Future = loop.create_future()
+            key = (module_id, action_id)
+            self._cb_waiters = getattr(self, "_cb_waiters", {})
+            self._cb_waiters[key] = future
+            process.stdin.write((json.dumps(request) + "\n").encode("utf-8"))
+            process.stdin.flush()
+            try:
+                return await asyncio.wait_for(asyncio.shield(future), timeout=30.0)
+            except asyncio.TimeoutError:
+                self._cb_waiters.pop(key, None)
+                raise PermissionError("sandbox callback timed out")
+
+        return handler
 
     def stop_module(self, module_id: str) -> bool:
         process = self._workers.pop(module_id, None)

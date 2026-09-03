@@ -145,6 +145,10 @@ class Runtime:
         )
         self.kernel.security = self.security
         self.state = StateStore(self.config.state_path)
+        
+        user_aliases = self.state.get_setting("user_aliases", {})
+        for alias, command in user_aliases.items():
+            self.kernel.registry.register_alias(alias, command)
         self.capabilities = CapabilityBroker()
         self.context_factory = ModuleContextFactory(self.state, self.responses, self)
         self.callbacks = CallbackRouter()
@@ -169,19 +173,6 @@ class Runtime:
         self.sandbox = ModuleSandbox(self)
         self.kernel.sandbox = self.sandbox
         self.kernel.context_factory = self.context_factory
-        self.kernel.registry.register("ver", self._command_ver, kernel=True, module_id=self.KERNEL_MODULE_ID)
-        self.kernel.registry.register("st", self._command_st, kernel=True, module_id=self.KERNEL_MODULE_ID)
-        self.kernel.registry.register("ls", self._command_ls, kernel=True, module_id=self.KERNEL_MODULE_ID)
-        self.kernel.registry.register("mi", self._command_mi, kernel=True, module_id=self.KERNEL_MODULE_ID)
-        self.kernel.registry.register("hlp", self._command_hlp, kernel=True, module_id=self.KERNEL_MODULE_ID)
-        self.kernel.registry.register("ld", self._command_ld, kernel=True, module_id=self.KERNEL_MODULE_ID)
-        self.kernel.registry.register("ul", self._command_ul, kernel=True, module_id=self.KERNEL_MODULE_ID)
-        self.kernel.registry.register("rl", self._command_rl, kernel=True, module_id=self.KERNEL_MODULE_ID)
-        self.kernel.registry.register("rm", self._command_rm, kernel=True, module_id=self.KERNEL_MODULE_ID)
-        self.kernel.registry.register("bk", self._command_bk, kernel=True, module_id=self.KERNEL_MODULE_ID)
-        self.kernel.registry.register("bot", self._command_bot, kernel=True, module_id=self.KERNEL_MODULE_ID)
-        self.kernel.registry.register("trust", self._command_trust, kernel=True, module_id=self.KERNEL_MODULE_ID)
-        self.kernel.registry.register("untrust", self._command_untrust, kernel=True, module_id=self.KERNEL_MODULE_ID)
         self.inline.on_inline(self._on_inline_query)
         self.inline.on_callback(self._on_inline_callback)
         self.callbacks.register("help_page", self._help_page)
@@ -190,6 +181,7 @@ class Runtime:
         self.app.on_cb(self._on_callback)
         self.event_router.attach_aux(self.app)
         return self.app
+
 
     async def _on_callback(self, callback: Any) -> object | None:
         if self.callbacks is None:
@@ -824,7 +816,7 @@ class Runtime:
 
     @property
     def constellations_dir(self) -> Path:
-        return self.config.state_path.parent / "constellations"
+        return Path(__file__).resolve().parent.parent / "constellations"
 
     @property
     def relay_dir(self) -> Path:
@@ -1298,11 +1290,18 @@ class Runtime:
         if self.modules is None or self.kernel is None:
             raise RuntimeError("build the runtime before activating modules")
         self._backup_before_activation(path)
-        if trusted is None:
+        # Kernel status is determined solely by the module's directory — never by its manifest.
+        is_kernel = self._is_kernel_path(path)
+        if is_kernel:
+            # constellations/ modules are always fully trusted
+            trusted = True
+        elif trusted is None:
             loaded = self.modules.loader.load(path)
             module_id = loaded.manifest.module_id
-            trusted = bool(self._is_kernel_path(path) or (self.state is not None and self.state.namespace(module_id).get("trusted") == "1"))
-        result = await self.modules.activate_source(path, self.kernel, health=health, sandbox=self.sandbox, trusted=trusted)
+            trusted = bool(self.state is not None and self.state.namespace(module_id).get("trusted") == "1")
+        result = await self.modules.activate_source(
+            path, self.kernel, health=health, sandbox=self.sandbox, trusted=bool(trusted), is_kernel=is_kernel,
+        )
         module_id = result.loaded.manifest.module_id
         namespace = self.state.namespace(module_id) if self.state is not None else None
         if namespace is not None:
@@ -1310,6 +1309,7 @@ class Runtime:
             namespace.set("moduleversion", result.loaded.manifest.version)
             namespace.delete("lasterror")
         return result
+
 
     async def deactivate_module(self, module_id: str) -> bool:
         if self.modules is None:
@@ -1413,6 +1413,22 @@ class Runtime:
         if self.app is None:
             self.build()
         assert self.app is not None
+        if self.state is not None and self.kernel is not None:
+            self.kernel.suspended = self.state.get_setting("suspended") == "1"
+        # Load all kernel modules from constellations/ — kernel status is set by directory alone.
+        if self.modules is not None and self.constellations_dir.is_dir():
+            for hmod_path in sorted(self.constellations_dir.glob("*.hmod")):
+                try:
+                    candidate = self.modules.loader.load(hmod_path)
+                except Exception:
+                    continue
+                if self.modules.get(candidate.manifest.module_id) is not None:
+                    continue
+                try:
+                    await self.activate_module(str(hmod_path))
+                except Exception as exc:
+                    if self.observatory is not None:
+                        self.observatory.emit("modules", "kernel_load_error", path=hmod_path.name, error=type(exc).__name__, detail=str(exc)[:240])
         await self.restore_enabled_modules()
         await self.restore_forms()
         if self._form_gc_task is None or self._form_gc_task.done():

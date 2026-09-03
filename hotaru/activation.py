@@ -32,7 +32,7 @@ class ModuleInstance:
 
 
 class ModuleBinder:
-    def bind(self, loaded: LoadedModule, namespace: dict[str, Any], kernel: Any) -> tuple[str, ...]:
+    def bind(self, loaded: LoadedModule, namespace: dict[str, Any], kernel: Any, *, is_kernel: bool = False) -> tuple[str, ...]:
         handlers: list[tuple[str, Any]] = []
         for name in loaded.manifest.commands:
             if not name.isidentifier():
@@ -41,24 +41,52 @@ class ModuleBinder:
             if not callable(handler):
                 raise ActivationError(f"module handler is missing: {name}")
             handlers.append((name, handler))
+        
+        watcher_handlers: list[tuple[str, Any]] = []
+        for name in loaded.manifest.watchers:
+            if not name.isidentifier():
+                raise ActivationError(f"module watcher is invalid: {name}")
+            handler = namespace.get(f"watcher_{name}")
+            if not callable(handler):
+                raise ActivationError(f"watcher handler is missing: {name}")
+            watcher_handlers.append((name, handler))
+
         bound: list[str] = []
+        bound_watchers: list[str] = []
         try:
             for name, handler in handlers:
                 kernel.registry.register(
                     name,
                     handler,
                     module_id=loaded.manifest.module_id,
+                    kernel=is_kernel,
                 )
                 bound.append(name)
+            for name, handler in watcher_handlers:
+                kernel.registry.register_watcher(name, handler, module_id=loaded.manifest.module_id, sandbox=False)
+                bound_watchers.append(name)
+            for alias, command in loaded.manifest.aliases.items():
+                kernel.registry.register_alias(alias, command)
         except Exception as exc:
             for name in bound:
                 kernel.unregister_module_command(loaded.manifest.module_id, name)
+            for name in bound_watchers:
+                kernel.registry.unregister_watcher(name, loaded.manifest.module_id)
+            for alias in loaded.manifest.aliases:
+                kernel.registry.unregister_alias(alias)
             raise ActivationError(f"module command binding failed: {loaded.manifest.module_id}") from exc
         return tuple(bound)
 
-    def unbind(self, loaded: LoadedModule, commands: tuple[str, ...], kernel: Any) -> None:
+    def unbind(self, loaded: LoadedModule, commands: tuple[str, ...], kernel: Any, *, is_kernel: bool = False) -> None:
         for name in commands:
-            kernel.unregister_module_command(loaded.manifest.module_id, name)
+            if is_kernel and hasattr(kernel.registry, "unregister_kernel"):
+                kernel.registry.unregister_kernel(name, module_id=loaded.manifest.module_id)
+            else:
+                kernel.unregister_module_command(loaded.manifest.module_id, name)
+        for name in loaded.manifest.watchers:
+            kernel.registry.unregister_watcher(name, loaded.manifest.module_id)
+        for alias in loaded.manifest.aliases:
+            kernel.registry.unregister_alias(alias)
 
     def bind_sandbox(self, loaded: LoadedModule, kernel: Any) -> tuple[str, ...]:
         for name in loaded.manifest.commands:
@@ -71,6 +99,10 @@ class ModuleBinder:
                 module_id=loaded.manifest.module_id,
                 sandbox=True,
             )
+        for name in loaded.manifest.watchers:
+            kernel.registry.register_watcher(name, None, module_id=loaded.manifest.module_id, sandbox=True)
+        for alias, command in loaded.manifest.aliases.items():
+            kernel.registry.register_alias(alias, command)
         return tuple(loaded.manifest.commands)
 
 
@@ -90,7 +122,7 @@ class ModuleManager:
         self.tasks = tasks
         self.form_cleanup: Callable[[str], Any] | None = None
         self._active: dict[str, ActiveModule] = {}
-        self._bindings: dict[str, tuple[Any, tuple[str, ...]]] = {}
+        self._bindings: dict[str, tuple[Any, tuple[str, ...], bool]] = {}  # kernel, commands, is_kernel
         self._rehydrators: dict[str, Callable[[dict[str, Any]], Any]] = {}
 
     def _register_rehydrator(self, module_id: str, namespace: dict[str, Any]) -> None:
@@ -141,6 +173,7 @@ class ModuleManager:
         health: Callable[[ModuleInstance], Any] | None = None,
         sandbox: Any = None,
         trusted: bool = False,
+        is_kernel: bool = False,
     ) -> ActiveModule:
         loaded = self.loader.load(path)
         behind_sandbox = not trusted
@@ -155,7 +188,22 @@ class ModuleManager:
             if loaded.manifest.module_id in self._active:
                 raise ActivationError(f"module is already active: {loaded.manifest.module_id}")
             self._active[loaded.manifest.module_id] = active
-            self._bindings[loaded.manifest.module_id] = (kernel, commands)
+            self._bindings[loaded.manifest.module_id] = (kernel, commands, False)
+            
+            if self.tasks is not None and kernel.context_factory is not None:
+                for task_name, task_def in loaded.manifest.tasks.items():
+                    if task_def.get("autostart", False):
+                        ctx = kernel.context_factory.create(loaded.manifest.module_id, None)
+                        
+                        async def sandbox_task_handler(c=ctx, s=sandbox, m=loaded.manifest.module_id, t=task_name):
+                            await s.call(m, t, [], {}, target=f"task_{t}")
+                            
+                        self.tasks.spawn(
+                            loaded.manifest.module_id, 
+                            self._run_task(task_name, task_def, sandbox_task_handler, ctx),
+                            name=f"hotaru:task:sandbox:{loaded.manifest.module_id}:{task_name}"
+                        )
+                        
             return active
         namespace: dict[str, Any] = {
             "__name__": f"hotaru_module_{loaded.manifest.module_id}",
@@ -164,7 +212,7 @@ class ModuleManager:
         try:
             with module_scope():
                 exec(compile(loaded.source, str(loaded.path), "exec"), namespace, namespace)
-            commands = self.binder.bind(loaded, namespace, kernel)
+            commands = self.binder.bind(loaded, namespace, kernel, is_kernel=is_kernel)
             instance = ModuleInstance(loaded, namespace, commands)
             if health is not None:
                 result = health(instance)
@@ -177,13 +225,39 @@ class ModuleManager:
             if loaded.manifest.module_id in self._active:
                 raise ActivationError(f"module is already active: {loaded.manifest.module_id}")
             self._active[loaded.manifest.module_id] = active
-            self._bindings[loaded.manifest.module_id] = (kernel, commands)
+            self._bindings[loaded.manifest.module_id] = (kernel, commands, is_kernel)
             self._register_rehydrator(loaded.manifest.module_id, namespace)
+            
+            if self.tasks is not None and kernel.context_factory is not None:
+                for task_name, task_def in loaded.manifest.tasks.items():
+                    if task_def.get("autostart", False):
+                        handler = namespace.get(f"task_{task_name}")
+                        if handler and callable(handler):
+                            ctx = kernel.context_factory.create(loaded.manifest.module_id, None)
+                            self.tasks.spawn(
+                                loaded.manifest.module_id, 
+                                self._run_task(task_name, task_def, handler, ctx),
+                                name=f"hotaru:task:{loaded.manifest.module_id}:{task_name}"
+                            )
             return active
         except Exception as exc:
             if "commands" in locals():
-                self.binder.unbind(loaded, commands, kernel)
+                self.binder.unbind(loaded, commands, kernel, is_kernel=is_kernel)
             raise ActivationError(f"module activation failed: {loaded.manifest.module_id}") from exc
+
+    async def _run_task(self, name: str, task_def: dict[str, Any], handler: Any, ctx: Any) -> None:
+        interval = float(task_def.get("interval", 60.0))
+        while True:
+            try:
+                with module_scope():
+                    result = handler(ctx)
+                    if inspect.isawaitable(result):
+                        await result
+                await asyncio.sleep(interval)
+            except asyncio.CancelledError:
+                break
+            except Exception:
+                await asyncio.sleep(interval)
 
     async def _cleanup(self, context: Any) -> None:
         if context is None:
@@ -213,7 +287,8 @@ class ModuleManager:
                 await asyncio.wait_for(result, timeout=self.timeout)
         binding = self._bindings.pop(module_id, None)
         if binding is not None:
-            self.binder.unbind(active.loaded, binding[1], binding[0])
+            kern, commands, ik = binding
+            self.binder.unbind(active.loaded, commands, kern, is_kernel=ik)
         del self._active[module_id]
         return True
 

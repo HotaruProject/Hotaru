@@ -9,6 +9,18 @@ from .denylist import payload_hits_blocked
 from .firewall import trusted_scope
 
 
+class AssetsHelper:
+    def __init__(self, context: Any) -> None:
+        self._context = context
+
+    async def upload(self, file: Any, filename: str | None = None) -> Any:
+        return await self._context.tg.send_media(file, caption=filename or "", peer="me")
+
+    async def download(self, message: Any, destination: str | Any | None = None) -> Any:
+        # Assuming message is an object with .download() method
+        return await self._context.message.__class__(message, self._context.responses).download(destination)
+
+
 class HtmlHelper:
     def escape(self, value: Any) -> str:
         return html.escape(str(value), quote=False)

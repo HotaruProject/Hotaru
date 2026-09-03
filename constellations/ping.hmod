@@ -11,6 +11,6 @@ import time
 
 async def command_ping(ctx, invocation):
     start = time.perf_counter()
-    await ctx.answer(text="ping")
+    await ctx.respond("ping")
     elapsed = (time.perf_counter() - start) * 1000
-    await ctx.answer(text=f"pong: {elapsed:.1f} ms")
+    await ctx.respond(f"pong: {elapsed:.1f} ms")

@@ -1,0 +1,249 @@
+HOTARU = {
+    "id": "hotaru-kernel",
+    "version": "0.1.5",
+    "description": "Hotaru kernel module — system commands",
+    "commands": [
+        "ver", "st", "ls", "mi", "hlp",
+        "ld", "ul", "rl", "rm", "bk",
+        "bot", "trust", "untrust", "conf",
+        "alias", "unalias"
+    ],
+    "capabilities": [],
+}
+
+
+async def command_ver(ctx, invocation):
+    from hotaru import __version__
+    await ctx.respond(f"Hotaru {__version__}")
+
+
+async def command_st(ctx, invocation):
+    runtime = ctx.runtime
+    if runtime is None:
+        await ctx.respond("runtime unavailable")
+        return
+    status = runtime.status()
+    flags = ", ".join(f"{key}={value}" for key, value in status.items())
+    lines = [f"health: {runtime.health()}", flags]
+    if runtime.supervisor is not None:
+        state = runtime.supervisor.state
+        lines.append(f"connection: {state.health.value} reconnects={state.reconnects} mt={state.mt_ready} bot={state.bot_ready}")
+        if state.last_error:
+            lines.append(f"last_error: {state.last_error}")
+    if runtime.kernel is not None:
+        lines.append(f"running_commands: {runtime.kernel.running()}")
+    if runtime.inline is not None and runtime.inline.info is not None:
+        running = runtime.inline._task is not None and not runtime.inline._task.done()
+        lines.append(f"inline: @{runtime.inline.info.username} ({'running' if running else 'stopped'})")
+    await ctx.respond("\n".join(lines))
+
+
+async def command_ls(ctx, invocation):
+    runtime = ctx.runtime
+    if runtime is None or runtime.modules is None:
+        await ctx.respond("modules: unavailable")
+        return
+    items = runtime.modules.items()
+    if not items:
+        await ctx.respond("modules: none")
+        return
+    await ctx.respond("modules:\n" + "\n".join(sorted(item.loaded.manifest.module_id for item in items)))
+
+
+async def command_mi(ctx, invocation):
+    runtime = ctx.runtime
+    if runtime is None:
+        await ctx.respond("runtime unavailable")
+        return
+    if len(invocation.args) != 1:
+        await ctx.respond("usage: !mi <module-id>")
+        return
+    await ctx.respond(runtime._module_detail_text(invocation.args[0].casefold()))
+
+
+async def command_hlp(ctx, invocation):
+    runtime = ctx.runtime
+    if runtime is None:
+        await ctx.respond("runtime unavailable")
+        return
+    page = 0
+    if invocation.args:
+        if len(invocation.args) != 1:
+            await ctx.respond("usage: !hlp [page] | !hlp <module-id>")
+            return
+        if not invocation.args[0].isdigit():
+            # treat as module-id
+            if runtime.modules is None:
+                await ctx.respond("module unavailable")
+                return
+            await ctx.respond(runtime._module_detail_text(invocation.args[0].casefold()))
+            return
+        page = int(invocation.args[0])
+    result = runtime._help_render(page, invocation.chat_id, invocation.message_id)
+    if isinstance(result, tuple):
+        text, buttons = result
+        await ctx.respond(text, buttons=buttons)
+    else:
+        await ctx.respond(result)
+
+
+async def command_ld(ctx, invocation):
+    runtime = ctx.runtime
+    if runtime is None:
+        await ctx.respond("runtime unavailable")
+        return
+    result = await runtime._command_ld(invocation)
+    if isinstance(result, tuple):
+        text, buttons = result
+        await ctx.respond(text, buttons=buttons)
+    else:
+        await ctx.respond(result)
+
+
+async def command_ul(ctx, invocation):
+    runtime = ctx.runtime
+    if runtime is None:
+        await ctx.respond("runtime unavailable")
+        return
+    result = await runtime._command_ul(invocation)
+    await ctx.respond(result)
+
+
+async def command_rl(ctx, invocation):
+    runtime = ctx.runtime
+    if runtime is None:
+        await ctx.respond("runtime unavailable")
+        return
+    result = await runtime._command_rl(invocation)
+    await ctx.respond(result)
+
+
+async def command_rm(ctx, invocation):
+    runtime = ctx.runtime
+    if runtime is None:
+        await ctx.respond("runtime unavailable")
+        return
+    result = await runtime._command_rm(invocation)
+    if isinstance(result, tuple):
+        text, buttons = result
+        await ctx.respond(text, buttons=buttons)
+    else:
+        await ctx.respond(result)
+
+
+async def command_bk(ctx, invocation):
+    runtime = ctx.runtime
+    if runtime is None:
+        await ctx.respond("runtime unavailable")
+        return
+    result = await runtime._command_bk(invocation)
+    if isinstance(result, tuple):
+        text, buttons = result
+        await ctx.respond(text, buttons=buttons)
+    else:
+        await ctx.respond(result)
+
+
+async def command_bot(ctx, invocation):
+    runtime = ctx.runtime
+    if runtime is None:
+        await ctx.respond("runtime unavailable")
+        return
+    result = await runtime._command_bot(invocation)
+    await ctx.respond(result)
+
+
+async def command_trust(ctx, invocation):
+    runtime = ctx.runtime
+    if runtime is None:
+        await ctx.respond("runtime unavailable")
+        return
+    result = await runtime._command_trust(invocation)
+    if isinstance(result, tuple):
+        text, buttons = result
+        await ctx.respond(text, buttons=buttons)
+    else:
+        await ctx.respond(result)
+
+
+async def command_untrust(ctx, invocation):
+    runtime = ctx.runtime
+    if runtime is None:
+        await ctx.respond("runtime unavailable")
+        return
+    result = await runtime._command_untrust(invocation)
+    await ctx.respond(result)
+
+async def command_conf(ctx, invocation):
+    runtime = ctx.runtime
+    if len(invocation.args) != 1:
+        await ctx.respond("usage: !conf <module-id>")
+        return
+    module_id = invocation.args[0].casefold()
+    active = runtime.modules.get(module_id) if runtime.modules else None
+    if not active:
+        await ctx.respond("module not active")
+        return
+    schema = active.loaded.manifest.config_schema
+    if not schema:
+        await ctx.respond("module has no configuration")
+        return
+    
+    namespace = runtime.state.namespace(module_id)
+    
+    def build_form():
+        text = f"<b>Configuration: {module_id}</b>\n"
+        buttons = []
+        for key, spec in schema.items():
+            val = namespace.get(key, spec.get("default"))
+            text += f"\n<b>{key}</b>: {val}"
+            if "description" in spec:
+                text += f" <i>({spec['description']})</i>"
+                
+            def make_handler(k, s):
+                async def handler(c, p):
+                    new_val = c.value
+                    if s.get("type") == "int":
+                        try:
+                            new_val = int(new_val)
+                        except ValueError:
+                            await c.answer("Must be an integer", alert=True)
+                            return
+                    elif s.get("type") == "bool":
+                        new_val = new_val.lower() in ("true", "1", "yes", "y", "on")
+                    namespace.set(k, new_val)
+                    await c.edit(**build_form())
+                return handler
+                
+            buttons.append([ctx.ui.input(f"Edit {key}", make_handler(key, spec), placeholder=f"New value for {key}")])
+        buttons.append([ctx.ui.close("Close")])
+        return {"text": text, "buttons": buttons, "inline": True}
+
+    await ctx.respond(**build_form())
+
+async def command_alias(ctx, invocation):
+    runtime = ctx.runtime
+    if len(invocation.args) != 2:
+        await ctx.respond("usage: !alias <alias> <command>")
+        return
+    alias, command = invocation.args
+    aliases = runtime.state.get_setting("user_aliases", {})
+    aliases[alias.casefold()] = command.casefold()
+    runtime.state.set_setting("user_aliases", aliases)
+    runtime.kernel.registry.register_alias(alias, command)
+    await ctx.respond(f"Alias set: {alias} -> {command}")
+
+async def command_unalias(ctx, invocation):
+    runtime = ctx.runtime
+    if len(invocation.args) != 1:
+        await ctx.respond("usage: !unalias <alias>")
+        return
+    alias = invocation.args[0].casefold()
+    aliases = runtime.state.get_setting("user_aliases", {})
+    if alias in aliases:
+        del aliases[alias]
+        runtime.state.set_setting("user_aliases", aliases)
+        runtime.kernel.registry.unregister_alias(alias)
+        await ctx.respond(f"Alias removed: {alias}")
+    else:
+        await ctx.respond(f"Alias not found: {alias}")
