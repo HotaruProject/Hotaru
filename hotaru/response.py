@@ -716,20 +716,46 @@ class ModuleContext:
         peer = getattr(self._source, "chat_id", None)
         if peer is None:
             raise ResponseError("rich message target is missing")
+        output = kwargs.pop("output", "reply")
+        message_id = getattr(self._source, "id", None)
+        if self.runtime is not None and getattr(self.runtime, "app", None) is not None:
+            return await self._trusted_send_rich(html, peer, output=output, message_id=message_id, **kwargs)
         data = {"peer": peer, "message": "", "random_id": secrets.randbits(63), "rich_message": {"_": "inputRichMessageHTML", "html": html}}
         kwargs.pop("parse_mode", None)
-        output = kwargs.pop("output", "reply")
-        if output == "edit" and getattr(self._source, "id", None) is not None:
-            data["id"] = int(self._source.id)
+        if output == "edit" and message_id is not None:
+            data["id"] = int(message_id)
             data.pop("peer", None)
             result = await self._context_tg_call("messages.editMessage", {"peer": peer, **data})
             return Response(True, "edit", getattr(self._source, "src", None), result)
-        reply_to = kwargs.pop("reply_to", None) or getattr(self._source, "id", None)
+        reply_to = kwargs.pop("reply_to", None) or message_id
         topic_id = kwargs.pop("topic_id", None) or self.topic_id
         if reply_to is not None:
-            data["reply_to"] = {"_": "inputReplyToMessage", "reply_to_msg_id": int(reply_to), **({"top_msg_id": int(topic_id)} if topic_id is not None else {})}
+            data["reply_to"] = {"_": "inputReplyToMessage", "reply_to_msg_id": int(reply_to), **( {"top_msg_id": int(topic_id)} if topic_id is not None else {})}
         data.update(kwargs)
         result = await self._context_tg_call("messages.sendMessage", data)
+        return Response(True, "reply", getattr(self._source, "src", None), result)
+
+    async def _trusted_send_rich(self, html: str, peer: Any, *, output: str = "reply", message_id: int | None = None, **kwargs: Any) -> Response:
+        from relay.firewall import trusted_scope
+        import secrets as _secrets
+        app = self.runtime.app
+        rich_message = {"_": "inputRichMessageHTML", "html": html}
+        if output == "edit" and message_id is not None:
+            with trusted_scope():
+                result = await app.mt_req("messages.editMessage", id=int(message_id), message="", rich_message=rich_message)
+            return Response(True, "edit", getattr(self._source, "src", None), result)
+        reply_to = kwargs.pop("reply_to", None) or message_id
+        topic_id = kwargs.pop("topic_id", None) or self.topic_id
+        data = {"peer": peer, "message": "", "random_id": _secrets.randbits(63), "rich_message": rich_message}
+        if reply_to is not None:
+            reply_to_data = {"_": "inputReplyToMessage", "reply_to_msg_id": int(reply_to)}
+            if topic_id is not None:
+                reply_to_data["top_msg_id"] = int(topic_id)
+            data["reply_to"] = reply_to_data
+        kwargs.pop("parse_mode", None)
+        data.update(kwargs)
+        with trusted_scope():
+            result = await app.mt_req("messages.sendMessage", **data)
         return Response(True, "reply", getattr(self._source, "src", None), result)
 
     async def _context_tg_call(self, method: str, data: dict[str, Any]) -> Any:
