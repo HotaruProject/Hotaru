@@ -4,6 +4,7 @@ import json
 import urllib.parse
 import urllib.request
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 from .denylist import is_blocked_host, payload_hits_blocked
@@ -131,6 +132,11 @@ PROVIDERS: dict[str, dict[str, Any]] = {
         "detail": "persistent key-value state in the module namespace",
         "side_effect": "write",
     },
+    "modules": {
+        "title": "Module management",
+        "detail": "load, unload, reload, list, and inspect installed modules; hashes and manifest info",
+        "side_effect": "write",
+    },
 }
 
 KNOWN = frozenset(PROVIDERS)
@@ -177,9 +183,13 @@ class CapabilityHost:
     async def call(self, module_id: str, capability: str, payload: dict[str, Any]) -> Any:
         if capability not in KNOWN:
             raise PermissionError(f"unknown capability: {capability}")
-        if not self._allowed(module_id, capability):
-            raise PermissionError(f"capability not granted to module: {capability}")
         meta = PROVIDERS[capability]
+        if capability == "modules":
+            op = payload.get("op") if isinstance(payload.get("op"), str) else ""
+            if op in ("list", "info", "hashes", "unload", "reload") and not self._allowed(module_id, capability):
+                raise PermissionError(f"capability not granted to module: {capability}")
+        elif not self._allowed(module_id, capability):
+            raise PermissionError(f"capability not granted to module: {capability}")
         with trusted_scope():
             if capability == "mt":
                 return await self._mt_call(module_id, payload, meta)
@@ -189,6 +199,8 @@ class CapabilityHost:
                 return self._net_fetch(module_id, payload, meta)
             if capability == "state":
                 return self._state_op(module_id, payload, meta)
+            if capability == "modules":
+                return await self._modules_op(module_id, payload, meta)
         raise PermissionError(f"capability not implemented: {capability}")
 
     async def _mt_call(self, module_id: str, payload: dict[str, Any], meta: dict[str, Any]) -> Any:
@@ -333,3 +345,142 @@ class CapabilityHost:
         if op == "keys":
             return list(namespace.keys())
         raise PermissionError(f"unknown state op: {op}")
+
+    def _module_brief(self, module_id: str) -> dict[str, Any]:
+        runtime = self.runtime
+        modules = runtime.modules
+        state = runtime.state
+        active = modules.get(module_id) if modules is not None else None
+        loaded = active.loaded if active is not None else None
+        manifest = loaded.manifest if loaded is not None else None
+        namespace = state.namespace(module_id) if state is not None else None
+        return {
+            "module_id": module_id,
+            "active": active is not None,
+            "version": manifest.version if manifest else (namespace.get("moduleversion") if namespace else None),
+            "digest": loaded.digest if loaded is not None else None,
+            "commands": list(manifest.commands) if manifest else [],
+            "capabilities": list(manifest.capabilities) if manifest else [],
+            "description": manifest.description if manifest else "",
+            "sandbox": bool(manifest.sandbox) if manifest else False,
+            "path": str(loaded.path) if loaded is not None else (namespace.get("sourcepath") if namespace else None),
+            "lasterror": namespace.get("lasterror") if namespace else None,
+        }
+
+    async def _modules_op(self, module_id: str, payload: dict[str, Any], meta: dict[str, Any]) -> Any:
+        runtime = self.runtime
+        op = payload.get("op")
+        if not isinstance(op, str):
+            raise PermissionError("modules op is required")
+        modules = runtime.modules
+        if modules is None:
+            raise PermissionError("module manager is not ready")
+        if op == "list":
+            if runtime.state is not None:
+                ids = set(runtime.state.module_ids())
+            else:
+                ids = set()
+            ids |= {item.loaded.manifest.module_id for item in modules.items()}
+            return [self._module_brief(module_id) for module_id in sorted(ids)]
+        if op == "info":
+            target = payload.get("module_id")
+            if not isinstance(target, str) or not target:
+                raise PermissionError("modules info requires a module_id")
+            return self._module_brief(target.casefold())
+        if op == "hashes":
+            result: dict[str, str] = {}
+            if runtime.state is not None:
+                ids = set(runtime.state.module_ids())
+            else:
+                ids = set()
+            ids |= {item.loaded.manifest.module_id for item in modules.items()}
+            for module_id in sorted(ids):
+                brief = self._module_brief(module_id)
+                if brief["digest"]:
+                    result[module_id] = brief["digest"]
+            return result
+        if op == "load":
+            return await self._modules_load(module_id, payload)
+        if op == "unload":
+            return await self._modules_unload(module_id, payload)
+        if op == "reload":
+            return await self._modules_reload(module_id, payload)
+        raise PermissionError(f"unknown modules op: {op}")
+
+    async def _modules_load(self, caller_id: str, payload: dict[str, Any]) -> Any:
+        runtime = self.runtime
+        url = payload.get("url")
+        text = payload.get("text")
+        source = payload.get("source")
+        stager = runtime.stager
+        if stager is None or runtime.state is None:
+            raise PermissionError("module stager is not ready")
+        constellations = runtime.config.state_path.parent / "constellations"
+        if isinstance(url, str) and url.startswith("https://"):
+            loaded = stager.stage_url(url, constellations)
+        elif isinstance(text, str) and text:
+            loaded = stager.stage_text(text, constellations)
+        elif isinstance(source, str) and source:
+            loaded = stager.stage_text(source, constellations)
+        else:
+            raise PermissionError("modules load requires an https url or module source text")
+        module_id = loaded.manifest.module_id
+        existing = runtime.modules.get(module_id) if runtime.modules is not None else None
+        granted = self._allowed(caller_id, "modules")
+        if existing is not None:
+            await runtime._command_rl(SimpleNamespace(args=(module_id,)))
+            return {
+                "module_id": module_id,
+                "version": loaded.manifest.version,
+                "digest": loaded.digest,
+                "action": "updated",
+            }
+        if granted:
+            runtime._mark_caps_consent(module_id, runtime._caps_fingerprint(loaded.manifest))
+            await runtime.activate_module(str(loaded.path))
+            return {
+                "module_id": module_id,
+                "version": loaded.manifest.version,
+                "digest": loaded.digest,
+                "action": "loaded",
+            }
+        namespace = runtime.state.namespace(module_id)
+        namespace.set("sourcepath", str(loaded.path))
+        namespace.set("moduleversion", loaded.manifest.version)
+        return {
+            "module_id": module_id,
+            "version": loaded.manifest.version,
+            "digest": loaded.digest,
+            "action": "staged",
+        }
+
+    async def _modules_unload(self, caller_id: str, payload: dict[str, Any]) -> Any:
+        runtime = self.runtime
+        target = payload.get("module_id")
+        if not isinstance(target, str) or not target:
+            raise PermissionError("modules unload requires a module_id")
+        module_id = target.casefold()
+        active = runtime.modules.get(module_id) if runtime.modules is not None else None
+        if active is None:
+            raise PermissionError(f"module not active: {module_id}")
+        runtime._backup_before_activation(active.loaded.path)
+        await runtime.deactivate_module(module_id)
+        try:
+            active.loaded.path.unlink()
+        except OSError:
+            await runtime.activate_module(str(active.loaded.path))
+            raise PermissionError(f"module removal failed: {module_id}")
+        if runtime.state is not None:
+            runtime.state.delete_module(module_id)
+        return {"module_id": module_id, "action": "unloaded"}
+
+    async def _modules_reload(self, caller_id: str, payload: dict[str, Any]) -> Any:
+        runtime = self.runtime
+        target = payload.get("module_id")
+        if not isinstance(target, str) or not target:
+            raise PermissionError("modules reload requires a module_id")
+        module_id = target.casefold()
+        if runtime.modules.get(module_id) is None:
+            raise PermissionError(f"module not active: {module_id}")
+        result = await runtime._command_rl(SimpleNamespace(args=(module_id, "force")))
+        return {"module_id": module_id, "action": "reloaded", "detail": result}

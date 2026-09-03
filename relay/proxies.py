@@ -37,8 +37,6 @@ class HtmlHelper:
 
 
 class Gateway:
-
-
     def __init__(self, host: Any, module_id: str) -> None:
         self._host = host
         self._module_id = module_id
@@ -622,6 +620,36 @@ class UiHelper:
 
     def actions(self) -> dict[str, Callable[[Any, Any], Any]]:
         return dict(self._actions)
+
+
+class ModulesHelper:
+    def __init__(self, host: Any) -> None:
+        self._host = host
+
+    async def list(self) -> Any:
+        return await self._host.cap("modules", {"op": "list"})
+
+    async def info(self, module_id: str) -> Any:
+        return await self._host.cap("modules", {"op": "info", "module_id": module_id})
+
+    async def hashes(self) -> Any:
+        return await self._host.cap("modules", {"op": "hashes"})
+
+    async def load(self, url: str | None = None, text: str | None = None, source: str | None = None) -> Any:
+        payload: dict[str, Any] = {"op": "load"}
+        if url is not None:
+            payload["url"] = url
+        if text is not None:
+            payload["text"] = text
+        if source is not None:
+            payload["source"] = source
+        return await self._host.cap("modules", payload)
+
+    async def unload(self, module_id: str) -> Any:
+        return await self._host.cap("modules", {"op": "unload", "module_id": module_id})
+
+    async def reload(self, module_id: str) -> Any:
+        return await self._host.cap("modules", {"op": "reload", "module_id": module_id})
 
 
 async def _noop(callback: Any, payload: Any) -> None:
