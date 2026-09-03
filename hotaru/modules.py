@@ -24,7 +24,6 @@ class ModuleManifest:
     description: str
     commands: tuple[str, ...]
     capabilities: tuple[str, ...]
-    sandbox: bool = True
 
 
 @dataclass(frozen=True, slots=True)
@@ -110,7 +109,7 @@ class HmodLoader:
             raise ModuleValidationError("manifest description is invalid")
         if not HmodLoader._strings(commands) or not HmodLoader._strings(capabilities):
             raise ModuleValidationError("manifest lists must contain strings")
-        return ModuleManifest(module_id, version, description, tuple(commands), tuple(capabilities), True)
+        return ModuleManifest(module_id, version, description, tuple(commands), tuple(capabilities))
 
     @staticmethod
     def _strings(value: Any) -> bool:

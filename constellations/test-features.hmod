@@ -1,6 +1,6 @@
 HOTARU = {
     "id": "test-features",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "description": "Hotaru proxy and capability test module",
     "commands": ["tfstatus", "tfhistory", "tfstate", "tffile", "tfnet", "tfbutton", "tfmedia", "tfinlinerich", "tfrichboth"],
     "capabilities": ["mt", "state", "files", "net"],
@@ -11,30 +11,30 @@ import asyncio
 
 async def command_tfstatus(ctx, invocation):
     result = await ctx.tg.get("updates.getState")
-    await ctx.answer(text=f"dynamic MTProto works: {result}")
+    await ctx.respond(f"dynamic MTProto works: {result}")
 
 
 async def command_tfhistory(ctx, invocation):
     result = await ctx.tg.get("messages.getHistory", peer="me", limit=5, offset_id=0, offset_date=0, add_offset=0, max_id=0, min_id=0, hash=0)
     items = result.get("messages", []) if isinstance(result, dict) else []
-    await ctx.answer(text=f"history items: {len(items)}")
+    await ctx.respond(f"history items: {len(items)}")
 
 
 async def command_tfstate(ctx, invocation):
     current = ctx.state.get("runs", 0) or 0
     ctx.state.set("runs", current + 1)
-    await ctx.answer(text=f"state runs: {current + 1}")
+    await ctx.respond(f"state runs: {current + 1}")
 
 
 async def command_tffile(ctx, invocation):
     await ctx.cap("files", {"op": "write", "name": "test.txt", "content": "file proxy works"})
     value = await ctx.cap("files", {"op": "read", "name": "test.txt"})
-    await ctx.answer(text=str(value))
+    await ctx.respond(str(value))
 
 
 async def command_tfnet(ctx, invocation):
     result = await ctx.net("https://api.github.com", timeout=10)
-    await ctx.answer(text=f"network status: {result.get('status')}")
+    await ctx.respond(f"network status: {result.get('status')}")
 
 
 async def command_tfbutton(ctx, invocation):
@@ -44,12 +44,12 @@ async def command_tfbutton(ctx, invocation):
 
     action_id = ctx.ui.on(pressed)
     button = ctx.ui.button("Run encrypted callback", action_id, {"source": "test-features"})
-    await ctx.answer(text="kernel callback proxy works", buttons=[[button]])
+    await ctx.answer("kernel callback proxy works", buttons=[[button]])
 
 
 async def command_tfmedia(ctx, invocation):
     attachment = ctx.attachment or ctx.reply_attachment
-    await ctx.answer(text=f"media detected: {attachment.kind if attachment else 'none'}")
+    await ctx.respond(f"media detected: {attachment.kind if attachment else 'none'}")
 
 
 async def command_tfinlinerich(ctx, invocation):
@@ -67,5 +67,5 @@ async def command_tfrichboth(ctx, invocation):
     html = '''<h1>Hotaru Rich dual transport</h1><p><b>User MTProto</b> + <b>Bot API</b></p><blockquote expandable><i>Один модуль, два транспорта</i></blockquote><ul><li>HTML</li><li>таблица</li><li>details</li><li>map</li><li>media</li></ul><ol><li>Parse HTML</li><li>Build RichMessage</li><li>Send</li></ol><details open><summary><b>Details</b></summary><p><code>ctx.rich</code> and <code>ctx.bot</code></p></details><table><tr><td><b>Transport</b></td><td><b>Status</b></td></tr><tr><td>MTProto</td><td>ready</td></tr><tr><td>Bot API</td><td>ready</td></tr></table><tg-map latitude="55.7558" longitude="37.6173" zoom="10" width="600" height="400"><b>Moscow</b></tg-map><pre><code>return rich</code></pre><tg-button-row align="center"><tg-button type="url" style="success" url="https://telegram.org">Telegram</tg-button><tg-button type="copy_text" text="copied">Copy</tg-button></tg-button-row>'''
     user_result = await rich.send(html)
     inline_result = await ctx.inline_form(html, [ctx.ui.url("Telegram", "https://telegram.org")])
-    await ctx.answer("<b>Rich dual test отправлен</b><br>user=ok<br>inline=ok")
+    await ctx.respond("<b>Rich dual test отправлен</b><br>user=ok<br>inline=ok")
     return {"user": bool(user_result), "inline": bool(inline_result)}

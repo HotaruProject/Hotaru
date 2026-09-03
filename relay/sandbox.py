@@ -250,6 +250,7 @@ class SandboxContext:
         if text is not None:
             kwargs["text"] = text
         value = kwargs.pop("text", "")
+        kwargs.setdefault("rich", True)
         return _respond_call({"content": value, "kwargs": kwargs})
 
     async def reply_html(self, text, **kwargs):

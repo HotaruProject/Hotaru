@@ -181,6 +181,7 @@ class Runtime:
         self.kernel.registry.register("bk", self._command_bk, kernel=True, module_id=self.KERNEL_MODULE_ID)
         self.kernel.registry.register("bot", self._command_bot, kernel=True, module_id=self.KERNEL_MODULE_ID)
         self.kernel.registry.register("trust", self._command_trust, kernel=True, module_id=self.KERNEL_MODULE_ID)
+        self.kernel.registry.register("untrust", self._command_untrust, kernel=True, module_id=self.KERNEL_MODULE_ID)
         self.inline.on_inline(self._on_inline_query)
         self.inline.on_callback(self._on_inline_callback)
         self.callbacks.register("help_page", self._help_page)
@@ -821,10 +822,20 @@ class Runtime:
         running = self.inline._task is not None and not self.inline._task.done()
         return f"inline bot: @{info.username} ({'running' if running else 'starting'})"
 
+    @property
+    def constellations_dir(self) -> Path:
+        return self.config.state_path.parent / "constellations"
+
+    @property
+    def relay_dir(self) -> Path:
+        directory = self.config.state_path.parent / "relay"
+        directory.mkdir(parents=True, exist_ok=True)
+        return directory
+
     def stage_module_url(self, source: str, destination: str | Path | None = None) -> Any:
         if self.stager is None:
             raise RuntimeError("build the runtime before staging modules")
-        target = Path(destination) if destination is not None else self.config.state_path.parent / "constellations"
+        target = Path(destination) if destination is not None else self.relay_dir
         return self.stager.stage_url(source, target)
 
     async def _download_module_message(self, message: Any, destination: Path) -> None:
@@ -942,7 +953,7 @@ class Runtime:
         module_id = invocation.args[0].casefold()
         active = self.modules.get(module_id)
         namespace = self.state.namespace(module_id)
-        source_path = active.loaded.path if active is not None else Path(namespace.get("sourcepath", self.config.state_path.parent / "constellations" / f"{module_id}.hmod"))
+        source_path = active.loaded.path if active is not None else Path(namespace.get("sourcepath", self.relay_dir / f"{module_id}.hmod"))
         if not source_path.is_file():
             return f"module not found: {module_id}"
         try:
@@ -979,7 +990,7 @@ class Runtime:
             return f"module not active: {module_id}"
         old_path = active.loaded.path
         old_source = active.loaded.source
-        candidate = self.config.state_path.parent / "constellations" / f"{module_id}.hmod"
+        candidate = self.relay_dir / f"{module_id}.hmod"
         reload_path = candidate if candidate.is_file() else old_path
         if reload_path == candidate:
             candidate_loaded = self.modules.loader.load(candidate)
@@ -1015,12 +1026,10 @@ class Runtime:
         if len(invocation.args) != 1 or self.modules is None or self.state is None:
             return "usage: !trust <module-id>"
         module_id = invocation.args[0].casefold()
-        if self.modules.get(module_id) is not None:
-            return f"module already active: {module_id}"
         namespace = self.state.namespace(module_id)
         source_path = namespace.get("sourcepath")
         if not isinstance(source_path, str):
-            candidate = self.config.state_path.parent / "constellations" / f"{module_id}.hmod"
+            candidate = self.relay_dir / f"{module_id}.hmod"
             if not candidate.is_file():
                 return f"module not found: {module_id}"
             source_path = str(candidate)
@@ -1030,17 +1039,41 @@ class Runtime:
             return f"trust failed: {type(exc).__name__}"
         fingerprint = self._caps_fingerprint(loaded.manifest)
         if not self._caps_consented(module_id, fingerprint):
-            return await self._render_caps_screen(module_id, loaded.manifest, invocation.chat_id, invocation.message_id)
+            return await self._render_caps_screen(module_id, loaded.manifest, invocation.chat_id, invocation.message_id, trusted=True)
         try:
-            await self.activate_module(source_path)
+            await self._activate_trusted(module_id, source_path)
         except Exception as exc:
             return f"trust failed: {type(exc).__name__}"
-        return f"active: {module_id}"
+        return f"trusted: {module_id}"
+
+    async def _activate_trusted(self, module_id: str, source_path: str) -> None:
+        if self.modules is None:
+            raise RuntimeError("module manager is not ready")
+        if self.modules.get(module_id) is not None:
+            await self.deactivate_module(module_id)
+        self.state.namespace(module_id).set("trusted", "1")
+        await self.activate_module(source_path, trusted=True)
+
+    async def _command_untrust(self, invocation: Any) -> str:
+        if len(invocation.args) != 1 or self.state is None:
+            return "usage: !untrust <module-id>"
+        module_id = invocation.args[0].casefold()
+        namespace = self.state.namespace(module_id)
+        if self.modules is not None and self.modules.get(module_id) is not None:
+            await self.deactivate_module(module_id)
+        namespace.delete("trusted")
+        source_path = namespace.get("sourcepath")
+        if isinstance(source_path, str):
+            try:
+                await self.activate_module(source_path)
+            except Exception:
+                pass
+        return f"untrusted (sandbox): {module_id}"
 
     def _caps_fingerprint(self, manifest: Any) -> str:
         import hashlib
 
-        payload = json.dumps([manifest.module_id, manifest.version, sorted(manifest.capabilities)], separators=(",", ":"))
+        payload = json.dumps([manifest.module_id, sorted(manifest.capabilities)], separators=(",", ":"))
         return hashlib.sha256(payload.encode()).hexdigest()[:16]
 
     def _caps_consented(self, module_id: str, fingerprint: str) -> bool:
@@ -1053,7 +1086,7 @@ class Runtime:
         if self.state is not None:
             self.state.namespace(module_id).set("caps-consent", fingerprint)
 
-    async def _render_caps_screen(self, module_id: str, manifest: Any, chat_id: int | str | None, message_id: int) -> tuple[str, list[dict[str, str]]] | str:
+    async def _render_caps_screen(self, module_id: str, manifest: Any, chat_id: int | str | None, message_id: int, *, trusted: bool = False) -> tuple[str, list[dict[str, str]]] | str:
         if self.callbacks is None or self.kernel is None or self.kernel.owner_id is None or chat_id is None:
             lines = [f"module {module_id} v{manifest.version} requests capabilities:"]
             lines.append(describe_caps(manifest.capabilities) or "none")
@@ -1062,19 +1095,20 @@ class Runtime:
         text = f"module {module_id} v{manifest.version} requests capabilities:\n" + (describe_caps(manifest.capabilities) or "none") + "\n\nНажми кнопку Confirm ниже, чтобы загрузить модуль."
         handle = self.callbacks.store.issue(
             CallbackBinding(self.kernel.owner_id, chat_id, 0),
-            {"action": "caps_confirm", "payload": module_id},
+            {"action": "caps_confirm", "payload": {"module": module_id, "trusted": bool(trusted)}},
         )
         return (text, [{"text": "Confirm", "callback_data": handle}])
 
     async def _caps_confirm(self, callback: Any, payload: Any) -> object:
-        if not isinstance(payload, str) or self.modules is None or self.state is None:
+        if not isinstance(payload, dict) or self.modules is None or self.state is None:
             await callback.answer("Invalid request", alert=True)
             return None
-        module_id = payload.casefold()
+        module_id = str(payload.get("module", "")).casefold()
+        want_trust = bool(payload.get("trusted"))
         namespace = self.state.namespace(module_id)
         source_path = namespace.get("sourcepath")
         if not isinstance(source_path, str):
-            candidate = self.config.state_path.parent / "constellations" / f"{module_id}.hmod"
+            candidate = self.relay_dir / f"{module_id}.hmod"
             if not candidate.is_file():
                 await callback.answer("Source missing", alert=True)
                 return await callback.edit(f"module not found: {module_id}")
@@ -1086,7 +1120,10 @@ class Runtime:
             return await callback.edit(f"trust failed: {type(exc).__name__}")
         try:
             self._mark_caps_consent(module_id, self._caps_fingerprint(loaded.manifest))
-            await self.activate_module(source_path)
+            if want_trust:
+                await self._activate_trusted(module_id, source_path)
+            else:
+                await self.activate_module(source_path)
         except Exception as exc:
             namespace.set("lasterror", f"{type(exc).__name__}: {str(exc)[:240]}")
             if self.observatory is not None:
@@ -1094,7 +1131,7 @@ class Runtime:
             await callback.answer("Activation failed", alert=True)
             return await callback.edit(f"trust failed: {type(exc).__name__}: {str(exc)[:120]}")
         await callback.answer("Module loaded")
-        text = f"active: {module_id}"
+        text = f"trusted: {module_id}" if want_trust else f"active: {module_id}"
         if getattr(callback, "inline_message_id", None) and getattr(callback, "app", None) is not None:
             return await callback.app.bot_req("editMessageText", inline_message_id=callback.inline_message_id, text=text)
         return await callback.edit(text)
@@ -1197,7 +1234,7 @@ class Runtime:
             return None
         try:
             plan = self.backups.plan(payload)
-            await self.restore_filesystem(plan, self.config.state_path.parent / "constellations")
+            await self.restore_filesystem(plan, self.relay_dir)
         except Exception as exc:
             await callback.answer("Restore failed", alert=True)
             return await callback.edit(f"restore failed: {type(exc).__name__}")
@@ -1247,14 +1284,25 @@ class Runtime:
     def stage_module(self, source: str | Path, destination: str | Path | None = None) -> Any:
         if self.stager is None:
             raise RuntimeError("build the runtime before staging modules")
-        target = Path(destination) if destination is not None else self.config.state_path.parent / "constellations"
+        target = Path(destination) if destination is not None else self.relay_dir
         return self.stager.stage(source, target)
 
-    async def activate_module(self, path: str, *, health: Any = None) -> Any:
+    def _is_kernel_path(self, path: str | Path) -> bool:
+        root = self.constellations_dir.resolve()
+        try:
+            return Path(path).resolve().is_relative_to(root)
+        except (OSError, ValueError):
+            return False
+
+    async def activate_module(self, path: str, *, health: Any = None, trusted: bool | None = None) -> Any:
         if self.modules is None or self.kernel is None:
             raise RuntimeError("build the runtime before activating modules")
         self._backup_before_activation(path)
-        result = await self.modules.activate_source(path, self.kernel, health=health, sandbox=self.sandbox)
+        if trusted is None:
+            loaded = self.modules.loader.load(path)
+            module_id = loaded.manifest.module_id
+            trusted = bool(self._is_kernel_path(path) or (self.state is not None and self.state.namespace(module_id).get("trusted") == "1"))
+        result = await self.modules.activate_source(path, self.kernel, health=health, sandbox=self.sandbox, trusted=trusted)
         module_id = result.loaded.manifest.module_id
         namespace = self.state.namespace(module_id) if self.state is not None else None
         if namespace is not None:
