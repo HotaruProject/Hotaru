@@ -48,7 +48,6 @@ class ModuleBinder:
                     name,
                     handler,
                     module_id=loaded.manifest.module_id,
-                    sandbox=loaded.manifest.sandbox,
                 )
                 bound.append(name)
         except Exception as exc:
@@ -141,9 +140,11 @@ class ModuleManager:
         *,
         health: Callable[[ModuleInstance], Any] | None = None,
         sandbox: Any = None,
+        trusted: bool = False,
     ) -> ActiveModule:
         loaded = self.loader.load(path)
-        if loaded.manifest.sandbox and sandbox is not None:
+        behind_sandbox = not trusted
+        if behind_sandbox and sandbox is not None:
             await sandbox.start_module(loaded.manifest.module_id, loaded.source, list(loaded.manifest.commands))
             for name in loaded.manifest.commands:
                 if not name.isidentifier():

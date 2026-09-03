@@ -362,7 +362,6 @@ class CapabilityHost:
             "commands": list(manifest.commands) if manifest else [],
             "capabilities": list(manifest.capabilities) if manifest else [],
             "description": manifest.description if manifest else "",
-            "sandbox": bool(manifest.sandbox) if manifest else False,
             "path": str(loaded.path) if loaded is not None else (namespace.get("sourcepath") if namespace else None),
             "lasterror": namespace.get("lasterror") if namespace else None,
         }
