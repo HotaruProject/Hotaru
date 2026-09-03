@@ -482,13 +482,6 @@ class ModuleContext:
         from relay.toolkit import TOOLS
         return TOOLS
 
-    def __getattr__(self, name: str) -> Any:
-        from relay.toolkit import TOOLS
-        func = getattr(TOOLS, name, None)
-        if func is not None:
-            return func
-        raise AttributeError(f"ModuleContext has no attribute '{name}'")
-
     @property
     def ui(self) -> Any:
         from relay.proxies import UiHelper
