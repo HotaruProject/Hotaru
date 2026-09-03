@@ -94,12 +94,12 @@ async def _show_help(ctx, invocation):
     
     if k_count > 0:
         text += f"<details>\n<summary><b>🔥 Kernel Modules ({k_count})</b></summary>\n"
-        text += "\n".join(kernel_modules)
-        text += "\n</details>\n\n"
+        text += "".join(kernel_modules)
+        text += "\n</details>\n"
         
     if u_count > 0:
         text += f"<details>\n<summary><b>🌟 User Modules ({u_count})</b></summary>\n"
-        text += "\n".join(user_modules)
+        text += "".join(user_modules)
         text += "\n</details>\n"
     
     await ctx.respond(text=text, parse_mode="HTML")
