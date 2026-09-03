@@ -3,7 +3,7 @@ HOTARU = {
     "version": "0.1.5",
     "description": "Hotaru kernel module — system commands",
     "commands": [
-        "ver", "st", "ls", "mi", "hlp",
+        "ver", "st", "ls", "mi",
         "ld", "ul", "rl", "rm", "bk",
         "bot", "trust", "untrust", "conf",
         "alias", "unalias"
@@ -61,30 +61,7 @@ async def command_mi(ctx, invocation):
     await ctx.respond(runtime._module_detail_text(invocation.args[0].casefold()))
 
 
-async def command_hlp(ctx, invocation):
-    runtime = ctx.runtime
-    if runtime is None:
-        await ctx.respond("runtime unavailable")
-        return
-    page = 0
-    if invocation.args:
-        if len(invocation.args) != 1:
-            await ctx.respond("usage: !hlp [page] | !hlp <module-id>")
-            return
-        if not invocation.args[0].isdigit():
-            # treat as module-id
-            if runtime.modules is None:
-                await ctx.respond("module unavailable")
-                return
-            await ctx.respond(runtime._module_detail_text(invocation.args[0].casefold()))
-            return
-        page = int(invocation.args[0])
-    result = runtime._help_render(page, invocation.chat_id, invocation.message_id)
-    if isinstance(result, tuple):
-        text, buttons = result
-        await ctx.respond(text, buttons=buttons)
-    else:
-        await ctx.respond(result)
+
 
 
 async def command_ld(ctx, invocation):
@@ -177,28 +154,33 @@ async def command_untrust(ctx, invocation):
 async def command_conf(ctx, invocation):
     runtime = ctx.runtime
     if len(invocation.args) != 1:
-        await ctx.respond("usage: !conf <module-id>")
+        await ctx.respond("<b>⚠️ Usage:</b> <code>!conf &lt;module-id&gt;</code>", parse_mode="HTML")
         return
     module_id = invocation.args[0].casefold()
     active = runtime.modules.get(module_id) if runtime.modules else None
     if not active:
-        await ctx.respond("module not active")
+        await ctx.respond("<b>❌ Module not active</b>", parse_mode="HTML")
         return
     schema = active.loaded.manifest.config_schema
     if not schema:
-        await ctx.respond("module has no configuration")
+        await ctx.respond("<b>ℹ️ Module has no configuration</b>", parse_mode="HTML")
         return
     
     namespace = runtime.state.namespace(module_id)
     
     def build_form():
-        text = f"<b>Configuration: {module_id}</b>\n"
+        text = f"⚙️ <b>Configuration Control</b>\n"
+        text += f"📦 <b>Module:</b> <code>{module_id}</code>\n\n"
+        
         buttons = []
+        
         for key, spec in schema.items():
             val = namespace.get(key, spec.get("default"))
-            text += f"\n<b>{key}</b>: {val}"
+            type_lbl = spec.get("type", "str")
+            text += f"🔹 <b>{key}</b> [<code>{type_lbl}</code>]: <b>{val}</b>\n"
             if "description" in spec:
-                text += f" <i>({spec['description']})</i>"
+                text += f"   <i>{spec['description']}</i>\n"
+            text += "\n"
                 
             def make_handler(k, s):
                 async def handler(c, p):
@@ -207,7 +189,7 @@ async def command_conf(ctx, invocation):
                         try:
                             new_val = int(new_val)
                         except ValueError:
-                            await c.answer("Must be an integer", alert=True)
+                            await c.answer("⚠️ Must be an integer", alert=True)
                             return
                     elif s.get("type") == "bool":
                         new_val = new_val.lower() in ("true", "1", "yes", "y", "on")
@@ -215,8 +197,9 @@ async def command_conf(ctx, invocation):
                     await c.edit(**build_form())
                 return handler
                 
-            buttons.append([ctx.ui.input(f"Edit {key}", make_handler(key, spec), placeholder=f"New value for {key}")])
-        buttons.append([ctx.ui.close("Close")])
+            buttons.append([ctx.ui.input(f"✏️ Edit {key}", make_handler(key, spec), placeholder=f"Enter new value for {key}")])
+            
+        buttons.append([ctx.ui.close("❌ Close Settings")])
         return {"text": text, "buttons": buttons, "inline": True}
 
     await ctx.respond(**build_form())

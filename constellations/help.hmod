@@ -1,0 +1,86 @@
+HOTARU = {
+    "id": "help",
+    "version": "1.0.0",
+    "description": "Hotaru Help Module",
+    "commands": ["hlp", "help"],
+    "capabilities": [],
+}
+
+async def command_hlp(ctx, invocation):
+    await _show_help(ctx, invocation)
+
+async def command_help(ctx, invocation):
+    await _show_help(ctx, invocation)
+
+async def _show_help(ctx, invocation):
+    runtime = ctx.runtime
+    if runtime is None:
+        await ctx.respond("<b>⚠️ Runtime unavailable</b>", parse_mode="HTML")
+        return
+        
+    page = 0
+    if invocation.args:
+        if len(invocation.args) != 1:
+            await ctx.respond("<b>📖 Usage:</b> <code>!hlp [page]</code> or <code>!hlp <module-id></code>", parse_mode="HTML")
+            return
+        if not invocation.args[0].isdigit():
+            if runtime.modules is None:
+                await ctx.respond("<b>⚠️ Module manager unavailable</b>", parse_mode="HTML")
+                return
+            await ctx.respond(f"<b>📦 Module Details</b>\n\n{runtime._module_detail_text(invocation.args[0].casefold())}", parse_mode="HTML")
+            return
+        page = int(invocation.args[0])
+
+    handle = [None]
+
+    def build_help_page(current_page):
+        names = sorted(runtime.kernel.registry.names())
+        entries = []
+        entry_ids = []
+        if runtime.modules is not None:
+            active = {item.loaded.manifest.module_id: item.loaded.manifest.version for item in runtime.modules.items()}
+            known = set(runtime.state.module_ids()) if runtime.state is not None else set()
+            for module_id in sorted(set(active) | known):
+                if module_id in active:
+                    entries.append(f"🟢 <b>{module_id}</b> <code>v{active[module_id]}</code>")
+                else:
+                    entries.append(f"🔴 <b>{module_id}</b> <i>(untrusted)</i>")
+                entry_ids.append(module_id)
+        
+        if not entries:
+            entries = [f"<code>{runtime.config.prefix}{name}</code>" for name in names]
+            entry_ids = [None] * len(entries)
+            
+        page_size = 10
+        start = current_page * page_size
+        if start >= len(entries) and entries:
+            return {"text": "<b>📖 End of catalog</b>", "buttons": [[ctx.ui.close("❌ Close")]], "inline": True}
+            
+        current = entries[start : start + page_size]
+        
+        text = f"<b>✨ Hotaru Core Help ✨</b>\n<i>Page {current_page + 1}</i>\n\n"
+        text += "\n".join(current)
+        
+        buttons = []
+        
+        nav_buttons = []
+        if current_page > 0:
+            async def prev_page(c, p):
+                if handle[0]:
+                    await handle[0].replace(**build_help_page(current_page - 1))
+            nav_buttons.append(ctx.ui.button("◀️ Prev", prev_page))
+            
+        if start + page_size < len(entries):
+            async def next_page(c, p):
+                if handle[0]:
+                    await handle[0].replace(**build_help_page(current_page + 1))
+            nav_buttons.append(ctx.ui.button("Next ▶️", next_page))
+            
+        if nav_buttons:
+            buttons.append(nav_buttons)
+            
+        buttons.append([ctx.ui.close("❌ Close")])
+        
+        return {"text": text, "buttons": buttons, "inline": True}
+
+    handle[0] = await ctx.respond(**build_help_page(page))
