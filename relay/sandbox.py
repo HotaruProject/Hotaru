@@ -989,7 +989,7 @@ class ModuleSandbox:
         async def send_plain(value: str, *, mode: str) -> Any:
             if mode == "edit" and message_id is not None:
                 with trusted_scope():
-                    return await app.mt_req("messages.editMessage", id=int(message_id), message=value)
+                    return await app.mt_req("messages.editMessage", peer=chat_id, id=int(message_id), message=value)
             data: dict[str, Any] = {"peer": chat_id, "message": value, "random_id": _secrets.randbits(63)}
             if topic_id is not None:
                 data["reply_to"] = {"_": "inputReplyToMessage", "reply_to_msg_id": int(message_id), "top_msg_id": topic_id} if message_id is not None else None
@@ -1004,7 +1004,7 @@ class ModuleSandbox:
             rich_message = {"_": "inputRichMessageHTML", "html": html}
             if mode == "edit" and message_id is not None:
                 with trusted_scope():
-                    return await app.mt_req("messages.editMessage", id=int(message_id), message="", rich_message=rich_message)
+                    return await app.mt_req("messages.editMessage", peer=chat_id, id=int(message_id), message="", rich_message=rich_message)
             data = {"peer": chat_id, "message": "", "random_id": _secrets.randbits(63), "rich_message": rich_message}
             if message_id is not None:
                 reply_to = {"_": "inputReplyToMessage", "reply_to_msg_id": int(message_id)}
