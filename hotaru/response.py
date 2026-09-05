@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Literal
 
+from goygram.errors import FloodWaitError, MessageNotModifiedError
+
 from .state import StateNamespace
 
 
@@ -171,6 +173,10 @@ class ResponseService:
         if output in ("edit", "auto") and hasattr(message, "edit"):
             try:
                 result = await message.edit(text or "", **payload)
+            except MessageNotModifiedError:
+                return Response(True, "edit", getattr(message, "src", None), message)
+            except FloodWaitError:
+                raise
             except Exception:
                 if output == "edit":
                     raise
@@ -855,7 +861,7 @@ class ModuleContext:
         source = self.message
         if self.attachment is None and self.reply_message is not None:
             source = self.reply_message
-        if hasattr(source, "download"):
+        if getattr(source, "src", None) == "bot" and hasattr(source, "download"):
             await source.download(str(path))
             return path
         document = target.raw if isinstance(target.raw, dict) else None

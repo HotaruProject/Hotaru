@@ -8,7 +8,7 @@ version = "0.1.5"
 description = "Hotaru userbot kernel on GoyGram"
 requires-python = ">=3.11"
 dependencies = [
-    "goygram @ git+https://github.com/GoyGram/GoyGram.git@3040468",
+    "goygram @ git+https://github.com/GoyGram/GoyGram.git@f86c58bf683386a5fdf23a9a9dd141605e27722f",
 ]
 
 [project.scripts]
@@ -19,3 +19,6 @@ allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
 packages = ["hotaru", "relay"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"constellations" = "hotaru/constellations"

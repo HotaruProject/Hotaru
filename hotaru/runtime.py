@@ -6,7 +6,7 @@ import os
 import secrets
 import tempfile
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -113,7 +113,7 @@ class Runtime:
         self.config.validate()
         if self.app is not None:
             return self.app
-        from goygram import GoyGram
+        from goygram import GoyGram, Session
 
         self.config.session_dir.mkdir(parents=True, exist_ok=True)
         install_firewall(self.config.session_dir, self.config.session_dir / f"{self.config.session_name}.vault", self.config.session_dir / f"{self.config.session_name}.session")
@@ -122,10 +122,12 @@ class Runtime:
         logging.disable(logging.INFO)
         try:
             self.app = GoyGram(
-                bot_token=self.config.bot_token,
+                bot_token=self.config.bot_token if self.config.api_id is None else None,
                 api_id=self.config.api_id,
                 api_hash=self.config.api_hash,
                 session_name=session_name,
+                session=Session(name=session_name),
+                default_transport="mtproto" if self.config.api_id is not None else "api",
             )
         finally:
             logging.disable(previous_disable)
@@ -816,7 +818,9 @@ class Runtime:
 
     @property
     def constellations_dir(self) -> Path:
-        return Path(__file__).resolve().parent.parent / "constellations"
+        root = Path(__file__).resolve().parent
+        bundled = root / "constellations"
+        return bundled if bundled.is_dir() else root.parent / "constellations"
 
     @property
     def relay_dir(self) -> Path:
@@ -1409,10 +1413,71 @@ class Runtime:
                 self.observatory.emit("modules", "restore_timeout", restored=len(restored))
         return tuple(restored)
 
+    def namesession(self) -> None:
+        session = self.app.session
+        userid = session.self_id
+        if userid is None or userid <= 0:
+            raise RuntimeError("the authorized session has no valid Telegram user ID")
+        if self.state is None or session.path is None:
+            raise RuntimeError("session storage is not ready")
+        name = f"hotaru-{userid}"
+        source = session.path
+        target = self.config.session_dir / f"{name}.vault"
+        linked = source != target
+        if linked:
+            os.link(source, target, follow_symlinks=False)
+        try:
+            self.state.set_setting("session-name", name)
+        except Exception:
+            if linked:
+                target.unlink()
+            raise
+        session.name = str(self.config.session_dir / name)
+        session.path = target
+        self.app.core.session_name = session.name
+        self.config = replace(self.config, session_name=name)
+        if self.app.mt.cursor_path is not None:
+            digest = hashlib.sha256(session.name.encode()).hexdigest()[:24]
+            self.app.mt.cursor_path = self.app.mt.cursor_path.with_name(f"{digest}.json")
+        if linked:
+            source.unlink()
+
+    async def authorize(self) -> None:
+        if self.app is None or self.app.mt is None:
+            return
+        from goygram.security import bootstrap_session
+
+        with trusted_scope():
+            fresh = self.app.session.path is not None and not self.app.session.path.exists()
+            result = await bootstrap_session(
+                self.app.core,
+                api_id=self.config.api_id,
+                api_hash=self.config.api_hash,
+                session_name=self.app.core.session_name,
+                session=self.app.session,
+            )
+        session = self.app.session
+        if not result or session.auth_key is None:
+            raise RuntimeError("GoyGram user authorization did not complete")
+        if session.is_bot:
+            raise RuntimeError("the primary MTProto session must belong to a user, not a bot")
+        if (fresh and result.get("source") in {"interactive", "qr"}) or self.config.session_name.startswith("hotaru-pending-"):
+            with trusted_scope():
+                self.namesession()
+        if self.kernel is not None and self.kernel.owner_id is None and session.self_id is not None:
+            self.kernel.owner_id = session.self_id
+            if self.security is not None:
+                self.security.set_owner(session.self_id)
+
     async def run(self) -> None:
         if self.app is None:
             self.build()
         assert self.app is not None
+        try:
+            await self.authorize()
+        except BaseException:
+            await self.close()
+            raise
         if self.state is not None and self.kernel is not None:
             self.kernel.suspended = self.state.get_setting("suspended") == "1"
         # Load all kernel modules from constellations/ — kernel status is set by directory alone.

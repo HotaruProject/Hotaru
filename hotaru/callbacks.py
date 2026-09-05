@@ -24,6 +24,13 @@ class CallbackContext:
         for name in ("src", "raw", "app", "id", "chat_id", "from_id", "msg_id", "data", "text", "inline_message_id"):
             if hasattr(callback, name):
                 setattr(self, name, getattr(callback, name))
+        if getattr(self, "src", None) == "bot" and not getattr(self, "inline_message_id", None):
+            raw = getattr(self, "raw", {})
+            query = raw.get("callback_query") if isinstance(raw, dict) else None
+            if not isinstance(query, dict) and isinstance(raw, dict) and isinstance(raw.get("raw"), dict):
+                query = raw["raw"].get("callback_query")
+            if isinstance(query, dict) and isinstance(query.get("inline_message_id"), str):
+                self.inline_message_id = query["inline_message_id"]
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self._callback, name)
