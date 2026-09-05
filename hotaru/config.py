@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from getpass import getpass
 from pathlib import Path
+import secrets
 
 from .state import StateStore
 
@@ -25,7 +26,7 @@ class RuntimeConfig:
     def from_database(cls, path: str | Path = DEFAULT_STATE_PATH) -> "RuntimeConfig":
         state = StateStore(path)
         try:
-            required = ("api-id", "api-hash", "owner-id", "prefix", "session-name", "session-dir", "backup-keep")
+            required = ("api-id", "api-hash", "prefix", "session-name", "session-dir", "backup-keep")
             if any(state.get_setting(key) is None for key in required):
                 if not __import__("sys").stdin.isatty():
                     raise ValueError("runtime settings are missing; run from an interactive TTY")
@@ -35,7 +36,7 @@ class RuntimeConfig:
                 owner_raw = input("Owner Telegram ID: ").strip()
                 owner_id = int(owner_raw) if owner_raw else None
                 prefix = input("Command prefix [!]: ").strip() or "!"
-                session_name = input("Session name [hotaru]: ").strip() or "hotaru"
+                session_name = f"hotaru-pending-{secrets.token_hex(8)}"
                 session_dir = input("Session directory [.]: ").strip() or "."
                 backup_keep = int(input("Backups to keep [7]: ").strip() or "7")
                 values = {
@@ -67,6 +68,12 @@ class RuntimeConfig:
             state.close()
 
     def validate(self) -> None:
+        if (self.api_id is None) != (self.api_hash is None):
+            raise ValueError("API ID and API hash must be configured together")
+        if self.api_hash is not None and not self.api_hash.strip():
+            raise ValueError("API hash must not be empty")
+        if self.bot_token is not None and not self.bot_token.strip():
+            raise ValueError("bot token must not be empty")
         if self.api_id is None and self.bot_token is None:
             raise ValueError("configure MTProto credentials or bot token in the database")
         if len(self.prefix) != 1 or self.prefix.isspace():

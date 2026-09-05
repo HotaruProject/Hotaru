@@ -290,16 +290,19 @@ class InlineManager:
         if state is None:
             raise InlineError("state store is not ready")
         token = state.get_setting("inline-bot-token")
-        username = state.get_setting("inline-bot-username")
         bot_id = state.get_setting("inline-bot-id")
-        if token and username and bot_id:
-            info = InlineBotInfo(str(token), str(username), int(bot_id))
-            if await self._token_alive(info):
-                self.info = info
-                return info
-            self._forget_bot()
-            if self.runtime.observatory is not None:
-                self.runtime.observatory.emit("inline", "token_dead", username=str(username))
+        if not token and self.runtime.config.api_id is not None:
+            token = self.runtime.config.bot_token
+            bot_id = None
+        if token:
+            info = await self.getbot(str(token))
+            if bot_id is not None and info.bot_id != int(bot_id):
+                raise InlineError("inline bot identity does not match the stored configuration")
+            state.set_setting("inline-bot-token", info.token)
+            state.set_setting("inline-bot-username", info.username)
+            state.set_setting("inline-bot-id", info.bot_id)
+            self.info = info
+            return info
         info = await self._find_existing_bot()
         if info is None and allow_create:
             self._create_gate()
@@ -325,32 +328,24 @@ class InlineManager:
                 )
         self._create_attempts.append(now)
 
-    async def _token_alive(self, info: InlineBotInfo) -> bool:
-        import urllib.error
-        import urllib.request
+    async def getbot(self, token: str) -> InlineBotInfo:
+        from goygram import GoyGram
 
+        app = GoyGram(bot_token=token, bot_timeout=10, default_transport="api")
         try:
-            request = urllib.request.Request(
-                f"https://api.telegram.org/bot{info.token}/getMe",
-                method="GET",
-            )
-            with urllib.request.urlopen(request, timeout=10) as response:
-                import json
-
-                payload = json.loads(response.read().decode("utf-8"))
+            payload = await app.bot_req("getMe")
             result = payload.get("result") if isinstance(payload, dict) else None
-            if not isinstance(result, dict):
-                return False
-            if info.bot_id and result.get("id") != info.bot_id:
-                if self.runtime.observatory is not None:
-                    self.runtime.observatory.emit("inline", "token_mismatch", stored=info.bot_id, actual=result.get("id"))
-                return False
-            actual = result.get("username")
-            if isinstance(actual, str) and actual.casefold() != info.username.casefold():
-                info = InlineBotInfo(info.token, actual.lstrip("@"), info.bot_id)
-            return True
+            if not isinstance(result, dict) or payload.get("ok") is False:
+                raise InlineError("inline bot token validation failed")
+            botid = result.get("id")
+            username = result.get("username")
+            if not isinstance(botid, int) or botid <= 0 or not isinstance(username, str) or not username or result.get("is_bot") is not True:
+                raise InlineError("inline bot identity is incomplete")
+            return InlineBotInfo(token, username.lstrip("@"), botid)
         except Exception:
-            return False
+            raise InlineError("inline bot token validation failed") from None
+        finally:
+            await app.close()
 
     def _forget_bot(self) -> None:
         state = self.runtime.state
@@ -469,11 +464,15 @@ class InlineManager:
         assert self.info is not None
         from goygram import GoyGram
 
+        main = self.runtime.app
+        if main is not None and main.core.bot_token == self.info.token:
+            raise InlineError("inline polling requires a token separate from the primary bot")
         self._stop.clear()
         self.ready.clear()
         self.bot_app = GoyGram(
             bot_token=self.info.token,
             bot_timeout=self.poll_timeout,
+            default_transport="api",
         )
         self.bot_app.on_inline(self._dispatch_inline)
         self.bot_app.on_cb(self._dispatch_callback)
@@ -516,6 +515,8 @@ class InlineManager:
                     pass
                 delay = min(delay * 2, 60.0)
             finally:
+                if app is self.bot_app:
+                    self.ready.clear()
                 if dispatch_task is not None and not dispatch_task.done():
                     dispatch_task.cancel()
                     await asyncio.gather(dispatch_task, return_exceptions=True)
@@ -528,16 +529,18 @@ class InlineManager:
         return "token" in text and ("invalid" in text or "revoked" in text)
 
     async def stop_polling(self) -> None:
+        self.ready.clear()
+        task = self._task
+        self._task = None
+        if task is not None and task is not asyncio.current_task() and not task.done():
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
         if self.bot_app is not None:
             try:
                 self.bot_app.stop()
-                await self.bot_app.core.bot.close()
+                await self.bot_app.close()
             except Exception:
                 pass
-        if self._task is not None and not self._task.done():
-            self._task.cancel()
-            await asyncio.gather(self._task, return_exceptions=True)
-        self._task = None
 
     async def _dispatch_inline(self, query: Any) -> None:
         for handler in tuple(self._handlers):
@@ -587,13 +590,4 @@ class InlineManager:
 
     async def stop(self) -> None:
         self._stop.set()
-        if self.bot_app is not None:
-            try:
-                self.bot_app.stop()
-                await self.bot_app.core.bot.close()
-            except Exception:
-                pass
-        if self._task is not None and not self._task.done():
-            self._task.cancel()
-            await asyncio.gather(self._task, return_exceptions=True)
-        self._task = None
+        await self.stop_polling()
