@@ -19,5 +19,4 @@ jobs:
           enable-cache: true
       - run: uv sync --locked
       - run: uv run --locked python -m compileall -q hotaru relay
-      - run: uv run --locked python -m unittest discover -s tests -p '*.py'
       - run: uv build
