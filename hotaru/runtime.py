@@ -1294,10 +1294,10 @@ class Runtime:
         if self.modules is None or self.kernel is None:
             raise RuntimeError("build the runtime before activating modules")
         self._backup_before_activation(path)
-        # Kernel status is determined solely by the module's directory — never by its manifest.
+                                                                                               
         is_kernel = self._is_kernel_path(path)
         if is_kernel:
-            # constellations/ modules are always fully trusted
+                                                              
             trusted = True
         elif trusted is None:
             loaded = self.modules.loader.load(path)
@@ -1480,7 +1480,7 @@ class Runtime:
             raise
         if self.state is not None and self.kernel is not None:
             self.kernel.suspended = self.state.get_setting("suspended") == "1"
-        # Load all kernel modules from constellations/ — kernel status is set by directory alone.
+                                                                                                 
         if self.modules is not None and self.constellations_dir.is_dir():
             for hmod_path in sorted(self.constellations_dir.glob("*.hmod")):
                 try:

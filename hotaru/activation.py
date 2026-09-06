@@ -122,7 +122,7 @@ class ModuleManager:
         self.tasks = tasks
         self.form_cleanup: Callable[[str], Any] | None = None
         self._active: dict[str, ActiveModule] = {}
-        self._bindings: dict[str, tuple[Any, tuple[str, ...], bool]] = {}  # kernel, commands, is_kernel
+        self._bindings: dict[str, tuple[Any, tuple[str, ...], bool]] = {}                               
         self._rehydrators: dict[str, Callable[[dict[str, Any]], Any]] = {}
 
     def _register_rehydrator(self, module_id: str, namespace: dict[str, Any]) -> None:

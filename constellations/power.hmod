@@ -45,7 +45,7 @@ async def command_restart(ctx, invocation):
     except Exception:
         pass
         
-    # Determine if started by systemd
+                                     
     if "INVOCATION_ID" in os.environ:
         service_name = None
         is_user_service = False
@@ -66,7 +66,7 @@ async def command_restart(ctx, invocation):
                 cmd.append("--user")
             cmd.extend(["restart", service_name])
             
-            # Fork a background process to restart the service via systemctl
+                                                                            
             subprocess.Popen(
                 cmd,
                 start_new_session=True,
@@ -76,5 +76,5 @@ async def command_restart(ctx, invocation):
             )
             sys.exit(0)
             
-    # Default fallback: replace the current process (keeps same env, args, PID)
+                                                                               
     os.execv(sys.executable, [sys.executable] + sys.argv)
