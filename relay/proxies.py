@@ -17,7 +17,7 @@ class AssetsHelper:
         return await self._context.tg.send_media(file, caption=filename or "", peer="me")
 
     async def download(self, message: Any, destination: str | Any | None = None) -> Any:
-        # Assuming message is an object with .download() method
+                                                               
         return await self._context.message.__class__(message, self._context.responses).download(destination)
 
 

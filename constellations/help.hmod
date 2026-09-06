@@ -29,7 +29,7 @@ async def _show_help(ctx, invocation):
         module_id = invocation.args[0].casefold()
         active = runtime.modules.get(module_id)
         if active is None:
-            # Check if it's disabled or untrusted
+                                                 
             if runtime.state is not None and module_id in runtime.state.module_ids():
                 lasterror = runtime.state.namespace(module_id).get('lasterror', 'none')
                 await ctx.respond(f"<tg-emoji emoji-id=5404553572727660202>❌</tg-emoji> <b>Module disabled:</b> <code>{module_id}</code>\n<i>Error: {lasterror}</i>", parse_mode="HTML")
@@ -62,16 +62,16 @@ async def _show_help(ctx, invocation):
             if module_id in active:
                 item = active[module_id]
                 manifest = item.loaded.manifest
-                # Use current prefix as requested
+                                                 
                 cmds = [c for c in manifest.commands]
                 cmds_str = f": ( {' | '.join(cmds)} )" if cmds else ""
                 
-                # Determine if kernel
+                                     
                 is_kernel = False
                 if module_id in runtime.modules._bindings:
                     is_kernel = runtime.modules._bindings[module_id][2]
                 
-                # Applying the requested tg-emoji format
+                                                        
                 line = f"<tg-emoji emoji-id=4974508259839836856>🛑</tg-emoji> <code>{module_id}</code>{cmds_str}"
                 
                 if is_kernel:

@@ -75,7 +75,6 @@ class CommandRegistry:
         return self._aliases.pop(alias.casefold(), None) is not None
 
     def unregister(self, name: str, *, module_id: str | None = None) -> bool:
-        """Unregister a user-module command. Kernel commands are protected."""
         key = name.casefold()
         current = self._items.get(key)
         if current is None or current.kernel or current.module_id != module_id:
@@ -84,7 +83,6 @@ class CommandRegistry:
         return True
 
     def unregister_kernel(self, name: str, *, module_id: str | None = None) -> bool:
-        """Unregister a kernel command — only allowed for the owning kernel module itself (used on reload)."""
         key = name.casefold()
         current = self._items.get(key)
         if current is None or current.module_id != module_id:
