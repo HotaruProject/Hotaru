@@ -305,8 +305,6 @@ class InlineManager:
             return info
         info = None
         if state.get_setting("inline-bot-token") is None and allow_create:
-            # Always provision a fresh dedicated bot: never reuse arbitrary
-            # bots owned by the account (they may be served elsewhere).
             self._create_gate()
             async with self._provision_lock:
                 info = await self._create_bot()
