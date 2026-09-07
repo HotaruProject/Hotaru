@@ -525,75 +525,48 @@ class ModuleContext:
         if app is None or getattr(app, "mt", None) is None:
             return False
 
-        def field(value: Any, name: str, default: Any = None) -> Any:
-            if isinstance(value, dict):
-                return value.get(name, default)
-            return getattr(value, name, default)
-
-        def find_premium(value: Any) -> bool | None:
-            def is_premium_entry(entry: dict) -> bool | None:
-                if "premium" in entry:
-                    return bool(entry["premium"])
-                flags = entry.get("flags")
-                if isinstance(flags, int) and entry.get("_") == "user":
-                    if flags < 0:
-                        flags &= (1 << 64) - 1
-                    return bool(flags & (1 << 28))
-                return None
+        def find_user(value: Any) -> Any | None:
             if isinstance(value, (list, tuple)):
                 for item in value:
-                    found = find_premium(item)
+                    found = find_user(item)
                     if found is not None:
                         return found
                 return None
             if isinstance(value, dict):
-                if value.get("_") == "user":
-                    found = is_premium_entry(value)
-                    if found is not None:
-                        return found
+                if value.get("_") == "user" or "premium" in value:
+                    return value
                 for key in ("result", "users", "user", "full_user"):
                     if key in value:
-                        found = find_premium(value[key])
+                        found = find_user(value[key])
                         if found is not None:
                             return found
-                return None
-            premium = field(value, "premium", None)
-            if premium is not None:
-                return bool(premium)
-            for name in ("result", "users", "user", "full_user"):
-                nested = field(value, name, None)
-                if nested is not None:
-                    found = find_premium(nested)
-                    if found is not None:
-                        return found
             return None
 
-        found = find_premium(self._source)
-        if found is not None:
-            self.is_premium = found
-            return found
+        def premium_of(payload: Any) -> bool | None:
+            user = find_user(payload)
+            if user is None and isinstance(payload, dict) and payload.get("_") == "user":
+                user = payload
+            if isinstance(user, dict):
+                if "premium" in user:
+                    return bool(user["premium"])
+                return None
+            return getattr(user, "premium", None)
 
         try:
             from relay.firewall import trusted_scope
 
             with trusted_scope():
                 result = await app.mt_req("users.getFullUser", id={"_": "inputUserSelf"})
-            found = find_premium(result)
+            found = premium_of(result)
             if found is None:
                 with trusted_scope():
                     result = await app.mt_req("users.getUsers", id=[{"_": "inputUserSelf"}])
-                found = find_premium(result)
+                found = premium_of(result)
             if found is not None:
                 self.is_premium = found
                 return found
         except Exception:
             pass
-
-        session = getattr(app, "session", None)
-        found = find_premium(field(session, "data", None))
-        if found is not None:
-            self.is_premium = found
-            return found
         return False
 
     async def answer(self, text: str | None = None, **kwargs: Any) -> Any:
