@@ -1,107 +1,136 @@
 HOTARU = {
     "id": "help",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "description": "Hotaru Help Module",
     "commands": ["hlp", "help"],
     "capabilities": [],
 }
 
+
+def _escape(value):
+    import html
+    return html.escape(str(value), quote=False)
+
+
+def _command_line(prefix, commands):
+    if not commands:
+        return ""
+    return " ( " + " | ".join(
+        f"<code>{_escape(prefix)}{_escape(command)}</code>"
+        for command in commands
+    ) + " )"
+
+
+def _module_line(runtime, module_id, manifest, kernel):
+    prefix = runtime.config.prefix
+    marker = "4974681956907221809" if kernel else "4974508259839836856"
+    name = f'<tg-emoji emoji-id="{marker}">▪️</tg-emoji> <code>{_escape(module_id)}</code>'
+    commands = _command_line(prefix, manifest.commands)
+    return f"<p>{name}{commands}</p>"
+
+
 async def command_hlp(ctx, invocation):
     await _show_help(ctx, invocation)
+
 
 async def command_help(ctx, invocation):
     await _show_help(ctx, invocation)
 
+
 async def _show_help(ctx, invocation):
     runtime = ctx.runtime
     if runtime is None:
-        await ctx.respond("<b>⚠️ Runtime unavailable</b>", parse_mode="HTML")
+        await ctx.respond("<b>Runtime unavailable</b>", parse_mode="HTML")
         return
-        
+
     if invocation.args:
         if len(invocation.args) != 1:
-            await ctx.respond("<b>📖 Usage:</b> <code>!hlp</code> or <code>!hlp &lt;module-id&gt;</code>", parse_mode="HTML")
+            await ctx.respond(
+                "<b>Usage:</b> <code>.hlp</code> or <code>.hlp &lt;module-id&gt;</code>",
+                parse_mode="HTML",
+            )
             return
         if runtime.modules is None:
-            await ctx.respond("<b>⚠️ Module manager unavailable</b>", parse_mode="HTML")
+            await ctx.respond("<b>Module manager unavailable</b>", parse_mode="HTML")
             return
-            
+
         module_id = invocation.args[0].casefold()
         active = runtime.modules.get(module_id)
         if active is None:
-                                                 
             if runtime.state is not None and module_id in runtime.state.module_ids():
-                lasterror = runtime.state.namespace(module_id).get('lasterror', 'none')
-                await ctx.respond(f"<tg-emoji emoji-id=5404553572727660202>❌</tg-emoji> <b>Module disabled:</b> <code>{module_id}</code>\n<i>Error: {lasterror}</i>", parse_mode="HTML")
+                last_error = runtime.state.namespace(module_id).get("lasterror", "none")
+                await ctx.respond(
+                    f'<b>Module disabled:</b> <code>{_escape(module_id)}</code><br>'
+                    f"<i>Error: {_escape(last_error)}</i>",
+                    parse_mode="HTML",
+                )
             else:
-                await ctx.respond(f"<b>❌ Module not active:</b> <code>{module_id}</code>", parse_mode="HTML")
+                await ctx.respond(
+                    f'<b>Module not active:</b> <code>{_escape(module_id)}</code>',
+                    parse_mode="HTML",
+                )
             return
-            
+
         manifest = active.loaded.manifest
-        cmds = [f"{runtime.config.prefix}{c}" for c in manifest.commands]
-        cmds_str = " | ".join(cmds) if cmds else "None"
-        caps = ", ".join(manifest.capabilities) if manifest.capabilities else "None"
-        
-        text = f"<tg-emoji emoji-id=5134452506935427991>🪐</tg-emoji> <b>{manifest.module_id}</b> (v{manifest.version}):\n"
+        commands = _command_line(runtime.config.prefix, manifest.commands)
+        capabilities = ", ".join(_escape(item) for item in manifest.capabilities) or "none"
+        text = (
+            f'<tg-emoji emoji-id="5134452506935427991">🪐</tg-emoji> '
+            f'<b>{_escape(manifest.module_id)}</b> <i>v{_escape(manifest.version)}</i>'
+        )
         if manifest.description:
-            text += f"<i><tg-emoji emoji-id=5879813604068298387>ℹ️</tg-emoji> {manifest.description}</i>\n\n"
-            
-        text += f"<tg-emoji emoji-id=5456197350416486261>1️⃣</tg-emoji> <b>Commands:</b> {cmds_str}\n"
-        text += f"<tg-emoji emoji-id=5456261689026581678>2️⃣</tg-emoji> <b>Capabilities:</b> {caps}"
+            text += f"<br><i>{_escape(manifest.description)}</i>"
+        text += f"<details><summary>Commands</summary><p>{commands or 'none'}</p></details>"
+        text += f"<details><summary>Capabilities</summary><p>{capabilities}</p></details>"
         await ctx.respond(text, parse_mode="HTML")
         return
 
     kernel_modules = []
     user_modules = []
-    
+
     if runtime.modules is not None:
         active = {item.loaded.manifest.module_id: item for item in runtime.modules.items()}
         known = set(runtime.state.module_ids()) if runtime.state is not None else set()
-        
-        for module_id in sorted(set(active.keys()) | known):
+
+        for module_id in sorted(set(active.keys()) | known, key=str.casefold):
             if module_id in active:
                 item = active[module_id]
                 manifest = item.loaded.manifest
-                                                 
-                cmds = [c for c in manifest.commands]
-                cmds_str = f": ( {' | '.join(cmds)} )" if cmds else ""
-                
-                                     
-                is_kernel = False
-                if module_id in runtime.modules._bindings:
-                    is_kernel = runtime.modules._bindings[module_id][2]
-                
-                                                        
-                line = f"<tg-emoji emoji-id=4974508259839836856>🛑</tg-emoji> <code>{module_id}</code>{cmds_str}"
-                
+                is_kernel = (
+                    module_id in runtime.modules._bindings
+                    and runtime.modules._bindings[module_id][2]
+                )
+                line = _module_line(runtime, module_id, manifest, is_kernel)
                 if is_kernel:
                     kernel_modules.append(line)
                 else:
                     user_modules.append(line)
             else:
-                line = f"<tg-emoji emoji-id=5404553572727660202>❌</tg-emoji> <code>{module_id}</code> <i>(untrusted)</i>"
-                user_modules.append(line)
-
+                user_modules.append(
+                    f'<p><tg-emoji emoji-id="5404553572727660202">❌</tg-emoji> '
+                    f'<code>{_escape(module_id)}</code> <i>(untrusted)</i></p>'
+                )
     else:
-        names = sorted(runtime.kernel.registry.names())
-        entries = [f"<tg-emoji emoji-id=4974508259839836856>🛑</tg-emoji> <code>{runtime.config.prefix}{name}</code>" for name in names]
-        user_modules.extend(entries)
+        for name in sorted(runtime.kernel.registry.names(), key=str.casefold):
+            user_modules.append(
+                f'<p><tg-emoji emoji-id="4974508259839836856">▪️</tg-emoji> '
+                f'<code>{_escape(runtime.config.prefix)}{_escape(name)}</code></p>'
+            )
 
-    k_count = len(kernel_modules)
-    u_count = len(user_modules)
-    
-    text = "<b>✨ 💎 Hotaru Core Help 💎 ✨</b>\n\n"
-    
-    if k_count > 0:
-        text += f"<details><summary><b>🔥 Kernel Modules ({k_count})</b></summary>"
-        text += "".join(kernel_modules)
-        text += "</details>"
-        
-    if u_count > 0:
-        if k_count > 0:
-            text += "\n"
-        text += f"<details><summary><b>🌟 User Modules ({u_count})</b></summary>"
-        text += "".join(user_modules)
-        text += "</details>"
-    
+    total = len(kernel_modules) + len(user_modules)
+    text = f"<b>Hotaru Help · {total} modules</b>"
+
+    if kernel_modules:
+        text += (
+            f"<details><summary>Kernel Modules ({len(kernel_modules)})</summary>"
+            + "".join(kernel_modules)
+            + "</details>"
+        )
+    if user_modules:
+        text += (
+            f"<details><summary>User Modules ({len(user_modules)})</summary>"
+            + "".join(user_modules)
+            + "</details>"
+        )
+
     await ctx.respond(text=text, parse_mode="HTML")
