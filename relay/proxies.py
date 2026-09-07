@@ -350,7 +350,7 @@ class BotGateway:
     async def rich_send(self, chat_id: int | str, html_text: str, *, buttons: Any = None, **kwargs: Any) -> Any:
         data = {"chat_id": chat_id, "rich_message": {"_": "inputRichMessageHTML", "html": __import__("re").sub(r"\n(?![^<]*>)", "<br>", html_text)}, **kwargs}
         if buttons is not None:
-            data["reply_markup"] = buttons
+            data["reply_markup"] = {"inline_keyboard": buttons} if isinstance(buttons, list) else buttons
         return await self.call("sendRichMessage", **data)
 
     async def send_message(self, chat_id: int | str, text: str, *, buttons: Any = None, **kwargs: Any) -> Any:
