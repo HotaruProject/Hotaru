@@ -258,16 +258,33 @@ async def task_poller(ctx):
     kernel = getattr(runtime, "kernel", None)
     if kernel is not None:
         owner = getattr(kernel, "owner_id", None)
-    app = getattr(runtime, "app", None)
-    if owner is None or app is None:
+    if owner is None:
         return
-    from relay.firewall import trusted_scope
 
-    with trusted_scope():
-        result = await app.mt_req(
-            "messages.sendMessage",
-            peer=await app.mt.resolve_peer(owner),
-            message=_notify_text(current, latest, changelog),
-            random_id=__import__("secrets").randbits(63),
-        )
+    async def update_handler(callback, payload):
+        await callback.answer("Updating…")
+        await callback.delete()
+        await _run_update(ctx)
+
+    async def ignore_handler(callback, payload):
+        await callback.answer("Updates ignored until next commit")
+        await callback.delete()
+        ctx.state.set("notified_commit", latest)
+
+    async def cancel_handler(callback, payload):
+        await callback.answer()
+        await callback.delete()
+
+    buttons = [
+        [
+            ctx.ui.button("Update", update_handler, style="primary"),
+            ctx.ui.button("Ignore", ignore_handler, style="danger"),
+            ctx.ui.button("×", cancel_handler, style="danger"),
+        ]
+    ]
+    text = _notify_text(current, latest, changelog)
+    try:
+        await ctx.bot.rich_send(owner, text, buttons=buttons)
+    except Exception:
+        return
     ctx.state.set("notified_commit", latest)
