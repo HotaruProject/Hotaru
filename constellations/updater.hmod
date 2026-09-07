@@ -1,0 +1,273 @@
+HOTARU = {
+    "id": "updater",
+    "version": "1.0.0",
+    "description": "Hotaru self-updater: changelog, update confirmation, git pull, deps, restart",
+    "commands": ["upd", "updlog", "updoff", "updon"],
+    "capabilities": ["net"],
+    "tasks": {
+        "poller": {"interval": 300, "autostart": True},
+    },
+}
+
+
+import asyncio
+import html as _html
+import json
+import os
+import subprocess
+import time
+
+
+FETCH_INTERVAL = 300
+REPO_URL = "https://github.com/HotaruProject/Hotaru"
+BRANCH = "main"
+
+
+def _escape(value):
+    return _html.escape(str(value), quote=False)
+
+
+def _repo_dir(runtime):
+    root = getattr(runtime, "constellations_dir", None)
+    if root is None:
+        return None
+    return str(root.parent)
+
+
+def _git(runtime, *args, timeout=60):
+    repo = _repo_dir(runtime)
+    if repo is None:
+        raise RuntimeError("repo directory is unavailable")
+    return subprocess.run(
+        ["git", "-C", repo, *args],
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+        check=False,
+    )
+
+
+def _fetch_origin(runtime):
+    result = _git(runtime, "fetch", "--quiet", "origin", timeout=120)
+    if result.returncode != 0:
+        raise RuntimeError(f"git fetch failed: {result.stderr.strip()[:200]}")
+
+
+def _current_commit(runtime):
+    result = _git(runtime, "rev-parse", "HEAD")
+    if result.returncode != 0:
+        raise RuntimeError("git rev-parse failed")
+    return result.stdout.strip()
+
+
+def _latest_commit(runtime):
+    result = _git(runtime, "rev-parse", f"origin/{BRANCH}")
+    if result.returncode != 0:
+        raise RuntimeError("git rev-parse origin failed")
+    return result.stdout.strip()
+
+
+def _changelog(runtime):
+    result = _git(runtime, "log", "--pretty=format:%h %s", f"HEAD..origin/{BRANCH}", "--max-count=10")
+    if result.returncode != 0:
+        raise RuntimeError("git log failed")
+    lines = [line for line in result.stdout.splitlines() if line.strip()]
+    if not lines:
+        return ""
+    entries = []
+    for line in lines:
+        sha, _, title = line.partition(" ")
+        entries.append(f"<b>{_escape(sha)}</b> <i>{_escape(title)}</i>")
+    return "<br>".join(entries)
+
+
+def _requirements_changed(runtime, before, after):
+    result = _git(runtime, "diff", "--name-only", before, after, "--", "pyproject.toml", "uv.lock")
+    if result.returncode != 0:
+        return False
+    return bool(result.stdout.strip())
+
+
+def _pull(runtime):
+    _fetch_origin(runtime)
+    before = _current_commit(runtime)
+    result = _git(runtime, "reset", "--hard", f"origin/{BRANCH}")
+    if result.returncode != 0:
+        raise RuntimeError(f"git reset failed: {result.stderr.strip()[:200]}")
+    after = _current_commit(runtime)
+    return before, after, _requirements_changed(runtime, before, after)
+
+
+def _sync_deps(runtime):
+    repo = _repo_dir(runtime)
+    venv = os.path.join(repo, ".venv")
+    if not os.path.isdir(venv):
+        return
+    candidates = [
+        os.path.join(venv, "bin", "uv"),
+        os.path.expanduser("~/.local/bin/uv"),
+        "/usr/local/bin/uv",
+    ]
+    uv = next((path for path in candidates if os.path.isfile(path)), None)
+    if uv is None:
+        return
+    subprocess.run(
+        [uv, "pip", "install", "-e", ".", "--quiet"],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        timeout=600,
+        check=False,
+    )
+
+
+async def _restart_service():
+    subprocess.Popen(
+        ["systemctl", "restart", "hotaru.service"],
+        start_new_session=True,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+
+
+def _notify_text(current, latest, changelog):
+    link = f'<a href="{REPO_URL}/compare/{current[:12]}...{latest[:12]}">{latest[:6]}</a>'
+    return (
+        f"<b>Hotaru update available</b><br>"
+        f"current: <code>{_escape(current[:7])}</code> → {link}<br><br>"
+        f"{changelog}"
+    )
+
+
+async def command_updlog(ctx, invocation):
+    runtime = ctx.runtime
+    if runtime is None:
+        await ctx.respond("<b>Runtime unavailable</b>", parse_mode="HTML")
+        return
+    try:
+        _fetch_origin(runtime)
+        changelog = _changelog(runtime)
+    except Exception as exc:
+        await ctx.respond(f"<b>Changelog failed:</b> <i>{_escape(exc)}</i>", parse_mode="HTML")
+        return
+    if not changelog:
+        await ctx.respond("<b>Hotaru is up to date</b>", parse_mode="HTML")
+        return
+    current = _current_commit(runtime)
+    latest = _latest_commit(runtime)
+    await ctx.respond(_notify_text(current, latest, changelog), parse_mode="HTML")
+
+
+async def command_updoff(ctx, invocation):
+    ctx.state.set("notify", False)
+    await ctx.respond("Update notifications disabled. Use .updon to re-enable.", parse_mode="HTML")
+
+
+async def command_updon(ctx, invocation):
+    ctx.state.set("notify", True)
+    await ctx.respond("Update notifications enabled.", parse_mode="HTML")
+
+
+async def _run_update(ctx):
+    runtime = ctx.runtime
+    await ctx.respond("<b>Downloading update…</b>", parse_mode="HTML")
+    try:
+        before, after, deps_changed = _pull(runtime)
+    except Exception as exc:
+        await ctx.respond(f"<b>Update failed:</b> <i>{_escape(exc)}</i>", parse_mode="HTML")
+        return
+    if before == after:
+        await ctx.respond("<b>Already up to date</b>", parse_mode="HTML")
+        return
+    if deps_changed:
+        await ctx.respond("<b>Syncing dependencies…</b>", parse_mode="HTML")
+        _sync_deps(runtime)
+    await ctx.respond(f"<b>Updated to</b> <code>{_escape(after[:7])}</code>. Restarting…", parse_mode="HTML")
+    ctx.state.set("restart_ts", time.time())
+    await asyncio.sleep(1)
+    await _restart_service()
+
+
+async def command_upd(ctx, invocation):
+    runtime = ctx.runtime
+    if runtime is None:
+        await ctx.respond("<b>Runtime unavailable</b>", parse_mode="HTML")
+        return
+    force = "force" in invocation.args or "-f" in invocation.args
+    try:
+        _fetch_origin(runtime)
+        current = _current_commit(runtime)
+        latest = _latest_commit(runtime)
+        changelog = _changelog(runtime)
+    except Exception as exc:
+        if force:
+            raise
+        await ctx.respond(f"<b>Update check failed:</b> <i>{_escape(exc)}</i>", parse_mode="HTML")
+        return
+
+    if current == latest:
+        await ctx.respond(f"<b>Already up to date</b> <code>{_escape(current[:7])}</code>", parse_mode="HTML")
+        return
+
+    if force:
+        await _run_update(ctx)
+        return
+
+    async def update_handler(callback, payload):
+        await callback.answer("Updating…")
+        await callback.delete()
+        await _run_update(ctx)
+
+    async def cancel_handler(callback, payload):
+        await callback.answer()
+        await callback.delete()
+
+    buttons = [
+        [
+            ctx.ui.button("Update", update_handler, style="primary"),
+            ctx.ui.button("Cancel", cancel_handler, style="danger"),
+        ]
+    ]
+    await ctx.respond(
+        _notify_text(current, latest, changelog) + "<br><br>Update now?",
+        buttons=buttons,
+        parse_mode="HTML",
+    )
+
+
+async def task_poller(ctx):
+    runtime = ctx.runtime
+    if runtime is None:
+        return
+    if ctx.state.get("notify", True) is False:
+        return
+    try:
+        _fetch_origin(runtime)
+        current = _current_commit(runtime)
+        latest = _latest_commit(runtime)
+        changelog = _changelog(runtime)
+    except Exception:
+        return
+    if not changelog or current == latest:
+        return
+    notified = ctx.state.get("notified_commit")
+    if notified == latest:
+        return
+    owner = None
+    kernel = getattr(runtime, "kernel", None)
+    if kernel is not None:
+        owner = getattr(kernel, "owner_id", None)
+    app = getattr(runtime, "app", None)
+    if owner is None or app is None:
+        return
+    from relay.firewall import trusted_scope
+
+    with trusted_scope():
+        result = await app.mt_req(
+            "messages.sendMessage",
+            peer=await app.mt.resolve_peer(owner),
+            message=_notify_text(current, latest, changelog),
+            random_id=__import__("secrets").randbits(63),
+        )
+    ctx.state.set("notified_commit", latest)
