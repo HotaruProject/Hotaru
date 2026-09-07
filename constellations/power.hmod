@@ -3,18 +3,18 @@ HOTARU = {
     "version": "1.0.0",
     "description": "High-level power management (restart, stop, start)",
     "commands": ["restart", "stop", "start"],
-    "capabilities": [],
+    "capabilities": ["mt"],
 }
 
 async def command_stop(ctx, invocation):
     if ctx.runtime.kernel.suspended:
         await ctx.respond("Юзербот уже остановлен (приостановлен).")
         return
-        
+
     ctx.runtime.kernel.suspended = True
     if ctx.runtime.state is not None:
         ctx.runtime.state.set_setting("suspended", "1")
-        
+
     await ctx.respond(
         "Юзербот остановлен (приостановлен).\n"
         "Обычные модули отключены, но команды ядра (например, .start) продолжают работать."
@@ -24,28 +24,28 @@ async def command_start(ctx, invocation):
     if not ctx.runtime.kernel.suspended:
         await ctx.respond("Юзербот уже запущен.")
         return
-        
+
     ctx.runtime.kernel.suspended = False
     if ctx.runtime.state is not None:
         ctx.runtime.state.set_setting("suspended", "0")
-        
+
     await ctx.respond("Юзербот запущен. Обработка всех команд возобновлена.")
 
 async def command_restart(ctx, invocation):
     import os
     import sys
     import subprocess
-    
+
     await ctx.respond("Перезапускаю юзербот...")
-    
+
     try:
         if ctx.runtime.app:
             import asyncio
             await asyncio.wait_for(ctx.runtime.app.close(), timeout=1.0)
     except Exception:
         pass
-        
-                                     
+
+
     if "INVOCATION_ID" in os.environ:
         service_name = None
         is_user_service = False
@@ -59,14 +59,14 @@ async def command_restart(ctx, invocation):
                         break
         except Exception:
             pass
-            
+
         if service_name:
             cmd = ["systemctl"]
             if is_user_service or os.geteuid() != 0:
                 cmd.append("--user")
             cmd.extend(["restart", service_name])
-            
-                                                                            
+
+
             subprocess.Popen(
                 cmd,
                 start_new_session=True,
@@ -75,6 +75,6 @@ async def command_restart(ctx, invocation):
                 stderr=subprocess.DEVNULL,
             )
             sys.exit(0)
-            
-                                                                               
+
+
     os.execv(sys.executable, [sys.executable] + sys.argv)
