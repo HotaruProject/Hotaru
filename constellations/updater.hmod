@@ -228,6 +228,30 @@ async def _run_update(ctx, notify=None):
     await _restart_service()
 
 
+async def _ensure_bot_dm(ctx, chat_id):
+    runtime = ctx.runtime
+    app = getattr(runtime, "app", None)
+    info = getattr(getattr(runtime, "inline", None), "info", None)
+    if app is None or info is None or not isinstance(chat_id, int):
+        return
+    username = getattr(info, "username", None)
+    if not username:
+        return
+    from relay.firewall import trusted_scope
+
+    try:
+        with trusted_scope():
+            peer = await app.mt.resolve_peer("@" + username)
+            await app.mt_req(
+                "messages.sendMessage",
+                peer=peer,
+                message="/start",
+                random_id=__import__("secrets").randbits(63),
+            )
+    except Exception:
+        pass
+
+
 async def command_upd(ctx, invocation):
     runtime = ctx.runtime
     if runtime is None:
@@ -270,6 +294,7 @@ async def command_upd(ctx, invocation):
             ctx.ui.button("Cancel", cancel_handler, style="danger"),
         ]
     ]
+    await _ensure_bot_dm(ctx, invocation.chat_id)
     message = await ctx.bot.rich_send(
         invocation.chat_id,
         _notify_text(current, latest, changelog) + "<br><br>Update now?",
@@ -357,6 +382,7 @@ async def task_poller(ctx):
     text = _notify_text(current, latest, changelog)
     editor = _NotifyEditor(ctx)
     try:
+        await _ensure_bot_dm(ctx, owner)
         message = await ctx.bot.rich_send(owner, text, buttons=buttons)
     except Exception:
         return
