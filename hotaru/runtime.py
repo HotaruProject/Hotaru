@@ -236,7 +236,14 @@ class Runtime:
                 if isinstance(value, int):
                     topic_id = value
                     break
-        sent = await self.inline.bot_app.send_msg(chat_id, text, reply_to=reply_to if isinstance(reply_to, int) else None, topic_id=topic_id if isinstance(topic_id, int) else None, parse_mode="HTML")
+        try:
+            sent = await self.inline.bot_app.send_msg(chat_id, text, reply_to=reply_to if isinstance(reply_to, int) else None, topic_id=topic_id if isinstance(topic_id, int) else None, parse_mode="HTML")
+        except RuntimeError as exc:
+            error = str(exc).lower()
+            blocked = any(item in error for item in ("chat not found", "bot was blocked", "forbidden: bot"))
+            if not blocked or not await self.inline.reopen_owner_chat(chat_id):
+                raise
+            sent = await self.inline.bot_app.send_msg(chat_id, text, reply_to=reply_to if isinstance(reply_to, int) else None, topic_id=topic_id if isinstance(topic_id, int) else None, parse_mode="HTML")
         body = sent.get("result", sent) if isinstance(sent, dict) else sent
         form_id = body.get("message_id") if isinstance(body, dict) else getattr(body, "message_id", None)
         if not isinstance(form_id, int):

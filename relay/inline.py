@@ -310,11 +310,36 @@ class InlineManager:
                 info = await self._create_bot()
         if info is None:
             raise InlineError("no inline bot available: nothing stored, nothing found, creation disabled")
+        await self._start_bot_chat(info.username)
         state.set_setting("inline-bot-token", info.token)
         state.set_setting("inline-bot-username", info.username)
         state.set_setting("inline-bot-id", info.bot_id)
         self.info = info
         return info
+
+    async def _start_bot_chat(self, username: str) -> None:
+        app = self.runtime.app
+        if app is None or app.mt is None:
+            return
+        from relay.firewall import trusted_scope
+
+        with trusted_scope():
+            peer = await app.mt.resolve_peer("@" + username)
+            await app.mt_req(
+                "messages.sendMessage",
+                peer=peer,
+                message="/start",
+                random_id=secrets.randbits(63),
+            )
+
+    async def reopen_owner_chat(self, chat_id: int | str | None) -> bool:
+        if not isinstance(chat_id, int) or self.info is None:
+            return False
+        try:
+            await self._start_bot_chat(self.info.username)
+            return True
+        except Exception:
+            return False
 
     def _create_gate(self, *, max_attempts: int = 3, window: float = 3600.0, cooldown: float = 900.0) -> None:
         now = time.monotonic()
