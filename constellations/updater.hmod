@@ -131,18 +131,25 @@ async def _restart_service():
     )
 
 
-async def _bot_edit(ctx, chat_id, message_id, text):
-    await ctx.bot.call(
-        "editMessageText",
-        chat_id=chat_id,
-        message_id=message_id,
-        text=text,
-        parse_mode="HTML",
+async def _bot_edit(ctx, chat_id, message_id, text, inline_message_id=None):
+    params = {"text": text, "parse_mode": "HTML"}
+    if isinstance(inline_message_id, str) and inline_message_id:
+        params["inline_message_id"] = inline_message_id
+    else:
+        params.update({"chat_id": chat_id, "message_id": message_id})
+    await ctx.bot.call("editMessageText", **params)
+
+
+def _save_update_msg(ctx, chat_id, message_id, inline_message_id=None):
+    ctx.state.set(
+        "update_msg",
+        {
+            "chat_id": chat_id,
+            "message_id": message_id,
+            "inline_message_id": inline_message_id,
+            "restart_ts": time.time(),
+        },
     )
-
-
-def _save_update_msg(ctx, chat_id, message_id):
-    ctx.state.set("update_msg", {"chat_id": chat_id, "message_id": message_id, "restart_ts": time.time()})
 
 
 async def _update_complete(ctx):
@@ -151,13 +158,14 @@ async def _update_complete(ctx):
         return
     chat_id = record.get("chat_id")
     message_id = record.get("message_id")
+    inline_message_id = record.get("inline_message_id")
     started = record.get("restart_ts")
-    if not isinstance(chat_id, int) or not isinstance(message_id, int):
+    if not isinstance(inline_message_id, str) and (not isinstance(chat_id, int) or not isinstance(message_id, int)):
         return
     took = round(time.time() - started) if isinstance(started, (int, float)) else "n/a"
     ctx.state.delete("update_msg")
     try:
-        await _bot_edit(ctx, chat_id, message_id, f"<b>Hotaru updated</b> in {took}s ✓")
+        await _bot_edit(ctx, chat_id, message_id, f"<b>Hotaru updated</b> in {took}s ✓", inline_message_id)
     except Exception:
         pass
 
@@ -307,6 +315,8 @@ class _NotifyEditor:
         self.ctx = ctx
         self.chat_id = None
         self.message_id = None
+        self.inline_message_id = None
+        self.callback = None
 
     def adopt(self, message):
         body = message.get("result", message) if isinstance(message, dict) else message
@@ -315,14 +325,22 @@ class _NotifyEditor:
             self.message_id = body.get("message_id")
 
     async def attach(self, callback):
+        self.callback = callback
         self.chat_id = getattr(callback, "chat_id", None) or self.chat_id
         self.message_id = getattr(callback, "msg_id", None) or getattr(callback, "message_id", None) or self.message_id
+        self.inline_message_id = getattr(callback, "inline_message_id", None) or self.inline_message_id
 
     def mark_restart(self):
-        if isinstance(self.chat_id, int) and isinstance(self.message_id, int):
-            _save_update_msg(self.ctx, self.chat_id, self.message_id)
+        if isinstance(self.inline_message_id, str) or (isinstance(self.chat_id, int) and isinstance(self.message_id, int)):
+            _save_update_msg(self.ctx, self.chat_id, self.message_id, self.inline_message_id)
 
     async def __call__(self, text):
+        if isinstance(self.inline_message_id, str) and self.inline_message_id:
+            try:
+                await _bot_edit(self.ctx, self.chat_id, self.message_id, text, self.inline_message_id)
+                return
+            except Exception:
+                pass
         if isinstance(self.chat_id, int) and isinstance(self.message_id, int):
             try:
                 await _bot_edit(self.ctx, self.chat_id, self.message_id, text)
