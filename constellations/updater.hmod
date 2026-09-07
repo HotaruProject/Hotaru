@@ -131,6 +131,37 @@ async def _restart_service():
     )
 
 
+async def _bot_edit(ctx, chat_id, message_id, text):
+    await ctx.bot.call(
+        "editMessageText",
+        chat_id=chat_id,
+        message_id=message_id,
+        text=text,
+        parse_mode="HTML",
+    )
+
+
+def _save_update_msg(ctx, chat_id, message_id):
+    ctx.state.set("update_msg", {"chat_id": chat_id, "message_id": message_id, "restart_ts": time.time()})
+
+
+async def _update_complete(ctx):
+    record = ctx.state.get("update_msg")
+    if not isinstance(record, dict):
+        return
+    chat_id = record.get("chat_id")
+    message_id = record.get("message_id")
+    started = record.get("restart_ts")
+    if not isinstance(chat_id, int) or not isinstance(message_id, int):
+        return
+    took = round(time.time() - started) if isinstance(started, (int, float)) else "n/a"
+    ctx.state.delete("update_msg")
+    try:
+        await _bot_edit(ctx, chat_id, message_id, f"<b>Hotaru updated</b> in {took}s ✓")
+    except Exception:
+        pass
+
+
 def _notify_text(current, latest, changelog):
     link = f'<a href="{REPO_URL}/compare/{current[:12]}...{latest[:12]}">{latest[:6]}</a>'
     return (
@@ -167,24 +198,32 @@ async def command_updoff(ctx, invocation):
 async def command_updon(ctx, invocation):
     ctx.state.set("notify", True)
     await ctx.respond("Update notifications enabled.", parse_mode="HTML")
+    await _update_complete(ctx)
 
 
-async def _run_update(ctx):
+async def _run_update(ctx, notify=None):
     runtime = ctx.runtime
-    await ctx.respond("<b>Downloading update…</b>", parse_mode="HTML")
+    async def say(text):
+        if notify is not None:
+            await notify(text)
+        else:
+            await ctx.respond(text, parse_mode="HTML")
+    await say("<b>Downloading update…</b>")
     try:
         before, after, deps_changed = _pull(runtime)
     except Exception as exc:
-        await ctx.respond(f"<b>Update failed:</b> <i>{_escape(exc)}</i>", parse_mode="HTML")
+        await say(f"<b>Update failed:</b> <i>{_escape(exc)}</i>")
         return
     if before == after:
-        await ctx.respond("<b>Already up to date</b>", parse_mode="HTML")
+        await say("<b>Already up to date</b>")
         return
     if deps_changed:
-        await ctx.respond("<b>Syncing dependencies…</b>", parse_mode="HTML")
+        await say("<b>Syncing dependencies…</b>")
         _sync_deps(runtime)
-    await ctx.respond(f"<b>Updated to</b> <code>{_escape(after[:7])}</code>. Restarting…", parse_mode="HTML")
+    await say(f"<b>Updated to</b> <code>{_escape(after[:7])}</code>. Restarting…")
     ctx.state.set("restart_ts", time.time())
+    if notify is not None and isinstance(notify, _NotifyEditor):
+        notify.mark_restart()
     await asyncio.sleep(1)
     await _restart_service()
 
@@ -214,10 +253,12 @@ async def command_upd(ctx, invocation):
         await _run_update(ctx)
         return
 
+    editor = _NotifyEditor(ctx)
+
     async def update_handler(callback, payload):
         await callback.answer("Updating…")
-        await callback.delete()
-        await _run_update(ctx)
+        await editor.attach(callback)
+        await _run_update(ctx, notify=editor)
 
     async def cancel_handler(callback, payload):
         await callback.answer()
@@ -229,11 +270,42 @@ async def command_upd(ctx, invocation):
             ctx.ui.button("Cancel", cancel_handler, style="danger"),
         ]
     ]
-    await ctx.respond(
+    message = await ctx.bot.rich_send(
+        invocation.chat_id,
         _notify_text(current, latest, changelog) + "<br><br>Update now?",
         buttons=buttons,
-        parse_mode="HTML",
     )
+    editor.adopt(message)
+
+
+class _NotifyEditor:
+    def __init__(self, ctx):
+        self.ctx = ctx
+        self.chat_id = None
+        self.message_id = None
+
+    def adopt(self, message):
+        body = message.get("result", message) if isinstance(message, dict) else message
+        if isinstance(body, dict):
+            self.chat_id = body.get("chat", {}).get("id") or body.get("chat_id")
+            self.message_id = body.get("message_id")
+
+    async def attach(self, callback):
+        self.chat_id = getattr(callback, "chat_id", None) or self.chat_id
+        self.message_id = getattr(callback, "msg_id", None) or getattr(callback, "message_id", None) or self.message_id
+
+    def mark_restart(self):
+        if isinstance(self.chat_id, int) and isinstance(self.message_id, int):
+            _save_update_msg(self.ctx, self.chat_id, self.message_id)
+
+    async def __call__(self, text):
+        if isinstance(self.chat_id, int) and isinstance(self.message_id, int):
+            try:
+                await _bot_edit(self.ctx, self.chat_id, self.message_id, text)
+                return
+            except Exception:
+                pass
+        await self.ctx.respond(text, parse_mode="HTML")
 
 
 async def task_poller(ctx):
@@ -263,8 +335,8 @@ async def task_poller(ctx):
 
     async def update_handler(callback, payload):
         await callback.answer("Updating…")
-        await callback.delete()
-        await _run_update(ctx)
+        await editor.attach(callback)
+        await _run_update(ctx, notify=editor)
 
     async def ignore_handler(callback, payload):
         await callback.answer("Updates ignored until next commit")
@@ -283,8 +355,10 @@ async def task_poller(ctx):
         ]
     ]
     text = _notify_text(current, latest, changelog)
+    editor = _NotifyEditor(ctx)
     try:
-        await ctx.bot.rich_send(owner, text, buttons=buttons)
+        message = await ctx.bot.rich_send(owner, text, buttons=buttons)
     except Exception:
         return
+    editor.adopt(message)
     ctx.state.set("notified_commit", latest)
