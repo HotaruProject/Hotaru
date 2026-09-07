@@ -354,6 +354,7 @@ async def task_poller(ctx):
     runtime = ctx.runtime
     if runtime is None:
         return
+    await _update_complete(ctx)
     if ctx.state.get("notify", True) is False:
         return
     try:
