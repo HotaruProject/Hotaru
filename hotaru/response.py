@@ -720,6 +720,24 @@ class ModuleContext:
         return await self._context_tg_call("messages.sendMessage", {"peer": self._source.chat_id, "message": "", "rich_message": rich_message, **kwargs})
 
     async def send_rich(self, html: str, **kwargs: Any) -> Response:
+        is_premium = False
+        raw = {"_": "inputUserSelf"}
+        result = await self._context_tg_call("users.getFullUser", {"id": raw})
+        if result and isinstance(result, dict) and result.get("users", []) != []:
+            users = result.get("users", [])
+            user = users[0]
+            is_premium = bool(user.get("premium"))
+        if not is_premium:
+            plain = __import__("html").unescape(__import__("re").sub(r"<[^>]+>", "", html))
+            buttons = kwargs.pop("buttons", None)
+            output = kwargs.pop("output", "reply")
+            topic_id = kwargs.pop("topic_id", 0) or self.topic_id
+            reply_to = kwargs.pop("reply_to", None) or getattr(self._source, "id", None)
+            kwargs.pop("parse_mode", None)
+            answer = await self.responses.answer(self._source, text=plain,
+                                                 buttons=buttons, output=output,
+                                                 topic_id=topic_id, reply_to=reply_to)
+            return answer
         buttons = kwargs.pop("buttons", None)
         if buttons is not None and self.form_sender is not None:
             result = await self.form_sender(self._source, html, buttons, kwargs)

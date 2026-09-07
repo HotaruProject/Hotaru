@@ -8,7 +8,7 @@ HOTARU = {
         "bot", "trust", "untrust",
         "alias", "unalias"
     ],
-    "capabilities": [],
+    "capabilities": ["mt"],
 }
 
 
