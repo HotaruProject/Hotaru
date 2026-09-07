@@ -142,6 +142,7 @@ class ResponseService:
         output: OutputMode = "edit",
         reply_to: int | None = None,
         topic_id: int | None = None,
+        parse_mode: str | None = "HTML",
     ) -> Response:
         if text is None and rich_message is None and media is None:
             raise ValueError("response requires text, rich_message, or media")
@@ -164,6 +165,8 @@ class ResponseService:
                 result = await result
             return Response(True, "edit" if output == "edit" else "reply", getattr(message, "src", None), result)
         payload = {"kbd": buttons}
+        if parse_mode is not None:
+            payload["parse_mode"] = parse_mode
         if media is not None:
             payload["media"] = media
         if reply_to is not None:
@@ -453,6 +456,7 @@ class ModuleContext:
     inline_manager: Any = None
     form_sender: Any = None
     runtime: Any = None
+    is_premium: bool | None = None
 
     @property
     def message(self) -> ModuleMessage:
@@ -514,16 +518,95 @@ class ModuleContext:
     async def net(self, url: str, *, data: dict[str, Any] | None = None, timeout: float = 10.0) -> dict[str, Any]:
         return await self.cap("net", {"url": url, "data": data, "timeout": timeout})
 
+    async def premium(self) -> bool:
+        if self.is_premium is not None:
+            return self.is_premium
+        app = getattr(self.runtime, "app", None) if self.runtime is not None else None
+        if app is None or getattr(app, "mt", None) is None:
+            return False
+
+        def field(value: Any, name: str, default: Any = None) -> Any:
+            if isinstance(value, dict):
+                return value.get(name, default)
+            return getattr(value, name, default)
+
+        def find_premium(value: Any) -> bool | None:
+            def is_premium_entry(entry: dict) -> bool | None:
+                if "premium" in entry:
+                    return bool(entry["premium"])
+                flags = entry.get("flags")
+                if isinstance(flags, int) and entry.get("_") == "user":
+                    if flags < 0:
+                        flags &= (1 << 64) - 1
+                    return bool(flags & (1 << 28))
+                return None
+            if isinstance(value, (list, tuple)):
+                for item in value:
+                    found = find_premium(item)
+                    if found is not None:
+                        return found
+                return None
+            if isinstance(value, dict):
+                if value.get("_") == "user":
+                    found = is_premium_entry(value)
+                    if found is not None:
+                        return found
+                for key in ("result", "users", "user", "full_user"):
+                    if key in value:
+                        found = find_premium(value[key])
+                        if found is not None:
+                            return found
+                return None
+            premium = field(value, "premium", None)
+            if premium is not None:
+                return bool(premium)
+            for name in ("result", "users", "user", "full_user"):
+                nested = field(value, name, None)
+                if nested is not None:
+                    found = find_premium(nested)
+                    if found is not None:
+                        return found
+            return None
+
+        found = find_premium(self._source)
+        if found is not None:
+            self.is_premium = found
+            return found
+
+        try:
+            from relay.firewall import trusted_scope
+
+            with trusted_scope():
+                result = await app.mt_req("users.getFullUser", id={"_": "inputUserSelf"})
+            found = find_premium(result)
+            if found is None:
+                with trusted_scope():
+                    result = await app.mt_req("users.getUsers", id=[{"_": "inputUserSelf"}])
+                found = find_premium(result)
+            if found is not None:
+                self.is_premium = found
+                return found
+        except Exception:
+            pass
+
+        session = getattr(app, "session", None)
+        found = find_premium(field(session, "data", None))
+        if found is not None:
+            self.is_premium = found
+            return found
+        return False
+
     async def answer(self, text: str | None = None, **kwargs: Any) -> Any:
         if text is not None:
             kwargs["text"] = text
+        use_rich = kwargs.pop("rich", True)
         if kwargs.get("text") is not None:
             kwargs.setdefault("parse_mode", "HTML")
         if kwargs.get("buttons"):
             kwargs["buttons"] = self._normalize_buttons(kwargs["buttons"])
         if kwargs.get("buttons") and self.form_sender is not None:
             return await self.form_sender(self._source, kwargs.get("text", ""), kwargs["buttons"], kwargs)
-        if kwargs.get("text") is not None and kwargs.get("rich", True) and self.cap_host is not None:
+        if kwargs.get("text") is not None and use_rich and self.cap_host is not None:
             value = kwargs.pop("text")
             limit = int(kwargs.pop("split_limit", 4096))
             file_limit = int(kwargs.pop("file_limit", 200000))
@@ -534,8 +617,8 @@ class ModuleContext:
                     return await self.responses.split_html(self._source, value, limit=limit, **kwargs)
                 return await self.responses.split(self._source, value, limit=limit, **kwargs)
             return await self.send_rich(value, **kwargs)
-        kwargs.pop("parse_mode", None)
-        return await self.responses.answer(self._source, **kwargs)
+        parse_mode = kwargs.pop("parse_mode", None)
+        return await self.responses.answer(self._source, parse_mode=parse_mode, **kwargs)
 
     async def respond(self, content: Any = None, **kwargs: Any) -> Any:
         mode = kwargs.pop("mode", kwargs.pop("output", "auto"))
