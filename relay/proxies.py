@@ -351,7 +351,14 @@ class BotGateway:
         data = {"chat_id": chat_id, "rich_message": {"_": "inputRichMessageHTML", "html": __import__("re").sub(r"\n(?![^<]*>)", "<br>", html_text)}, **kwargs}
         if buttons is not None:
             data["reply_markup"] = {"inline_keyboard": buttons} if isinstance(buttons, list) else buttons
-        return await self.call("sendRichMessage", **data)
+        try:
+            return await self.call("sendRichMessage", **data)
+        except RuntimeError as exc:
+            error = str(exc).lower()
+            blocked = any(text in error for text in ("chat not found", "bot was blocked", "forbidden: bot"))
+            if not blocked or not await self._manager.reopen_owner_chat(chat_id):
+                raise
+            return await self.call("sendRichMessage", **data)
 
     async def send_message(self, chat_id: int | str, text: str, *, buttons: Any = None, **kwargs: Any) -> Any:
         data = {"chat_id": chat_id, "text": text, "parse_mode": "HTML", **kwargs}
