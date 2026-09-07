@@ -453,6 +453,7 @@ class ModuleContext:
     inline_manager: Any = None
     form_sender: Any = None
     runtime: Any = None
+    is_premium: bool | None = None
 
     @property
     def message(self) -> ModuleMessage:
@@ -719,22 +720,31 @@ class ModuleContext:
             return await self.form_sender(self._source, rich_message, buttons, kwargs)
         return await self._context_tg_call("messages.sendMessage", {"peer": self._source.chat_id, "message": "", "rich_message": rich_message, **kwargs})
 
-    async def send_rich(self, html: str, **kwargs: Any) -> Response:
+    async def _is_premium(self):
+        if self.is_premium is not None:
+            return self.is_premium
+        from relay.firewall import trusted_scope
         is_premium = False
         raw = {"_": "inputUserSelf"}
-        result = await self._context_tg_call("users.getFullUser", {"id": raw})
-        if result and isinstance(result, dict) and result.get("users", []) != []:
-            users = result.get("users", [])
-            user = users[0]
-            is_premium = bool(user.get("premium"))
+        if self.runtime is not None and getattr(self.runtime, "app", None) is not None:
+            app = self.runtime.app
+            with trusted_scope():
+                result = await app.mt_req("users.getFullUser", id=raw)
+            if result and isinstance(result, dict) and result.get("users", []) != []:
+                users = result.get("users", [])
+                user = users[0]
+                is_premium = bool(user.get("premium"))
+        return is_premium
+
+    async def send_rich(self, html: str, **kwargs: Any) -> Response:
+        is_premium = await self._is_premium()
         if not is_premium:
-            plain = __import__("html").unescape(__import__("re").sub(r"<[^>]+>", "", html))
             buttons = kwargs.pop("buttons", None)
             output = kwargs.pop("output", "reply")
             topic_id = kwargs.pop("topic_id", 0) or self.topic_id
             reply_to = kwargs.pop("reply_to", None) or getattr(self._source, "id", None)
             kwargs.pop("parse_mode", None)
-            answer = await self.responses.answer(self._source, text=plain,
+            answer = await self.responses.answer(self._source, text=html,
                                                  buttons=buttons, output=output,
                                                  topic_id=topic_id, reply_to=reply_to)
             return answer
