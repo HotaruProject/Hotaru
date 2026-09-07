@@ -94,8 +94,10 @@ class CallbackStore:
         try:
             padded = handle + "=" * (-len(handle) % 4)
             blob = base64.urlsafe_b64decode(padded.encode("ascii"))
+            if len(blob) <= 12 or len(blob) < 12 + 16:
+                return None
             return ext.aes_gcm_decrypt(self._key, blob[:12], blob[12:], b"hotaru-cb")
-        except Exception:
+        except BaseException:
             return None
 
     def issue(self, binding: CallbackBinding, value: dict[str, Any]) -> str:
