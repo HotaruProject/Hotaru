@@ -294,13 +294,12 @@ async def command_upd(ctx, invocation):
             ctx.ui.button("Cancel", cancel_handler, style="danger"),
         ]
     ]
-    await _ensure_bot_dm(ctx, invocation.chat_id)
-    message = await ctx.bot.rich_send(
-        invocation.chat_id,
+    await ctx.respond(
         _notify_text(current, latest, changelog) + "<br><br>Update now?",
         buttons=buttons,
+        inline=True,
+        parse_mode="HTML",
     )
-    editor.adopt(message)
 
 
 class _NotifyEditor:
