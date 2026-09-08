@@ -11,15 +11,6 @@
     "unknown_error": "Неизвестная ошибка"
   },
   "kernel": {
-    "help": {
-      "title": "Помощь Hotaru",
-      "modules": "Модули",
-      "kernel_modules": "Модули ядра",
-      "user_modules": "Пользовательские модули",
-      "commands": "Команды",
-      "capabilities": "Возможности",
-      "module_count": "Помощь Hotaru · модулей: {count}"
-    },
     "config": {
       "title": "Конфигурация",
       "no_modules": "Настраиваемых модулей нет",
@@ -34,7 +25,19 @@
       "stopped_details": "Обычные модули отключены, но команды ядра, например {prefix}start, продолжают работать.",
       "already_started": "Юзербот уже запущен.",
       "started": "Юзербот запущен. Обработка команд возобновлена.",
-      "restarting": "Перезапускаю юзербот..."
+      "restarting": "Перезапускаю юзербот...",
+      "description": "Управление юзерботом",
+      "commands": {
+        "restart": {
+          "description": "Перезапуск юзербота"
+        },
+        "stop": {
+          "description": "Приостановить юзербота"
+        },
+        "start": {
+          "description": "Возобновить юзербота"
+        }
+      }
     },
     "updater": {
       "unavailable": "Runtime недоступен",
@@ -43,7 +46,22 @@
       "downloading": "Скачиваю обновление…",
       "syncing": "Обновляю зависимости…",
       "restarting": "Обновлено до {commit}. Перезапускаю…",
-      "updated": "Hotaru обновлён за {seconds} с"
+      "updated": "Hotaru обновлён за {seconds} с",
+      "description": "Автообновление Hotaru",
+      "commands": {
+        "upd": {
+          "description": "Проверить и применить обновление"
+        },
+        "updlog": {
+          "description": "Показать ченджлог"
+        },
+        "updoff": {
+          "description": "Выключить уведомления об обновлениях"
+        },
+        "updon": {
+          "description": "Включить уведомления об обновлениях"
+        }
+      }
     },
     "kernel": {
       "runtime_unavailable": "Runtime недоступен",
@@ -53,6 +71,124 @@
       "alias_set": "Алиас установлен: {alias} → {command}",
       "alias_removed": "Алиас удалён: {alias}",
       "alias_not_found": "Алиас не найден: {alias}"
+    },
+    "capabilities": {
+      "mt": "Прямой доступ к MTProto",
+      "state": "Постоянное хранилище состояния",
+      "files": "Доступ к файловой системе",
+      "net": "Доступ к сети"
+    },
+    "hotaru-kernel": {
+      "description": "Модули ядра Hotaru",
+      "commands": {
+        "ver": {
+          "description": "Версия Hotaru"
+        },
+        "st": {
+          "description": "Статус рантайма"
+        },
+        "ls": {
+          "description": "Список активных модулей"
+        },
+        "mi": {
+          "description": "Инфо о модуле"
+        },
+        "ld": {
+          "description": "Загрузить модуль"
+        },
+        "ul": {
+          "description": "Выгрузить модуль"
+        },
+        "rl": {
+          "description": "Перезагрузить модуль"
+        },
+        "rm": {
+          "description": "Удалить модуль"
+        },
+        "bk": {
+          "description": "Бэкапы"
+        },
+        "bot": {
+          "description": "Статус inline-бота"
+        },
+        "trust": {
+          "description": "Доверять модулю"
+        },
+        "untrust": {
+          "description": "Отозвать доверие"
+        },
+        "alias": {
+          "description": "Создать алиас"
+        },
+        "unalias": {
+          "description": "Удалить алиас"
+        }
+      }
+    },
+    "help": {
+      "description": "Модуль помощи Hotaru",
+      "commands": {
+        "hlp": {
+          "description": "Каталог помощи"
+        },
+        "help": {
+          "description": "Каталог помощи"
+        }
+      }
+    },
+    "hotaru-config": {
+      "description": "Модуль конфигурации Hotaru",
+      "commands": {
+        "conf": {
+          "description": "Открыть настройки"
+        },
+        "config": {
+          "description": "Открыть настройки"
+        }
+      }
+    },
+    "translations": {
+      "description": "Управление переводами",
+      "commands": {
+        "lang": {
+          "description": "Показать или изменить язык"
+        },
+        "language": {
+          "description": "Показать или изменить язык"
+        }
+      }
+    },
+    "test-features": {
+      "description": "Тестовый модуль прокси и возможностей Hotaru",
+      "commands": {
+        "tfstatus": {
+          "description": "Пинг MTProto"
+        },
+        "tfhistory": {
+          "description": "Тест получения истории"
+        },
+        "tfstate": {
+          "description": "Тест состояния"
+        },
+        "tffile": {
+          "description": "Тест файлов"
+        },
+        "tfnet": {
+          "description": "Тест сети"
+        },
+        "tfbutton": {
+          "description": "Тест кнопок"
+        },
+        "tfmedia": {
+          "description": "Тест распознавания медиа"
+        },
+        "tfinlinerich": {
+          "description": "Тест inline Rich"
+        },
+        "tfrichboth": {
+          "description": "Тест двух Rich-транспортов"
+        }
+      }
     }
   },
   "commands": {

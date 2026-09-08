@@ -769,7 +769,9 @@ class Runtime:
             f"{command}: {manifest.command_details(command, language).get('description', '')}".rstrip(": ")
             for command in manifest.commands
         ) or "none"
-        capabilities = ", ".join(manifest.capabilities) if manifest.capabilities else "none"
+        capabilities = ", ".join(
+            self.t(f"kernel.capabilities.{item}", item) for item in manifest.capabilities
+        ) if manifest.capabilities else "none"
         return f"module: {manifest.module_id}\nversion: {manifest.version}\ncommands: {commands}\ncapabilities: {capabilities}\ndescription: {description}"
 
     def _command_mi(self, invocation: Any) -> str:

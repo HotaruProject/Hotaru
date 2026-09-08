@@ -10,5 +10,156 @@
       "invalid": "Непідтримувана мова: {language}",
       "changed": "Мову змінено на {language}"
     }
+  },
+  "kernel": {
+    "capabilities": {
+      "mt": "Прямий доступ до MTProto",
+      "state": "Постійне сховище стану",
+      "files": "Доступ до файлової системи",
+      "net": "Доступ до мережі"
+    },
+    "hotaru-kernel": {
+      "description": "Системні команди ядра Hotaru",
+      "commands": {
+        "ver": {
+          "description": "Версія Hotaru"
+        },
+        "st": {
+          "description": "Статус рантайму"
+        },
+        "ls": {
+          "description": "Список активних модулів"
+        },
+        "mi": {
+          "description": "Інфо про модуль"
+        },
+        "ld": {
+          "description": "Завантажити модуль"
+        },
+        "ul": {
+          "description": "Вивантажити модуль"
+        },
+        "rl": {
+          "description": "Перезавантажити модуль"
+        },
+        "rm": {
+          "description": "Видалити модуль"
+        },
+        "bk": {
+          "description": "Бекапи"
+        },
+        "bot": {
+          "description": "Статус inline-бота"
+        },
+        "trust": {
+          "description": "Довіряти модулю"
+        },
+        "untrust": {
+          "description": "Відкликати довіру"
+        },
+        "alias": {
+          "description": "Створити аліас"
+        },
+        "unalias": {
+          "description": "Видалити аліас"
+        }
+      }
+    },
+    "help": {
+      "description": "Модуль допомоги Hotaru",
+      "commands": {
+        "hlp": {
+          "description": "Каталог допомоги"
+        },
+        "help": {
+          "description": "Каталог допомоги"
+        }
+      }
+    },
+    "power": {
+      "description": "Керування юзерботом",
+      "commands": {
+        "restart": {
+          "description": "Перезапуск юзербота"
+        },
+        "stop": {
+          "description": "Призупинити юзербота"
+        },
+        "start": {
+          "description": "Відновити юзербота"
+        }
+      }
+    },
+    "hotaru-config": {
+      "description": "Модуль конфігурації Hotaru",
+      "commands": {
+        "conf": {
+          "description": "Відкрити налаштування"
+        },
+        "config": {
+          "description": "Відкрити налаштування"
+        }
+      }
+    },
+    "updater": {
+      "description": "Автооновлення Hotaru",
+      "commands": {
+        "upd": {
+          "description": "Перевірити і застосувати оновлення"
+        },
+        "updlog": {
+          "description": "Показати ченджлог"
+        },
+        "updoff": {
+          "description": "Вимкнути повідомлення про оновлення"
+        },
+        "updon": {
+          "description": "Увімкнути повідомлення про оновлення"
+        }
+      }
+    },
+    "translations": {
+      "description": "Керування перекладами",
+      "commands": {
+        "lang": {
+          "description": "Показати або змінити мову"
+        },
+        "language": {
+          "description": "Показати або змінити мову"
+        }
+      }
+    },
+    "test-features": {
+      "description": "Тестовий модуль проксі та можливостей Hotaru",
+      "commands": {
+        "tfstatus": {
+          "description": "Пінг MTProto"
+        },
+        "tfhistory": {
+          "description": "Тест отримання історії"
+        },
+        "tfstate": {
+          "description": "Тест стану"
+        },
+        "tffile": {
+          "description": "Тест файлів"
+        },
+        "tfnet": {
+          "description": "Тест мережі"
+        },
+        "tfbutton": {
+          "description": "Тест кнопок"
+        },
+        "tfmedia": {
+          "description": "Тест медіа"
+        },
+        "tfinlinerich": {
+          "description": "Тест inline Rich"
+        },
+        "tfrichboth": {
+          "description": "Тест двох Rich-транспортів"
+        }
+      }
+    }
   }
 }

@@ -3,7 +3,6 @@ HOTARU = {
     "version": "1.1.0",
     "description": "Hotaru Help Module",
     "commands": ["hlp", "help"],
-    "translations": {'en': {'description': 'Hotaru help module', 'commands': {'hlp': {'description': 'Hlp'}, 'help': {'description': 'Help'}}}, 'ru': {'description': 'Модуль помощи Hotaru', 'commands': {'hlp': {'description': 'Hlp'}, 'help': {'description': 'Help'}}}, 'kz': {'description': 'Hotaru help module', 'commands': {'hlp': {'description': 'Hlp'}, 'help': {'description': 'Help'}}}, 'uk': {'description': 'Hotaru help module', 'commands': {'hlp': {'description': 'Hlp'}, 'help': {'description': 'Help'}}}, 'ja': {'description': 'Hotaru help module', 'commands': {'hlp': {'description': 'Hlp'}, 'help': {'description': 'Help'}}}},
     "capabilities": ["mt"],
 }
 
@@ -93,9 +92,8 @@ async def _show_help(ctx, invocation):
         localized = manifest.localized(runtime.language(), manifest.description)
         description = localized.get("description", manifest.description)
         commands = _command_line(runtime.config.prefix, manifest.commands)
-        capabilities = ", ".join(_escape(item) for item in manifest.capabilities) or "none"
+        capabilities = ", ".join(_escape(ctx.t(f"kernel.capabilities.{item}", item)) for item in manifest.capabilities) or "none"
         text = (
-            f'<tg-emoji emoji-id="5134452506935427991">🪐</tg-emoji> '
             f'<b>{_escape(manifest.module_id)}</b> <i>v{_escape(manifest.version)}</i>'
         )
         if description:
@@ -116,7 +114,7 @@ async def _show_help(ctx, invocation):
             plain = (
                 f'<b>{_escape(manifest.module_id)}</b> <i>v{_escape(manifest.version)}</i>'
                 + (f"<br><i>{_escape(description)}</i>" if description else "")
-                + f"<br>{commands or 'none'}<br><i>Capabilities: {capabilities}</i>"
+                + f"<br>{'<br>'.join(command_lines) or 'none'}<br><i>Capabilities: {capabilities}</i>"
             )
             await ctx.respond(plain, rich=False, parse_mode="HTML")
         return

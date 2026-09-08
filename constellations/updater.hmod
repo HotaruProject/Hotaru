@@ -3,7 +3,6 @@ HOTARU = {
     "version": "1.0.0",
     "description": "Hotaru self-updater: changelog, update confirmation, git pull, deps, restart",
     "commands": ["upd", "updlog", "updoff", "updon"],
-    "translations": {'en': {'description': 'Hotaru self-updater', 'commands': {'upd': {'description': 'Upd'}, 'updlog': {'description': 'Updlog'}, 'updoff': {'description': 'Updoff'}, 'updon': {'description': 'Updon'}}}, 'ru': {'description': 'Автообновление Hotaru', 'commands': {'upd': {'description': 'Upd'}, 'updlog': {'description': 'Updlog'}, 'updoff': {'description': 'Updoff'}, 'updon': {'description': 'Updon'}}}, 'kz': {'description': 'Hotaru self-updater', 'commands': {'upd': {'description': 'Upd'}, 'updlog': {'description': 'Updlog'}, 'updoff': {'description': 'Updoff'}, 'updon': {'description': 'Updon'}}}, 'uk': {'description': 'Hotaru self-updater', 'commands': {'upd': {'description': 'Upd'}, 'updlog': {'description': 'Updlog'}, 'updoff': {'description': 'Updoff'}, 'updon': {'description': 'Updon'}}}, 'ja': {'description': 'Hotaru self-updater', 'commands': {'upd': {'description': 'Upd'}, 'updlog': {'description': 'Updlog'}, 'updoff': {'description': 'Updoff'}, 'updon': {'description': 'Updon'}}}},
     "capabilities": ["net"],
     "tasks": {
         "poller": {"interval": 300, "autostart": True},

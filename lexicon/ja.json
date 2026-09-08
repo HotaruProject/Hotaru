@@ -10,5 +10,156 @@
       "invalid": "サポートされていない言語: {language}",
       "changed": "言語を {language} に変更しました"
     }
+  },
+  "kernel": {
+    "capabilities": {
+      "mt": "MTProto直接アクセス",
+      "state": "永続状態ストレージ",
+      "files": "ファイルシステムアクセス",
+      "net": "ネットワークアクセス"
+    },
+    "hotaru-kernel": {
+      "description": "Hotaru カーネルのシステムコマンド",
+      "commands": {
+        "ver": {
+          "description": "Hotaruのバージョン"
+        },
+        "st": {
+          "description": "ランタイム状態"
+        },
+        "ls": {
+          "description": "アクティブモジュール一覧"
+        },
+        "mi": {
+          "description": "モジュール情報"
+        },
+        "ld": {
+          "description": "モジュール読み込み"
+        },
+        "ul": {
+          "description": "モジュール削除"
+        },
+        "rl": {
+          "description": "モジュール再読み込み"
+        },
+        "rm": {
+          "description": "モジュール削除（完全）"
+        },
+        "bk": {
+          "description": "バックアップ"
+        },
+        "bot": {
+          "description": "インラインボット状態"
+        },
+        "trust": {
+          "description": "モジュールを信頼"
+        },
+        "untrust": {
+          "description": "信頼を取り消す"
+        },
+        "alias": {
+          "description": "エイリアス設定"
+        },
+        "unalias": {
+          "description": "エイリアス削除"
+        }
+      }
+    },
+    "help": {
+      "description": "Hotaru ヘルプモジュール",
+      "commands": {
+        "hlp": {
+          "description": "ヘルプカタログ"
+        },
+        "help": {
+          "description": "ヘルプカタログ"
+        }
+      }
+    },
+    "power": {
+      "description": "電源管理",
+      "commands": {
+        "restart": {
+          "description": "ユーザーボット再起動"
+        },
+        "stop": {
+          "description": "ユーザーボット停止"
+        },
+        "start": {
+          "description": "ユーザーボット再開"
+        }
+      }
+    },
+    "hotaru-config": {
+      "description": "Hotaru 設定モジュール",
+      "commands": {
+        "conf": {
+          "description": "設定を開く"
+        },
+        "config": {
+          "description": "設定を開く"
+        }
+      }
+    },
+    "updater": {
+      "description": "Hotaru 自動更新",
+      "commands": {
+        "upd": {
+          "description": "更新の確認と適用"
+        },
+        "updlog": {
+          "description": "変更ログ表示"
+        },
+        "updoff": {
+          "description": "更新通知を無効化"
+        },
+        "updon": {
+          "description": "更新通知を有効化"
+        }
+      }
+    },
+    "translations": {
+      "description": "翻訳設定",
+      "commands": {
+        "lang": {
+          "description": "言語を表示または変更"
+        },
+        "language": {
+          "description": "言語を表示または変更"
+        }
+      }
+    },
+    "test-features": {
+      "description": "Hotaru プロキシと機能のテストモジュール",
+      "commands": {
+        "tfstatus": {
+          "description": "MTProto ping"
+        },
+        "tfhistory": {
+          "description": "履歴取得テスト"
+        },
+        "tfstate": {
+          "description": "状態テスト"
+        },
+        "tffile": {
+          "description": "ファイルテスト"
+        },
+        "tfnet": {
+          "description": "ネットワークテスト"
+        },
+        "tfbutton": {
+          "description": "ボタンテスト"
+        },
+        "tfmedia": {
+          "description": "メディアテスト"
+        },
+        "tfinlinerich": {
+          "description": "Inline Richテスト"
+        },
+        "tfrichboth": {
+          "description": "デュアルRichテスト"
+        }
+      }
+    }
   }
 }

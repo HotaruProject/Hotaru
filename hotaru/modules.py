@@ -43,7 +43,10 @@ class ModuleManifest:
             object.__setattr__(self, "translations", {})
 
     def localized(self, language: str, fallback: str | None = None) -> dict[str, Any]:
-        selected = self.translations.get(language) or self.translations.get("en") or {}
+        if self.translations:
+            selected = self.translations.get(language) or self.translations.get("en") or {}
+        else:
+            selected = _kernel_lexicon_lookup(self.module_id, language)
         result = dict(selected) if isinstance(selected, dict) else {}
         if "description" not in result and fallback is not None:
             result["description"] = fallback
@@ -55,9 +58,46 @@ class ModuleManifest:
         details = commands.get(command, {}) if isinstance(commands, dict) else {}
         if not isinstance(details, dict):
             details = {}
-        if "description" not in details and fallback is not None:
-            details = {"description": fallback, **details}
+        if "description" not in details:
+            details = {"description": _kernel_command_description(self.module_id, command, language) or fallback, **details}
         return {key: value for key, value in details.items() if isinstance(key, str) and isinstance(value, str)}
+
+
+_KERNEL_LEXICON: Any = None
+
+
+def _kernel_lexicon() -> Any:
+    global _KERNEL_LEXICON
+    if _KERNEL_LEXICON is None:
+        from .i18n import Lexicon
+
+        root = Path(__file__).resolve().parent
+        bundled = root / "lexicon"
+        _KERNEL_LEXICON = Lexicon(bundled if bundled.is_dir() else root.parent / "lexicon")
+    return _KERNEL_LEXICON
+
+
+def _kernel_lexicon_lookup(module_id: str, language: str) -> dict[str, Any]:
+    try:
+        payload = _kernel_lexicon().bundle(language)
+        block = payload.get("kernel", {}).get(module_id)
+        if isinstance(block, dict):
+            return block
+    except Exception:
+        pass
+    return {}
+
+
+def _kernel_command_description(module_id: str, command: str, language: str) -> str | None:
+    try:
+        payload = _kernel_lexicon().bundle(language)
+        commands = payload.get("kernel", {}).get(module_id, {}).get("commands", {})
+        entry = commands.get(command) if isinstance(commands, dict) else None
+        if isinstance(entry, dict) and isinstance(entry.get("description"), str):
+            return entry["description"]
+    except Exception:
+        pass
+    return None
 
 
 @dataclass(frozen=True, slots=True)

@@ -3,7 +3,6 @@ HOTARU = {
     "version": "1.0.0",
     "description": "High-level power management (restart, stop, start)",
     "commands": ["restart", "stop", "start"],
-    "translations": {'en': {'description': 'Power management', 'commands': {'restart': {'description': 'Restart'}, 'stop': {'description': 'Stop'}, 'start': {'description': 'Start'}}}, 'ru': {'description': 'Управление юзерботом', 'commands': {'restart': {'description': 'Restart'}, 'stop': {'description': 'Stop'}, 'start': {'description': 'Start'}}}, 'kz': {'description': 'Power management', 'commands': {'restart': {'description': 'Restart'}, 'stop': {'description': 'Stop'}, 'start': {'description': 'Start'}}}, 'uk': {'description': 'Power management', 'commands': {'restart': {'description': 'Restart'}, 'stop': {'description': 'Stop'}, 'start': {'description': 'Start'}}}, 'ja': {'description': 'Power management', 'commands': {'restart': {'description': 'Restart'}, 'stop': {'description': 'Stop'}, 'start': {'description': 'Start'}}}},
     "capabilities": ["mt"],
 }
 
