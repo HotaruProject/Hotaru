@@ -11,15 +11,6 @@
     "unknown_error": "Unknown error"
   },
   "kernel": {
-    "help": {
-      "title": "Hotaru Help",
-      "modules": "Modules",
-      "kernel_modules": "Kernel Modules",
-      "user_modules": "User Modules",
-      "commands": "Commands",
-      "capabilities": "Capabilities",
-      "module_count": "Hotaru Help · {count} modules"
-    },
     "config": {
       "title": "Configuration",
       "no_modules": "No configurable modules found",
@@ -34,7 +25,19 @@
       "stopped_details": "Regular modules are disabled, but kernel commands such as {prefix}start continue to work.",
       "already_started": "Userbot is already running.",
       "started": "Userbot started. All command processing has resumed.",
-      "restarting": "Restarting userbot..."
+      "restarting": "Restarting userbot...",
+      "description": "Power management",
+      "commands": {
+        "restart": {
+          "description": "Restart userbot"
+        },
+        "stop": {
+          "description": "Suspend userbot"
+        },
+        "start": {
+          "description": "Resume userbot"
+        }
+      }
     },
     "updater": {
       "unavailable": "Runtime unavailable",
@@ -43,7 +46,22 @@
       "downloading": "Downloading update…",
       "syncing": "Syncing dependencies…",
       "restarting": "Updated to {commit}. Restarting…",
-      "updated": "Hotaru updated in {seconds}s"
+      "updated": "Hotaru updated in {seconds}s",
+      "description": "Hotaru self-updater",
+      "commands": {
+        "upd": {
+          "description": "Check and apply update"
+        },
+        "updlog": {
+          "description": "Show update changelog"
+        },
+        "updoff": {
+          "description": "Disable update notifications"
+        },
+        "updon": {
+          "description": "Enable update notifications"
+        }
+      }
     },
     "kernel": {
       "runtime_unavailable": "Runtime unavailable",
@@ -53,6 +71,124 @@
       "alias_set": "Alias set: {alias} → {command}",
       "alias_removed": "Alias removed: {alias}",
       "alias_not_found": "Alias not found: {alias}"
+    },
+    "capabilities": {
+      "mt": "Direct MTProto access",
+      "state": "Persistent state storage",
+      "files": "File system access",
+      "net": "Network access"
+    },
+    "hotaru-kernel": {
+      "description": "Hotaru kernel — system commands",
+      "commands": {
+        "ver": {
+          "description": "Show Hotaru version"
+        },
+        "st": {
+          "description": "Runtime status"
+        },
+        "ls": {
+          "description": "List active modules"
+        },
+        "mi": {
+          "description": "Module info"
+        },
+        "ld": {
+          "description": "Load module"
+        },
+        "ul": {
+          "description": "Unload module"
+        },
+        "rl": {
+          "description": "Reload module"
+        },
+        "rm": {
+          "description": "Remove module"
+        },
+        "bk": {
+          "description": "Backups"
+        },
+        "bot": {
+          "description": "Inline bot status"
+        },
+        "trust": {
+          "description": "Trust module"
+        },
+        "untrust": {
+          "description": "Untrust module"
+        },
+        "alias": {
+          "description": "Set command alias"
+        },
+        "unalias": {
+          "description": "Remove alias"
+        }
+      }
+    },
+    "help": {
+      "description": "Hotaru help module",
+      "commands": {
+        "hlp": {
+          "description": "Show help catalog"
+        },
+        "help": {
+          "description": "Show help catalog"
+        }
+      }
+    },
+    "hotaru-config": {
+      "description": "Hotaru configuration module",
+      "commands": {
+        "conf": {
+          "description": "Open settings"
+        },
+        "config": {
+          "description": "Open settings"
+        }
+      }
+    },
+    "translations": {
+      "description": "Translation management",
+      "commands": {
+        "lang": {
+          "description": "Show or change language"
+        },
+        "language": {
+          "description": "Show or change language"
+        }
+      }
+    },
+    "test-features": {
+      "description": "Hotaru proxy and capability test module",
+      "commands": {
+        "tfstatus": {
+          "description": "MTProto ping"
+        },
+        "tfhistory": {
+          "description": "History fetch test"
+        },
+        "tfstate": {
+          "description": "State persistence test"
+        },
+        "tffile": {
+          "description": "Files capability test"
+        },
+        "tfnet": {
+          "description": "Network capability test"
+        },
+        "tfbutton": {
+          "description": "Callback button test"
+        },
+        "tfmedia": {
+          "description": "Media detection test"
+        },
+        "tfinlinerich": {
+          "description": "Inline Rich test"
+        },
+        "tfrichboth": {
+          "description": "Dual Rich transport test"
+        }
+      }
     }
   },
   "commands": {

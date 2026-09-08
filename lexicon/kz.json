@@ -10,5 +10,156 @@
       "invalid": "Қолдау көрсетілмейтін тіл: {language}",
       "changed": "Тіл {language} болып өзгертілді"
     }
+  },
+  "kernel": {
+    "capabilities": {
+      "mt": "MTProto тікелей қол жеткізу",
+      "state": "Тұрақты күй сақтауы",
+      "files": "Файлдық жүйеге қол жеткізу",
+      "net": "Желіге қол жеткізу"
+    },
+    "hotaru-kernel": {
+      "description": "Hotaru ядросының жүйелік командалары",
+      "commands": {
+        "ver": {
+          "description": "Hotaru нұсқасы"
+        },
+        "st": {
+          "description": "Рантайм күйі"
+        },
+        "ls": {
+          "description": "Белсенді модульдер"
+        },
+        "mi": {
+          "description": "Модуль туралы ақпарат"
+        },
+        "ld": {
+          "description": "Модуль жүктеу"
+        },
+        "ul": {
+          "description": "Модульді алу"
+        },
+        "rl": {
+          "description": "Модульді қайта жүктеу"
+        },
+        "rm": {
+          "description": "Модульді өшіру"
+        },
+        "bk": {
+          "description": "Бэкаптар"
+        },
+        "bot": {
+          "description": "Inline-бот күйі"
+        },
+        "trust": {
+          "description": "Модульге сену"
+        },
+        "untrust": {
+          "description": "Сенімді қайтару"
+        },
+        "alias": {
+          "description": "Алиас жасау"
+        },
+        "unalias": {
+          "description": "Алиасті өшіру"
+        }
+      }
+    },
+    "help": {
+      "description": "Hotaru көмек модулі",
+      "commands": {
+        "hlp": {
+          "description": "Көмек каталогы"
+        },
+        "help": {
+          "description": "Көмек каталогы"
+        }
+      }
+    },
+    "power": {
+      "description": "Қуатты басқару",
+      "commands": {
+        "restart": {
+          "description": "Юзерботты қайта қосу"
+        },
+        "stop": {
+          "description": "Юзерботты тоқтату"
+        },
+        "start": {
+          "description": "Юзерботты жалғастыру"
+        }
+      }
+    },
+    "hotaru-config": {
+      "description": "Hotaru конфигурация модулі",
+      "commands": {
+        "conf": {
+          "description": "Параметрлерді ашу"
+        },
+        "config": {
+          "description": "Параметрлерді ашу"
+        }
+      }
+    },
+    "updater": {
+      "description": "Hotaru жаңарту",
+      "commands": {
+        "upd": {
+          "description": "Жаңартуды тексеру және қолдану"
+        },
+        "updlog": {
+          "description": "Өзгерістер тізімі"
+        },
+        "updoff": {
+          "description": "Жаңарту хабарламаларын өшіру"
+        },
+        "updon": {
+          "description": "Жаңарту хабарламаларын қосу"
+        }
+      }
+    },
+    "translations": {
+      "description": "Аудармаларды басқару",
+      "commands": {
+        "lang": {
+          "description": "Тілді көрсету немесе өзгерту"
+        },
+        "language": {
+          "description": "Тілді көрсету немесе өзгерту"
+        }
+      }
+    },
+    "test-features": {
+      "description": "Hotaru прокси және мүмкіндік тесті",
+      "commands": {
+        "tfstatus": {
+          "description": "MTProto пингі"
+        },
+        "tfhistory": {
+          "description": "Тарих алу тесті"
+        },
+        "tfstate": {
+          "description": "Күй тесті"
+        },
+        "tffile": {
+          "description": "Файлдар тесті"
+        },
+        "tfnet": {
+          "description": "Желі тесті"
+        },
+        "tfbutton": {
+          "description": "Батырма тесті"
+        },
+        "tfmedia": {
+          "description": "Медиа тесті"
+        },
+        "tfinlinerich": {
+          "description": "Inline Rich тесті"
+        },
+        "tfrichboth": {
+          "description": "Қос Rich тесті"
+        }
+      }
+    }
   }
 }
