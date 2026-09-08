@@ -267,12 +267,18 @@ wheels = [
 
 [[package]]
 name = "goygram"
-version = "0.7.65"
-source = { git = "https://github.com/GoyGram/GoyGram.git?rev=f86c58bf683386a5fdf23a9a9dd141605e27722f#f86c58bf683386a5fdf23a9a9dd141605e27722f" }
+version = "0.7.68"
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiohttp" },
     { name = "qrcode" },
     { name = "rich" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/d3/df/17916d1a3ed8f755cac4109c27b094c12c17ff336bf3eaf4acc5bbd1e1a5/goygram-0.7.68.tar.gz", hash = "sha256:240e7ea54794ff94b5e57b30c7993a685486e1b6e62c5e6cec88d01e9a9c644a", size = 84845, upload-time = "2026-09-08T02:00:36.118Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/7f/7c/3662001007cf4f96161a4a0129a223024931a2dce19e30459b7fa765264e/goygram-0.7.68-cp311-abi3-macosx_11_0_arm64.whl", hash = "sha256:142a28c0a7635553bff1d0a34326ae677d3acf8d5daae6fc25022e4cc0efc9e6", size = 371025, upload-time = "2026-09-08T02:00:31.143Z" },
+    { url = "https://files.pythonhosted.org/packages/f8/5e/6f97c753fe2e7daea1bdec266eed079b98f981449c4cb9c32341381128d0/goygram-0.7.68-cp311-abi3-manylinux_2_34_x86_64.whl", hash = "sha256:5e53a18b45fb24dde9adb465426e5b2dc536ce0964eea565aacd0c914e24206d", size = 400620, upload-time = "2026-09-08T02:00:33.302Z" },
+    { url = "https://files.pythonhosted.org/packages/9a/ba/2de2e12640573e3ddbc572b9e17991615674ea4dbfbacab972593658dc85/goygram-0.7.68-cp311-abi3-win_amd64.whl", hash = "sha256:f2f64d7b35f29debe6924d9cf658c1a402d5602a1079da3510be0b24a74df652", size = 314921, upload-time = "2026-09-08T02:00:34.795Z" },
 ]
 
 [[package]]
@@ -284,7 +290,7 @@ dependencies = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "goygram", git = "https://github.com/GoyGram/GoyGram.git?rev=f86c58bf683386a5fdf23a9a9dd141605e27722f" }]
+requires-dist = [{ name = "goygram", specifier = ">=0.7.66" }]
 
 [[package]]
 name = "idna"

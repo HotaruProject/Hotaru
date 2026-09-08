@@ -394,7 +394,7 @@ class BotGateway:
         return await self.call("sendRichMessageDraft", chat_id=chat_id, draft_id=draft_id, rich_message={"_": "inputRichMessageHTML", "html": __import__("re").sub(r"\n(?![^<]*>)", "<br>", html_text)}, **kwargs)
 
     async def inline_answer(self, query: Any, results: list[dict[str, Any]], **kwargs: Any) -> Any:
-        return await query.answer(results, **kwargs)
+        return await query.answer(results=results, **kwargs)
 
     async def inline_edit(self, inline_message_id: str, html_text: str, *, buttons: Any = None, **kwargs: Any) -> Any:
         data = {"inline_message_id": inline_message_id, "rich_message": {"_": "inputRichMessageHTML", "html": __import__("re").sub(r"\n(?![^<]*>)", "<br>", html_text)}, **kwargs}
@@ -431,7 +431,7 @@ class InlineHelper:
         return self.rich(result_id or secrets.token_urlsafe(10), title, html_text, buttons=buttons, description=description, **kw)
 
     async def answer(self, query: Any, results: list[dict[str, Any]], **kw: Any) -> Any:
-        return await query.answer(results, **kw)
+        return await query.answer(results=results, **kw)
 
     def photo(self, result_id: str, title: str, photo: str, *, caption: str = "", buttons: Any = None, **kw: Any) -> dict[str, Any]:
         result = {"type": "photo", "id": result_id, "title": title, "photo_url": photo, "thumbnail_url": photo, "caption": caption, "parse_mode": "HTML", **kw}

@@ -45,14 +45,14 @@ class InputContext:
         self.inline_message_id = None
 
     async def reject(self, text: str = "Invalid value") -> Any:
-        return await self.query.answer([], cache_time=0, is_personal=True)
+        return await self.query.answer(results=[], cache_time=0, is_personal=True)
 
     async def submit(self, text: str | None = None, **kwargs: Any) -> Any:
         return await self.answer(text, **kwargs)
 
     async def answer(self, text: str | None = None, **kwargs: Any) -> Any:
         if text:
-            return await self.query.answer([], cache_time=0, is_personal=True)
+            return await self.query.answer(results=[], cache_time=0, is_personal=True)
         return None
 
     async def edit(self, text: str, **kwargs: Any) -> Any:
@@ -632,7 +632,7 @@ class Runtime:
             if request is not None and value and request[3] > time.monotonic():
                 handler, payload, source, _, placeholder = request
                 if value == placeholder:
-                    await query.answer([], cache_time=0, is_personal=True)
+                    await query.answer(results=[], cache_time=0, is_personal=True)
                     return
                 try:
                     result = handler(InputContext(self, source, query, value, payload), value, payload)
@@ -646,7 +646,7 @@ class Runtime:
                         self._input_requests.pop(key.split(":", 1)[1], None)
             elif request is not None and request[3] <= time.monotonic() and self._input_requests is not None:
                 self._input_requests.pop(key.split(":", 1)[1], None)
-            await query.answer([], cache_time=0, is_personal=True)
+            await query.answer(results=[], cache_time=0, is_personal=True)
             return
         if text.startswith("hotaru-form:"):
             nonce = text.split(":", 1)[1]
@@ -654,13 +654,13 @@ class Runtime:
             if self.observatory is not None:
                 self.observatory.emit("inline", "form_lookup", nonce=nonce, found=form is not None)
             if form is None:
-                await query.answer([], cache_time=0, is_personal=True)
+                await query.answer(results=[], cache_time=0, is_personal=True)
                 return
             form_text, buttons = form
             result = InlineObj.article("hotaru-form", "Hotaru form", form_text)
             result["input_message_content"] = {"rich_message": {"_": "inputRichMessageHTML", "html": __import__("re").sub(r"\n(?![^<]*>)", "<br>", form_text)}}
             result["reply_markup"] = {"inline_keyboard": buttons}
-            await query.answer([result], cache_time=0, is_personal=True)
+            await query.answer(results=[result], cache_time=0, is_personal=True)
             if self.observatory is not None:
                 self.observatory.emit("inline", "form_answered", buttons=len(buttons))
             return
@@ -677,7 +677,7 @@ class Runtime:
             results.append(InlineObj.article("hotaru-hlp", "Help", "Send !hlp to list modules", description="Command catalog"))
         if not lowered or "ver" in lowered:
             results.append(InlineObj.article("hotaru-ver", "Version", f"Hotaru {__version__}", description="Kernel version"))
-        await query.answer(results, cache_time=0, is_personal=True)
+        await query.answer(results=results, cache_time=0, is_personal=True)
 
     async def _render_inline_form(self, query: Any) -> None:
         text = str(query.query or "")
@@ -685,10 +685,10 @@ class Runtime:
             return
         form = self._inline_forms.get(text.split(":", 1)[1])
         if form is None:
-            await query.answer([], cache_time=0, is_personal=True)
+            await query.answer(results=[], cache_time=0, is_personal=True)
             return
         body, buttons = form
-        await query.answer([InlineObj.article("hotaru-form", "Hotaru form", body, kbd={"inline_keyboard": [buttons]})], cache_time=0, is_personal=True)
+        await query.answer(results=[InlineObj.article("hotaru-form", "Hotaru form", body, kbd={"inline_keyboard": [buttons]})], cache_time=0, is_personal=True)
 
     async def _on_inline_callback(self, callback: Any) -> None:
         if self.security is None or self.callbacks is None:
