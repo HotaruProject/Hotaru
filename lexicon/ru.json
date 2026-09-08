@@ -1,0 +1,81 @@
+{
+  "meta": {
+    "language": "ru",
+    "name": "Русский"
+  },
+  "common": {
+    "ok": "ОК",
+    "cancel": "Отмена",
+    "close": "Закрыть",
+    "back": "Назад",
+    "unknown_error": "Неизвестная ошибка"
+  },
+  "kernel": {
+    "help": {
+      "title": "Помощь Hotaru",
+      "modules": "Модули",
+      "kernel_modules": "Модули ядра",
+      "user_modules": "Пользовательские модули",
+      "commands": "Команды",
+      "capabilities": "Возможности",
+      "module_count": "Помощь Hotaru · модулей: {count}"
+    },
+    "config": {
+      "title": "Конфигурация",
+      "no_modules": "Настраиваемых модулей нет",
+      "select_module": "Выберите модуль для настройки",
+      "page": "Страница {page} из {total}",
+      "module": "Модуль",
+      "edit": "Изменить {key}"
+    },
+    "power": {
+      "already_stopped": "Юзербот уже остановлен.",
+      "stopped": "Юзербот остановлен.",
+      "stopped_details": "Обычные модули отключены, но команды ядра, например {prefix}start, продолжают работать.",
+      "already_started": "Юзербот уже запущен.",
+      "started": "Юзербот запущен. Обработка команд возобновлена.",
+      "restarting": "Перезапускаю юзербот..."
+    },
+    "updater": {
+      "unavailable": "Runtime недоступен",
+      "up_to_date": "Hotaru уже обновлён",
+      "update_available": "Доступно обновление Hotaru",
+      "downloading": "Скачиваю обновление…",
+      "syncing": "Обновляю зависимости…",
+      "restarting": "Обновлено до {commit}. Перезапускаю…",
+      "updated": "Hotaru обновлён за {seconds} с"
+    },
+    "kernel": {
+      "runtime_unavailable": "Runtime недоступен",
+      "modules_unavailable": "Модули недоступны",
+      "modules_none": "Модулей нет",
+      "usage": "Использование: {usage}",
+      "alias_set": "Алиас установлен: {alias} → {command}",
+      "alias_removed": "Алиас удалён: {alias}",
+      "alias_not_found": "Алиас не найден: {alias}"
+    }
+  },
+  "commands": {
+    "hlp": {
+      "description": "Показать помощь",
+      "usage": "{prefix}hlp [id-модуля]"
+    },
+    "help": {
+      "description": "Показать помощь",
+      "usage": "{prefix}help [id-модуля]"
+    },
+    "lang": {
+      "description": "Показать или изменить язык",
+      "usage": "{prefix}lang [language]",
+      "invalid": "Неподдерживаемый язык: {language}",
+      "changed": "Язык изменён на {language}"
+    }
+  },
+  "languages": {
+    "ru": "Русский",
+    "en": "Английский",
+    "kz": "Казахский",
+    "uk": "Украинский",
+    "ja": "Японский"
+  }
+}

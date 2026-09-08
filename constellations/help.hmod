@@ -3,6 +3,7 @@ HOTARU = {
     "version": "1.1.0",
     "description": "Hotaru Help Module",
     "commands": ["hlp", "help"],
+    "translations": {'en': {'description': 'Hotaru help module', 'commands': {'hlp': {'description': 'Hlp'}, 'help': {'description': 'Help'}}}, 'ru': {'description': 'Модуль помощи Hotaru', 'commands': {'hlp': {'description': 'Hlp'}, 'help': {'description': 'Help'}}}, 'kz': {'description': 'Hotaru help module', 'commands': {'hlp': {'description': 'Hlp'}, 'help': {'description': 'Help'}}}, 'uk': {'description': 'Hotaru help module', 'commands': {'hlp': {'description': 'Hlp'}, 'help': {'description': 'Help'}}}, 'ja': {'description': 'Hotaru help module', 'commands': {'hlp': {'description': 'Hlp'}, 'help': {'description': 'Help'}}}},
     "capabilities": ["mt"],
 }
 
@@ -26,12 +27,16 @@ def _module_line(runtime, module_id, manifest, kernel):
     marker = "4974681956907221809" if kernel else "4974508259839836856"
     name = f'<tg-emoji emoji-id="{marker}">▪️</tg-emoji> <code>{_escape(module_id)}</code>'
     commands = _command_line(prefix, manifest.commands)
-    return f"<p>{name}{commands}</p>"
+    description = manifest.localized(runtime.language(), manifest.description).get("description", "")
+    suffix = f"<br><i>{_escape(description)}</i>" if description else ""
+    return f"<p>{suffix[4:] + '<br>' if suffix else ''}{name}{commands}</p>"
 
 
 def _plain_module_line(runtime, module_id, manifest):
     commands = _command_line(runtime.config.prefix, manifest.commands)
-    return f"<code>{_escape(module_id)}</code>{commands}"
+    description = manifest.localized(runtime.language(), manifest.description).get("description", "")
+    suffix = f"<br><i>{_escape(description)}</i>" if description else ""
+    return f"{suffix[4:] + '<br>' if suffix else ''}<code>{_escape(module_id)}</code>{commands}"
 
 
 def _plain_section(lines):
@@ -85,22 +90,32 @@ async def _show_help(ctx, invocation):
             return
 
         manifest = active.loaded.manifest
+        localized = manifest.localized(runtime.language(), manifest.description)
+        description = localized.get("description", manifest.description)
         commands = _command_line(runtime.config.prefix, manifest.commands)
         capabilities = ", ".join(_escape(item) for item in manifest.capabilities) or "none"
         text = (
             f'<tg-emoji emoji-id="5134452506935427991">🪐</tg-emoji> '
             f'<b>{_escape(manifest.module_id)}</b> <i>v{_escape(manifest.version)}</i>'
         )
-        if manifest.description:
-            text += f"<br><i>{_escape(manifest.description)}</i>"
-        text += f"<details><summary>Commands</summary><p>{commands or 'none'}</p></details>"
-        text += f"<details><summary>Capabilities</summary><p>{capabilities}</p></details>"
+        if description:
+            text += f"<br><i>{_escape(description)}</i>"
+        command_lines = []
+        for command in manifest.commands:
+            details = manifest.command_details(command, runtime.language())
+            command_description = details.get("description", "")
+            line = f"<code>{_escape(runtime.config.prefix)}{_escape(command)}</code>"
+            if command_description:
+                line += f" — {_escape(command_description)}"
+            command_lines.append(line)
+        text += f"<details><summary>{_escape(ctx.t('kernel.help.commands'))}</summary><p>{'<br>'.join(command_lines) or 'none'}</p></details>"
+        text += f"<details><summary>{_escape(ctx.t('kernel.help.capabilities'))}</summary><p>{capabilities}</p></details>"
         if premium:
             await ctx.respond(text, parse_mode="HTML")
         else:
             plain = (
                 f'<b>{_escape(manifest.module_id)}</b> <i>v{_escape(manifest.version)}</i>'
-                + (f"<br><i>{_escape(manifest.description)}</i>" if manifest.description else "")
+                + (f"<br><i>{_escape(description)}</i>" if description else "")
                 + f"<br>{commands or 'none'}<br><i>Capabilities: {capabilities}</i>"
             )
             await ctx.respond(plain, rich=False, parse_mode="HTML")
@@ -141,17 +156,17 @@ async def _show_help(ctx, invocation):
             )
 
     total = len(kernel_modules) + len(user_modules)
-    text = f"<b>Hotaru Help · {total} modules</b>"
+    text = f"<b>{_escape(ctx.t('kernel.help.module_count', count=total))}</b>"
 
     if kernel_modules:
         text += (
-            f"<details><summary>Kernel Modules ({len(kernel_modules)})</summary>"
+            f"<details><summary>{_escape(ctx.t('kernel.help.kernel_modules'))} ({len(kernel_modules)})</summary>"
             + "".join(kernel_modules)
             + "</details>"
         )
     if user_modules:
         text += (
-            f"<details><summary>User Modules ({len(user_modules)})</summary>"
+            f"<details><summary>{_escape(ctx.t('kernel.help.user_modules'))} ({len(user_modules)})</summary>"
             + "".join(user_modules)
             + "</details>"
         )
@@ -159,9 +174,9 @@ async def _show_help(ctx, invocation):
     if premium:
         await ctx.respond(text=text, parse_mode="HTML")
     else:
-        plain = f"<b>Hotaru Help · {total} modules</b>"
+        plain = f"<b>{_escape(ctx.t('kernel.help.module_count', count=total))}</b>"
         if kernel_modules:
-            plain += f"<br><b>Kernel Modules ({len(kernel_modules)})</b>" + _plain_section(kernel_modules)
+            plain += f"<br><b>{_escape(ctx.t('kernel.help.kernel_modules'))} ({len(kernel_modules)})</b>" + _plain_section(kernel_modules)
         if user_modules:
-            plain += f"<br><b>User Modules ({len(user_modules)})</b>" + _plain_section(user_modules)
+            plain += f"<br><b>{_escape(ctx.t('kernel.help.user_modules'))} ({len(user_modules)})</b>" + _plain_section(user_modules)
         await ctx.respond(text=plain, rich=False, parse_mode="HTML")

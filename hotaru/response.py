@@ -488,6 +488,15 @@ class ModuleContext:
         return HtmlHelper()
 
     @property
+    def i18n(self) -> Any:
+        if self.runtime is None or not hasattr(self.runtime, "translator"):
+            raise ResponseError("translation runtime is unavailable")
+        return self.runtime.translator()
+
+    def t(self, key: str, default: str | None = None, **params: Any) -> str:
+        return self.i18n.t(key, default, **params)
+
+    @property
     def tools(self) -> Any:
         from relay.toolkit import TOOLS
         return TOOLS

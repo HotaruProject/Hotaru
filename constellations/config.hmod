@@ -3,6 +3,7 @@ HOTARU = {
     "version": "1.0.0",
     "description": "Hotaru Config Module",
     "commands": ["conf", "config"],
+    "translations": {'en': {'description': 'Hotaru configuration module', 'commands': {'conf': {'description': 'Conf'}, 'config': {'description': 'Config'}}}, 'ru': {'description': 'Модуль конфигурации Hotaru', 'commands': {'conf': {'description': 'Conf'}, 'config': {'description': 'Config'}}}, 'kz': {'description': 'Hotaru configuration module', 'commands': {'conf': {'description': 'Conf'}, 'config': {'description': 'Config'}}}, 'uk': {'description': 'Hotaru configuration module', 'commands': {'conf': {'description': 'Conf'}, 'config': {'description': 'Config'}}}, 'ja': {'description': 'Hotaru configuration module', 'commands': {'conf': {'description': 'Conf'}, 'config': {'description': 'Config'}}}},
     "capabilities": ["mt"],
 }
 

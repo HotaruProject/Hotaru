@@ -4,6 +4,7 @@ from relay.inline import BotFatherConversation, InlineBotInfo, InlineError, Inli
 from .kernel import Kernel
 from .layouts import swap_layout
 from .modules import HmodLoader, LoadedModule, ModuleCatalog, ModuleFetchError, ModuleManifest, ModuleStager, ModuleValidationError
+from .i18n import Lexicon, TranslationError, Translator
 from .config import RuntimeConfig
 from .activation import ActivationError, ActiveModule, ModuleBinder, ModuleInstance, ModuleManager
 from .backup import BackupError, BackupService, RestorePlan
@@ -36,6 +37,9 @@ __all__ = [
     "ModuleManifest",
     "ModuleStager",
     "ModuleValidationError",
+    "Lexicon",
+    "TranslationError",
+    "Translator",
     "ActivationError",
     "ActiveModule",
     "ModuleBinder",

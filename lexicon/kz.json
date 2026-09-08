@@ -1,0 +1,14 @@
+{
+  "meta": {
+    "language": "kz",
+    "name": "Қазақша"
+  },
+  "commands": {
+    "lang": {
+      "description": "Тілді көрсету немесе өзгерту",
+      "usage": "{prefix}lang [language]",
+      "invalid": "Қолдау көрсетілмейтін тіл: {language}",
+      "changed": "Тіл {language} болып өзгертілді"
+    }
+  }
+}

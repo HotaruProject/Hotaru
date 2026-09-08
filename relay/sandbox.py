@@ -307,6 +307,24 @@ class SandboxContext:
         self._msg = payload
 
     @property
+    def i18n(self):
+        return SimpleNamespace(language=self._msg.get("language", "en"), t=self.t)
+
+    def t(self, key, default=None, **params):
+        value = self._msg.get("translations") or {}
+        for part in str(key).split("."):
+            if not isinstance(value, dict) or part not in value:
+                value = default if isinstance(default, str) else str(key)
+                break
+            value = value[part]
+        if not isinstance(value, str):
+            value = default if isinstance(default, str) else str(key)
+        try:
+            return value.format(**params)
+        except (KeyError, IndexError, ValueError):
+            return default if isinstance(default, str) else str(key)
+
+    @property
     def message(self):
         return SimpleNamespace(
             chat_id=self.chat_id,

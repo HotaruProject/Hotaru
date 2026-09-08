@@ -22,3 +22,4 @@ packages = ["hotaru", "relay"]
 
 [tool.hatch.build.targets.wheel.force-include]
 "constellations" = "hotaru/constellations"
+"lexicon" = "hotaru/lexicon"
