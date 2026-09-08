@@ -189,6 +189,14 @@
           "description": "Dual Rich transport test"
         }
       }
+    },
+    "help_ui": {
+      "module_count": "Hotaru Help · {count} modules",
+      "kernel_modules": "Kernel Modules",
+      "user_modules": "User Modules",
+      "commands": "Commands",
+      "capabilities": "Capabilities",
+      "untrusted": "untrusted"
     }
   },
   "commands": {

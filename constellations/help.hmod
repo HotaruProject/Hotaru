@@ -106,8 +106,8 @@ async def _show_help(ctx, invocation):
             if command_description:
                 line += f" — {_escape(command_description)}"
             command_lines.append(line)
-        text += f"<details><summary>{_escape(ctx.t('kernel.help.commands'))}</summary><p>{'<br>'.join(command_lines) or 'none'}</p></details>"
-        text += f"<details><summary>{_escape(ctx.t('kernel.help.capabilities'))}</summary><p>{capabilities}</p></details>"
+        text += f"<details><summary>{_escape(ctx.t('kernel.help_ui.commands'))}</summary><p>{'<br>'.join(command_lines) or 'none'}</p></details>"
+        text += f"<details><summary>{_escape(ctx.t('kernel.help_ui.capabilities'))}</summary><p>{capabilities}</p></details>"
         if premium:
             await ctx.respond(text, parse_mode="HTML")
         else:
@@ -142,8 +142,8 @@ async def _show_help(ctx, invocation):
             else:
                 user_modules.append(
                     f'<p><tg-emoji emoji-id="5404553572727660202">❌</tg-emoji> '
-                    f'<code>{_escape(module_id)}</code> <i>(untrusted)</i></p>'
-                    if premium else f'<code>{_escape(module_id)}</code> <i>(untrusted)</i>'
+                    f'<code>{_escape(module_id)}</code> <i>({_escape(ctx.t("kernel.help_ui.untrusted"))})</i></p>'
+                    if premium else f'<code>{_escape(module_id)}</code> <i>({_escape(ctx.t("kernel.help_ui.untrusted"))})</i>'
                 )
     else:
         for name in sorted(runtime.kernel.registry.names(), key=str.casefold):
@@ -154,17 +154,17 @@ async def _show_help(ctx, invocation):
             )
 
     total = len(kernel_modules) + len(user_modules)
-    text = f"<b>{_escape(ctx.t('kernel.help.module_count', count=total))}</b>"
+    text = f"<b>{_escape(ctx.t('kernel.help_ui.module_count', count=total))}</b>"
 
     if kernel_modules:
         text += (
-            f"<details><summary>{_escape(ctx.t('kernel.help.kernel_modules'))} ({len(kernel_modules)})</summary>"
+            f"<details><summary>{_escape(ctx.t('kernel.help_ui.kernel_modules'))} ({len(kernel_modules)})</summary>"
             + "".join(kernel_modules)
             + "</details>"
         )
     if user_modules:
         text += (
-            f"<details><summary>{_escape(ctx.t('kernel.help.user_modules'))} ({len(user_modules)})</summary>"
+            f"<details><summary>{_escape(ctx.t('kernel.help_ui.user_modules'))} ({len(user_modules)})</summary>"
             + "".join(user_modules)
             + "</details>"
         )
@@ -172,9 +172,9 @@ async def _show_help(ctx, invocation):
     if premium:
         await ctx.respond(text=text, parse_mode="HTML")
     else:
-        plain = f"<b>{_escape(ctx.t('kernel.help.module_count', count=total))}</b>"
+        plain = f"<b>{_escape(ctx.t('kernel.help_ui.module_count', count=total))}</b>"
         if kernel_modules:
-            plain += f"<br><b>{_escape(ctx.t('kernel.help.kernel_modules'))} ({len(kernel_modules)})</b>" + _plain_section(kernel_modules)
+            plain += f"<br><b>{_escape(ctx.t('kernel.help_ui.kernel_modules'))} ({len(kernel_modules)})</b>" + _plain_section(kernel_modules)
         if user_modules:
-            plain += f"<br><b>{_escape(ctx.t('kernel.help.user_modules'))} ({len(user_modules)})</b>" + _plain_section(user_modules)
+            plain += f"<br><b>{_escape(ctx.t('kernel.help_ui.user_modules'))} ({len(user_modules)})</b>" + _plain_section(user_modules)
         await ctx.respond(text=plain, rich=False, parse_mode="HTML")

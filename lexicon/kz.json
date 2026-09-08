@@ -160,6 +160,14 @@
           "description": "Қос Rich тесті"
         }
       }
+    },
+    "help_ui": {
+      "module_count": "Hotaru көмегі · модульдер: {count}",
+      "kernel_modules": "Ядро модульдері",
+      "user_modules": "Пайдаланушы модульдері",
+      "commands": "Командалар",
+      "capabilities": "Мүмкіндіктер",
+      "untrusted": "сенімсіз"
     }
   }
 }

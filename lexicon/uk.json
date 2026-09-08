@@ -160,6 +160,14 @@
           "description": "Тест двох Rich-транспортів"
         }
       }
+    },
+    "help_ui": {
+      "module_count": "Довідка Hotaru · модулів: {count}",
+      "kernel_modules": "Модулі ядра",
+      "user_modules": "Користувацькі модулі",
+      "commands": "Команди",
+      "capabilities": "Можливості",
+      "untrusted": "недовіренний"
     }
   }
 }
