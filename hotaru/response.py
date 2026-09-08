@@ -505,7 +505,12 @@ class ModuleContext:
     @property
     def ui(self) -> Any:
         from relay.proxies import UiHelper
-        return UiHelper(self.module_id, self.callback_router.store, getattr(self._source, "from_id", None), getattr(self._source, "chat_id", None), getattr(self._source, "id", 0), self.callback_router)
+        owner_id = getattr(self._source, "from_id", None)
+        if not isinstance(owner_id, int) and self.runtime is not None:
+            owner_id = getattr(getattr(self.runtime, "kernel", None), "owner_id", None)
+        if not isinstance(owner_id, int):
+            owner_id = None
+        return UiHelper(self.module_id, self.callback_router.store, owner_id, getattr(self._source, "chat_id", None), getattr(self._source, "id", 0), self.callback_router)
 
     async def cap(self, capability: str, payload: dict[str, Any] | None = None) -> Any:
         if self.cap_host is None:
