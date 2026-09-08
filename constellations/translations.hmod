@@ -1,0 +1,211 @@
+HOTARU = {
+    "id": "translations",
+    "version": "1.0.0",
+    "description": "Translation management",
+    "commands": ["lang", "language"],
+    "translations": {
+        "en": {
+            "description": "Translation management",
+            "commands": {
+                "lang": {"description": "Show or change language", "usage": "{prefix}lang [language]"},
+                "language": {"description": "Show or change language", "usage": "{prefix}language [language]"}
+            }
+        },
+        "ru": {
+            "description": "Управление переводами",
+            "commands": {
+                "lang": {"description": "Показать или изменить язык", "usage": "{prefix}lang [язык]"},
+                "language": {"description": "Показать или изменить язык", "usage": "{prefix}language [язык]"}
+            }
+        },
+        "kz": {
+            "description": "Аудармаларды басқару",
+            "commands": {
+                "lang": {"description": "Тілді көрсету немесе өзгерту", "usage": "{prefix}lang [тіл]"},
+                "language": {"description": "Тілді көрсету немесе өзгерту", "usage": "{prefix}language [тіл]"}
+            }
+        },
+        "uk": {
+            "description": "Керування перекладами",
+            "commands": {
+                "lang": {"description": "Показати або змінити мову", "usage": "{prefix}lang [мова]"},
+                "language": {"description": "Показати або змінити мову", "usage": "{prefix}language [мова]"}
+            }
+        },
+        "ja": {
+            "description": "翻訳設定",
+            "commands": {
+                "lang": {"description": "言語を表示または変更", "usage": "{prefix}lang [言語]"},
+                "language": {"description": "言語を表示または変更", "usage": "{prefix}language [言語]"}
+            }
+        }
+    },
+    "capabilities": ["mt"]
+}
+
+
+NATIVE_LABELS = {
+    "ru": "Русский",
+    "en": "English",
+    "kz": "Қазақша",
+    "uk": "Українська",
+    "ja": "日本語",
+}
+
+from hotaru.callbacks import CallbackBinding
+from relay.firewall import trusted_scope
+
+
+def _kbd_buttons(ctx, runtime, rows):
+    owner = int(getattr(runtime.kernel, "owner_id", 0) or 0)
+    result = []
+    for row in rows:
+        current = []
+        for button in row:
+            if not isinstance(button, dict):
+                continue
+            handle = button.get("callback_data")
+            if isinstance(handle, str):
+                handle = runtime.callbacks.store.rebind(handle, CallbackBinding(owner, None, 0))
+                current.append({"text": button.get("text", ""), "callback_data": handle})
+            elif isinstance(button.get("url"), str):
+                current.append({"text": button.get("text", ""), "url": button["url"]})
+        if current:
+            result.append(current)
+    return result
+
+
+def _kbd_row(ctx, runtime, language, current):
+    marker = "✓ " if language == current else ""
+
+    async def select(callback, payload, selected=language):
+        runtime.set_language(selected)
+        form = _screen(ctx)
+        markup = {"inline_keyboard": _kbd_buttons(ctx, runtime, form["buttons"])}
+        try:
+            await callback.answer()
+        except Exception:
+            pass
+        await ctx.bot.call(
+            "editMessageText",
+            inline_message_id=callback.inline_message_id,
+            text=form["text"],
+            parse_mode="HTML",
+            reply_markup=markup,
+        )
+
+    return ctx.ui.button(f"{marker}{NATIVE_LABELS[language]}", select, {"language": language})
+
+
+def _close_button(ctx):
+    async def close(callback, payload):
+        try:
+            await callback.answer()
+        except Exception:
+            pass
+        runtime = ctx.runtime
+        namespace = runtime.state.namespace("translations")
+        chat_id = namespace.get("card_chat_id")
+        message_id = namespace.get("card_message_id")
+        if isinstance(chat_id, int) and isinstance(message_id, int):
+            with trusted_scope():
+                await ctx.tg.call(
+                    "messages.deleteMessages",
+                    {"id": [message_id], "revoke": True, "peer": chat_id},
+                )
+            return
+        await callback.delete()
+
+    return ctx.ui.button(ctx.t("common.close", "Close"), close, style="danger")
+
+
+def _screen(ctx):
+    runtime = ctx.runtime
+    current = runtime.language()
+    row = []
+    rows = []
+    for language in ("ru", "en", "kz", "uk", "ja"):
+        row.append(_kbd_row(ctx, runtime, language, current))
+        if len(row) == 2:
+            rows.append(row)
+            row = []
+    if row:
+        rows.append(row)
+    rows.append([_close_button(ctx)])
+    return {
+        "text": f"<b>{ctx.t('commands.lang.description', 'Language')}</b>\n<i>Current: {_escape(current)}</i>",
+        "buttons": rows,
+        "inline": True,
+        "parse_mode": "HTML"
+    }
+
+
+async def _send_screen(ctx):
+    form = _screen(ctx)
+    await ctx.respond(form["text"], buttons=form["buttons"], inline=True, parse_mode="HTML")
+    try:
+        runtime = ctx.runtime
+        chat_id = getattr(ctx._source, "chat_id", None)
+        if chat_id is None:
+            return
+        history = await ctx.tg.get(
+            "messages.getHistory",
+            peer=chat_id, limit=5, offset_id=0, offset_date=0, add_offset=0, max_id=0, min_id=0, hash=0,
+        )
+        messages = history.get("messages", []) if isinstance(history, dict) else []
+        for message in messages:
+            if not isinstance(message, dict) or not isinstance(message.get("id"), int):
+                continue
+            sender = message.get("from_id")
+            sender_id = sender.get("user_id") if isinstance(sender, dict) else sender
+            if sender_id is None and isinstance(message.get("via_bot_id"), int):
+                sender_id = message["via_bot_id"]
+            if sender_id is None and isinstance(message.get("peer_id"), dict):
+                continue
+            if sender_id is None:
+                sender_id = 0
+            namespace = runtime.state.namespace("translations")
+            namespace.set("card_chat_id", int(chat_id))
+            namespace.set("card_message_id", int(message["id"]))
+            namespace.set("card_sender_id", int(sender_id) if isinstance(sender_id, int) else 0)
+            return
+    except Exception:
+        pass
+
+
+def _escape(value):
+    import html
+    return html.escape(str(value), quote=False)
+
+
+async def _show(ctx):
+    runtime = ctx.runtime
+    if runtime is None:
+        await ctx.respond("Runtime unavailable")
+        return
+    if not ctx.runtime.lexicon:
+        await ctx.respond("Translation lexicon unavailable")
+        return
+    if not ctx.runtime.lexicon.available_languages():
+        await ctx.respond("Translation languages unavailable")
+        return
+    if not ctx.runtime.lexicon._validate_language(runtime.language()):
+        runtime.set_language("en")
+    await _send_screen(ctx)
+
+
+async def command_lang(ctx, invocation):
+    if len(invocation.args) > 1:
+        await ctx.respond(ctx.t("commands.lang.usage", "Usage: {prefix}lang [language]", prefix=ctx.runtime.config.prefix))
+        return
+    if len(invocation.args) == 1:
+        try:
+            ctx.runtime.set_language(invocation.args[0])
+        except Exception:
+            await ctx.respond(ctx.t("commands.lang.invalid", "Unsupported language: {language}", language=invocation.args[0]))
+            return
+    await _show(ctx)
+
+
+async def command_language(ctx, invocation):
+    await command_lang(ctx, invocation)

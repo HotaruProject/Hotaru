@@ -12,6 +12,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from .i18n import SUPPORTED_LANGUAGES
+
 
 class ModuleValidationError(ValueError):
     pass
@@ -28,6 +30,7 @@ class ModuleManifest:
     tasks: dict[str, dict[str, Any]] = None
     aliases: dict[str, str] = None
     config_schema: dict[str, Any] = None
+    translations: dict[str, dict[str, Any]] = None
 
     def __post_init__(self):
         if self.tasks is None:
@@ -36,6 +39,25 @@ class ModuleManifest:
             object.__setattr__(self, "aliases", {})
         if self.config_schema is None:
             object.__setattr__(self, "config_schema", {})
+        if self.translations is None:
+            object.__setattr__(self, "translations", {})
+
+    def localized(self, language: str, fallback: str | None = None) -> dict[str, Any]:
+        selected = self.translations.get(language) or self.translations.get("en") or {}
+        result = dict(selected) if isinstance(selected, dict) else {}
+        if "description" not in result and fallback is not None:
+            result["description"] = fallback
+        return result
+
+    def command_details(self, command: str, language: str, fallback: str | None = None) -> dict[str, str]:
+        localized = self.localized(language)
+        commands = localized.get("commands", {})
+        details = commands.get(command, {}) if isinstance(commands, dict) else {}
+        if not isinstance(details, dict):
+            details = {}
+        if "description" not in details and fallback is not None:
+            details = {"description": fallback, **details}
+        return {key: value for key, value in details.items() if isinstance(key, str) and isinstance(value, str)}
 
 
 @dataclass(frozen=True, slots=True)
@@ -138,6 +160,25 @@ class HmodLoader:
         if not isinstance(config_schema, dict):
             raise ModuleValidationError("manifest config_schema must be a dictionary")
 
+        translations = raw.get("translations", {})
+        if not isinstance(translations, dict):
+            raise ModuleValidationError("manifest translations must be a dictionary")
+        for language, translation in translations.items():
+            if language not in SUPPORTED_LANGUAGES or not isinstance(translation, dict):
+                raise ModuleValidationError("manifest translations are invalid")
+            if "description" in translation and not isinstance(translation["description"], str):
+                raise ModuleValidationError("manifest translation description is invalid")
+            translated_commands = translation.get("commands", {})
+            if not isinstance(translated_commands, dict):
+                raise ModuleValidationError("manifest translation commands are invalid")
+            if not set(translated_commands).issubset(set(commands)):
+                raise ModuleValidationError("manifest translation contains an unknown command")
+            for command, details in translated_commands.items():
+                if not isinstance(command, str) or not isinstance(details, dict):
+                    raise ModuleValidationError("manifest command translation is invalid")
+                if any(not isinstance(value, str) for value in details.values()):
+                    raise ModuleValidationError("manifest command translation values are invalid")
+
         return ModuleManifest(
             module_id, 
             version, 
@@ -147,7 +188,8 @@ class HmodLoader:
             tuple(watchers),
             tasks,
             aliases,
-            config_schema
+            config_schema,
+            translations
         )
 
     @staticmethod

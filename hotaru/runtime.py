@@ -24,6 +24,7 @@ from relay.sandbox import ModuleSandbox
 from relay.caps import CapabilityHost, describe as describe_caps
 from relay.firewall import install as install_firewall, trusted_scope
 from .kernel import Kernel
+from .i18n import Lexicon, SUPPORTED_LANGUAGES, Translator
 from .modules import ModuleStager
 from .activation import ModuleManager
 from .observatory import Observatory
@@ -96,6 +97,7 @@ class Runtime:
     security: SecurityGate | None = None
     sandbox: ModuleSandbox | None = None
     cap_host: CapabilityHost | None = None
+    lexicon: Lexicon | None = None
     closed: bool = False
     _inline_forms: dict[str, tuple[str, list[dict[str, str]]]] | None = None
     _forms: dict[str, tuple[Any, Any, str, Any, dict[str, Any]]] | None = None
@@ -147,6 +149,7 @@ class Runtime:
         )
         self.kernel.security = self.security
         self.state = StateStore(self.config.state_path)
+        self.lexicon = Lexicon(self.lexicon_dir)
         
         user_aliases = self.state.get_setting("user_aliases", {})
         for alias, command in user_aliases.items():
@@ -704,7 +707,19 @@ class Runtime:
             return None
         try:
             return await self.callbacks.dispatch(callback)
+        except CallbackDenied as exc:
+            try:
+                await callback.answer("Callback expired, send the command again", show_alert=True)
+            except Exception:
+                pass
+            if self.observatory is not None:
+                self.observatory.emit("inline", "callback_error", error=type(exc).__name__, detail=str(exc)[:240])
+            return None
         except Exception as exc:
+            try:
+                await callback.answer("Callback failed", show_alert=True)
+            except Exception:
+                pass
             if self.observatory is not None:
                 self.observatory.emit("inline", "callback_error", error=type(exc).__name__, detail=str(exc)[:240])
             return None
@@ -747,9 +762,15 @@ class Runtime:
                 return f"module: {module_id}\nstatus: disabled\nlasterror: {self.state.namespace(module_id).get('lasterror', 'none')}"
             return f"module not active: {module_id}"
         manifest = active.loaded.manifest
-        commands = ", ".join(manifest.commands) if manifest.commands else "none"
+        language = self.language()
+        localized = manifest.localized(language, manifest.description)
+        description = localized.get("description", manifest.description)
+        commands = ", ".join(
+            f"{command}: {manifest.command_details(command, language).get('description', '')}".rstrip(": ")
+            for command in manifest.commands
+        ) or "none"
         capabilities = ", ".join(manifest.capabilities) if manifest.capabilities else "none"
-        return f"module: {manifest.module_id}\nversion: {manifest.version}\ncommands: {commands}\ncapabilities: {capabilities}\ndescription: {manifest.description}"
+        return f"module: {manifest.module_id}\nversion: {manifest.version}\ncommands: {commands}\ncapabilities: {capabilities}\ndescription: {description}"
 
     def _command_mi(self, invocation: Any) -> str:
         if len(invocation.args) != 1:
@@ -828,6 +849,35 @@ class Runtime:
         root = Path(__file__).resolve().parent
         bundled = root / "constellations"
         return bundled if bundled.is_dir() else root.parent / "constellations"
+
+    @property
+    def lexicon_dir(self) -> Path:
+        root = Path(__file__).resolve().parent
+        bundled = root / "lexicon"
+        return bundled if bundled.is_dir() else root.parent / "lexicon"
+
+    def language(self) -> str:
+        if self.state is None:
+            return "ru"
+        value = self.state.get_setting("language", "ru")
+        return value.casefold() if isinstance(value, str) and value.casefold() in SUPPORTED_LANGUAGES else "ru"
+
+    def set_language(self, language: str) -> str:
+        if self.lexicon is None:
+            self.lexicon = Lexicon(self.lexicon_dir)
+        normalized = self.lexicon._validate_language(language)
+        if self.state is None:
+            raise RuntimeError("state is unavailable")
+        self.state.set_setting("language", normalized)
+        return normalized
+
+    def translator(self, language: str | None = None) -> Translator:
+        if self.lexicon is None:
+            self.lexicon = Lexicon(self.lexicon_dir)
+        return Translator(self.lexicon, language or self.language())
+
+    def t(self, key: str, default: str | None = None, *, locale: str | None = None, **params: Any) -> str:
+        return self.translator(locale).t(key, default, **params)
 
     @property
     def relay_dir(self) -> Path:

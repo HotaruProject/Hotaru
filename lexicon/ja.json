@@ -1,0 +1,14 @@
+{
+  "meta": {
+    "language": "ja",
+    "name": "日本語"
+  },
+  "commands": {
+    "lang": {
+      "description": "言語を表示または変更",
+      "usage": "{prefix}lang [language]",
+      "invalid": "サポートされていない言語: {language}",
+      "changed": "言語を {language} に変更しました"
+    }
+  }
+}

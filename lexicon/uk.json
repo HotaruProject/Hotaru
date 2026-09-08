@@ -1,0 +1,14 @@
+{
+  "meta": {
+    "language": "uk",
+    "name": "Українська"
+  },
+  "commands": {
+    "lang": {
+      "description": "Показати або змінити мову",
+      "usage": "{prefix}lang [language]",
+      "invalid": "Непідтримувана мова: {language}",
+      "changed": "Мову змінено на {language}"
+    }
+  }
+}

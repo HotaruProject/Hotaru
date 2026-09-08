@@ -195,6 +195,12 @@ class Kernel:
             "attachment": self._sandbox_attachment(invocation.message),
             "reply_attachment": self._sandbox_attachment(self._reply_of(invocation.message)),
         }
+        runtime = getattr(self.context_factory, "runtime", None)
+        lexicon = getattr(runtime, "lexicon", None)
+        if runtime is not None and lexicon is not None:
+            language = runtime.language()
+            payload["language"] = language
+            payload["translations"] = lexicon.bundle(language)
         message = invocation.message
         topic_id = getattr(message, "topic_id", None) or getattr(message, "message_thread_id", None)
         if isinstance(topic_id, int) and topic_id > 0:

@@ -1,0 +1,81 @@
+{
+  "meta": {
+    "language": "en",
+    "name": "English"
+  },
+  "common": {
+    "ok": "OK",
+    "cancel": "Cancel",
+    "close": "Close",
+    "back": "Back",
+    "unknown_error": "Unknown error"
+  },
+  "kernel": {
+    "help": {
+      "title": "Hotaru Help",
+      "modules": "Modules",
+      "kernel_modules": "Kernel Modules",
+      "user_modules": "User Modules",
+      "commands": "Commands",
+      "capabilities": "Capabilities",
+      "module_count": "Hotaru Help · {count} modules"
+    },
+    "config": {
+      "title": "Configuration",
+      "no_modules": "No configurable modules found",
+      "select_module": "Select a module to configure",
+      "page": "Page {page} of {total}",
+      "module": "Module",
+      "edit": "Edit {key}"
+    },
+    "power": {
+      "already_stopped": "Userbot is already stopped.",
+      "stopped": "Userbot stopped.",
+      "stopped_details": "Regular modules are disabled, but kernel commands such as {prefix}start continue to work.",
+      "already_started": "Userbot is already running.",
+      "started": "Userbot started. All command processing has resumed.",
+      "restarting": "Restarting userbot..."
+    },
+    "updater": {
+      "unavailable": "Runtime unavailable",
+      "up_to_date": "Hotaru is up to date",
+      "update_available": "Hotaru update available",
+      "downloading": "Downloading update…",
+      "syncing": "Syncing dependencies…",
+      "restarting": "Updated to {commit}. Restarting…",
+      "updated": "Hotaru updated in {seconds}s"
+    },
+    "kernel": {
+      "runtime_unavailable": "Runtime unavailable",
+      "modules_unavailable": "Modules unavailable",
+      "modules_none": "Modules: none",
+      "usage": "Usage: {usage}",
+      "alias_set": "Alias set: {alias} → {command}",
+      "alias_removed": "Alias removed: {alias}",
+      "alias_not_found": "Alias not found: {alias}"
+    }
+  },
+  "commands": {
+    "hlp": {
+      "description": "Show help",
+      "usage": "{prefix}hlp [module-id]"
+    },
+    "help": {
+      "description": "Show help",
+      "usage": "{prefix}help [module-id]"
+    },
+    "lang": {
+      "description": "Show or change language",
+      "usage": "{prefix}lang [language]",
+      "invalid": "Unsupported language: {language}",
+      "changed": "Language changed to {language}"
+    }
+  },
+  "languages": {
+    "ru": "Russian",
+    "en": "English",
+    "kz": "Kazakh",
+    "uk": "Ukrainian",
+    "ja": "Japanese"
+  }
+}
