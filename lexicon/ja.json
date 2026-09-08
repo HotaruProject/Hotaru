@@ -160,6 +160,14 @@
           "description": "デュアルRichテスト"
         }
       }
+    },
+    "help_ui": {
+      "module_count": "Hotaru ヘルプ · モジュール数: {count}",
+      "kernel_modules": "カーネルモジュール",
+      "user_modules": "ユーザーモジュール",
+      "commands": "コマンド",
+      "capabilities": "機能",
+      "untrusted": "未信頼"
     }
   }
 }
