@@ -10,3 +10,5 @@ __pycache__/
 .env
 sanctuary/
 observatory/runtime/
+# User modules are local runtime artifacts, not repository source.
+/relay/*.hmod
