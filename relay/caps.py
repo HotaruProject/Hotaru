@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import json
+import asyncio
+import os
+import subprocess
 import urllib.parse
 import urllib.request
 from pathlib import Path
@@ -147,6 +150,11 @@ PROVIDERS: dict[str, dict[str, Any]] = {
         "detail": "access to hidden assets storage",
         "side_effect": "write",
     },
+    "shell": {
+        "title": "Shell",
+        "detail": "developer shell commands in the module workspace with timeout and output limits",
+        "side_effect": "write",
+    },
 }
 
 KNOWN = frozenset(PROVIDERS)
@@ -215,7 +223,37 @@ class CapabilityHost:
                 return await self._modules_op(module_id, payload, meta)
             if capability == "assets":
                 return await self._assets_op(module_id, payload, meta)
+            if capability == "shell":
+                return await self._shell_op(module_id, payload, meta)
         raise PermissionError(f"capability not implemented: {capability}")
+
+    async def _shell_op(self, module_id: str, payload: dict[str, Any], meta: dict[str, Any]) -> Any:
+        command = payload.get("command")
+        if not isinstance(command, str) or not command.strip() or len(command) > 4000:
+            raise PermissionError("shell requires a non-empty command up to 4000 characters")
+        timeout = payload.get("timeout", 30)
+        try:
+            timeout = max(1, min(int(timeout), 120))
+        except (TypeError, ValueError):
+            timeout = 30
+        workspace = self.runtime.config.state_path.parent / "workspaces" / module_id
+        workspace.mkdir(parents=True, exist_ok=True)
+        env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "HOME": str(workspace), "LANG": "C.UTF-8"}
+        try:
+            proc = await asyncio.to_thread(
+                subprocess.run,
+                ["/bin/sh", "-lc", command],
+                cwd=str(workspace),
+                env=env,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                check=False,
+            )
+        except subprocess.TimeoutExpired:
+            raise PermissionError(f"shell command timed out after {timeout}s")
+        output = (proc.stdout or "") + ("\n" + proc.stderr if proc.stderr else "")
+        return {"returncode": proc.returncode, "output": output[:16000], "cwd": str(workspace)}
 
     async def _mt_call(self, module_id: str, payload: dict[str, Any], meta: dict[str, Any]) -> Any:
         app = self.runtime.app
