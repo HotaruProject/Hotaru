@@ -1086,6 +1086,10 @@ class ModuleSandbox:
                 if isinstance(message, dict) and "respond" in message:
                     self._respond_pending.append(message)
                     continue
+                if isinstance(message, dict) and "cb_respond" in message:
+                    self._cb_respond_pending = getattr(self, "_cb_respond_pending", [])
+                    self._cb_respond_pending.append(message)
+                    continue
                 return message
 
         self._pending_caps = getattr(self, "_pending_caps", [])
@@ -1098,6 +1102,8 @@ class ModuleSandbox:
                     await self._serve_caps(module_id)
                 if self._respond_pending:
                     await self._serve_respond(module_id)
+                if getattr(self, "_cb_respond_pending", None):
+                    await self._serve_cb_respond(module_id)
                 continue
             except Exception:
                 task.cancel()
@@ -1137,6 +1143,36 @@ class ModuleSandbox:
             process = self._workers.get(module_id)
             if process is not None and process.poll() is None and process.stdin is not None:
                 process.stdin.write((json.dumps(reply) + "\n").encode("utf-8"))
+                process.stdin.flush()
+
+    async def _serve_cb_respond(self, module_id: str) -> None:
+        pending = getattr(self, "_cb_respond_pending", [])
+        self._cb_respond_pending = []
+        callback = getattr(self, "_active_callback", {}).get(module_id)
+        process = self._workers.get(module_id)
+        for message in pending:
+            data = message.get("cb_respond") or {}
+            result = {"ok": False, "error": "callback context is unavailable"}
+            try:
+                if callback is None:
+                    raise PermissionError("callback context is unavailable")
+                action = data.get("action")
+                if action == "answer":
+                    from .firewall import trusted_scope
+                    with trusted_scope():
+                        value = await callback.app.bot_req("answerCallbackQuery", callback_query_id=str(callback.id), text=str(data.get("text", "")), show_alert=bool(data.get("alert", False)))
+                elif action == "edit":
+                    from .firewall import trusted_scope
+                    params = {"inline_message_id": callback.inline_message_id, "text": str(data.get("text", "")), "parse_mode": "HTML"}
+                    with trusted_scope():
+                        value = await callback.app.bot_req("editMessageText", **params)
+                else:
+                    raise PermissionError("unknown callback action")
+                result = {"ok": True, "result": value}
+            except Exception as exc:
+                result = {"ok": False, "error": f"{type(exc).__name__}: {exc}"[:200]}
+            if process is not None and process.poll() is None and process.stdin is not None:
+                process.stdin.write((json.dumps({"cb_respond_result": result}) + "\n").encode("utf-8"))
                 process.stdin.flush()
 
     async def _trusted_respond(self, module_id: str, source: Any, payload: dict[str, Any]) -> Any:
@@ -1275,6 +1311,8 @@ class ModuleSandbox:
 
     def _make_sandbox_cb(self, module_id: str, action_id: str) -> Any:
         async def handler(callback: Any, payload: Any) -> object:
+            self._active_callback = getattr(self, "_active_callback", {})
+            self._active_callback[module_id] = callback
             process = self._workers.get(module_id)
             if process is None or process.poll() is not None or process.stdin is None:
                 raise PermissionError("sandbox callback worker is not running")
