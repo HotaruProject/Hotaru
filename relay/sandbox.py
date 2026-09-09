@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from . import toolkit as _toolkit
+from hotaru.callbacks import CallbackBinding
 
 _TOOLKIT_SOURCE = Path(_toolkit.__file__).read_text(encoding="utf-8")
 
@@ -856,6 +857,9 @@ class ModuleSandbox:
         self._workers: dict[str, subprocess.Popen] = {}
         self._booted: dict[str, bool] = {}
         self._respond_sources: dict[str, Any] = {}
+        self._cb_waiters: dict[tuple[str, str], asyncio.Future] = {}
+        self._active_callback: dict[str, Any] = {}
+        self._cb_respond_pending: list[dict[str, Any]] = []
         self._python = os.path.realpath(sys.executable)
         self._stdlib = sysconfig.get_paths()["stdlib"]
         self._stdlib_dst = f"/opt/py/lib/python{sys.version_info.major}.{sys.version_info.minor}"
@@ -1328,17 +1332,55 @@ class ModuleSandbox:
                 }
             }
             loop = asyncio.get_running_loop()
-            future: asyncio.Future = loop.create_future()
-            key = (module_id, action_id)
-            self._cb_waiters = getattr(self, "_cb_waiters", {})
-            self._cb_waiters[key] = future
-            process.stdin.write((json.dumps(request) + "\n").encode("utf-8"))
-            process.stdin.flush()
+            task: asyncio.Future | None = None
+
+            def _reader() -> Any:
+                assert process.stdin is not None
+                process.stdin.write((json.dumps(request) + "\n").encode("utf-8"))
+                process.stdin.flush()
+                while True:
+                    line = self._readline(process)
+                    if not line:
+                        raise SandboxError(f"sandbox worker died during callback: {module_id}")
+                    message = json.loads(line)
+                    if not isinstance(message, dict):
+                        continue
+                    if "cap" in message:
+                        self._pending_caps = getattr(self, "_pending_caps", [])
+                        self._pending_caps.append(message)
+                        continue
+                    if "respond" in message:
+                        self._respond_pending = getattr(self, "_respond_pending", [])
+                        self._respond_pending.append(message)
+                        continue
+                    if "cb_respond" in message:
+                        self._cb_respond_pending.append(message)
+                        continue
+                    return message
+
             try:
-                return await asyncio.wait_for(asyncio.shield(future), timeout=30.0)
+                task = asyncio.ensure_future(loop.run_in_executor(None, _reader))
+                while True:
+                    try:
+                        result = await asyncio.wait_for(asyncio.shield(task), timeout=0.05)
+                        break
+                    except asyncio.TimeoutError:
+                        if getattr(self, "_pending_caps", None):
+                            await self._serve_caps(module_id)
+                        if getattr(self, "_respond_pending", None):
+                            await self._serve_respond(module_id)
+                        if getattr(self, "_cb_respond_pending", None):
+                            await self._serve_cb_respond(module_id)
+                        continue
+                if isinstance(result, dict) and result.get("ok"):
+                    return result.get("result")
+                raise PermissionError(f"sandbox callback failed: {result.get('error') if isinstance(result, dict) else 'malformed'}")
             except asyncio.TimeoutError:
-                self._cb_waiters.pop(key, None)
                 raise PermissionError("sandbox callback timed out")
+            finally:
+                self._active_callback.pop(module_id, None)
+                if task is not None and not task.done():
+                    task.cancel()
 
         return handler
 
