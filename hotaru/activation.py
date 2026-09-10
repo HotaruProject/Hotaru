@@ -141,7 +141,9 @@ class ModuleManager:
         self._active: dict[str, ActiveModule] = {}
         self._bindings: dict[str, tuple[Any, tuple[str, ...], bool]] = {}                               
         self._rehydrators: dict[str, Callable[[dict[str, Any]], Any]] = {}
-
+        self._sandbox_ref: Any = None
+        self._booting = False
+        self._deferred_rise: list[Any] = []
     def _register_rehydrator(self, module_id: str, namespace: dict[str, Any]) -> None:
         callback = namespace.get("rehydrate_form")
         if callable(callback):
@@ -198,6 +200,19 @@ class ModuleManager:
             )
         except Exception:
             pass
+
+    def begin_boot(self) -> None:
+        self._booting = True
+
+    async def end_boot(self) -> None:
+        self._booting = False
+        pending = self._deferred_rise
+        self._deferred_rise = []
+        for runner in pending:
+            try:
+                await runner()
+            except Exception:
+                pass
 
     def rehydrate_form(self, module_id: str, payload: dict[str, Any]) -> Any:
         callback = self._rehydrators.get(module_id)
@@ -281,9 +296,12 @@ class ModuleManager:
                             name=f"hotaru:task:sandbox:{loaded.manifest.module_id}:{task_name}"
                         )
                         
-            if kernel.context_factory is not None:
+            if kernel.context_factory is not None and loaded.manifest.rise:
                 rise_ctx = kernel.context_factory.create(loaded.manifest.module_id, None)
-                await self._rise_sandbox(loaded, sandbox, rise_ctx)
+                if self._booting:
+                    self._deferred_rise.append(lambda: self._rise_sandbox(loaded, sandbox, rise_ctx))
+                else:
+                    await self._rise_sandbox(loaded, sandbox, rise_ctx)
             return active
         namespace: dict[str, Any] = {
             "__name__": f"hotaru_module_{loaded.manifest.module_id}",
@@ -319,9 +337,12 @@ class ModuleManager:
                                 self._run_task(task_name, task_def, handler, ctx),
                                 name=f"hotaru:task:{loaded.manifest.module_id}:{task_name}"
                             )
-            if kernel.context_factory is not None:
+            if kernel.context_factory is not None and loaded.manifest.rise:
                 rise_ctx = kernel.context_factory.create(loaded.manifest.module_id, None)
-                await self._rise_host(loaded, namespace, kernel, rise_ctx)
+                if self._booting:
+                    self._deferred_rise.append(lambda: self._rise_host(loaded, namespace, kernel, rise_ctx))
+                else:
+                    await self._rise_host(loaded, namespace, kernel, rise_ctx)
             return active
         except Exception as exc:
             if "commands" in locals():
