@@ -168,6 +168,34 @@
       "commands": "Команди",
       "capabilities": "Можливості",
       "untrusted": "недовіренний"
+    },
+    "accounts": {
+      "description": "Multi-account management: register, authorize, spawn, stop accounts",
+      "commands": {
+        "acc": {
+          "description": "Manage account: acc <#> <start|stop|on|off|del>"
+        },
+        "acca": {
+          "description": "Authorize a new account: acca <#>"
+        },
+        "accs": {
+          "description": "List accounts"
+        }
+      }
+    },
+    "acl": {
+      "description": "Access control administration: grant, revoke, list user permissions",
+      "commands": {
+        "perms": {
+          "description": "List permissions of all users"
+        },
+        "perm": {
+          "description": "Grant/revoke: perm <user_id> <owner|admin|trusted|everyone> [remove]"
+        },
+        "whois": {
+          "description": "User permissions: whois <user_id>"
+        }
+      }
     }
   },
   "inline_commands_hint": "Обери команду — введи @<бот> і її назву в будь-якому чаті"

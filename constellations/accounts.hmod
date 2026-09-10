@@ -3,42 +3,20 @@ HOTARU = {
     "version": "1.0.0",
     "description": "Multi-account management: register, authorize, spawn, stop accounts",
     "commands": ["acc", "acca", "accs"],
-    "capabilities": ["mt"],
-    "translations": {
-        "ru": {
-            "description": "Мультиаккаунтинг: регистрация, авторизация, запуск и остановка аккаунтов",
-            "commands": {
-                "acc": {"description": "Управление аккаунтом: acc <#> <start|stop|on|off|del>"},
-                "acca": {"description": "Авторизовать новый аккаунт: acca <#>"},
-                "accs": {"description": "Список аккаунтов"},
-            },
-        },
-        "en": {
-            "description": "Multi-account management: register, authorize, spawn, stop accounts",
-            "commands": {
-                "acc": {"description": "Manage account: acc <#> <start|stop|on|off|del>"},
-                "acca": {"description": "Authorize a new account: acca <#>"},
-                "accs": {"description": "List accounts"},
-            },
-        },
-    },
+    "capabilities": ["mt"]
 }
-
 
 import asyncio
 import html as _html
 
-
 def _escape(value):
     return _html.escape(str(value), quote=False)
-
 
 def _usage(ctx):
     return ctx.t(
         "accounts.usage",
         "usage: !acc <#> <start|stop|on|off|del>\n!acca <#> — авторизовать аккаунт\n!accs — список",
     )
-
 
 async def command_accs(ctx, invocation):
     items = ctx.accounts.items()
@@ -54,7 +32,6 @@ async def command_accs(ctx, invocation):
             f"<b>#{profile.account_number}</b> user <code>{profile.user_id}</code> vault {vault_state} {state}"
         )
     await ctx.respond("<b>Accounts</b><br>" + "<br>".join(rows), parse_mode="HTML")
-
 
 async def command_acca(ctx, invocation):
     if not invocation.args or not invocation.args[0].isdigit():
@@ -80,7 +57,6 @@ async def command_acca(ctx, invocation):
         f"Авторизуйся, затем запусти: <code>!acc {number} start</code>",
         parse_mode="HTML",
     )
-
 
 async def command_acc(ctx, invocation):
     if len(invocation.args) < 2 or not invocation.args[0].isdigit():
