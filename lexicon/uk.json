@@ -88,7 +88,8 @@
         "start": {
           "description": "Відновити юзербота"
         }
-      }
+      },
+      "restarted": "Юзербот успішно перезапущений за {took}"
     },
     "hotaru-config": {
       "description": "Модуль конфігурації Hotaru",
@@ -116,7 +117,8 @@
         "updon": {
           "description": "Увімкнути повідомлення про оновлення"
         }
-      }
+      },
+      "restarted": "Hotaru оновлено та успішно перезапущено за {took}"
     },
     "translations": {
       "description": "Керування перекладами",

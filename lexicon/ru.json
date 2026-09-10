@@ -37,7 +37,8 @@
         "start": {
           "description": "Возобновить юзербота"
         }
-      }
+      },
+      "restarted": "Юзербот успешно перезапущен за {took}"
     },
     "updater": {
       "unavailable": "Runtime недоступен",
@@ -61,7 +62,8 @@
         "updon": {
           "description": "Включить уведомления об обновлениях"
         }
-      }
+      },
+      "restarted": "Hotaru обновлён и успешно перезапущен за {took}"
     },
     "kernel": {
       "runtime_unavailable": "Runtime недоступен",

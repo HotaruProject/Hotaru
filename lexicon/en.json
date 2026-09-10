@@ -37,7 +37,8 @@
         "start": {
           "description": "Resume userbot"
         }
-      }
+      },
+      "restarted": "Userbot successfully restarted in {took}"
     },
     "updater": {
       "unavailable": "Runtime unavailable",
@@ -61,7 +62,8 @@
         "updon": {
           "description": "Enable update notifications"
         }
-      }
+      },
+      "restarted": "Hotaru updated and successfully restarted in {took}"
     },
     "kernel": {
       "runtime_unavailable": "Runtime unavailable",

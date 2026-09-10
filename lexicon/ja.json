@@ -88,7 +88,8 @@
         "start": {
           "description": "ユーザーボット再開"
         }
-      }
+      },
+      "restarted": "ユーザーボットは{took}で正常に再起動されました"
     },
     "hotaru-config": {
       "description": "Hotaru 設定モジュール",
@@ -116,7 +117,8 @@
         "updon": {
           "description": "更新通知を有効化"
         }
-      }
+      },
+      "restarted": "Hotaruは更新され、{took}で正常に再起動されました"
     },
     "translations": {
       "description": "翻訳設定",
