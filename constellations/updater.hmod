@@ -3,7 +3,7 @@ HOTARU = {
     "version": "1.4.0",
     "description": "Hotaru self-updater: changelog, update confirmation, git pull, deps, restart",
     "commands": ["upd", "updlog", "updoff", "updon"],
-    "capabilities": ["net"],
+    "capabilities": ["net", "mt"],
     "tasks": {
         "poller": {"interval": 300, "autostart": True},
     },
@@ -107,14 +107,30 @@ async def afterglow(ctx):
         return
     chat_id = pending.get("chat_id")
     message_id = pending.get("message_id")
+    peer_hex = pending.get("peer") if isinstance(pending.get("peer"), str) else None
+    own = bool(pending.get("own"))
     ctx.state.delete("update_pending")
     took = round(time.time() - float(restarting)) if isinstance(restarting, (int, float)) else None
     took = f"{took}s" if took is not None else "n/a"
     text = ctx.t("kernel.updater.restarted", "Hotaru обновлён и успешно перезапущен за {took}", took=took)
     if not (isinstance(chat_id, int) and isinstance(message_id, int)):
         return
+    html = f"<b>{text}</b>"
+    if own:
+        rich = {"_": "inputRichMessageHTML", "html": html}
+        try:
+            if peer_hex:
+                await ctx.tg.call("messages.editMessage", {"id": message_id, "rich_message": rich, "peer": bytes.fromhex(peer_hex)})
+            else:
+                await ctx.tg.edit_rich(message_id, html, peer=chat_id)
+        except Exception:
+            try:
+                await ctx.tg.edit_rich(message_id, html, peer=chat_id)
+            except Exception:
+                pass
+        return
     try:
-        await _bot_edit(ctx, chat_id, message_id, f"<b>{text}</b>")
+        await _bot_edit(ctx, chat_id, message_id, html)
     except Exception:
         pass
 
@@ -174,8 +190,22 @@ async def _run_update(ctx, notify=None):
     base = pending if isinstance(pending, dict) else {}
     chat_id = base.get("chat_id")
     message_id = base.get("message_id")
+    own = False
+    if not (isinstance(chat_id, int) and isinstance(message_id, int)):
+        chat_id = getattr(ctx.message, "chat_id", None)
+        message_id = getattr(ctx.message, "id", None)
+        own = True
     if isinstance(chat_id, int) and isinstance(message_id, int):
-        ctx.state.set("update_pending", {"chat_id": chat_id, "message_id": message_id, "restarting": time.time()})
+        peer_hex = None
+        if own:
+            try:
+                app = getattr(ctx.runtime, "app", None)
+                mt = getattr(app, "mt", None) if app is not None else None
+                if mt is not None and hasattr(mt, "resolve_peer"):
+                    peer_hex = (await mt.resolve_peer(chat_id)).hex()
+            except Exception:
+                peer_hex = None
+        ctx.state.set("update_pending", {"chat_id": chat_id, "message_id": message_id, "peer": peer_hex, "own": own, "restarting": time.time()})
     await asyncio.sleep(1)
     await _restart_service(ctx)
 

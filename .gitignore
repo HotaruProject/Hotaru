@@ -9,3 +9,5 @@ __pycache__/
 /.tests/
 .env
 runtime.db
+sanctuary/
+observatory/
