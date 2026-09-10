@@ -44,8 +44,16 @@ async def command_start(ctx, invocation):
 async def command_restart(ctx, invocation):
     chat_id = getattr(ctx.message, "chat_id", None)
     message_id = getattr(ctx.message, "id", None)
+    peer_hex = None
     if isinstance(chat_id, int) and isinstance(message_id, int):
-        ctx.state.set("restart_pending", {"chat_id": chat_id, "message_id": message_id, "ts": time.time()})
+        try:
+            app = getattr(ctx.runtime, "app", None)
+            mt = getattr(app, "mt", None) if app is not None else None
+            if mt is not None and hasattr(mt, "resolve_peer"):
+                peer_hex = (await mt.resolve_peer(chat_id)).hex()
+        except Exception:
+            peer_hex = None
+        ctx.state.set("restart_pending", {"chat_id": chat_id, "message_id": message_id, "peer": peer_hex, "ts": time.time()})
     await ctx.respond(ctx.t("kernel.power.restarting", "Перезапускаю юзербот..."), parse_mode="HTML")
 
     try:
@@ -83,15 +91,24 @@ async def sunrise(ctx):
     ts = pending.get("ts")
     chat_id = pending.get("chat_id")
     message_id = pending.get("message_id")
+    peer_hex = pending.get("peer") if isinstance(pending.get("peer"), str) else None
     if not (isinstance(chat_id, int) and isinstance(message_id, int)):
         return
     took = max(1, round(time.time() - float(ts))) if isinstance(ts, (int, float)) else None
     took = f"{took}s" if took is not None else "n/a"
     text = ctx.t("kernel.power.restarted", "Юзербот успешно перезапущен за {took}", took=took)
+    html = f"<b>{text}</b>"
+    rich = {"_": "inputRichMessageHTML", "html": html}
     try:
-        await ctx.tg.edit_rich(message_id, f"<b>{text}</b>", peer=chat_id)
+        if peer_hex:
+            await ctx.tg.call("messages.editMessage", {"id": message_id, "rich_message": rich, "peer": bytes.fromhex(peer_hex)})
+        else:
+            await ctx.tg.edit_rich(message_id, html, peer=chat_id)
     except Exception:
-        pass
+        try:
+            await ctx.tg.edit_rich(message_id, html, peer=chat_id)
+        except Exception:
+            pass
 
 async def sundown(ctx):
     return None
