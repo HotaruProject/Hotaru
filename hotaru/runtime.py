@@ -1674,6 +1674,8 @@ class Runtime:
             self.kernel.suspended = self.state.get_setting("suspended") == "1"
                                                                                                  
         if self.modules is not None and self.constellations_dir.is_dir():
+            if hasattr(self.modules, "begin_boot"):
+                self.modules.begin_boot()
             for hmod_path in sorted(self.constellations_dir.glob("*.hmod")):
                 try:
                     candidate = self.modules.loader.load(hmod_path)
@@ -1700,6 +1702,8 @@ class Runtime:
             except Exception as exc:
                 if self.observatory is not None:
                     self.observatory.emit("inline", "start_failed", error=type(exc).__name__)
+        if self.modules is not None and hasattr(self.modules, "end_boot"):
+            await self.modules.end_boot()
         if self.supervisor is not None:
             self.supervisor.mark_ready(mt=self.app.mt is not None, bot=self.app.bot is not None)
         try:
