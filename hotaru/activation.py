@@ -176,6 +176,12 @@ class ModuleManager:
         is_kernel: bool = False,
     ) -> ActiveModule:
         loaded = self.loader.load(path)
+        requires = list(getattr(loaded.manifest, "requires", ()) or ())
+        if requires and not trusted:
+            raise ActivationError(f"module requires third-party packages and must be trusted: {loaded.manifest.module_id}")
+        if requires:
+            from .deps import ensure as ensure_deps
+            await ensure_deps(requires)
         behind_sandbox = not trusted
         if behind_sandbox and sandbox is not None:
             await sandbox.start_module(loaded.manifest.module_id, loaded.source, list(loaded.manifest.commands))

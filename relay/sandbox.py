@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from . import toolkit as _toolkit
+from goygram.rich import rich_html
 from hotaru.callbacks import CallbackBinding
 
 _TOOLKIT_SOURCE = Path(_toolkit.__file__).read_text(encoding="utf-8")
@@ -28,6 +29,10 @@ import socket
 import sys
 from pathlib import Path
 from types import SimpleNamespace
+import re as _re
+
+def rich_html(html):
+    return {"html": _re.sub(r"\n(?![^<]*>)", "<br>", html)}
 
 SECCOMP_CFG = {"allow": set(), "errno": set(), "kill": set()}
 CLONE_NR = 56
@@ -493,14 +498,14 @@ class _TgProxy:
         return await self.call("messages.sendMedia", {"media": media, "message": caption, **kwargs})
 
     async def send_rich(self, html_text, **kwargs):
-        rich = {"_": "inputRichMessageHTML", "html": __import__("re").sub(r"\n(?![^<]*>)", "<br>", html_text)} if isinstance(html_text, str) else html_text
+        rich = {"_": "inputRichMessageHTML", **rich_html(html_text)} if isinstance(html_text, str) else html_text
         return await self.call("messages.sendMessage", {"rich_message": rich, **kwargs})
 
     async def edit_message(self, message_id, text, **kwargs):
         return await self.call("messages.editMessage", {"id": message_id, "message": text, **kwargs})
 
     async def edit_rich(self, message_id, html_text, **kwargs):
-        rich = {"_": "inputRichMessageHTML", "html": __import__("re").sub(r"\n(?![^<]*>)", "<br>", html_text)} if isinstance(html_text, str) else html_text
+        rich = {"_": "inputRichMessageHTML", **rich_html(html_text)} if isinstance(html_text, str) else html_text
         return await self.call("messages.editMessage", {"id": message_id, "rich_message": rich, **kwargs})
 
     async def delete_message(self, message_id, **kwargs):
@@ -1239,7 +1244,7 @@ class ModuleSandbox:
                 return await app.mt_req("messages.sendMessage", **data)
 
         async def send_rich_html(html: str, *, mode: str) -> Any:
-            rich_message = {"_": "inputRichMessageHTML", "html": __import__("re").sub(r"\n(?![^<]*>)", "<br>", html)}
+            rich_message = {"_": "inputRichMessageHTML", **rich_html(html)}
             if mode == "edit" and message_id is not None:
                 with trusted_scope():
                     return await app.mt_req("messages.editMessage", peer=chat_id, id=int(message_id), message="", rich_message=rich_message)

@@ -8,7 +8,4 @@ __pycache__/
 /tests/
 /.tests/
 .env
-sanctuary/
-observatory/runtime/
-# User modules are local runtime artifacts, not repository source.
-/relay/*.hmod
+runtime.db
