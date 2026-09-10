@@ -32,6 +32,7 @@ from .registry import Handler
 from .response import FormHandle, ModuleContextFactory, ResponseService
 from .security import SecurityGate
 from .state import StateStore
+from .kmsg import KernelMessageService
 from .supervisor import ConnectionSupervisor, Health
 from .tasks import TaskSupervisor
 from goygram.rich import rich_html
@@ -83,6 +84,10 @@ class Runtime:
     app: Any = None
     kernel: Kernel | None = None
     state: StateStore | None = None
+    access: Any = None
+    kmsg: KernelMessageService | None = None
+    kernel_messages: KernelMessageService | None = None
+    account_manager: Any = None
     capabilities: CapabilityBroker | None = None
     modules: ModuleManager | None = None
     stager: ModuleStager | None = None
@@ -151,6 +156,15 @@ class Runtime:
         self.kernel.security = self.security
         self.state = StateStore(self.config.state_path)
         self.lexicon = Lexicon(self.lexicon_dir)
+        from .access import AccessManager, AccessStore
+        self.access = AccessManager(self.config.owner_id, AccessStore(self.state))
+        self.security.set_access(self.access)
+        self.kernel.access = self.access
+        from .kmsg import KernelMessageService
+        self.kmsg = KernelMessageService(self.state)
+        self.kernel_messages = self.kmsg
+        from .accounts import AccountManager
+        self.account_manager = AccountManager(self.state, self.config.session_dir)
         
         user_aliases = self.state.get_setting("user_aliases", {})
         for alias, command in user_aliases.items():
@@ -176,6 +190,7 @@ class Runtime:
         self._form_gc_task = None
         self.context_factory.inline_manager = self.inline
         self.context_factory.form_sender = self._send_form
+        self.context_factory.kmsg = self.kmsg
         self.sandbox = ModuleSandbox(self)
         self.kernel.sandbox = self.sandbox
         self.kernel.context_factory = self.context_factory
@@ -376,6 +391,34 @@ class Runtime:
     async def refresh_forms(self) -> int:
         self.purge_forms()
         return await self.restore_forms()
+
+    async def recover_kernel_messages(self) -> int:
+        if self.kmsg is None or self.inline is None:
+            return 0
+        records = self.kmsg.items()
+        if not records:
+            return 0
+        try:
+            if self.inline.info is None:
+                with trusted_scope():
+                    await self.inline.ensure_bot()
+            if self.inline.bot_app is None:
+                with trusted_scope():
+                    await self.inline.start()
+            await asyncio.wait_for(self.inline.ready.wait(), timeout=10.0)
+        except Exception:
+            return 0
+        from relay.proxies import BotGateway
+        bot = BotGateway(self.inline)
+        recovered = 0
+        for record in records:
+            if not isinstance(record.message_id, int):
+                continue
+            if await KernelMessageService.edit(bot, record, record.text):
+                recovered += 1
+        if self.observatory is not None:
+            self.observatory.emit("kmsg", "recovered", count=recovered, total=len(records))
+        return recovered
 
     async def unload_module_forms(self, module_id: str) -> int:
         if self._forms is None:
@@ -668,20 +711,115 @@ class Runtime:
             if self.observatory is not None:
                 self.observatory.emit("inline", "form_answered", buttons=len(buttons))
             return
-        from . import __version__
-
-        results = []
-        lowered = text.casefold()
-        if not lowered or "ping" in lowered:
-            results.append(InlineObj.article("hotaru-ping", "Ping", "pong!", description="Measure roundtrip"))
-        if not lowered or "stat" in lowered or "st" in lowered:
-            body = self._command_st(SimpleNamespace(args=()))
-            results.append(InlineObj.article("hotaru-st", "Status", body, description="Runtime status"))
-        if not lowered or "help" in lowered or "hlp" in lowered:
-            results.append(InlineObj.article("hotaru-hlp", "Help", "Send !hlp to list modules", description="Command catalog"))
-        if not lowered or "ver" in lowered:
-            results.append(InlineObj.article("hotaru-ver", "Version", f"Hotaru {__version__}", description="Kernel version"))
+        results = await self._dispatch_inline_command(text, query)
         await query.answer(results=results, cache_time=0, is_personal=True)
+
+    async def _dispatch_inline_command(self, text: str, query: Any) -> list[dict[str, Any]]:
+        kernel = self.kernel
+        if kernel is None:
+            return []
+        registry = kernel.inline_registry
+        parts = text.split()
+        language = self.language()
+        if not parts:
+            results = []
+            for spec in sorted(registry.items(), key=lambda item: item.name):
+                meta = self._inline_command_meta(spec, language)
+                results.append(InlineObj.article(
+                    f"hotaru-inline:{spec.name}",
+                    meta.get("title") or spec.name,
+                    meta.get("message") or "",
+                    description=meta.get("description") or None,
+                    thumb_url=meta.get("thumb_url") or None,
+                ))
+            return results
+        name = parts[0].casefold()
+        if not name.isidentifier():
+            return []
+        spec = registry.resolve(name)
+        if spec is None:
+            return []
+        args = tuple(parts[1:])
+        if self.observatory is not None:
+            self.observatory.emit("inline", "command", name=spec.name, module=spec.module_id)
+        if spec.sandbox:
+            if self.sandbox is None:
+                return []
+            payload: dict[str, Any] = {"query": text, "args": list(args), "inline": True}
+            if self.lexicon is not None:
+                payload["language"] = language
+                payload["translations"] = self.lexicon.bundle(language)
+            try:
+                result = await self.sandbox.call(spec.module_id, f"inline_{spec.name}", [], payload, source=query, target=f"inline_{spec.name}")
+            except Exception as exc:
+                if self.observatory is not None:
+                    self.observatory.emit("inline", "command_error", error=type(exc).__name__, detail=str(exc)[:240])
+                return []
+            return self._normalize_inline_results(result)
+        if kernel.suspended and not self._is_kernel_module(spec.module_id):
+            return []
+        try:
+            result = spec.handler(query, args)
+            if asyncio.iscoroutine(result) or isinstance(result, asyncio.Future):
+                result = await result
+        except Exception as exc:
+            if self.observatory is not None:
+                self.observatory.emit("inline", "command_error", error=type(exc).__name__, detail=str(exc)[:240])
+            return []
+        return self._normalize_inline_results(result)
+
+    def _is_kernel_module(self, module_id: str) -> bool:
+        if self.modules is None:
+            return False
+        binding = self.modules._bindings.get(module_id)
+        return bool(binding and binding[2])
+
+    def _normalize_inline_results(self, result: Any) -> list[dict[str, Any]]:
+        if result is None:
+            return []
+        if isinstance(result, dict):
+            result = [result]
+        if not isinstance(result, list):
+            return []
+        normalized = []
+        for item in result:
+            if not isinstance(item, dict):
+                continue
+            if "message" not in item and "photo" not in item and "gif" not in item and "video" not in item and "file" not in item:
+                continue
+            normalized.append(item)
+        return normalized
+
+    def _inline_command_meta(self, spec: Any, language: str) -> dict[str, str]:
+        if self.modules is None:
+            return {}
+        active = self.modules.get(spec.module_id)
+        if active is None:
+            return {}
+        manifest = active.loaded.manifest
+        entry: dict[str, Any] = {}
+        details = manifest.localized(language).get("inline_commands", {})
+        if isinstance(details, dict):
+            candidate = details.get(spec.name)
+            if isinstance(candidate, dict):
+                entry = candidate
+        if not entry:
+            try:
+                payload = self.lexicon.bundle(language) if self.lexicon is not None else {}
+                block = payload.get("kernel", {}).get(manifest.module_id, {}).get("inline_commands", {})
+                candidate = block.get(spec.name) if isinstance(block, dict) else None
+                if isinstance(candidate, dict):
+                    entry = candidate
+                elif isinstance(candidate, str):
+                    entry = {"description": candidate}
+            except Exception:
+                pass
+        result: dict[str, str] = {}
+        for key in ("title", "description", "message", "thumb_url"):
+            value = entry.get(key)
+            if isinstance(value, str) and value:
+                result[key] = value
+        return result
 
     async def _render_inline_form(self, query: Any) -> None:
         text = str(query.query or "")
@@ -728,7 +866,12 @@ class Runtime:
     def _command_ver(self, invocation: Any) -> str:
         from . import __version__
 
-        return f"Hotaru {__version__}"
+        try:
+            import goygram
+            goygram_version = goygram.__version__
+        except Exception:
+            goygram_version = "unknown"
+        return f"Hotaru {__version__} · goygram {goygram_version}"
 
     def _command_st(self, invocation: Any) -> str:
         status = self.status()
@@ -1537,6 +1680,7 @@ class Runtime:
                         self.observatory.emit("modules", "kernel_load_error", path=hmod_path.name, error=type(exc).__name__, detail=str(exc)[:240])
         await self.restore_enabled_modules()
         await self.restore_forms()
+        await self.recover_kernel_messages()
         if self._form_gc_task is None or self._form_gc_task.done():
             self._form_gc_task = asyncio.create_task(self._form_gc_loop(), name="hotaru:form-gc")
         if self.inline is not None:

@@ -9,7 +9,9 @@ from typing import Any
 
 from .commands import CommandInvocation, CommandParser
 from .registry import CommandRegistry
+from .inline_registry import InlineRegistry
 from .security import AccessVerdict, SecurityGate
+from .access import AccessManager, Permission
 
 
 class Kernel:
@@ -30,8 +32,10 @@ class Kernel:
         if command_timeout <= 0:
             raise ValueError("command_timeout must be positive")
         self.registry = registry or CommandRegistry()
+        self.inline_registry = InlineRegistry()
         self.parser = parser or CommandParser()
         self.owner_id = owner_id
+        self.access: AccessManager | None = None
         self.context_factory = context_factory
         self.response_service = response_service
         self.form_sender = form_sender
@@ -101,7 +105,7 @@ class Kernel:
     async def dispatch(self, message: Any, *, source: str) -> object | None:
         if self._is_blocked_peer(message):
             return None
-        if not self._is_owner(message):
+        if not self._is_authorized(message):
             return None
         if self.security is not None:
             verdict = self.security.check(message, transport="mt", is_group=self._is_group(message))
@@ -237,15 +241,39 @@ class Kernel:
     def unregister_module_command(self, module_id: str, name: str) -> bool:
         return self.registry.unregister(name, module_id=module_id)
 
-    def _is_owner(self, message: Any) -> bool:
+    def _is_authorized(self, message: Any) -> bool:
+        user_id = getattr(message, "from_id", None)
+        if not isinstance(user_id, int):
+            user_id = None
+        if self.access is not None:
+            required = self._required_permission(message)
+            return self.access.allows(user_id, required)
         if bool(getattr(message, "is_me", False)):
             return True
         if self.owner_id is None:
             return False
-        if getattr(message, "from_id", None) == self.owner_id:
+        if user_id == self.owner_id:
             return True
         chat_id = getattr(message, "chat_id", None)
         return chat_id == self.owner_id
+
+    def _required_permission(self, message: Any) -> Permission:
+        from .access import DEFAULT_COMMAND_PERMISSION, PUBLIC_COMMAND_PERMISSION
+        text = getattr(message, "text", None) or ""
+        name = self.parser.command_name(text)
+        if name is None:
+            return DEFAULT_COMMAND_PERMISSION
+        spec = self.registry.resolve_name(name)
+        if spec is None:
+            return DEFAULT_COMMAND_PERMISSION
+        if spec.kernel:
+            return DEFAULT_COMMAND_PERMISSION
+        if self.access is None:
+            return DEFAULT_COMMAND_PERMISSION
+        permission = self.access.default_permission(spec.module_id, spec.name)
+        if permission == PUBLIC_COMMAND_PERMISSION and self._is_group(message):
+            return DEFAULT_COMMAND_PERMISSION
+        return permission
 
     @staticmethod
     def _is_blocked_peer(message: Any) -> bool:

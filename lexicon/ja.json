@@ -169,5 +169,6 @@
       "capabilities": "機能",
       "untrusted": "未信頼"
     }
-  }
+  },
+  "inline_commands_hint": "コマンドを選択 — 任意のチャットで @<bot> とコマンド名を入力"
 }

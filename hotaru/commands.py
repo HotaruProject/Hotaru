@@ -48,6 +48,15 @@ class CommandParser:
             message=message,
         )
 
+    def command_name(self, text: str | None) -> str | None:
+        if not text or not text.startswith(self.prefix):
+            return None
+        parts = text[len(self.prefix) :].split()
+        if not parts:
+            return None
+        name = parts[0].casefold()
+        return name if name.isidentifier() else None
+
     def swap_invocation(self, invocation: CommandInvocation) -> CommandInvocation | None:
         swapped = swap_layout(invocation.name).casefold()
         if not swapped.isidentifier() or swapped == invocation.name:

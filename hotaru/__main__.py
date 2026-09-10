@@ -49,10 +49,30 @@ def ensure_kernel_dependencies() -> None:
                 del sys.modules[entry]
 
 
+def _apply_account_session(config, session_base):
+    from dataclasses import replace
+    from pathlib import Path
+    session_dir = Path(session_base).resolve().parent
+    session_name = Path(session_base).name
+    if not session_name or Path(session_name).name != session_name:
+        raise SystemExit("account session name is invalid")
+    return replace(config, session_name=session_name, session_dir=session_dir)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="hotaru")
     parser.add_argument("--check", action="store_true")
+    parser.add_argument("--account", type=int, default=None)
     args = parser.parse_args()
+    if args.account is not None and not args.check:
+        import os as _os
+        if _os.environ.get("HOTARU_ACCOUNT_SESSION"):
+            from .config import RuntimeConfig
+            from .runtime import Runtime
+            config = RuntimeConfig.from_database()
+            config = _apply_account_session(config, _os.environ["HOTARU_ACCOUNT_SESSION"])
+            asyncio.run(Runtime(config).run())
+            return
     ensure_kernel_dependencies()
     from .config import RuntimeConfig
     from .runtime import Runtime

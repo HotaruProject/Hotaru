@@ -3,7 +3,9 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable
+from typing import Any
+
+from .access import AccessManager, Permission
 
 
 class AccessVerdict(Enum):
@@ -15,9 +17,12 @@ class AccessVerdict(Enum):
 @dataclass(frozen=True, slots=True)
 class Principal:
     user_id: int | None
-    is_me: bool
     chat_id: int | str | None
     transport: str
+
+    @property
+    def is_me(self) -> bool:
+        return False
 
 
 class SecurityError(RuntimeError):
@@ -50,6 +55,7 @@ class SecurityGate:
         if seen_limit < 1:
             raise ValueError("seen_limit must be positive")
         self.owner_id = owner_id
+        self.access: AccessManager | None = None
         self._policies: dict[str, ModulePolicy] = {}
         self._windows: dict[tuple[str, int], RateWindow] = {}
         self._seen_limit = seen_limit
@@ -59,6 +65,11 @@ class SecurityGate:
         if owner_id is not None and not isinstance(owner_id, int):
             raise ValueError("owner id must be an integer")
         self.owner_id = owner_id
+        if self.access is not None:
+            self.access.set_owner(owner_id)
+
+    def set_access(self, access: AccessManager | None) -> None:
+        self.access = access
 
     def register_policy(self, policy: ModulePolicy) -> None:
         self._policies[policy.module_id] = policy
@@ -69,20 +80,19 @@ class SecurityGate:
     def principal_of(self, event: Any, *, transport: str) -> Principal:
         user_id = getattr(event, "from_id", None)
         chat_id = getattr(event, "chat_id", None)
-        is_me = bool(getattr(event, "is_me", False))
         if not isinstance(user_id, int):
             user_id = None
-        return Principal(user_id, is_me, chat_id, transport)
+        return Principal(user_id, chat_id, transport)
 
-    def _is_owner(self, principal: Principal) -> bool:
-        if principal.is_me:
-            return True
+    def _privileged(self, principal: Principal) -> bool:
+        if self.access is not None:
+            return self.access.allows(principal.user_id, Permission.TRUSTED)
         if self.owner_id is not None and principal.user_id == self.owner_id:
             return True
         return False
 
-    def _rate_ok(self, principal: Principal, policy: ModulePolicy | None, *, owner: bool = False) -> bool:
-        if owner:
+    def _rate_ok(self, principal: Principal, policy: ModulePolicy | None, *, privileged: bool = False) -> bool:
+        if privileged:
             return True
         limits = (policy.max_hits, policy.window) if policy is not None else (30, 60.0)
         key = (principal.transport, principal.user_id or 0)
@@ -108,8 +118,8 @@ class SecurityGate:
     def check(self, event: Any, *, transport: str, module_id: str | None = None, is_group: bool = False) -> AccessVerdict:
         principal = self.principal_of(event, transport=transport)
         policy = self._policies.get(module_id) if module_id else None
-        if self._is_owner(principal):
-            if not self._rate_ok(principal, policy, owner=True):
+        if self._privileged(principal):
+            if not self._rate_ok(principal, policy, privileged=True):
                 return AccessVerdict.SILENT
             return AccessVerdict.ALLOW
         if policy is not None and policy.allow_others:
@@ -122,11 +132,9 @@ class SecurityGate:
 
     def check_callback(self, event: Any, *, transport: str, owner_binding: int | str | None = None) -> AccessVerdict:
         principal = self.principal_of(event, transport=transport)
-        if principal.is_me:
+        if self._privileged(principal):
             return AccessVerdict.ALLOW
         if owner_binding is not None and principal.user_id is not None:
             if str(principal.user_id) == str(owner_binding):
                 return AccessVerdict.ALLOW
-        if self.owner_id is not None and principal.user_id == self.owner_id:
-            return AccessVerdict.ALLOW
         return AccessVerdict.SILENT

@@ -1,0 +1,134 @@
+HOTARU = {
+    "id": "accounts",
+    "version": "1.0.0",
+    "description": "Multi-account management: register, authorize, spawn, stop accounts",
+    "commands": ["acc", "acca", "accs"],
+    "capabilities": ["mt"],
+    "translations": {
+        "ru": {
+            "description": "Мультиаккаунтинг: регистрация, авторизация, запуск и остановка аккаунтов",
+            "commands": {
+                "acc": {"description": "Управление аккаунтом: acc <#> <start|stop|on|off|del>"},
+                "acca": {"description": "Авторизовать новый аккаунт: acca <#>"},
+                "accs": {"description": "Список аккаунтов"},
+            },
+        },
+        "en": {
+            "description": "Multi-account management: register, authorize, spawn, stop accounts",
+            "commands": {
+                "acc": {"description": "Manage account: acc <#> <start|stop|on|off|del>"},
+                "acca": {"description": "Authorize a new account: acca <#>"},
+                "accs": {"description": "List accounts"},
+            },
+        },
+    },
+}
+
+
+import asyncio
+import html as _html
+
+
+def _escape(value):
+    return _html.escape(str(value), quote=False)
+
+
+def _usage(ctx):
+    return ctx.t(
+        "accounts.usage",
+        "usage: !acc <#> <start|stop|on|off|del>\n!acca <#> — авторизовать аккаунт\n!accs — список",
+    )
+
+
+async def command_accs(ctx, invocation):
+    items = ctx.accounts.items()
+    if not items:
+        await ctx.respond(ctx.t("accounts.empty", "Аккаунты не зарегистрированы. Используй !acca <#>."), parse_mode="HTML")
+        return
+    rows = []
+    for profile in items:
+        vault_ok = ctx.accounts.vault_ready(profile.account_number)
+        vault_state = "✓" if vault_ok else "✗"
+        state = "on" if profile.enabled else "off"
+        rows.append(
+            f"<b>#{profile.account_number}</b> user <code>{profile.user_id}</code> vault {vault_state} {state}"
+        )
+    await ctx.respond("<b>Accounts</b><br>" + "<br>".join(rows), parse_mode="HTML")
+
+
+async def command_acca(ctx, invocation):
+    if not invocation.args or not invocation.args[0].isdigit():
+        await ctx.respond(_usage(ctx), parse_mode="HTML")
+        return
+    number = int(invocation.args[0])
+    user_id = getattr(ctx.runtime, "session_self_id", None)
+    if user_id is None:
+        session = getattr(ctx.runtime.app, "session", None)
+        user_id = getattr(session, "self_id", None) if session is not None else None
+    if user_id is None:
+        await ctx.respond(ctx.t("accounts.no_self", "Не удалось определить user id сессии."), parse_mode="HTML")
+        return
+    try:
+        profile = ctx.accounts.register(user_id, number)
+    except Exception as exc:
+        await ctx.respond(f"<b>Register failed:</b> <i>{_escape(exc)}</i>", parse_mode="HTML")
+        return
+    vault = ctx.accounts.vault_path(number)
+    await ctx.respond(
+        f"<b>Account #{number} registered</b><br>"
+        f"vault: <code>{_escape(profile.vault_name)}</code><br>"
+        f"Авторизуйся, затем запусти: <code>!acc {number} start</code>",
+        parse_mode="HTML",
+    )
+
+
+async def command_acc(ctx, invocation):
+    if len(invocation.args) < 2 or not invocation.args[0].isdigit():
+        await ctx.respond(_usage(ctx), parse_mode="HTML")
+        return
+    number = int(invocation.args[0])
+    action = invocation.args[1].casefold()
+
+    if ctx.accounts.profile(number) is None:
+        await ctx.respond(ctx.t("accounts.not_registered", f"Аккаунт #{number} не зарегистрирован."), parse_mode="HTML")
+        return
+
+    if action == "start":
+        try:
+            pid = ctx.accounts.spawn(number)
+        except Exception as exc:
+            await ctx.respond(f"<b>Start failed:</b> <i>{_escape(exc)}</i>", parse_mode="HTML")
+            return
+        await ctx.respond(f"<b>Account #{number} started</b> (pid {pid})", parse_mode="HTML")
+        return
+
+    if action == "stop":
+        ok = ctx.accounts.stop(number)
+        await ctx.respond(
+            f"<b>Account #{number} stopped</b>" if ok else f"Account #{number} not running",
+            parse_mode="HTML",
+        )
+        return
+
+    if action in ("on", "off"):
+        enabled = action == "on"
+        ok = ctx.accounts.set_enabled(number, enabled)
+        await ctx.respond(
+            f"<b>Account #{number} {'enabled' if enabled else 'disabled'}</b>" if ok else "failed",
+            parse_mode="HTML",
+        )
+        return
+
+    if action == "del":
+        try:
+            ctx.accounts.stop(number)
+        except Exception:
+            pass
+        ok = ctx.accounts.unregister(number)
+        await ctx.respond(
+            f"<b>Account #{number} removed</b>" if ok else f"Account #{number} not registered",
+            parse_mode="HTML",
+        )
+        return
+
+    await ctx.respond(_usage(ctx), parse_mode="HTML")

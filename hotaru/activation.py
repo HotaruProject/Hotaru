@@ -41,6 +41,15 @@ class ModuleBinder:
             if not callable(handler):
                 raise ActivationError(f"module handler is missing: {name}")
             handlers.append((name, handler))
+
+        inline_handlers: list[tuple[str, Any]] = []
+        for name in getattr(loaded.manifest, "inline_commands", ()):
+            if not name.isidentifier():
+                raise ActivationError(f"module inline command is invalid: {name}")
+            handler = namespace.get(f"inline_{name}")
+            if not callable(handler):
+                raise ActivationError(f"module inline handler is missing: {name}")
+            inline_handlers.append((name, handler))
         
         watcher_handlers: list[tuple[str, Any]] = []
         for name in loaded.manifest.watchers:
@@ -65,11 +74,15 @@ class ModuleBinder:
             for name, handler in watcher_handlers:
                 kernel.registry.register_watcher(name, handler, module_id=loaded.manifest.module_id, sandbox=False)
                 bound_watchers.append(name)
+            for name, handler in inline_handlers:
+                kernel.inline_registry.register(name, handler, module_id=loaded.manifest.module_id)
             for alias, command in loaded.manifest.aliases.items():
                 kernel.registry.register_alias(alias, command)
         except Exception as exc:
             for name in bound:
                 kernel.unregister_module_command(loaded.manifest.module_id, name)
+            for name, _ in inline_handlers:
+                kernel.inline_registry.unregister(name, module_id=loaded.manifest.module_id)
             for name in bound_watchers:
                 kernel.registry.unregister_watcher(name, loaded.manifest.module_id)
             for alias in loaded.manifest.aliases:
@@ -83,6 +96,8 @@ class ModuleBinder:
                 kernel.registry.unregister_kernel(name, module_id=loaded.manifest.module_id)
             else:
                 kernel.unregister_module_command(loaded.manifest.module_id, name)
+        for name in getattr(loaded.manifest, "inline_commands", ()):
+            kernel.inline_registry.unregister(name, module_id=loaded.manifest.module_id)
         for name in loaded.manifest.watchers:
             kernel.registry.unregister_watcher(name, loaded.manifest.module_id)
         for alias in loaded.manifest.aliases:
@@ -99,6 +114,8 @@ class ModuleBinder:
                 module_id=loaded.manifest.module_id,
                 sandbox=True,
             )
+        for name in getattr(loaded.manifest, "inline_commands", ()):
+            kernel.inline_registry.register(name, None, module_id=loaded.manifest.module_id, sandbox=True)
         for name in loaded.manifest.watchers:
             kernel.registry.register_watcher(name, None, module_id=loaded.manifest.module_id, sandbox=True)
         for alias, command in loaded.manifest.aliases.items():
