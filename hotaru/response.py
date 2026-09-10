@@ -353,7 +353,6 @@ class ModuleContext:
     form_sender: Any = None
     runtime: Any = None
     is_premium: bool | None = None
-    kmsg: Any = None
 
     @property
     def message(self) -> ModuleMessage:
@@ -393,13 +392,6 @@ class ModuleContext:
     def t(self, key: str, default: str | None = None, **params: Any) -> str:
         return self.i18n.t(key, default, **params)
 
-    @property
-    def kernel_messages(self) -> Any:
-        from .kmsg import KernelMessageError
-        if not self._is_kernel_module():
-            raise KernelMessageError("kernel messages are available to kernel modules only")
-        return self.kmsg
-
     def _is_kernel_module(self) -> bool:
         runtime = self.runtime
         if runtime is None or getattr(runtime, "modules", None) is None:
@@ -409,24 +401,22 @@ class ModuleContext:
 
     @property
     def accounts(self) -> Any:
-        from .kmsg import KernelMessageError
         if not self._is_kernel_module():
-            raise KernelMessageError("account management is available to kernel modules only")
+            raise RuntimeError("account management is available to kernel modules only")
         runtime = self.runtime
         manager = getattr(runtime, "account_manager", None) if runtime is not None else None
         if manager is None:
-            raise KernelMessageError("account manager is unavailable")
+            raise RuntimeError("account manager is unavailable")
         return manager
 
     @property
     def access_admin(self) -> Any:
-        from .kmsg import KernelMessageError
         if not self._is_kernel_module():
-            raise KernelMessageError("access administration is available to kernel modules only")
+            raise RuntimeError("access administration is available to kernel modules only")
         runtime = self.runtime
         access = getattr(runtime, "access", None) if runtime is not None else None
         if access is None:
-            raise KernelMessageError("access manager is unavailable")
+            raise RuntimeError("access manager is unavailable")
         return access
 
     @property
@@ -877,8 +867,7 @@ class ModuleContextFactory:
         self.callback_router: Any = None
         self.inline_manager: Any = None
         self.form_sender: Any = None
-        self.kmsg: Any = None
         self.runtime: Any = runtime
 
     def create(self, module_id: str, message: Any) -> ModuleContext:
-        return ModuleContext(module_id, message, self._state.namespace(module_id), self._responses, self.cap_host, self.callback_router, self.inline_manager, self.form_sender, self.runtime, None, self.kmsg)
+        return ModuleContext(module_id, message, self._state.namespace(module_id), self._responses, self.cap_host, self.callback_router, self.inline_manager, self.form_sender, self.runtime, None)

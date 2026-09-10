@@ -1,12 +1,9 @@
 HOTARU = {
     "id": "power",
-    "version": "1.3.0",
-    "description": "Power management: restart, stop, start with persistent status messages",
+    "version": "1.4.0",
+    "description": "Power management: restart with post-restart success message",
     "commands": ["restart", "stop", "start"],
     "capabilities": ["mt"],
-    "tasks": {
-        "status_sync": {"interval": 60, "autostart": True},
-    },
     "rise": "sunrise",
     "fade": "sundown",
 }
@@ -17,24 +14,12 @@ import subprocess
 import sys
 import time
 
-from hotaru.kmsg import KernelMessageService
-
-SLOT = "power:status"
-RESTART_SLOT = "power:restart"
 
 def _text_running(ctx):
     return f"<b>{ctx.t('kernel.power.running', 'Юзербот работает')}</b>"
 
 def _text_stopped(ctx):
     return f"<b>{ctx.t('kernel.power.stopped', 'Юзербот приостановлен')}</b>"
-
-async def _edit_status(ctx, text):
-    record = ctx.kernel_messages.get(SLOT)
-    if record is None:
-        return
-    updated = ctx.kernel_messages.put(SLOT, "power", record.chat_id, record.message_id, text, record.meta)
-    if updated is not None:
-        await KernelMessageService.edit(ctx.bot, updated, text)
 
 async def command_stop(ctx, invocation):
     runtime = ctx.runtime
@@ -45,7 +30,6 @@ async def command_stop(ctx, invocation):
     if runtime.state is not None:
         runtime.state.set_setting("suspended", "1")
     await ctx.respond(_text_stopped(ctx), parse_mode="HTML")
-    await _edit_status(ctx, _text_stopped(ctx))
 
 async def command_start(ctx, invocation):
     runtime = ctx.runtime
@@ -56,26 +40,13 @@ async def command_start(ctx, invocation):
     if runtime.state is not None:
         runtime.state.set_setting("suspended", "0")
     await ctx.respond(_text_running(ctx), parse_mode="HTML")
-    await _edit_status(ctx, _text_running(ctx))
 
 async def command_restart(ctx, invocation):
-    restarting = ctx.t("kernel.power.restarting", "Перезапускаю юзербот...")
-    record = ctx.kernel_messages.get(RESTART_SLOT)
-    if record is not None:
-        ctx.kernel_messages.put(RESTART_SLOT, "power", record.chat_id, record.message_id, restarting, {"restart_ts": time.time()})
-        await KernelMessageService.edit(ctx.bot, ctx.kernel_messages.get(RESTART_SLOT), restarting)
-    else:
-        sent = None
-        try:
-            sent = await ctx.respond(restarting, parse_mode="HTML")
-        except Exception:
-            sent = None
-        body = sent.get("result", sent) if isinstance(sent, dict) else sent
-        if isinstance(body, dict):
-            chat_id = body.get("chat", {}).get("id") or body.get("chat_id")
-            message_id = body.get("message_id")
-            if isinstance(chat_id, int) and isinstance(message_id, int):
-                ctx.kernel_messages.put(RESTART_SLOT, "power", chat_id, message_id, restarting, {"restart_ts": time.time()})
+    chat_id = getattr(ctx.message, "chat_id", None)
+    message_id = getattr(ctx.message, "id", None)
+    if isinstance(chat_id, int) and isinstance(message_id, int):
+        ctx.state.set("restart_pending", {"chat_id": chat_id, "message_id": message_id, "ts": time.time()})
+    await ctx.respond(ctx.t("kernel.power.restarting", "Перезапускаю юзербот..."), parse_mode="HTML")
 
     try:
         if ctx.runtime.app:
@@ -105,46 +76,22 @@ async def command_restart(ctx, invocation):
     os.execv(sys.executable, [sys.executable, "-m", "hotaru"])
 
 async def sunrise(ctx):
-    record = ctx.kernel_messages.get(RESTART_SLOT)
-    if record is None:
+    pending = ctx.state.get("restart_pending")
+    if not isinstance(pending, dict):
         return
-    meta = record.meta or {}
-    restart_ts = meta.get("restart_ts")
-    if not isinstance(restart_ts, (int, float)) or not restart_ts:
-        ctx.kernel_messages.pop(RESTART_SLOT)
+    ctx.state.delete("restart_pending")
+    ts = pending.get("ts")
+    chat_id = pending.get("chat_id")
+    message_id = pending.get("message_id")
+    if not (isinstance(chat_id, int) and isinstance(message_id, int)):
         return
-    took = time.time() - float(restart_ts)
-    if took < 1:
-        took = 1
-    if took > 600:
-        took = "n/a"
-    else:
-        took = f"{round(took)}s"
-    restarted = ctx.t("kernel.power.restarted", "Юзербот успешно перезапущен за {took}", took=took)
-    text = f"<b>{restarted}</b>"
-    ctx.kernel_messages.pop(RESTART_SLOT)
+    took = max(1, round(time.time() - float(ts))) if isinstance(ts, (int, float)) else None
+    took = f"{took}s" if took is not None else "n/a"
+    text = ctx.t("kernel.power.restarted", "Юзербот успешно перезапущен за {took}", took=took)
     try:
-        await KernelMessageService.edit(ctx.bot, record, text)
+        await ctx.tg.edit_rich(message_id, f"<b>{text}</b>", peer=chat_id)
     except Exception:
         pass
 
 async def sundown(ctx):
-    try:
-        record = ctx.kernel_messages.get(SLOT)
-        if record is not None:
-            return
-    except Exception:
-        pass
-
-async def task_status_sync(ctx):
-    while True:
-        try:
-            record = ctx.kernel_messages.get(SLOT)
-            if record is not None:
-                expected = _text_running(ctx) if not ctx.runtime.kernel.suspended else _text_stopped(ctx)
-                if record.text != expected:
-                    if await KernelMessageService.edit(ctx.bot, record, expected):
-                        ctx.kernel_messages.put(SLOT, "power", record.chat_id, record.message_id, expected, record.meta)
-        except Exception:
-            pass
-        await asyncio.sleep(30)
+    return None

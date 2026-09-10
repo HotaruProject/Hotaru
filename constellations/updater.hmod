@@ -1,6 +1,6 @@
 HOTARU = {
     "id": "updater",
-    "version": "1.3.0",
+    "version": "1.4.0",
     "description": "Hotaru self-updater: changelog, update confirmation, git pull, deps, restart",
     "commands": ["upd", "updlog", "updoff", "updon"],
     "capabilities": ["net"],
@@ -11,86 +11,66 @@ HOTARU = {
 }
 
 import asyncio
-import html as _html
 import json
 import os
 import subprocess
+import sys
 import time
 
-FETCH_INTERVAL = 300
 REPO_URL = "https://github.com/HotaruProject/Hotaru"
-BRANCH = "main"
-SLOT = "updater:status"
+
 
 def _escape(value):
+    import html as _html
     return _html.escape(str(value), quote=False)
 
 def _repo_dir(runtime):
-    root = getattr(runtime, "constellations_dir", None)
-    if root is None:
-        return None
-    return str(root.parent)
+    return os.path.dirname(os.path.dirname(os.path.abspath(__file__))) if runtime is None else str(getattr(runtime, "root", "") or os.getcwd())
 
-def _git(runtime, *args, timeout=60):
+def _git(runtime, *args):
     repo = _repo_dir(runtime)
-    if repo is None:
-        raise RuntimeError("repo directory is unavailable")
-    return subprocess.run(
-        ["git", "-C", repo, *args],
+    result = subprocess.run(
+        ["git", "-C", repo] + list(args),
         capture_output=True,
         text=True,
-        timeout=timeout,
-        check=False,
+        timeout=180,
     )
+    if result.returncode != 0:
+        raise RuntimeError(result.stderr.strip() or result.stdout.strip() or "git failed")
+    return result.stdout
 
 def _fetch_origin(runtime):
-    result = _git(runtime, "fetch", "--quiet", "origin", timeout=120)
-    if result.returncode != 0:
-        raise RuntimeError(f"git fetch failed: {result.stderr.strip()[:200]}")
+    _git(runtime, "fetch", "origin", "main")
 
 def _current_commit(runtime):
-    result = _git(runtime, "rev-parse", "HEAD")
-    if result.returncode != 0:
-        raise RuntimeError("git rev-parse failed")
-    return result.stdout.strip()
+    return _git(runtime, "rev-parse", "HEAD").strip()
 
 def _latest_commit(runtime):
-    result = _git(runtime, "rev-parse", f"origin/{BRANCH}")
-    if result.returncode != 0:
-        raise RuntimeError("git rev-parse origin failed")
-    return result.stdout.strip()
+    return _git(runtime, "rev-parse", "origin/main").strip()
 
 def _changelog(runtime):
-    result = _git(runtime, "log", "--pretty=format:%h %s", f"HEAD..origin/{BRANCH}", "--max-count=10")
-    if result.returncode != 0:
-        raise RuntimeError("git log failed")
-    lines = [line for line in result.stdout.splitlines() if line.strip()]
-    if not lines:
-        return ""
-    entries = []
-    for line in lines:
-        sha, _, title = line.partition(" ")
-        entries.append(f"<b>{_escape(sha)}</b> <i>{_escape(title)}</i>")
-    return "<br>".join(entries)
+    current = _current_commit(runtime)
+    latest = _latest_commit(runtime)
+    if current == latest:
+        return []
+    return _git(runtime, "log", "--pretty=format:%s", f"{current}..{latest}").splitlines()
 
 def _pull(runtime):
     before = _current_commit(runtime)
-    result = _git(runtime, "pull", "--ff-only", "origin", BRANCH, timeout=300)
-    if result.returncode != 0:
-        raise RuntimeError(f"git pull failed: {result.stderr.strip()[:300]}")
-    after = _current_commit(runtime)
-    diff = _git(runtime, "diff", "--name-only", before, after)
-    deps_changed = any(
-        name in ("pyproject.toml", "uv.lock", "requirements.txt")
-        for name in diff.stdout.splitlines()
-    )
-    return before, after, deps_changed
+    _git(runtime, "reset", "--hard", "origin/main")
+    _git(runtime, "clean", "-fd")
+    after = _latest_commit(runtime)
+    deps = False
+    try:
+        deps_changed = _git(runtime, "diff", "--name-only", before, after, "--", "pyproject.toml", "uv.lock")
+        deps = bool(deps_changed.strip())
+    except Exception:
+        pass
+    return before, after, deps
 
 def _sync_deps(runtime):
-    venv = runtime.config.state_path.parent / ".venv" if hasattr(runtime.config, "state_path") else None
     root = _repo_dir(runtime)
     try:
-        import sys
         subprocess.run(
             [sys.executable, "-m", "hotaru_deps_sync"],
             cwd=root,
@@ -109,47 +89,41 @@ async def _bot_edit(ctx, chat_id, message_id, text, inline_message_id=None):
     await ctx.bot.call("editMessageText", **params)
 
 async def _status(ctx, text):
-    record = ctx.kernel_messages.get(SLOT)
-    if record is None:
-        return None
-    ctx.kernel_messages.put(SLOT, "updater", record.chat_id, record.message_id, text, record.meta)
-    try:
-        await _bot_edit(ctx, record.chat_id, record.message_id, text)
-    except Exception:
-        pass
-    return record
-
-async def _recover(ctx):
-    from hotaru.kmsg import KernelMessageService
-    record = ctx.kernel_messages.get(SLOT)
-    if record is None:
+    pending = ctx.state.get("update_pending")
+    if not (isinstance(pending, dict) and isinstance(pending.get("chat_id"), int) and isinstance(pending.get("message_id"), int)):
+        await ctx.respond(text, parse_mode="HTML")
         return
-    meta = record.meta or {}
-    restarting = meta.get("restarting") or meta.get("update_ts")
-    if not restarting:
-        return
-    took = round(time.time() - float(restarting)) if isinstance(restarting, (int, float)) else "n/a"
-    meta = dict(meta)
-    meta.pop("restarting", None)
-    meta.pop("update_ts", None)
-    text = ctx.t("kernel.updater.restarted", "Hotaru обновлён и успешно перезапущен за {took}", took=f"{took}s" if isinstance(took, int) else took)
-    text = f"<b>{text}</b>"
-    ctx.kernel_messages.put(SLOT, "updater", record.chat_id, record.message_id, text, meta)
     try:
-        await _bot_edit(ctx, record.chat_id, record.message_id, text)
+        await _bot_edit(ctx, pending["chat_id"], pending["message_id"], text)
     except Exception:
         pass
 
 async def afterglow(ctx):
-    await _recover(ctx)
+    pending = ctx.state.get("update_pending")
+    if not isinstance(pending, dict):
+        return
+    restarting = pending.get("restarting")
+    if not restarting:
+        return
+    chat_id = pending.get("chat_id")
+    message_id = pending.get("message_id")
+    ctx.state.delete("update_pending")
+    took = round(time.time() - float(restarting)) if isinstance(restarting, (int, float)) else None
+    took = f"{took}s" if took is not None else "n/a"
+    text = ctx.t("kernel.updater.restarted", "Hotaru обновлён и успешно перезапущен за {took}", took=took)
+    if not (isinstance(chat_id, int) and isinstance(message_id, int)):
+        return
+    try:
+        await _bot_edit(ctx, chat_id, message_id, f"<b>{text}</b>")
+    except Exception:
+        pass
 
 def _notify_text(current, latest, changelog):
     link = f'<a href="{REPO_URL}/compare/{current[:12]}...{latest[:12]}">{latest[:6]}</a>'
-    return (
-        f"<b>Hotaru update available</b><br>"
-        f"current: <code>{_escape(current[:7])}</code> → {link}<br><br>"
-        f"{changelog}"
-    )
+    lines = [f"<b>Hotaru update available</b> → <code>{link}</code>"]
+    for entry in (changelog or [])[:10]:
+        lines.append(f"• {_escape(entry)}")
+    return "<br>".join(lines)
 
 async def command_updlog(ctx, invocation):
     runtime = ctx.runtime
@@ -158,28 +132,26 @@ async def command_updlog(ctx, invocation):
         return
     try:
         _fetch_origin(runtime)
+        current = _current_commit(runtime)
+        latest = _latest_commit(runtime)
         changelog = _changelog(runtime)
     except Exception as exc:
-        await ctx.respond(f"<b>Changelog failed:</b> <i>{_escape(exc)}</i>", parse_mode="HTML")
+        await ctx.respond(f"<b>Update check failed:</b> <i>{_escape(exc)}</i>", parse_mode="HTML")
         return
-    if not changelog:
-        await ctx.respond("<b>Hotaru is up to date</b>", parse_mode="HTML")
+    if current == latest:
+        await ctx.respond(f"<b>Already up to date</b> <code>{_escape(current[:7])}</code>", parse_mode="HTML")
         return
-    current = _current_commit(runtime)
-    latest = _latest_commit(runtime)
     await ctx.respond(_notify_text(current, latest, changelog), parse_mode="HTML")
 
 async def command_updoff(ctx, invocation):
     ctx.state.set("notify", False)
-    await ctx.respond("Update notifications disabled. Use .updon to re-enable.", parse_mode="HTML")
+    await ctx.respond("<b>Update notifications disabled</b>", parse_mode="HTML")
 
 async def command_updon(ctx, invocation):
     ctx.state.set("notify", True)
-    await ctx.respond("Update notifications enabled.", parse_mode="HTML")
-    await _recover(ctx)
+    await ctx.respond("<b>Update notifications enabled</b>", parse_mode="HTML")
 
 async def _run_update(ctx, notify=None):
-    runtime = ctx.runtime
     async def say(text):
         if notify is not None:
             await notify(text)
@@ -187,7 +159,7 @@ async def _run_update(ctx, notify=None):
             await _status(ctx, text)
     await say("<b>Downloading update…</b>")
     try:
-        before, after, deps_changed = _pull(runtime)
+        before, after, deps_changed = _pull(ctx.runtime)
     except Exception as exc:
         await say(f"<b>Update failed:</b> <i>{_escape(exc)}</i>")
         return
@@ -196,13 +168,14 @@ async def _run_update(ctx, notify=None):
         return
     if deps_changed:
         await say("<b>Syncing dependencies…</b>")
-        _sync_deps(runtime)
+        _sync_deps(ctx.runtime)
     await say(f"<b>Updated to</b> <code>{_escape(after[:7])}</code>. Restarting…")
-    record = ctx.kernel_messages.get(SLOT)
-    if record is not None:
-        meta = dict(record.meta or {})
-        meta["restarting"] = time.time()
-        ctx.kernel_messages.put(SLOT, "updater", record.chat_id, record.message_id, f"<b>Updated to</b> <code>{_escape(after[:7])}</code>. Restarting…", meta)
+    pending = ctx.state.get("update_pending")
+    base = pending if isinstance(pending, dict) else {}
+    chat_id = base.get("chat_id")
+    message_id = base.get("message_id")
+    if isinstance(chat_id, int) and isinstance(message_id, int):
+        ctx.state.set("update_pending", {"chat_id": chat_id, "message_id": message_id, "restarting": time.time()})
     await asyncio.sleep(1)
     await _restart_service(ctx)
 
@@ -222,7 +195,7 @@ async def _restart_service(ctx):
                 for line in f:
                     if ".service" in line:
                         service_name = line.strip().split("/")[-1]
-                        if "user.slice" in line or "user@" in line:
+                        if "user.slice" in line or "user@".lower() in line.lower():
                             is_user_service = True
                         break
         except Exception:
@@ -277,15 +250,14 @@ async def command_upd(ctx, invocation):
     body = message.get("result", message) if isinstance(message, dict) else message
     if isinstance(body, dict):
         chat_id = body.get("chat", {}).get("id") or body.get("chat_id")
-        message_id = body.get("message_id")
+        message_id = body.get("message_id") or body.get("id")
         if isinstance(chat_id, int) and isinstance(message_id, int):
-            ctx.kernel_messages.put(SLOT, "updater", chat_id, message_id, _notify_text(current, latest, changelog), {})
+            ctx.state.set("update_pending", {"chat_id": chat_id, "message_id": message_id})
 
 async def task_poller(ctx):
     runtime = ctx.runtime
     if runtime is None:
         return
-    await _recover(ctx)
     if ctx.state.get("notify", True) is False:
         return
     try:
@@ -326,5 +298,5 @@ async def task_poller(ctx):
         chat_id = body.get("chat", {}).get("id") or body.get("chat_id")
         message_id = body.get("message_id")
         if isinstance(chat_id, int) and isinstance(message_id, int):
-            ctx.kernel_messages.put(SLOT, "updater", chat_id, message_id, text, {})
+            ctx.state.set("update_pending", {"chat_id": chat_id, "message_id": message_id})
     ctx.state.set("notified_commit", latest)

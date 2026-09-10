@@ -32,7 +32,6 @@ from .registry import Handler
 from .response import FormHandle, ModuleContextFactory, ResponseService
 from .security import SecurityGate
 from .state import StateStore
-from .kmsg import KernelMessageService
 from .supervisor import ConnectionSupervisor, Health
 from .tasks import TaskSupervisor
 from goygram.rich import rich_html
@@ -85,8 +84,6 @@ class Runtime:
     kernel: Kernel | None = None
     state: StateStore | None = None
     access: Any = None
-    kmsg: KernelMessageService | None = None
-    kernel_messages: KernelMessageService | None = None
     account_manager: Any = None
     capabilities: CapabilityBroker | None = None
     modules: ModuleManager | None = None
@@ -160,9 +157,6 @@ class Runtime:
         self.access = AccessManager(self.config.owner_id, AccessStore(self.state))
         self.security.set_access(self.access)
         self.kernel.access = self.access
-        from .kmsg import KernelMessageService
-        self.kmsg = KernelMessageService(self.state)
-        self.kernel_messages = self.kmsg
         from .accounts import AccountManager
         self.account_manager = AccountManager(self.state, self.config.session_dir)
         
@@ -190,7 +184,6 @@ class Runtime:
         self._form_gc_task = None
         self.context_factory.inline_manager = self.inline
         self.context_factory.form_sender = self._send_form
-        self.context_factory.kmsg = self.kmsg
         self.sandbox = ModuleSandbox(self)
         self.kernel.sandbox = self.sandbox
         self.kernel.context_factory = self.context_factory
@@ -391,34 +384,6 @@ class Runtime:
     async def refresh_forms(self) -> int:
         self.purge_forms()
         return await self.restore_forms()
-
-    async def recover_kernel_messages(self) -> int:
-        if self.kmsg is None or self.inline is None:
-            return 0
-        records = self.kmsg.items()
-        if not records:
-            return 0
-        try:
-            if self.inline.info is None:
-                with trusted_scope():
-                    await self.inline.ensure_bot()
-            if self.inline.bot_app is None:
-                with trusted_scope():
-                    await self.inline.start()
-            await asyncio.wait_for(self.inline.ready.wait(), timeout=10.0)
-        except Exception:
-            return 0
-        from relay.proxies import BotGateway
-        bot = BotGateway(self.inline)
-        recovered = 0
-        for record in records:
-            if not isinstance(record.message_id, int):
-                continue
-            if await KernelMessageService.edit(bot, record, record.text):
-                recovered += 1
-        if self.observatory is not None:
-            self.observatory.emit("kmsg", "recovered", count=recovered, total=len(records))
-        return recovered
 
     async def unload_module_forms(self, module_id: str) -> int:
         if self._forms is None:
@@ -1690,7 +1655,6 @@ class Runtime:
                         self.observatory.emit("modules", "kernel_load_error", path=hmod_path.name, error=type(exc).__name__, detail=str(exc)[:240])
         await self.restore_enabled_modules()
         await self.restore_forms()
-        await self.recover_kernel_messages()
         if self._form_gc_task is None or self._form_gc_task.done():
             self._form_gc_task = asyncio.create_task(self._form_gc_loop(), name="hotaru:form-gc")
         if self.inline is not None:
