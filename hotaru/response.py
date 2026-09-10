@@ -10,6 +10,7 @@ from typing import Any, Callable, Literal
 from goygram.errors import FloodWaitError, MessageNotModifiedError
 
 from .state import StateNamespace
+from goygram.rich import rich_html
 
 
 OutputMode = Literal["edit", "reply", "auto"]
@@ -259,115 +260,10 @@ class ResponseService:
         return result
 
     async def split_html(self, message: Any, text: str, *, limit: int = 4096, max_parts: int = 20, **kwargs: Any) -> list[Any]:
-        import re
+        from goygram.sugar import split_html_text
         if limit < 256:
             raise ValueError("limit must be at least 256")
-        units = lambda s: len(s.encode("utf-16-le")) // 2
-        tokens = re.findall(r"<[^>]+>|[^<]+", text)
-        parts: list[str] = []
-        stack: list[str] = []
-
-        def open_tags() -> str:
-            names = []
-            for tag in stack:
-                match = re.match(r"<([a-zA-Z][\w-]*)", tag)
-                if match is not None:
-                    names.append(match.group(1))
-            return "".join(f"<{name}>" for name in names)
-
-        def close_tags() -> str:
-            names = []
-            for tag in stack:
-                match = re.match(r"<([a-zA-Z][\w-]*)", tag)
-                if match is not None:
-                    names.append(match.group(1))
-            return "".join(f"</{name}>" for name in reversed(names))
-
-        def close_units() -> int:
-            total = 0
-            for tag in stack:
-                match = re.match(r"<([a-zA-Z][\w-]*)", tag)
-                if match is not None:
-                    total += units(f"</{match.group(1)}>")
-            return total
-
-        current = [open_tags()]
-        size = units(current[0])
-
-        def budget() -> int:
-            return max(limit - size - close_units(), 1)
-
-        def fits(extra_units: int) -> bool:
-            return size + extra_units + close_units() <= limit
-
-        def flush(force_close: bool) -> None:
-            nonlocal current, size
-            chunk_text = "".join(current)
-            if not force_close:
-                chunk_text += close_tags()
-            parts.append(chunk_text)
-            current = [open_tags()]
-            size = units(current[0])
-
-        for token in tokens:
-            if token.startswith("<"):
-                opening = re.fullmatch(r"<([a-zA-Z][\w-]*)(?:\s[^>]*)?>", token)
-                closing = re.fullmatch(r"</([a-zA-Z][\w-]*)>", token)
-                token_units = units(token)
-                if not fits(token_units) and len(current) > 1:
-                    flush(force_close=False)
-                current.append(token)
-                size += token_units
-                if opening and not token.endswith("/>") and opening.group(1).lower() not in {"br", "hr", "img", "tg-emoji"}:
-                    stack.append(token)
-                elif closing:
-                    for index in range(len(stack) - 1, -1, -1):
-                        match = re.match(r"<([a-zA-Z][\w-]*)", stack[index])
-                        if match is not None and match.group(1).lower() == closing.group(1).lower():
-                            del stack[index]
-                            break
-                continue
-            for separator in ("\n", " "):
-                pieces = token.split(separator)
-                joined = [separator.join(pieces[:1])]
-                for piece in pieces[1:]:
-                    joined.append(separator + piece if piece else separator)
-                pieces = [p for p in joined if p]
-                if len(pieces) > 1:
-                    break
-            else:
-                pieces = [token]
-            for piece in pieces:
-                piece_units = units(piece)
-                if piece_units > limit - size - close_units():
-                    if len(current) > 1:
-                        flush(force_close=False)
-                        piece_units = units(piece)
-                if piece_units > budget():
-                    remaining = piece
-                    while remaining:
-                        room = budget()
-                        fragment = []
-                        frag_units = 0
-                        cut_at = 0
-                        for char in remaining:
-                            char_units = units(char)
-                            if frag_units + char_units > room and fragment:
-                                break
-                            fragment.append(char)
-                            frag_units += char_units
-                            cut_at += 1
-                        current.append("".join(fragment))
-                        flush(force_close=False)
-                        remaining = remaining[cut_at:]
-                    continue
-                if not fits(piece_units) and len(current) > 1:
-                    flush(force_close=False)
-                current.append(piece)
-                size += piece_units
-        if len(current) > 1 or not parts:
-            flush(force_close=True)
-        parts = [part for part in parts if part.strip()]
+        parts = [part for part in split_html_text(text, limit) if part.strip()]
         if len(parts) > max_parts:
             return await self.fallback_file(message, text, **kwargs)
         result = []
@@ -538,47 +434,21 @@ class ModuleContext:
         app = getattr(self.runtime, "app", None) if self.runtime is not None else None
         if app is None or getattr(app, "mt", None) is None:
             return False
-
-        def find_user(value: Any) -> Any | None:
-            if isinstance(value, (list, tuple)):
-                for item in value:
-                    found = find_user(item)
-                    if found is not None:
-                        return found
-                return None
-            if isinstance(value, dict):
-                if value.get("_") == "user" or "premium" in value:
-                    return value
-                for key in ("result", "users", "user", "full_user"):
-                    if key in value:
-                        found = find_user(value[key])
-                        if found is not None:
-                            return found
-            return None
-
-        def premium_of(payload: Any) -> bool | None:
-            user = find_user(payload)
-            if user is None and isinstance(payload, dict) and payload.get("_") == "user":
-                user = payload
-            if isinstance(user, dict):
-                if "premium" in user:
-                    return bool(user["premium"])
-                return None
-            return getattr(user, "premium", None)
-
         try:
             from relay.firewall import trusted_scope
 
             with trusted_scope():
-                result = await app.mt_req("users.getFullUser", id={"_": "inputUserSelf"})
-            found = premium_of(result)
+                user = await app.core.get_self(refresh=True)
+            found = bool(user.get("premium")) if isinstance(user, dict) else None
             if found is None:
                 with trusted_scope():
                     result = await app.mt_req("users.getUsers", id=[{"_": "inputUserSelf"}])
-                found = premium_of(result)
-            if found is not None:
-                self.is_premium = found
-                return found
+                body = result.get("result", result) if isinstance(result, dict) else {}
+                users = body.get("users") if isinstance(body, dict) else None
+                first = users[0] if isinstance(users, list) and users else None
+                found = bool(first.get("premium")) if isinstance(first, dict) else False
+            self.is_premium = found
+            return found
         except Exception:
             pass
         return False
@@ -801,7 +671,7 @@ class ModuleContext:
         message_id = getattr(self._source, "id", None)
         if self.runtime is not None and getattr(self.runtime, "app", None) is not None:
             return await self._trusted_send_rich(html, peer, output=output, message_id=message_id, **kwargs)
-        data = {"peer": peer, "message": "", "random_id": secrets.randbits(63), "rich_message": {"_": "inputRichMessageHTML", "html": __import__("re").sub(r"\n(?![^<]*>)", "<br>", html)}}
+        data = {"peer": peer, "message": "", "random_id": secrets.randbits(63), "rich_message": {"_": "inputRichMessageHTML", **rich_html(html)}}
         kwargs.pop("parse_mode", None)
         if output == "edit" and message_id is not None:
             data["id"] = int(message_id)
@@ -820,7 +690,7 @@ class ModuleContext:
         from relay.firewall import trusted_scope
         import secrets as _secrets
         app = self.runtime.app
-        rich_message = {"_": "inputRichMessageHTML", "html": __import__("re").sub(r"\n(?![^<]*>)", "<br>", html)}
+        rich_message = {"_": "inputRichMessageHTML", **rich_html(html)}
         if output == "edit" and message_id is not None:
             with trusted_scope():
                 result = await app.mt_req("messages.editMessage", peer=peer, id=int(message_id), message="", rich_message=rich_message)

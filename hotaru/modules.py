@@ -31,6 +31,7 @@ class ModuleManifest:
     aliases: dict[str, str] = None
     config_schema: dict[str, Any] = None
     translations: dict[str, dict[str, Any]] = None
+    requires: tuple[str, ...] = ()
 
     def __post_init__(self):
         if self.tasks is None:
@@ -203,6 +204,10 @@ class HmodLoader:
         translations = raw.get("translations", {})
         if not isinstance(translations, dict):
             raise ModuleValidationError("manifest translations must be a dictionary")
+        
+        requires = raw.get("requires", [])
+        if not HmodLoader._strings(requires):
+            raise ModuleValidationError("manifest requires must contain strings")
         for language, translation in translations.items():
             if language not in SUPPORTED_LANGUAGES or not isinstance(translation, dict):
                 raise ModuleValidationError("manifest translations are invalid")
@@ -225,11 +230,12 @@ class HmodLoader:
             description, 
             tuple(commands), 
             tuple(capabilities),
-            tuple(watchers),
+            tuple(watchers), 
             tasks,
             aliases,
             config_schema,
-            translations
+            translations,
+            tuple(requires),
         )
 
     @staticmethod

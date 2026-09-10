@@ -34,6 +34,7 @@ from .security import SecurityGate
 from .state import StateStore
 from .supervisor import ConnectionSupervisor, Health
 from .tasks import TaskSupervisor
+from goygram.rich import rich_html
 
 
 class InputContext:
@@ -661,7 +662,7 @@ class Runtime:
                 return
             form_text, buttons = form
             result = InlineObj.article("hotaru-form", "Hotaru form", form_text)
-            result["input_message_content"] = {"rich_message": {"_": "inputRichMessageHTML", "html": __import__("re").sub(r"\n(?![^<]*>)", "<br>", form_text)}}
+            result["input_message_content"] = {"rich_message": {"_": "inputRichMessageHTML", **rich_html(form_text)}}
             result["reply_markup"] = {"inline_keyboard": buttons}
             await query.answer(results=[result], cache_time=0, is_personal=True)
             if self.observatory is not None:
@@ -919,40 +920,21 @@ class Runtime:
                 source = next((item for item in messages or [] if item.get("id") == reply_id), None)
         if source is None or not hasattr(source, "get"):
             raise ValueError("module file is missing")
-        document = source.get("document")
-        media = source.get("media")
-        if document is None and isinstance(media, dict):
-            document = media.get("document")
-        if not isinstance(document, dict):
-            raise ValueError("module file must be a document")
         if getattr(source, "src", getattr(message, "src", None)) == "bot":
             if hasattr(source, "download"):
                 await source.download(str(destination))
             else:
-                file_id = document.get("file_id")
+                file_id = (source.get("document") or {}).get("file_id")
                 if not isinstance(file_id, str):
                     raise ValueError("Bot API document file_id is missing")
                 await message.app.download_file(file_id, str(destination))
             return
-        required = ("id", "access_hash")
-        if any(not isinstance(document.get(key), int) for key in required):
-            raise ValueError("MTProto document location is incomplete")
-        file_reference = document.get("file_reference", b"")
-        if isinstance(file_reference, str):
-            try:
-                file_reference = bytes.fromhex(file_reference)
-            except ValueError:
-                file_reference = file_reference.encode("utf-8")
-        if not isinstance(file_reference, (bytes, bytearray)):
-            raise ValueError("MTProto file reference is invalid")
-        location = {
-            "_": "inputDocumentFileLocation",
-            "id": document["id"],
-            "access_hash": document["access_hash"],
-            "file_reference": bytes(file_reference),
-            "thumb_size": "",
-        }
-        await message.app.mt.download_file(location, str(destination), limit=524288)
+        media = source.get("document") if isinstance(source.get("document"), dict) else source.get("media")
+        if media is None and isinstance(source.get("media"), dict):
+            media = source["media"].get("document")
+        if not isinstance(media, dict):
+            raise ValueError("module file must be a document")
+        await self.app.core.download_media(media, str(destination))
 
     async def _command_ld(self, invocation: Any) -> str:
         if len(invocation.args) > 1:
