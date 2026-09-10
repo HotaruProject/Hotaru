@@ -88,7 +88,8 @@
         "start": {
           "description": "Юзерботты жалғастыру"
         }
-      }
+      },
+      "restarted": "Юзербот сәтті қайта қосылды ({took})"
     },
     "hotaru-config": {
       "description": "Hotaru конфигурация модулі",
@@ -116,7 +117,8 @@
         "updon": {
           "description": "Жаңарту хабарламаларын қосу"
         }
-      }
+      },
+      "restarted": "Hotaru жаңартылып, сәтті қайта қосылды ({took})"
     },
     "translations": {
       "description": "Аудармаларды басқару",

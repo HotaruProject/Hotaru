@@ -33,6 +33,8 @@ class ModuleManifest:
     translations: dict[str, dict[str, Any]] = None
     requires: tuple[str, ...] = ()
     inline_commands: tuple[str, ...] = ()
+    rise: str = ""
+    fade: str = ""
 
     def __post_init__(self):
         if self.tasks is None:
@@ -216,6 +218,18 @@ class HmodLoader:
         for inline_name in inline_commands:
             if not inline_name.isidentifier():
                 raise ModuleValidationError(f"manifest inline command is invalid: {inline_name}")
+
+        rise = raw.get("rise", "")
+        if not isinstance(rise, str):
+            raise ModuleValidationError("manifest rise must be a string")
+        if rise and not rise.isidentifier():
+            raise ModuleValidationError("manifest rise is invalid")
+
+        fade = raw.get("fade", "")
+        if not isinstance(fade, str):
+            raise ModuleValidationError("manifest fade must be a string")
+        if fade and not fade.isidentifier():
+            raise ModuleValidationError("manifest fade is invalid")
         for language, translation in translations.items():
             if language not in SUPPORTED_LANGUAGES or not isinstance(translation, dict):
                 raise ModuleValidationError("manifest translations are invalid")
@@ -256,6 +270,8 @@ class HmodLoader:
             translations,
             tuple(requires),
             tuple(inline_commands),
+            rise,
+            fade,
         )
 
     @staticmethod

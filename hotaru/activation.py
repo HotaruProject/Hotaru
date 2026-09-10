@@ -147,6 +147,58 @@ class ModuleManager:
         if callable(callback):
             self._rehydrators[module_id] = callback
 
+    async def _run_lifecycle(self, hook: Any, context: Any) -> None:
+        if not callable(hook):
+            return
+        with module_scope():
+            if len(inspect.signature(hook).parameters) == 0:
+                result = hook()
+            else:
+                result = hook(context)
+            if inspect.isawaitable(result):
+                await asyncio.wait_for(result, timeout=self.timeout)
+
+    async def _rise_host(self, loaded: LoadedModule, namespace: dict[str, Any], kernel: Any, context: Any) -> None:
+        if not loaded.manifest.rise:
+            return
+        await self._run_lifecycle(namespace.get(loaded.manifest.rise), context)
+
+    async def _fade_host(self, loaded: LoadedModule, namespace: dict[str, Any], context: Any) -> None:
+        if not loaded.manifest.fade:
+            return
+        try:
+            await self._run_lifecycle(namespace.get(loaded.manifest.fade), context)
+        except Exception:
+            pass
+
+    async def _rise_sandbox(self, loaded: LoadedModule, sandbox: Any, context: Any) -> None:
+        if not loaded.manifest.rise:
+            return
+        try:
+            await sandbox.call(
+                loaded.manifest.module_id,
+                loaded.manifest.rise,
+                [],
+                {"source": "lifecycle"},
+                target=loaded.manifest.rise,
+            )
+        except Exception:
+            pass
+
+    async def _fade_sandbox(self, loaded: LoadedModule, sandbox: Any, context: Any) -> None:
+        if not loaded.manifest.fade:
+            return
+        try:
+            await sandbox.call(
+                loaded.manifest.module_id,
+                loaded.manifest.fade,
+                [],
+                {"source": "lifecycle"},
+                target=loaded.manifest.fade,
+            )
+        except Exception:
+            pass
+
     def rehydrate_form(self, module_id: str, payload: dict[str, Any]) -> Any:
         callback = self._rehydrators.get(module_id)
         if callback is None:
@@ -200,6 +252,8 @@ class ModuleManager:
             from .deps import ensure as ensure_deps
             await ensure_deps(requires)
         behind_sandbox = not trusted
+        if sandbox is not None:
+            self._sandbox_ref = sandbox
         if behind_sandbox and sandbox is not None:
             await sandbox.start_module(loaded.manifest.module_id, loaded.source, list(loaded.manifest.commands))
             for name in loaded.manifest.commands:
@@ -227,6 +281,9 @@ class ModuleManager:
                             name=f"hotaru:task:sandbox:{loaded.manifest.module_id}:{task_name}"
                         )
                         
+            if kernel.context_factory is not None:
+                rise_ctx = kernel.context_factory.create(loaded.manifest.module_id, None)
+                await self._rise_sandbox(loaded, sandbox, rise_ctx)
             return active
         namespace: dict[str, Any] = {
             "__name__": f"hotaru_module_{loaded.manifest.module_id}",
@@ -262,6 +319,9 @@ class ModuleManager:
                                 self._run_task(task_name, task_def, handler, ctx),
                                 name=f"hotaru:task:{loaded.manifest.module_id}:{task_name}"
                             )
+            if kernel.context_factory is not None:
+                rise_ctx = kernel.context_factory.create(loaded.manifest.module_id, None)
+                await self._rise_host(loaded, namespace, kernel, rise_ctx)
             return active
         except Exception as exc:
             if "commands" in locals():
@@ -298,6 +358,24 @@ class ModuleManager:
         active = self._active.get(module_id)
         if active is None:
             return False
+        binding = self._bindings.get(module_id)
+        if binding is not None and active.loaded.manifest.fade:
+            try:
+                namespace = active.context.namespace if isinstance(active.context, ModuleInstance) else {}
+                is_sandbox = bool(namespace.get("__sandbox__"))
+                kernel = binding[0]
+                if is_sandbox:
+                    sandbox = self._sandbox_ref if hasattr(self, "_sandbox_ref") else None
+                    if sandbox is not None:
+                        if getattr(kernel, "context_factory", None) is not None:
+                            fade_ctx = kernel.context_factory.create(module_id, None)
+                            await self._fade_sandbox(active.loaded, sandbox, fade_ctx)
+                else:
+                    if getattr(kernel, "context_factory", None) is not None:
+                        fade_ctx = kernel.context_factory.create(module_id, None)
+                        await self._fade_host(active.loaded, namespace, fade_ctx)
+            except Exception:
+                pass
         if stopper is not None:
             result = stopper(active)
             if inspect.isawaitable(result):

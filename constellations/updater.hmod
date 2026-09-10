@@ -1,12 +1,13 @@
 HOTARU = {
     "id": "updater",
-    "version": "1.2.0",
+    "version": "1.3.0",
     "description": "Hotaru self-updater: changelog, update confirmation, git pull, deps, restart",
     "commands": ["upd", "updlog", "updoff", "updon"],
     "capabilities": ["net"],
     "tasks": {
         "poller": {"interval": 300, "autostart": True},
-    }
+    },
+    "rise": "afterglow",
 }
 
 import asyncio
@@ -131,11 +132,16 @@ async def _recover(ctx):
     meta = dict(meta)
     meta.pop("restarting", None)
     meta.pop("update_ts", None)
-    ctx.kernel_messages.put(SLOT, "updater", record.chat_id, record.message_id, f"<b>Hotaru updated</b> in {took}s ✓", meta)
+    text = ctx.t("kernel.updater.restarted", "Hotaru обновлён и успешно перезапущен за {took}", took=f"{took}s" if isinstance(took, int) else took)
+    text = f"<b>{text}</b>"
+    ctx.kernel_messages.put(SLOT, "updater", record.chat_id, record.message_id, text, meta)
     try:
-        await _bot_edit(ctx, record.chat_id, record.message_id, f"<b>Hotaru updated</b> in {took}s ✓")
+        await _bot_edit(ctx, record.chat_id, record.message_id, text)
     except Exception:
         pass
+
+async def afterglow(ctx):
+    await _recover(ctx)
 
 def _notify_text(current, latest, changelog):
     link = f'<a href="{REPO_URL}/compare/{current[:12]}...{latest[:12]}">{latest[:6]}</a>'

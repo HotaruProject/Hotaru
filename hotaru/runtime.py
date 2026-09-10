@@ -1502,11 +1502,19 @@ class Runtime:
     async def deactivate_module(self, module_id: str) -> bool:
         if self.modules is None:
             raise RuntimeError("build the runtime before deactivating modules")
+        was_sandbox = False
         if self.sandbox is not None:
-            self.sandbox.stop_module(module_id)
+            was_sandbox = module_id in getattr(self.sandbox, "_workers", {})
+            if not was_sandbox:
+                self.sandbox.stop_module(module_id)
+        try:
+            result = await self.modules.deactivate(module_id)
+        finally:
+            if self.sandbox is not None and was_sandbox:
+                self.sandbox.stop_module(module_id)
         if self.callbacks is not None:
             self.callbacks.unregister_module(module_id)
-        return await self.modules.deactivate(module_id)
+        return result
 
     async def restore_backup(self, plan: Any, activate: Any, *, rollback: Any | None = None, timeout: float = 10.0) -> Any:
         if self.backups is None:

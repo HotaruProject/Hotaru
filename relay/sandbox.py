@@ -589,6 +589,17 @@ class SandboxInlineQuery:
         return {"ok": True, "results": results or []}
 
 
+def _invoke_lifecycle(handler, ctx):
+    import inspect
+    try:
+        params = inspect.signature(handler).parameters
+    except (TypeError, ValueError):
+        params = {}
+    if len(params) == 0:
+        return handler()
+    return handler(ctx)
+
+
 class _ModulesProxy:
     async def list(self):
         return _cap_call("modules", {"op": "list"})
@@ -700,7 +711,10 @@ def main():
                         message_id=payload.get("message_id"),
                         chat_id=payload.get("chat_id"),
                     )
-                    result = handler(ctx, invocation)
+                    if payload.get("source") == "lifecycle":
+                        result = _invoke_lifecycle(handler, ctx)
+                    else:
+                        result = handler(ctx, invocation)
                     if asyncio.iscoroutine(result):
                         result = asyncio.run(result)
                     out = {"ok": True, "result": result}
