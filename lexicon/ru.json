@@ -212,7 +212,11 @@
         "accs": {
           "description": "Список аккаунтов"
         }
-      }
+      },
+      "usage": "использование: !acc <#> <start|stop|on|off|del>\n!acca — зарегистрировать аккаунт (номер выдаётся автоматически)\n!accs — список",
+      "empty": "Аккаунты не зарегистрированы.",
+      "no_self": "Не удалось определить user id сессии.",
+      "not_registered": "Аккаунт #{n} не зарегистрирован."
     },
     "acl": {
       "description": "Управление правами: выдача, отзыв, список прав пользователей",
@@ -226,7 +230,16 @@
         "whois": {
           "description": "Права пользователя: whois <user_id>"
         }
-      }
+      },
+      "usage": "использование:\n!owneradd <user_id|reply> — выдать owner\n!ownerrm <user_id|reply> — снять owner\n!ownerlist — владельцы\n!newsgroup <name> — создать группу прав\n!sgroups — список групп\n!sgroup <name> — участники и права группы\n!delsgroup <name> — удалить группу\n!sgroupadd <name> <user_id|reply> — добавить юзера в группу\n!sgroupdel <name> <user_id|reply> — убрать юзера из группы\n!tsec <user|chat|sgroup> <target> <command|module>/<name> [срок] — выдать право\n!tsecrm — убрать правило\n!tsecclr — очистить все правила цели\n!perm <user_id> <admin|trusted|everyone> [remove] — выдать/снять право\n!perms — список прав\n!whois <user_id> — права пользователя",
+      "bad_group": "Имя группы: только буквы и цифры, до 32 символов.",
+      "no_groups": "Групп прав нет. Создай: !newsgroup <name>",
+      "bad_duration": "Срок: число + s/m/h/d/w, либо forever.",
+      "bad_rule": "Правило: command/имя или module/имя.",
+      "self_owner": "Этот пользователь уже является владельцем аккаунта.",
+      "empty": "Нет выданных прав. Используй !perm <user_id> <role>.",
+      "bad_label": "Неизвестное право: {label}.",
+      "no_owner_grant": "Право owner выдаётся через !owneradd."
     }
   },
   "commands": {

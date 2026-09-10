@@ -1625,6 +1625,19 @@ class Runtime:
             self.kernel.owner_id = session.self_id
             if self.security is not None:
                 self.security.set_owner(session.self_id)
+        if self.account_manager is not None and session.self_id is not None and self.state is not None:
+            try:
+                self.account_manager.sync_vaults()
+                self._ensure_primary_account(session.self_id)
+            except Exception as exc:
+                if self.observatory is not None:
+                    self.observatory.emit("accounts", "primary_register_error", error=type(exc).__name__)
+
+    def _ensure_primary_account(self, user_id: int) -> None:
+        manager = self.account_manager
+        manager.ensure_primary(user_id, self.config.session_name)
+        if self.observatory is not None:
+            self.observatory.emit("accounts", "primary_registered", user_id=user_id)
 
     async def run(self) -> None:
         if self.app is None:

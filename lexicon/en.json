@@ -212,7 +212,11 @@
         "accs": {
           "description": "List accounts"
         }
-      }
+      },
+      "usage": "usage: !acc <#> <start|stop|on|off|del>\n!acca — register this session as an account (number is assigned automatically)\n!accs — list accounts",
+      "empty": "No accounts registered.",
+      "no_self": "Failed to determine session user id.",
+      "not_registered": "Account #{n} is not registered."
     },
     "acl": {
       "description": "Access control administration: grant, revoke, list user permissions",
@@ -226,7 +230,16 @@
         "whois": {
           "description": "User permissions: whois <user_id>"
         }
-      }
+      },
+      "usage": "usage:\n!owneradd <user_id|reply> — grant owner\n!ownerrm <user_id|reply> — revoke owner\n!ownerlist — list owners\n!newsgroup <name> — create a security group\n!sgroups — list groups\n!sgroup <name> — show group users and rules\n!delsgroup <name> — delete a group\n!sgroupadd <name> <user_id|reply> — add a user to a group\n!sgroupdel <name> <user_id|reply> — remove a user from a group\n!tsec <user|chat|sgroup> <target> <command|module>/<name> [expiry] — add a rule\n!tsecrm — remove a rule\n!tsecclr — clear rules for a target\n!perm <user_id> <admin|trusted|everyone> [remove] — grant/revoke a permission\n!perms — list permissions\n!whois <user_id> — user permissions",
+      "bad_group": "Group name: letters and digits only, up to 32 characters.",
+      "no_groups": "No security groups. Create one: !newsgroup <name>",
+      "bad_duration": "Expiry: number + s/m/h/d/w, or forever.",
+      "bad_rule": "Rule: command/name or module/name.",
+      "self_owner": "This user is already the account owner.",
+      "empty": "No permissions granted. Use !perm <user_id> <role>.",
+      "bad_label": "Unknown permission: {label}.",
+      "no_owner_grant": "Owner is granted via !owneradd."
     }
   },
   "commands": {

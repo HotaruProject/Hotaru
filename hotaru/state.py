@@ -106,9 +106,12 @@ class StateStore:
         self.connection.execute(
             "CREATE TABLE IF NOT EXISTS accounts ("
             "user_id INTEGER NOT NULL, account_number INTEGER NOT NULL, vault_name TEXT NOT NULL, "
-            "session_dir TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1, "
+            "session_dir TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1, pid INTEGER, "
             "PRIMARY KEY(user_id, account_number), UNIQUE(vault_name))"
         )
+        columns = {row[1] for row in self.connection.execute("PRAGMA table_info(accounts)").fetchall()}
+        if "pid" not in columns:
+            self.connection.execute("ALTER TABLE accounts ADD COLUMN pid INTEGER")
         self.connection.commit()
         self.path.chmod(0o600)
 
@@ -121,10 +124,11 @@ class StateStore:
         rows = self.connection.execute("SELECT DISTINCT module_id FROM module_state ORDER BY module_id").fetchall()
         return tuple(row[0] for row in rows)
 
-    def register_account(self, user_id: int, account_number: int, session_dir: str | Path) -> Any:
+    def register_account(self, user_id: int, account_number: int, session_dir: str | Path, session_name: str | None = None) -> Any:
         from .accounts import AccountProfile
 
-        profile = AccountProfile.create(user_id, account_number, session_dir)
+        session_name = session_name or f"hotaru-{user_id}"
+        profile = AccountProfile(user_id, account_number, session_name, Path(session_dir))
         profile.validate()
         with self.connection:
             self.connection.execute(
@@ -135,10 +139,10 @@ class StateStore:
         return profile
 
     def accounts(self) -> tuple[Any, ...]:
-        from .accounts import AccountProfile
+        from .accounts import AccountManager
 
-        rows = self.connection.execute("SELECT user_id, account_number, vault_name, session_dir, enabled FROM accounts ORDER BY user_id, account_number").fetchall()
-        return tuple(AccountProfile(row[0], row[1], row[2], Path(row[3]), bool(row[4])) for row in rows)
+        manager = AccountManager(self, ".")
+        return manager.items()
 
     def get_setting(self, key: str, default: Any = None) -> Any:
         if not isinstance(key, str) or not re.fullmatch(r"[a-zA-Z0-9_][a-zA-Z0-9_:.-]{0,127}", key):

@@ -183,7 +183,11 @@
         "accs": {
           "description": "List accounts"
         }
-      }
+      },
+      "usage": "колданылуы: !acc <#> <start|stop|on|off|del>\n!acca — аккаунтты тіркеу (нөмірі автоматты түрде беріледі)\n!accs — тізім",
+      "empty": "Тіркелген аккаунттар жоқ.",
+      "no_self": "Сессия user id анықталмады.",
+      "not_registered": "#{n} аккаунты тіркелмеген."
     },
     "acl": {
       "description": "Access control administration: grant, revoke, list user permissions",
@@ -197,7 +201,16 @@
         "whois": {
           "description": "User permissions: whois <user_id>"
         }
-      }
+      },
+      "usage": "колданылуы:\n!owneradd <user_id|reply> — owner беру\n!ownerrm <user_id|reply> — owner алу\n!ownerlist — иелер\n!newsgroup <name> — құқықтар тобын құру\n!sgroups — топтар тізімі\n!sgroup <name> — топ қатысушылары мен ережелері\n!delsgroup <name> — топты жою\n!sgroupadd <name> <user_id|reply> — топқа қосу\n!sgroupdel <name> <user_id|reply> — топтан шығару\n!tsec <user|chat|sgroup> <target> <command|module>/<name> [мерзім] — ереже беру\n!tsecrm — ережені жою\n!tsecclr — барлық ережелерді тазарту\n!perm <user_id> <admin|trusted|everyone> [remove] — құқық беру/алу\n!perms — құқықтар тізімі\n!whois <user_id> — пайдаланушы құқықтары",
+      "bad_group": "Топ атауы: тек әріптер мен цифрлар, 32 таңбаға дейін.",
+      "no_groups": "Құқықтар топтары жоқ. Құр: !newsgroup <name>",
+      "bad_duration": "Мерзім: сан + s/m/h/d/w, немесе forever.",
+      "bad_rule": "Ереже: command/атау немесе module/атау.",
+      "self_owner": "Бұл пайдаланушы аккаунт иесі болып табылады.",
+      "empty": "Берілген құқықтар жоқ. !perm <user_id> <role> қолданыңыз.",
+      "bad_label": "Белгісіз құқық: {label}.",
+      "no_owner_grant": "Owner !owneradd арқылы беріледі."
     }
   },
   "inline_commands_hint": "Команданы таңда — кез келген чатта @<бот> және оның атын тер"
