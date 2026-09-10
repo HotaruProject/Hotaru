@@ -6,27 +6,8 @@ HOTARU = {
     "capabilities": ["mt"],
     "tasks": {
         "status_sync": {"interval": 60, "autostart": True},
-    },
-    "translations": {
-        "ru": {
-            "description": "Управление питанием: рестарт, стоп, старт с живыми статусными сообщениями",
-            "commands": {
-                "restart": {"description": "Перезапустить юзербота"},
-                "stop": {"description": "Приостановить обработку команд"},
-                "start": {"description": "Возобновить обработку команд"},
-            },
-        },
-        "en": {
-            "description": "Power management: restart, stop, start with persistent status messages",
-            "commands": {
-                "restart": {"description": "Restart the userbot"},
-                "stop": {"description": "Suspend command processing"},
-                "start": {"description": "Resume command processing"},
-            },
-        },
-    },
+    }
 }
-
 
 import asyncio
 import os
@@ -36,17 +17,13 @@ import time
 
 from hotaru.kmsg import KernelMessageService
 
-
 SLOT = "power:status"
-
 
 def _text_running(ctx):
     return f"<b>{ctx.t('kernel.power.running', 'Юзербот работает')}</b>"
 
-
 def _text_stopped(ctx):
     return f"<b>{ctx.t('kernel.power.stopped', 'Юзербот приостановлен')}</b>"
-
 
 async def _edit_status(ctx, text):
     record = ctx.kernel_messages.get(SLOT)
@@ -55,7 +32,6 @@ async def _edit_status(ctx, text):
     updated = ctx.kernel_messages.put(SLOT, "power", record.chat_id, record.message_id, text, record.meta)
     if updated is not None:
         await KernelMessageService.edit(ctx.bot, updated, text)
-
 
 async def command_stop(ctx, invocation):
     runtime = ctx.runtime
@@ -68,7 +44,6 @@ async def command_stop(ctx, invocation):
     await ctx.respond(_text_stopped(ctx), parse_mode="HTML")
     await _edit_status(ctx, _text_stopped(ctx))
 
-
 async def command_start(ctx, invocation):
     runtime = ctx.runtime
     if not runtime.kernel.suspended:
@@ -79,7 +54,6 @@ async def command_start(ctx, invocation):
         runtime.state.set_setting("suspended", "0")
     await ctx.respond(_text_running(ctx), parse_mode="HTML")
     await _edit_status(ctx, _text_running(ctx))
-
 
 async def command_restart(ctx, invocation):
     record = ctx.kernel_messages.get("power:status")
@@ -114,7 +88,6 @@ async def command_restart(ctx, invocation):
             return
 
     os.execv(sys.executable, [sys.executable, "-m", "hotaru"])
-
 
 async def task_status_sync(ctx):
     while True:

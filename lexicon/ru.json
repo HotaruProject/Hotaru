@@ -197,6 +197,34 @@
       "commands": "Команды",
       "capabilities": "Возможности",
       "untrusted": "недоверенный"
+    },
+    "accounts": {
+      "description": "Мультиаккаунтинг: регистрация, авторизация, запуск и остановка аккаунтов",
+      "commands": {
+        "acc": {
+          "description": "Управление аккаунтом: acc <#> <start|stop|on|off|del>"
+        },
+        "acca": {
+          "description": "Авторизовать новый аккаунт: acca <#>"
+        },
+        "accs": {
+          "description": "Список аккаунтов"
+        }
+      }
+    },
+    "acl": {
+      "description": "Управление правами: выдача, отзыв, список прав пользователей",
+      "commands": {
+        "perms": {
+          "description": "Список прав всех пользователей"
+        },
+        "perm": {
+          "description": "Выдать/отозвать право: perm <user_id> <owner|admin|trusted|everyone> [remove]"
+        },
+        "whois": {
+          "description": "Права пользователя: whois <user_id>"
+        }
+      }
     }
   },
   "commands": {

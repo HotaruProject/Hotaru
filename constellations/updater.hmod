@@ -6,29 +6,8 @@ HOTARU = {
     "capabilities": ["net"],
     "tasks": {
         "poller": {"interval": 300, "autostart": True},
-    },
-    "translations": {
-        "ru": {
-            "description": "Самообновление Hotaru: ченджлог, подтверждение, git pull, зависимости, рестарт",
-            "commands": {
-                "upd": {"description": "Проверить обновление и обновиться"},
-                "updlog": {"description": "Показать changelog"},
-                "updoff": {"description": "Выключить уведомления об обновлениях"},
-                "updon": {"description": "Включить уведомления об обновлениях"},
-            },
-        },
-        "en": {
-            "description": "Hotaru self-updater: changelog, confirmation, git pull, deps, restart",
-            "commands": {
-                "upd": {"description": "Check for update and apply"},
-                "updlog": {"description": "Show changelog"},
-                "updoff": {"description": "Disable update notifications"},
-                "updon": {"description": "Enable update notifications"},
-            },
-        },
-    },
+    }
 }
-
 
 import asyncio
 import html as _html
@@ -37,23 +16,19 @@ import os
 import subprocess
 import time
 
-
 FETCH_INTERVAL = 300
 REPO_URL = "https://github.com/HotaruProject/Hotaru"
 BRANCH = "main"
 SLOT = "updater:status"
 
-
 def _escape(value):
     return _html.escape(str(value), quote=False)
-
 
 def _repo_dir(runtime):
     root = getattr(runtime, "constellations_dir", None)
     if root is None:
         return None
     return str(root.parent)
-
 
 def _git(runtime, *args, timeout=60):
     repo = _repo_dir(runtime)
@@ -67,12 +42,10 @@ def _git(runtime, *args, timeout=60):
         check=False,
     )
 
-
 def _fetch_origin(runtime):
     result = _git(runtime, "fetch", "--quiet", "origin", timeout=120)
     if result.returncode != 0:
         raise RuntimeError(f"git fetch failed: {result.stderr.strip()[:200]}")
-
 
 def _current_commit(runtime):
     result = _git(runtime, "rev-parse", "HEAD")
@@ -80,13 +53,11 @@ def _current_commit(runtime):
         raise RuntimeError("git rev-parse failed")
     return result.stdout.strip()
 
-
 def _latest_commit(runtime):
     result = _git(runtime, "rev-parse", f"origin/{BRANCH}")
     if result.returncode != 0:
         raise RuntimeError("git rev-parse origin failed")
     return result.stdout.strip()
-
 
 def _changelog(runtime):
     result = _git(runtime, "log", "--pretty=format:%h %s", f"HEAD..origin/{BRANCH}", "--max-count=10")
@@ -101,7 +72,6 @@ def _changelog(runtime):
         entries.append(f"<b>{_escape(sha)}</b> <i>{_escape(title)}</i>")
     return "<br>".join(entries)
 
-
 def _pull(runtime):
     before = _current_commit(runtime)
     result = _git(runtime, "pull", "--ff-only", "origin", BRANCH, timeout=300)
@@ -114,7 +84,6 @@ def _pull(runtime):
         for name in diff.stdout.splitlines()
     )
     return before, after, deps_changed
-
 
 def _sync_deps(runtime):
     venv = runtime.config.state_path.parent / ".venv" if hasattr(runtime.config, "state_path") else None
@@ -130,7 +99,6 @@ def _sync_deps(runtime):
     except Exception:
         pass
 
-
 async def _bot_edit(ctx, chat_id, message_id, text, inline_message_id=None):
     params = {"text": text, "parse_mode": "HTML"}
     if isinstance(inline_message_id, str) and inline_message_id:
@@ -138,7 +106,6 @@ async def _bot_edit(ctx, chat_id, message_id, text, inline_message_id=None):
     else:
         params.update({"chat_id": chat_id, "message_id": message_id})
     await ctx.bot.call("editMessageText", **params)
-
 
 async def _status(ctx, text):
     record = ctx.kernel_messages.get(SLOT)
@@ -150,7 +117,6 @@ async def _status(ctx, text):
     except Exception:
         pass
     return record
-
 
 async def _recover(ctx):
     from hotaru.kmsg import KernelMessageService
@@ -171,7 +137,6 @@ async def _recover(ctx):
     except Exception:
         pass
 
-
 def _notify_text(current, latest, changelog):
     link = f'<a href="{REPO_URL}/compare/{current[:12]}...{latest[:12]}">{latest[:6]}</a>'
     return (
@@ -179,7 +144,6 @@ def _notify_text(current, latest, changelog):
         f"current: <code>{_escape(current[:7])}</code> → {link}<br><br>"
         f"{changelog}"
     )
-
 
 async def command_updlog(ctx, invocation):
     runtime = ctx.runtime
@@ -199,17 +163,14 @@ async def command_updlog(ctx, invocation):
     latest = _latest_commit(runtime)
     await ctx.respond(_notify_text(current, latest, changelog), parse_mode="HTML")
 
-
 async def command_updoff(ctx, invocation):
     ctx.state.set("notify", False)
     await ctx.respond("Update notifications disabled. Use .updon to re-enable.", parse_mode="HTML")
-
 
 async def command_updon(ctx, invocation):
     ctx.state.set("notify", True)
     await ctx.respond("Update notifications enabled.", parse_mode="HTML")
     await _recover(ctx)
-
 
 async def _run_update(ctx, notify=None):
     runtime = ctx.runtime
@@ -239,7 +200,6 @@ async def _run_update(ctx, notify=None):
     await asyncio.sleep(1)
     await _restart_service(ctx)
 
-
 async def _restart_service(ctx):
     import sys
     runtime = ctx.runtime
@@ -267,7 +227,6 @@ async def _restart_service(ctx):
             subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             return
     os.execv(sys.executable, [sys.executable, "-m", "hotaru"])
-
 
 async def command_upd(ctx, invocation):
     runtime = ctx.runtime
@@ -315,7 +274,6 @@ async def command_upd(ctx, invocation):
         message_id = body.get("message_id")
         if isinstance(chat_id, int) and isinstance(message_id, int):
             ctx.kernel_messages.put(SLOT, "updater", chat_id, message_id, _notify_text(current, latest, changelog), {})
-
 
 async def task_poller(ctx):
     runtime = ctx.runtime

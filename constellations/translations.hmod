@@ -3,58 +3,19 @@ HOTARU = {
     "version": "1.0.0",
     "description": "Translation management",
     "commands": ["lang", "language"],
-    "translations": {
-        "en": {
-            "description": "Translation management",
-            "commands": {
-                "lang": {"description": "Show or change language", "usage": "{prefix}lang [language]"},
-                "language": {"description": "Show or change language", "usage": "{prefix}language [language]"}
-            }
-        },
-        "ru": {
-            "description": "Управление переводами",
-            "commands": {
-                "lang": {"description": "Показать или изменить язык", "usage": "{prefix}lang [язык]"},
-                "language": {"description": "Показать или изменить язык", "usage": "{prefix}language [язык]"}
-            }
-        },
-        "kz": {
-            "description": "Аудармаларды басқару",
-            "commands": {
-                "lang": {"description": "Тілді көрсету немесе өзгерту", "usage": "{prefix}lang [тіл]"},
-                "language": {"description": "Тілді көрсету немесе өзгерту", "usage": "{prefix}language [тіл]"}
-            }
-        },
-        "uk": {
-            "description": "Керування перекладами",
-            "commands": {
-                "lang": {"description": "Показати або змінити мову", "usage": "{prefix}lang [мова]"},
-                "language": {"description": "Показати або змінити мову", "usage": "{prefix}language [мова]"}
-            }
-        },
-        "ja": {
-            "description": "翻訳設定",
-            "commands": {
-                "lang": {"description": "言語を表示または変更", "usage": "{prefix}lang [言語]"},
-                "language": {"description": "言語を表示または変更", "usage": "{prefix}language [言語]"}
-            }
-        }
-    },
     "capabilities": ["mt"]
 }
-
 
 NATIVE_LABELS = {
     "ru": "Русский",
     "en": "English",
     "kz": "Қазақша",
     "uk": "Українська",
-    "ja": "日本語",
+    "ja": "日本語"
 }
 
 from hotaru.callbacks import CallbackBinding
 from relay.firewall import trusted_scope
-
 
 def _kbd_buttons(ctx, runtime, rows):
     owner = int(getattr(runtime.kernel, "owner_id", 0) or 0)
@@ -73,7 +34,6 @@ def _kbd_buttons(ctx, runtime, rows):
         if current:
             result.append(current)
     return result
-
 
 def _kbd_row(ctx, runtime, language, current):
     marker = "✓ " if language == current else ""
@@ -96,7 +56,6 @@ def _kbd_row(ctx, runtime, language, current):
 
     return ctx.ui.button(f"{marker}{NATIVE_LABELS[language]}", select, {"language": language})
 
-
 def _close_button(ctx):
     async def close(callback, payload):
         try:
@@ -118,7 +77,6 @@ def _close_button(ctx):
 
     return ctx.ui.button(ctx.t("common.close", "Close"), close, style="danger")
 
-
 def _screen(ctx):
     runtime = ctx.runtime
     current = runtime.language()
@@ -138,7 +96,6 @@ def _screen(ctx):
         "inline": True,
         "parse_mode": "HTML"
     }
-
 
 async def _send_screen(ctx):
     form = _screen(ctx)
@@ -172,11 +129,9 @@ async def _send_screen(ctx):
     except Exception:
         pass
 
-
 def _escape(value):
     import html
     return html.escape(str(value), quote=False)
-
 
 async def _show(ctx):
     runtime = ctx.runtime
@@ -193,7 +148,6 @@ async def _show(ctx):
         runtime.set_language("en")
     await _send_screen(ctx)
 
-
 async def command_lang(ctx, invocation):
     if len(invocation.args) > 1:
         await ctx.respond(ctx.t("commands.lang.usage", "Usage: {prefix}lang [language]", prefix=ctx.runtime.config.prefix))
@@ -205,7 +159,6 @@ async def command_lang(ctx, invocation):
             await ctx.respond(ctx.t("commands.lang.invalid", "Unsupported language: {language}", language=invocation.args[0]))
             return
     await _show(ctx)
-
 
 async def command_language(ctx, invocation):
     await command_lang(ctx, invocation)
