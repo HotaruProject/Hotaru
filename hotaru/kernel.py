@@ -247,7 +247,18 @@ class Kernel:
             user_id = None
         if self.access is not None:
             required = self._required_permission(message)
-            return self.access.allows(user_id, required)
+            if self.access.allows(user_id, required):
+                return True
+            text = getattr(message, "text", None) or ""
+            name = self.parser.command_name(text)
+            chat_id = getattr(message, "chat_id", None)
+            module_id = None
+            if name is not None:
+                spec = self.registry.resolve_name(name)
+                module_id = spec.module_id if spec is not None else None
+            if self.access.check_tsec(user_id, module_id, name, chat_id):
+                return True
+            return False
         if bool(getattr(message, "is_me", False)):
             return True
         if self.owner_id is None:
