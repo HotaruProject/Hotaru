@@ -32,6 +32,7 @@ class ModuleManifest:
     config_schema: dict[str, Any] = None
     translations: dict[str, dict[str, Any]] = None
     requires: tuple[str, ...] = ()
+    inline_commands: tuple[str, ...] = ()
 
     def __post_init__(self):
         if self.tasks is None:
@@ -208,6 +209,13 @@ class HmodLoader:
         requires = raw.get("requires", [])
         if not HmodLoader._strings(requires):
             raise ModuleValidationError("manifest requires must contain strings")
+
+        inline_commands = raw.get("inline_commands", [])
+        if not HmodLoader._strings(inline_commands):
+            raise ModuleValidationError("manifest inline_commands must contain strings")
+        for inline_name in inline_commands:
+            if not inline_name.isidentifier():
+                raise ModuleValidationError(f"manifest inline command is invalid: {inline_name}")
         for language, translation in translations.items():
             if language not in SUPPORTED_LANGUAGES or not isinstance(translation, dict):
                 raise ModuleValidationError("manifest translations are invalid")
@@ -218,6 +226,17 @@ class HmodLoader:
                 raise ModuleValidationError("manifest translation commands are invalid")
             if not set(translated_commands).issubset(set(commands)):
                 raise ModuleValidationError("manifest translation contains an unknown command")
+            translated_inline = translation.get("inline_commands", {})
+            if not isinstance(translated_inline, dict):
+                raise ModuleValidationError("manifest translation inline commands are invalid")
+            if not set(translated_inline).issubset(set(raw.get("inline_commands", []))):
+                raise ModuleValidationError("manifest translation contains an unknown inline command")
+            for inline_name, meta in translated_inline.items():
+                if not isinstance(inline_name, str) or not isinstance(meta, dict):
+                    raise ModuleValidationError("manifest inline command translation is invalid")
+                for meta_key, meta_value in meta.items():
+                    if meta_key not in {"title", "description", "message", "thumb_url"} or not isinstance(meta_value, str):
+                        raise ModuleValidationError("manifest inline command translation values are invalid")
             for command, details in translated_commands.items():
                 if not isinstance(command, str) or not isinstance(details, dict):
                     raise ModuleValidationError("manifest command translation is invalid")
@@ -236,6 +255,7 @@ class HmodLoader:
             config_schema,
             translations,
             tuple(requires),
+            tuple(inline_commands),
         )
 
     @staticmethod

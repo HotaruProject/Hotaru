@@ -1,0 +1,111 @@
+HOTARU = {
+    "id": "acl",
+    "version": "1.0.0",
+    "description": "Access control administration: grant, revoke, list user permissions",
+    "commands": ["perms", "perm", "whois"],
+    "capabilities": ["mt"],
+    "translations": {
+        "ru": {
+            "description": "Управление правами: выдача, отзыв, список прав пользователей",
+            "commands": {
+                "perms": {"description": "Список прав всех пользователей"},
+                "perm": {"description": "Выдать/отозвать право: perm <user_id> <owner|admin|trusted|everyone> [remove]"},
+                "whois": {"description": "Права пользователя: whois <user_id>"},
+            },
+        },
+        "en": {
+            "description": "Access control administration: grant, revoke, list user permissions",
+            "commands": {
+                "perms": {"description": "List permissions of all users"},
+                "perm": {"description": "Grant/revoke: perm <user_id> <owner|admin|trusted|everyone> [remove]"},
+                "whois": {"description": "User permissions: whois <user_id>"},
+            },
+        },
+    },
+}
+
+
+import html as _html
+
+
+def _escape(value):
+    return _html.escape(str(value), quote=False)
+
+
+def _usage(ctx):
+    return ctx.t(
+        "acl.usage",
+        "usage: !perm <user_id> <admin|trusted|everyone> [remove]\n!perms — список\n!whois <user_id> — права пользователя",
+    )
+
+
+def _parse_label(ctx, label):
+    from hotaru.access import permission_from_label
+    return permission_from_label(label)
+
+
+async def command_perms(ctx, invocation):
+    entries = ctx.access_admin.store.items()
+    if not entries:
+        await ctx.respond(ctx.t("acl.empty", "Нет выданных прав. Используй !perm <user_id> <role>."), parse_mode="HTML")
+        return
+    from hotaru.access import permission_label
+    rows = []
+    for entry in entries:
+        rows.append(
+            f"<code>{entry.user_id}</code> — <b>{_escape(permission_label(entry.permissions))}</b>"
+            + (f" <i>({_escape(entry.label)})</i>" if entry.label else "")
+        )
+    await ctx.respond("<b>Permissions</b><br>" + "<br>".join(rows), parse_mode="HTML")
+
+
+async def command_whois(ctx, invocation):
+    if not invocation.args or not invocation.args[0].lstrip("-").isdigit():
+        await ctx.respond(_usage(ctx), parse_mode="HTML")
+        return
+    user_id = int(invocation.args[0])
+    from hotaru.access import permission_label
+    permissions = ctx.access_admin.permissions_of(user_id)
+    labels = ctx.access_admin.user_labels(user_id)
+    rank = ctx.access_admin.rank_of(user_id)
+    await ctx.respond(
+        f"<b>User <code>{user_id}</code></b><br>"
+        f"permissions: <b>{_escape(permission_label(permissions))}</b><br>"
+        f"rank: <code>{rank}</code>",
+        parse_mode="HTML",
+    )
+
+
+async def command_perm(ctx, invocation):
+    if len(invocation.args) < 2:
+        await ctx.respond(_usage(ctx), parse_mode="HTML")
+        return
+    if not invocation.args[0].lstrip("-").isdigit():
+        await ctx.respond(_usage(ctx), parse_mode="HTML")
+        return
+    user_id = int(invocation.args[0])
+    label = invocation.args[1].casefold()
+    remove = len(invocation.args) > 2 and invocation.args[2].casefold() == "remove"
+    permission = _parse_label(ctx, label)
+    if permission is None:
+        await ctx.respond(ctx.t("acl.bad_label", f"Неизвестное право: {label}"), parse_mode="HTML")
+        return
+    if permission.name == "OWNER":
+        await ctx.respond(ctx.t("acl.no_owner_grant", "Право owner нельзя выдать вручную."), parse_mode="HTML")
+        return
+    if remove:
+        ok = ctx.access_admin.store.revoke(user_id, permission)
+        await ctx.respond(
+            f"<b>Revoked</b> <code>{label}</code> from <code>{user_id}</code>" if ok else "nothing to revoke",
+            parse_mode="HTML",
+        )
+        return
+    try:
+        entry = ctx.access_admin.store.grant(user_id, permission, label=label)
+    except Exception as exc:
+        await ctx.respond(f"<b>Grant failed:</b> <i>{_escape(exc)}</i>", parse_mode="HTML")
+        return
+    await ctx.respond(
+        f"<b>Granted</b> <code>{label}</code> to <code>{user_id}</code>",
+        parse_mode="HTML",
+    )

@@ -221,5 +221,6 @@
     "kz": "Kazakh",
     "uk": "Ukrainian",
     "ja": "Japanese"
-  }
+  },
+  "inline_commands_hint": "Pick a command — type @<bot> and its name in any chat"
 }

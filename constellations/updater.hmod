@@ -1,11 +1,31 @@
 HOTARU = {
     "id": "updater",
-    "version": "1.0.0",
+    "version": "1.2.0",
     "description": "Hotaru self-updater: changelog, update confirmation, git pull, deps, restart",
     "commands": ["upd", "updlog", "updoff", "updon"],
     "capabilities": ["net"],
     "tasks": {
         "poller": {"interval": 300, "autostart": True},
+    },
+    "translations": {
+        "ru": {
+            "description": "Самообновление Hotaru: ченджлог, подтверждение, git pull, зависимости, рестарт",
+            "commands": {
+                "upd": {"description": "Проверить обновление и обновиться"},
+                "updlog": {"description": "Показать changelog"},
+                "updoff": {"description": "Выключить уведомления об обновлениях"},
+                "updon": {"description": "Включить уведомления об обновлениях"},
+            },
+        },
+        "en": {
+            "description": "Hotaru self-updater: changelog, confirmation, git pull, deps, restart",
+            "commands": {
+                "upd": {"description": "Check for update and apply"},
+                "updlog": {"description": "Show changelog"},
+                "updoff": {"description": "Disable update notifications"},
+                "updon": {"description": "Enable update notifications"},
+            },
+        },
     },
 }
 
@@ -21,6 +41,7 @@ import time
 FETCH_INTERVAL = 300
 REPO_URL = "https://github.com/HotaruProject/Hotaru"
 BRANCH = "main"
+SLOT = "updater:status"
 
 
 def _escape(value):
@@ -81,54 +102,33 @@ def _changelog(runtime):
     return "<br>".join(entries)
 
 
-def _requirements_changed(runtime, before, after):
-    result = _git(runtime, "diff", "--name-only", before, after, "--", "pyproject.toml", "uv.lock")
-    if result.returncode != 0:
-        return False
-    return bool(result.stdout.strip())
-
-
 def _pull(runtime):
-    _fetch_origin(runtime)
     before = _current_commit(runtime)
-    result = _git(runtime, "reset", "--hard", f"origin/{BRANCH}")
+    result = _git(runtime, "pull", "--ff-only", "origin", BRANCH, timeout=300)
     if result.returncode != 0:
-        raise RuntimeError(f"git reset failed: {result.stderr.strip()[:200]}")
+        raise RuntimeError(f"git pull failed: {result.stderr.strip()[:300]}")
     after = _current_commit(runtime)
-    return before, after, _requirements_changed(runtime, before, after)
+    diff = _git(runtime, "diff", "--name-only", before, after)
+    deps_changed = any(
+        name in ("pyproject.toml", "uv.lock", "requirements.txt")
+        for name in diff.stdout.splitlines()
+    )
+    return before, after, deps_changed
 
 
 def _sync_deps(runtime):
-    repo = _repo_dir(runtime)
-    venv = os.path.join(repo, ".venv")
-    if not os.path.isdir(venv):
-        return
-    candidates = [
-        os.path.join(venv, "bin", "uv"),
-        os.path.expanduser("~/.local/bin/uv"),
-        "/usr/local/bin/uv",
-    ]
-    uv = next((path for path in candidates if os.path.isfile(path)), None)
-    if uv is None:
-        return
-    subprocess.run(
-        [uv, "pip", "install", "-e", ".", "--quiet"],
-        cwd=repo,
-        capture_output=True,
-        text=True,
-        timeout=600,
-        check=False,
-    )
-
-
-async def _restart_service():
-    subprocess.Popen(
-        ["systemctl", "restart", "hotaru.service"],
-        start_new_session=True,
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
+    venv = runtime.config.state_path.parent / ".venv" if hasattr(runtime.config, "state_path") else None
+    root = _repo_dir(runtime)
+    try:
+        import sys
+        subprocess.run(
+            [sys.executable, "-m", "hotaru_deps_sync"],
+            cwd=root,
+            timeout=600,
+            capture_output=True,
+        )
+    except Exception:
+        pass
 
 
 async def _bot_edit(ctx, chat_id, message_id, text, inline_message_id=None):
@@ -140,32 +140,34 @@ async def _bot_edit(ctx, chat_id, message_id, text, inline_message_id=None):
     await ctx.bot.call("editMessageText", **params)
 
 
-def _save_update_msg(ctx, chat_id, message_id, inline_message_id=None):
-    ctx.state.set(
-        "update_msg",
-        {
-            "chat_id": chat_id,
-            "message_id": message_id,
-            "inline_message_id": inline_message_id,
-            "restart_ts": time.time(),
-        },
-    )
-
-
-async def _update_complete(ctx):
-    record = ctx.state.get("update_msg")
-    if not isinstance(record, dict):
-        return
-    chat_id = record.get("chat_id")
-    message_id = record.get("message_id")
-    inline_message_id = record.get("inline_message_id")
-    started = record.get("restart_ts")
-    if not isinstance(inline_message_id, str) and (not isinstance(chat_id, int) or not isinstance(message_id, int)):
-        return
-    took = round(time.time() - started) if isinstance(started, (int, float)) else "n/a"
-    ctx.state.delete("update_msg")
+async def _status(ctx, text):
+    record = ctx.kernel_messages.get(SLOT)
+    if record is None:
+        return None
+    ctx.kernel_messages.put(SLOT, "updater", record.chat_id, record.message_id, text, record.meta)
     try:
-        await _bot_edit(ctx, chat_id, message_id, f"<b>Hotaru updated</b> in {took}s ✓", inline_message_id)
+        await _bot_edit(ctx, record.chat_id, record.message_id, text)
+    except Exception:
+        pass
+    return record
+
+
+async def _recover(ctx):
+    from hotaru.kmsg import KernelMessageService
+    record = ctx.kernel_messages.get(SLOT)
+    if record is None:
+        return
+    meta = record.meta or {}
+    restarting = meta.get("restarting") or meta.get("update_ts")
+    if not restarting:
+        return
+    took = round(time.time() - float(restarting)) if isinstance(restarting, (int, float)) else "n/a"
+    meta = dict(meta)
+    meta.pop("restarting", None)
+    meta.pop("update_ts", None)
+    ctx.kernel_messages.put(SLOT, "updater", record.chat_id, record.message_id, f"<b>Hotaru updated</b> in {took}s ✓", meta)
+    try:
+        await _bot_edit(ctx, record.chat_id, record.message_id, f"<b>Hotaru updated</b> in {took}s ✓")
     except Exception:
         pass
 
@@ -206,7 +208,7 @@ async def command_updoff(ctx, invocation):
 async def command_updon(ctx, invocation):
     ctx.state.set("notify", True)
     await ctx.respond("Update notifications enabled.", parse_mode="HTML")
-    await _update_complete(ctx)
+    await _recover(ctx)
 
 
 async def _run_update(ctx, notify=None):
@@ -215,7 +217,7 @@ async def _run_update(ctx, notify=None):
         if notify is not None:
             await notify(text)
         else:
-            await ctx.respond(text, parse_mode="HTML")
+            await _status(ctx, text)
     await say("<b>Downloading update…</b>")
     try:
         before, after, deps_changed = _pull(runtime)
@@ -229,11 +231,42 @@ async def _run_update(ctx, notify=None):
         await say("<b>Syncing dependencies…</b>")
         _sync_deps(runtime)
     await say(f"<b>Updated to</b> <code>{_escape(after[:7])}</code>. Restarting…")
-    ctx.state.set("restart_ts", time.time())
-    if notify is not None and isinstance(notify, _NotifyEditor):
-        notify.mark_restart()
+    record = ctx.kernel_messages.get(SLOT)
+    if record is not None:
+        meta = dict(record.meta or {})
+        meta["restarting"] = time.time()
+        ctx.kernel_messages.put(SLOT, "updater", record.chat_id, record.message_id, f"<b>Updated to</b> <code>{_escape(after[:7])}</code>. Restarting…", meta)
     await asyncio.sleep(1)
-    await _restart_service()
+    await _restart_service(ctx)
+
+
+async def _restart_service(ctx):
+    import sys
+    runtime = ctx.runtime
+    try:
+        if runtime.app:
+            await asyncio.wait_for(runtime.app.close(), timeout=1.0)
+    except Exception:
+        pass
+    if "INVOCATION_ID" in os.environ:
+        service_name = None
+        is_user_service = False
+        try:
+            with open("/proc/self/cgroup", "r") as f:
+                for line in f:
+                    if ".service" in line:
+                        service_name = line.strip().split("/")[-1]
+                        if "user.slice" in line or "user@" in line:
+                            is_user_service = True
+                        break
+        except Exception:
+            pass
+        if service_name:
+            cmd = ["systemctl", "--user" if is_user_service else "", "restart", service_name]
+            cmd = [c for c in cmd if c]
+            subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            return
+    os.execv(sys.executable, [sys.executable, "-m", "hotaru"])
 
 
 async def command_upd(ctx, invocation):
@@ -261,76 +294,34 @@ async def command_upd(ctx, invocation):
         await _run_update(ctx)
         return
 
-    editor = _NotifyEditor(ctx)
-
     async def update_handler(callback, payload):
         await callback.answer("Updating…")
-        await editor.attach(callback)
-        await _run_update(ctx, notify=editor)
-
-    async def cancel_handler(callback, payload):
-        await callback.answer()
-        await callback.delete()
+        await _run_update(ctx)
 
     buttons = [
         [
             ctx.ui.button("Update", update_handler, style="primary"),
-            ctx.ui.button("Cancel", cancel_handler, style="danger"),
         ]
     ]
-    await ctx.respond(
+    message = await ctx.respond(
         _notify_text(current, latest, changelog) + "<br><br>Update now?",
         buttons=buttons,
         inline=True,
         parse_mode="HTML",
     )
-
-
-class _NotifyEditor:
-    def __init__(self, ctx):
-        self.ctx = ctx
-        self.chat_id = None
-        self.message_id = None
-        self.inline_message_id = None
-        self.callback = None
-
-    def adopt(self, message):
-        body = message.get("result", message) if isinstance(message, dict) else message
-        if isinstance(body, dict):
-            self.chat_id = body.get("chat", {}).get("id") or body.get("chat_id")
-            self.message_id = body.get("message_id")
-
-    async def attach(self, callback):
-        self.callback = callback
-        self.chat_id = getattr(callback, "chat_id", None) or self.chat_id
-        self.message_id = getattr(callback, "msg_id", None) or getattr(callback, "message_id", None) or self.message_id
-        self.inline_message_id = getattr(callback, "inline_message_id", None) or self.inline_message_id
-
-    def mark_restart(self):
-        if isinstance(self.inline_message_id, str) or (isinstance(self.chat_id, int) and isinstance(self.message_id, int)):
-            _save_update_msg(self.ctx, self.chat_id, self.message_id, self.inline_message_id)
-
-    async def __call__(self, text):
-        if isinstance(self.inline_message_id, str) and self.inline_message_id:
-            try:
-                await _bot_edit(self.ctx, self.chat_id, self.message_id, text, self.inline_message_id)
-                return
-            except Exception:
-                pass
-        if isinstance(self.chat_id, int) and isinstance(self.message_id, int):
-            try:
-                await _bot_edit(self.ctx, self.chat_id, self.message_id, text)
-                return
-            except Exception:
-                pass
-        await self.ctx.respond(text, parse_mode="HTML")
+    body = message.get("result", message) if isinstance(message, dict) else message
+    if isinstance(body, dict):
+        chat_id = body.get("chat", {}).get("id") or body.get("chat_id")
+        message_id = body.get("message_id")
+        if isinstance(chat_id, int) and isinstance(message_id, int):
+            ctx.kernel_messages.put(SLOT, "updater", chat_id, message_id, _notify_text(current, latest, changelog), {})
 
 
 async def task_poller(ctx):
     runtime = ctx.runtime
     if runtime is None:
         return
-    await _update_complete(ctx)
+    await _recover(ctx)
     if ctx.state.get("notify", True) is False:
         return
     try:
@@ -354,30 +345,22 @@ async def task_poller(ctx):
 
     async def update_handler(callback, payload):
         await callback.answer("Updating…")
-        await editor.attach(callback)
-        await _run_update(ctx, notify=editor)
-
-    async def ignore_handler(callback, payload):
-        await callback.answer("Updates ignored until next commit")
-        await callback.delete()
-        ctx.state.set("notified_commit", latest)
-
-    async def cancel_handler(callback, payload):
-        await callback.answer()
-        await callback.delete()
+        await _run_update(ctx)
 
     buttons = [
         [
             ctx.ui.button("Update", update_handler, style="primary"),
-            ctx.ui.button("Ignore", ignore_handler, style="danger"),
-            ctx.ui.button("×", cancel_handler, style="danger"),
         ]
     ]
     text = _notify_text(current, latest, changelog)
-    editor = _NotifyEditor(ctx)
     try:
-        message = await ctx.bot.rich_send(owner, text, buttons=buttons)
+        message = await ctx.bot.send_message(owner, text, buttons=buttons)
     except Exception:
         return
-    editor.adopt(message)
+    body = message.get("result", message) if isinstance(message, dict) else message
+    if isinstance(body, dict):
+        chat_id = body.get("chat", {}).get("id") or body.get("chat_id")
+        message_id = body.get("message_id")
+        if isinstance(chat_id, int) and isinstance(message_id, int):
+            ctx.kernel_messages.put(SLOT, "updater", chat_id, message_id, text, {})
     ctx.state.set("notified_commit", latest)

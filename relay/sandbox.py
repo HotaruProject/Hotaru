@@ -573,6 +573,22 @@ class _InlineProxy:
         return _cap_call("inline", {"op": "form", "text": text, "buttons": buttons, "kwargs": kwargs})
 
 
+class SandboxInlineQuery:
+    def __init__(self, payload):
+        payload = payload or {}
+        self.query = str(payload.get("query", ""))
+        self.args = list(payload.get("args") or [])
+        self._answered = False
+
+    @property
+    def from_id(self):
+        return None
+
+    async def answer(self, results=None, **kwargs):
+        self._answered = True
+        return {"ok": True, "results": results or []}
+
+
 class _ModulesProxy:
     async def list(self):
         return _cap_call("modules", {"op": "list"})
@@ -670,17 +686,24 @@ def main():
                 payload = req.get("payload") or {}
                 args = req.get("args") or []
                 ctx = SandboxContext(tools, {**payload, "args": args})
-                invocation = SimpleNamespace(
-                    name=req.get("command"),
-                    args=tuple(args),
-                    source=payload.get("source", "command"),
-                    message_id=payload.get("message_id"),
-                    chat_id=payload.get("chat_id"),
-                )
-                result = handler(ctx, invocation)
-                if asyncio.iscoroutine(result):
-                    result = asyncio.run(result)
-                out = {"ok": True, "result": result}
+                if str(target).startswith("inline_"):
+                    query = SandboxInlineQuery(payload)
+                    result = handler(query, tuple(args))
+                    if asyncio.iscoroutine(result):
+                        result = asyncio.run(result)
+                    out = {"ok": True, "result": result}
+                else:
+                    invocation = SimpleNamespace(
+                        name=req.get("command"),
+                        args=tuple(args),
+                        source=payload.get("source", "command"),
+                        message_id=payload.get("message_id"),
+                        chat_id=payload.get("chat_id"),
+                    )
+                    result = handler(ctx, invocation)
+                    if asyncio.iscoroutine(result):
+                        result = asyncio.run(result)
+                    out = {"ok": True, "result": result}
         except BaseException as exc:
             out = {"ok": False, "error": type(exc).__name__}
         sys.stdout.write(json.dumps(out) + "\n")

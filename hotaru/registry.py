@@ -96,5 +96,14 @@ class CommandRegistry:
             name = self._aliases[name]
         return self._items.get(name)
 
+    def resolve_name(self, name: str) -> CommandSpec | None:
+        name = name.casefold()
+        if name in self._aliases:
+            name = self._aliases[name]
+        return self._items.get(name)
+
+    def spec_of(self, module_id: str) -> tuple[CommandSpec, ...]:
+        return tuple(spec for spec in self._items.values() if spec.module_id == module_id)
+
     def names(self) -> tuple[str, ...]:
         return tuple(self._items)

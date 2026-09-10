@@ -1,50 +1,98 @@
 HOTARU = {
     "id": "power",
-    "version": "1.0.0",
-    "description": "High-level power management (restart, stop, start)",
+    "version": "1.2.0",
+    "description": "Power management: restart, stop, start with persistent status messages",
     "commands": ["restart", "stop", "start"],
     "capabilities": ["mt"],
+    "tasks": {
+        "status_sync": {"interval": 60, "autostart": True},
+    },
+    "translations": {
+        "ru": {
+            "description": "Управление питанием: рестарт, стоп, старт с живыми статусными сообщениями",
+            "commands": {
+                "restart": {"description": "Перезапустить юзербота"},
+                "stop": {"description": "Приостановить обработку команд"},
+                "start": {"description": "Возобновить обработку команд"},
+            },
+        },
+        "en": {
+            "description": "Power management: restart, stop, start with persistent status messages",
+            "commands": {
+                "restart": {"description": "Restart the userbot"},
+                "stop": {"description": "Suspend command processing"},
+                "start": {"description": "Resume command processing"},
+            },
+        },
+    },
 }
 
-async def command_stop(ctx, invocation):
-    if ctx.runtime.kernel.suspended:
-        await ctx.respond("Юзербот уже остановлен (приостановлен).")
+
+import asyncio
+import os
+import subprocess
+import sys
+import time
+
+from hotaru.kmsg import KernelMessageService
+
+
+SLOT = "power:status"
+
+
+def _text_running(ctx):
+    return f"<b>{ctx.t('kernel.power.running', 'Юзербот работает')}</b>"
+
+
+def _text_stopped(ctx):
+    return f"<b>{ctx.t('kernel.power.stopped', 'Юзербот приостановлен')}</b>"
+
+
+async def _edit_status(ctx, text):
+    record = ctx.kernel_messages.get(SLOT)
+    if record is None:
         return
+    updated = ctx.kernel_messages.put(SLOT, "power", record.chat_id, record.message_id, text, record.meta)
+    if updated is not None:
+        await KernelMessageService.edit(ctx.bot, updated, text)
 
-    ctx.runtime.kernel.suspended = True
-    if ctx.runtime.state is not None:
-        ctx.runtime.state.set_setting("suspended", "1")
 
-    await ctx.respond(
-        "Юзербот остановлен (приостановлен).\n"
-        "Обычные модули отключены, но команды ядра (например, .start) продолжают работать."
-    )
+async def command_stop(ctx, invocation):
+    runtime = ctx.runtime
+    if runtime.kernel.suspended:
+        await ctx.respond(ctx.t("kernel.power.already_stopped", "Юзербот уже остановлен (приостановлен)."))
+        return
+    runtime.kernel.suspended = True
+    if runtime.state is not None:
+        runtime.state.set_setting("suspended", "1")
+    await ctx.respond(_text_stopped(ctx), parse_mode="HTML")
+    await _edit_status(ctx, _text_stopped(ctx))
+
 
 async def command_start(ctx, invocation):
-    if not ctx.runtime.kernel.suspended:
-        await ctx.respond("Юзербот уже запущен.")
+    runtime = ctx.runtime
+    if not runtime.kernel.suspended:
+        await ctx.respond(ctx.t("kernel.power.already_running", "Юзербот уже запущен."))
         return
+    runtime.kernel.suspended = False
+    if runtime.state is not None:
+        runtime.state.set_setting("suspended", "0")
+    await ctx.respond(_text_running(ctx), parse_mode="HTML")
+    await _edit_status(ctx, _text_running(ctx))
 
-    ctx.runtime.kernel.suspended = False
-    if ctx.runtime.state is not None:
-        ctx.runtime.state.set_setting("suspended", "0")
-
-    await ctx.respond("Юзербот запущен. Обработка всех команд возобновлена.")
 
 async def command_restart(ctx, invocation):
-    import os
-    import sys
-    import subprocess
-
-    await ctx.respond("Перезапускаю юзербот...")
+    record = ctx.kernel_messages.get("power:status")
+    if record is not None:
+        ctx.kernel_messages.put("power:status", "power", record.chat_id, record.message_id, ctx.t("kernel.power.restarting", "Перезапускаю юзербот..."), {"restart_ts": time.time()})
+        await KernelMessageService.edit(ctx.bot, ctx.kernel_messages.get("power:status"), ctx.t("kernel.power.restarting", "Перезапускаю юзербот..."))
+    await ctx.respond(ctx.t("kernel.power.restarting", "Перезапускаю юзербот..."), parse_mode="HTML")
 
     try:
         if ctx.runtime.app:
-            import asyncio
             await asyncio.wait_for(ctx.runtime.app.close(), timeout=1.0)
     except Exception:
         pass
-
 
     if "INVOCATION_ID" in os.environ:
         service_name = None
@@ -59,22 +107,24 @@ async def command_restart(ctx, invocation):
                         break
         except Exception:
             pass
-
         if service_name:
-            cmd = ["systemctl"]
-            if is_user_service or os.geteuid() != 0:
-                cmd.append("--user")
-            cmd.extend(["restart", service_name])
+            cmd = ["systemctl", "--user" if is_user_service else "", "restart", service_name]
+            cmd = [c for c in cmd if c]
+            subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            return
+
+    os.execv(sys.executable, [sys.executable, "-m", "hotaru"])
 
 
-            subprocess.Popen(
-                cmd,
-                start_new_session=True,
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-            sys.exit(0)
-
-
-    os.execv(sys.executable, [sys.executable] + sys.argv)
+async def task_status_sync(ctx):
+    while True:
+        try:
+            record = ctx.kernel_messages.get(SLOT)
+            if record is not None:
+                expected = _text_running(ctx) if not ctx.runtime.kernel.suspended else _text_stopped(ctx)
+                if record.text != expected:
+                    if await KernelMessageService.edit(ctx.bot, record, expected):
+                        ctx.kernel_messages.put(SLOT, "power", record.chat_id, record.message_id, expected, record.meta)
+        except Exception:
+            pass
+        await asyncio.sleep(30)
