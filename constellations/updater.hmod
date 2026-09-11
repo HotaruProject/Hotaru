@@ -135,8 +135,8 @@ def _t(ctx, key, fallback, **params):
 def _rich(text):
     return {"_": "inputRichMessageHTML", "html": text}
 
-async def _edit_inline(ctx, text):
-    pending = ctx.state.get("update_pending")
+async def _edit_inline(ctx, text, pending=None):
+    pending = pending if isinstance(pending, dict) else ctx.state.get("update_pending")
     if not isinstance(pending, dict):
         return False
     mid = _restore_inline(pending.get("inline_id"))
@@ -153,8 +153,8 @@ async def _edit_inline(ctx, text):
     except Exception:
         return False
 
-async def _edit_own(ctx, text):
-    pending = ctx.state.get("update_pending")
+async def _edit_own(ctx, text, pending=None):
+    pending = pending if isinstance(pending, dict) else ctx.state.get("update_pending")
     if not isinstance(pending, dict):
         return False
     peer_hex = pending.get("peer") if isinstance(pending.get("peer"), str) else None
@@ -220,9 +220,9 @@ async def afterglow(ctx):
     for _ in range(12):
         try:
             if bool(pending.get("own")):
-                if await _edit_inline(ctx, html):
+                if await _edit_inline(ctx, html, pending):
                     return
-                if await _edit_own(ctx, html):
+                if await _edit_own(ctx, html, pending):
                     return
             else:
                 chat_id = pending.get("chat_id")
