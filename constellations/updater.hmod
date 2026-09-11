@@ -84,27 +84,19 @@ def _serialize_inline(mid):
     if not isinstance(mid, dict):
         return None
     out = {}
-    for key in ("id", "access_hash"):
+    for key in ("dc_id", "id", "access_hash"):
         if isinstance(mid.get(key), int):
             out[key] = int(mid[key])
-    if isinstance(mid.get("file_reference"), (bytes, bytearray)):
-        out["file_reference"] = bytes(mid["file_reference"]).hex()
-    elif isinstance(mid.get("file_reference"), str):
-        out["file_reference"] = mid["file_reference"]
     return out if "id" in out else None
 
 def _restore_inline(stored):
     if not isinstance(stored, dict) or not isinstance(stored.get("id"), int):
         return None
-    mid = {"_": "inputBotInlineMessageID", "id": int(stored["id"])}
-    if isinstance(stored.get("access_hash"), int):
-        mid["access_hash"] = int(stored["access_hash"])
-    if isinstance(stored.get("file_reference"), str) and stored["file_reference"]:
-        try:
-            mid["file_reference"] = bytes.fromhex(stored["file_reference"])
-        except Exception:
-            pass
-    return mid
+    mid = {"_": "inputBotInlineMessageID"}
+    for key in ("dc_id", "id", "access_hash"):
+        if isinstance(stored.get(key), int):
+            mid[key] = int(stored[key])
+    return mid if "id" in mid else None
 
 def _pending_from_callback(ctx, callback):
     existing = ctx.state.get("update_pending")
@@ -143,8 +135,6 @@ async def _edit_inline(ctx, text):
         return False
 
 async def _edit_own(ctx, text):
-    from goygram.sugar import html_to_entities
-
     pending = ctx.state.get("update_pending")
     if not isinstance(pending, dict):
         return False
@@ -152,16 +142,18 @@ async def _edit_own(ctx, text):
     message_id = pending.get("message_id")
     if not peer_hex or not isinstance(message_id, int):
         return False
+    rich = {"_": "inputRichMessageHTML", "html": text}
+    data = {"id": int(message_id), "rich_message": rich, "peer": bytes.fromhex(peer_hex)}
     try:
-        plain, ents = html_to_entities(text)
-        data = {"id": int(message_id), "message": plain, "peer": bytes.fromhex(peer_hex)}
-        if ents:
-            data["entities"] = ents
         await ctx.tg.call("messages.editMessage", data)
         return True
     except Exception:
+        pass
+    try:
+        await ctx.tg.edit_rich(message_id, text, peer=pending.get("chat_id"))
+        return True
+    except Exception:
         return False
-
 async def _bot_edit(ctx, chat_id, message_id, text):
     from goygram.sugar import html_to_entities
 
@@ -374,8 +366,9 @@ async def command_upd(ctx, invocation):
         parse_mode="HTML",
     )
     pending = None
-    if isinstance(message, dict):
-        body = message.get("result", message)
+    sent = getattr(message, "value", None) if message is not None and not isinstance(message, dict) else message
+    if isinstance(sent, dict):
+        body = sent.get("result", sent)
         if isinstance(body, dict):
             message_id = body.get("id") if isinstance(body.get("id"), int) else body.get("message_id")
             chat_id = getattr(ctx.message, "chat_id", None)
