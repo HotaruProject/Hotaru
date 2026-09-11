@@ -24,6 +24,8 @@ class CallbackContext:
         for name in ("src", "raw", "app", "id", "chat_id", "from_id", "msg_id", "data", "text", "inline_message_id"):
             if hasattr(callback, name):
                 setattr(self, name, getattr(callback, name))
+        if getattr(self, "src", None) == "mt" and getattr(self, "msg_id", None) is not None and not isinstance(getattr(self, "msg_id", None), int):
+            self.inline_message_id = self.msg_id
         if getattr(self, "src", None) == "bot" and not getattr(self, "inline_message_id", None):
             raw = getattr(self, "raw", {})
             query = raw.get("callback_query") if isinstance(raw, dict) else None
@@ -36,21 +38,45 @@ class CallbackContext:
         return getattr(self._callback, name)
 
     async def answer(self, text: str | None = None, **kwargs: Any) -> Any:
-        return await self._callback.answer(text, **kwargs)
+        kwargs.pop("show_alert", None)
+        alert = kwargs.pop("alert", False)
+        return await self._callback.answer(text, alert=alert, **kwargs)
 
     async def edit(self, text: str, **kwargs: Any) -> Any:
-        if getattr(self, "inline_message_id", None) and getattr(self, "app", None) is not None:
+        inline_mid = getattr(self, "inline_message_id", None)
+        app = getattr(self, "app", None)
+        if inline_mid is not None and app is not None:
+            if getattr(self, "src", None) == "mt":
+                from goygram.types.kbd import kbd_to_tl
+
+                data = dict(kwargs)
+                raw_kbd = data.pop("reply_markup", data.pop("kbd", None))
+                if raw_kbd is not None:
+                    markup = kbd_to_tl(raw_kbd)
+                    if markup is not None:
+                        data["reply_markup"] = markup
+                id_field = inline_mid if isinstance(inline_mid, dict) else {"_": "inputBotInlineMessageID", "raw": inline_mid} if isinstance(inline_mid, (str, bytes)) else None
+                if id_field is not None:
+                    return await app.mt_req("messages.editInlineBotMessage", id=id_field, message=text, **data)
             data = dict(kwargs)
             kbd = data.pop("kbd", None)
             if kbd is not None:
                 data["reply_markup"] = kbd.to_dict() if hasattr(kbd, "to_dict") else kbd
-            return await self.app.bot_req("editMessageText", inline_message_id=self.inline_message_id, text=text, **data)
+            return await app.bot_req("editMessageText", inline_message_id=self.inline_message_id, text=text, **data)
         return await self._callback.edit(text, **kwargs)
 
     async def delete(self) -> Any:
-        if getattr(self, "inline_message_id", None):
+        inline_mid = getattr(self, "inline_message_id", None)
+        if inline_mid is not None:
+            if getattr(self, "src", None) == "mt" and getattr(self, "app", None) is not None:
+                id_field = inline_mid if isinstance(inline_mid, dict) else {"_": "inputBotInlineMessageID", "raw": inline_mid} if isinstance(inline_mid, (str, bytes)) else None
+                if id_field is not None:
+                    try:
+                        return await self.app.mt_req("messages.editInlineBotMessage", id=id_field, message="​")
+                    except Exception:
+                        return None
             if getattr(self, "app", None) is not None:
-                return await self.app.bot_req("editMessageText", inline_message_id=self.inline_message_id, text="\u200b", parse_mode="HTML")
+                return await self.app.bot_req("editMessageText", inline_message_id=self.inline_message_id, text="​", parse_mode="HTML")
             return None
         if hasattr(self._callback, "delete"):
             return await self._callback.delete()

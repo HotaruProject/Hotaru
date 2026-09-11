@@ -1206,12 +1206,27 @@ class ModuleSandbox:
                 if action == "answer":
                     from .firewall import trusted_scope
                     with trusted_scope():
-                        value = await callback.app.bot_req("answerCallbackQuery", callback_query_id=str(callback.id), text=str(data.get("text", "")), show_alert=bool(data.get("alert", False)))
+                        if getattr(callback, "src", None) == "mt":
+                            value = await callback.app.mt_req("messages.setBotCallbackAnswer", query_id=int(callback.id), message=str(data.get("text", "")), alert=bool(data.get("alert", False)), cache_time=0)
+                        else:
+                            value = await callback.app.bot_req("answerCallbackQuery", callback_query_id=str(callback.id), text=str(data.get("text", "")), show_alert=bool(data.get("alert", False)))
                 elif action == "edit":
                     from .firewall import trusted_scope
-                    params = {"inline_message_id": callback.inline_message_id, "text": str(data.get("text", "")), "parse_mode": "HTML"}
-                    with trusted_scope():
-                        value = await callback.app.bot_req("editMessageText", **params)
+                    inline_mid = getattr(callback, "inline_message_id", None)
+                    if getattr(callback, "src", None) == "mt" and inline_mid is not None:
+                        params = {"id": inline_mid if isinstance(inline_mid, dict) else {"_": "inputBotInlineMessageID", "raw": inline_mid}, "message": str(data.get("text", ""))}
+                        markup = data.get("reply_markup")
+                        if markup is not None:
+                            from goygram.types.kbd import kbd_to_tl
+                            tl_markup = kbd_to_tl(markup)
+                            if tl_markup is not None:
+                                params["reply_markup"] = tl_markup
+                        with trusted_scope():
+                            value = await callback.app.mt_req("messages.editInlineBotMessage", **params)
+                    else:
+                        params = {"inline_message_id": inline_mid, "text": str(data.get("text", "")), "parse_mode": "HTML"}
+                        with trusted_scope():
+                            value = await callback.app.bot_req("editMessageText", **params)
                 else:
                     raise PermissionError("unknown callback action")
                 result = {"ok": True, "result": value}

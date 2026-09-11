@@ -342,8 +342,91 @@ class BotGateway:
         app = getattr(self._manager, "bot_app", None)
         if app is None:
             raise RuntimeError("inline bot is not ready")
+        mapped = self._map_method(method, kwargs) if getattr(app, "mt", None) is not None else None
+        if mapped is not None:
+            act, data = mapped
+            with trusted_scope():
+                return await app.mt_req(act, **data)
         with trusted_scope():
             return await app.bot_req(method, **kwargs)
+
+    def _tl_markup(self, markup: Any) -> Any:
+        from goygram.types.kbd import kbd_to_tl
+
+        if markup is None:
+            return None
+        if isinstance(markup, list):
+            markup = {"inline_keyboard": [row if isinstance(row, (list, tuple)) else [row] for row in markup]}
+        if isinstance(markup, dict) and markup.get("_") in {"replyInlineMarkup", "replyKeyboardMarkup"}:
+            return markup
+        tl_markup = kbd_to_tl(markup) if isinstance(markup, dict) else None
+        return tl_markup if isinstance(tl_markup, dict) else None
+
+    def _map_method(self, method: str, kwargs: dict[str, Any]) -> tuple[str, dict[str, Any]] | None:
+        from goygram.sugar import html_to_entities
+
+        data: dict[str, Any] = {}
+        if method in {"sendMessage", "sendRichMessage"}:
+            text = str(kwargs.get("text", kwargs.get("message", "")))
+            rich = kwargs.get("rich_message")
+            data["peer"] = kwargs.get("chat_id")
+            data["random_id"] = secrets.randbits(63)
+            if isinstance(rich, dict):
+                data["message"] = ""
+                data["rich_message"] = rich
+            else:
+                data["message"] = text
+                if str(kwargs.get("parse_mode", "")).lower() == "html":
+                    plain, ents = html_to_entities(text)
+                    data["message"] = plain
+                    if ents:
+                        data["entities"] = ents
+            markup = self._tl_markup(kwargs.get("reply_markup"))
+            if markup is not None:
+                data["reply_markup"] = markup
+            reply_to = kwargs.get("reply_to_message_id")
+            if isinstance(reply_to, int):
+                data["reply_to"] = {"_": "inputReplyToMessage", "reply_to_msg_id": reply_to}
+            return "messages.sendMessage", data
+        if method in {"editMessageText", "sendRichMessageDraft"} and kwargs.get("inline_message_id") is None:
+            text = str(kwargs.get("text", ""))
+            rich = kwargs.get("rich_message")
+            data["peer"] = kwargs.get("chat_id")
+            data["id"] = int(kwargs.get("message_id", 0))
+            if isinstance(rich, dict):
+                data["message"] = ""
+                data["rich_message"] = rich
+            else:
+                data["message"] = text
+                if str(kwargs.get("parse_mode", "")).lower() == "html":
+                    plain, ents = html_to_entities(text)
+                    data["message"] = plain
+                    if ents:
+                        data["entities"] = ents
+            markup = self._tl_markup(kwargs.get("reply_markup"))
+            if markup is not None:
+                data["reply_markup"] = markup
+            return "messages.editMessage", data
+        if method == "editMessageText" and kwargs.get("inline_message_id") is not None:
+            inline_mid = kwargs.get("inline_message_id")
+            text = str(kwargs.get("text", ""))
+            rich = kwargs.get("rich_message")
+            data["id"] = inline_mid if isinstance(inline_mid, dict) else {"_": "inputBotInlineMessageID", "raw": inline_mid}
+            if isinstance(rich, dict):
+                data["message"] = ""
+                data["rich_message"] = rich
+            else:
+                data["message"] = text
+                if str(kwargs.get("parse_mode", "")).lower() == "html":
+                    plain, ents = html_to_entities(text)
+                    data["message"] = plain
+                    if ents:
+                        data["entities"] = ents
+            markup = self._tl_markup(kwargs.get("reply_markup"))
+            if markup is not None:
+                data["reply_markup"] = markup
+            return "messages.editInlineBotMessage", data
+        return None
 
     async def send(self, method: str, **kwargs: Any) -> Any:
         return await self.call(method, **kwargs)
