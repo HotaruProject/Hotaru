@@ -425,9 +425,11 @@ async def task_poller(ctx):
         current = _current_commit(runtime)
         latest = _latest_commit(runtime)
         changelog = _changelog(runtime)
-    except Exception:
+    except Exception as exc:
+        _emit(ctx, "poller_git_error", error=type(exc).__name__)
         return
     if not changelog or current == latest:
+        _emit(ctx, "poller_uptodate")
         return
     notified = ctx.state.get("notified_commit")
     if notified == latest:
@@ -437,6 +439,7 @@ async def task_poller(ctx):
     if kernel is not None:
         owner = getattr(kernel, "owner_id", None)
     if owner is None:
+        _emit(ctx, "poller_no_owner")
         return
 
     async def update_handler(callback, payload):
@@ -461,7 +464,8 @@ async def task_poller(ctx):
     text = _notify_text(current, latest, changelog)
     try:
         message = await ctx.bot.send_message(owner, text, buttons=buttons)
-    except Exception:
+    except Exception as exc:
+        _emit(ctx, "poller_send_error", error=type(exc).__name__, detail=str(exc)[:200])
         return
     sent = None
     if isinstance(message, dict):
@@ -475,3 +479,4 @@ async def task_poller(ctx):
     if sent is not None:
         ctx.state.set("update_pending", {"chat_id": int(owner), "message_id": int(sent["id"]), "own": False})
     ctx.state.set("notified_commit", latest)
+    _emit(ctx, "poller_notified", latest=latest[:12], sent=bool(sent))
