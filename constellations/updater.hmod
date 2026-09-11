@@ -213,26 +213,41 @@ async def afterglow(ctx):
     if not restarting:
         return
     ctx.state.delete("update_pending")
-    took = round(time.time() - float(restarting)) if isinstance(restarting, (int, float)) else None
-    took = f"{took}s" if took is not None else "n/a"
+    asyncio.get_event_loop().create_task(_finalize_restart(ctx, pending))
+
+async def _finalize_restart(ctx, pending):
+    took_raw = round(time.time() - float(pending["restarting"])) if isinstance(pending.get("restarting"), (int, float)) else None
+    took = f"{took_raw}s" if took_raw is not None else "n/a"
     text = _t(ctx, "restarted", "Hotaru updated and successfully restarted in {took}", took=took)
     html = f"<b>{text}</b>"
-    for _ in range(12):
+    for attempt in range(30):
         try:
             if bool(pending.get("own")):
                 if await _edit_inline(ctx, html, pending):
+                    _emit(ctx, "afterglow_edited", attempt=attempt, mode="inline")
                     return
                 if await _edit_own(ctx, html, pending):
+                    _emit(ctx, "afterglow_edited", attempt=attempt, mode="own")
                     return
             else:
                 chat_id = pending.get("chat_id")
                 message_id = pending.get("message_id")
                 if isinstance(chat_id, int) and isinstance(message_id, int):
                     if await _bot_edit(ctx, chat_id, message_id, html):
+                        _emit(ctx, "afterglow_edited", attempt=attempt, mode="bot")
                         return
+        except Exception as exc:
+            _emit(ctx, "afterglow_error", attempt=attempt, error=type(exc).__name__)
+        await asyncio.sleep(2)
+    _emit(ctx, "afterglow_gave_up")
+
+def _emit(ctx, event, **fields):
+    observatory = getattr(ctx.runtime, "observatory", None)
+    if observatory is not None:
+        try:
+            observatory.emit("updater", event, **fields)
         except Exception:
             pass
-        await asyncio.sleep(1)
 
 def _notify_text(current, latest, changelog):
     link = f'<a href="{REPO_URL}/compare/{current[:12]}...{latest[:12]}">{latest[:6]}</a>'
