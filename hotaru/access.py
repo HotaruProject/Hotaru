@@ -474,6 +474,7 @@ RESERVED_COMMANDS = frozenset({
     "ver", "st", "ls", "mi", "ld", "ul", "rl", "rm", "bk", "bot", "trust", "untrust", "alias", "unalias",
     "hlp", "help", "restart", "stop", "start", "upd", "updlog", "updoff", "updon",
     "conf", "config", "acc", "acca", "accs", "perms", "perm", "whois", "grant", "revoke",
+    "owadd", "owrm", "owls", "sgls", "sg", "sgnew", "sgdel", "sgadd", "sgrm", "rule", "rulerm", "ruleclr",
 })
 
 

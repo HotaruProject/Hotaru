@@ -2,7 +2,7 @@ HOTARU = {
     "id": "acl",
     "version": "2.0.0",
     "description": "Access control: owners, security groups, targeted rules, permission grants",
-    "commands": ["perms", "perm", "whois", "owneradd", "ownerrm", "ownerlist", "sgroups", "sgroup", "newsgroup", "delsgroup", "sgroupadd", "sgroupdel", "tsec", "tsecrm", "tsecclr"],
+    "commands": ["perms", "perm", "whois", "owadd", "owrm", "owls", "sgls", "sg", "sgnew", "sgdel", "sgadd", "sgrm", "rule", "rulerm", "ruleclr"],
     "capabilities": ["mt"],
 }
 
@@ -15,18 +15,18 @@ def _usage(ctx):
     return ctx.t(
         "acl.usage",
         "usage:\n"
-        "!owneradd <user_id|reply> — выдать owner\n"
-        "!ownerrm <user_id|reply> — снять owner\n"
-        "!ownerlist — владельцы\n"
-        "!newsgroup <name> — создать группу прав\n"
-        "!sgroups — список групп\n"
-        "!sgroup <name> — участники и права группы\n"
-        "!delsgroup <name> — удалить группу\n"
-        "!sgroupadd <name> <user_id|reply> — добавить юзера в группу\n"
-        "!sgroupdel <name> <user_id|reply> — убрать юзера из группы\n"
-        "!tsec <user|chat|sgroup> <target> <command|module>/<name> [expiry] — выдать право\n"
-        "!tsecrm — убрать правило\n"
-        "!tsecclr — очистить все правила цели\n"
+        "!owadd <user_id|reply> — выдать owner\n"
+        "!owrm <user_id|reply> — снять owner\n"
+        "!owls — владельцы\n"
+        "!sgnew <name> — создать группу прав\n"
+        "!sgls — список групп\n"
+        "!sg <name> — участники и права группы\n"
+        "!sgdel <name> — удалить группу\n"
+        "!sgadd <name> <user_id|reply> — добавить юзера в группу\n"
+        "!sgrm <name> <user_id|reply> — убрать юзера из группы\n"
+        "!rule <user|chat|sgroup> <target> <command|module>/<name> [expiry] — выдать право\n"
+        "!rulerm — убрать правило\n"
+        "!ruleclr — очистить все правила цели\n"
         "!perm <user_id> <admin|trusted|everyone> [remove] — выдать/снять право\n"
         "!perms — список прав\n"
         "!whois <user_id> — права пользователя",
@@ -96,12 +96,12 @@ def _parse_duration(raw):
         return None
     return int(body) * multipliers[suffix]
 
-async def command_ownerlist(ctx, invocation):
+async def command_owls(ctx, invocation):
     owners = ctx.access_admin.owners
     rows = [f"<code>{uid}</code> · account" if uid == ctx.access_admin.owner_id else f"<code>{uid}</code>" for uid in owners]
     await ctx.respond("<b>Owners</b><br>" + "<br>".join(rows), parse_mode="HTML")
 
-async def command_owneradd(ctx, invocation):
+async def command_owadd(ctx, invocation):
     user_id, _rest = await _resolve_target_user(ctx, invocation)
     if user_id is None:
         await ctx.respond(_usage(ctx), parse_mode="HTML")
@@ -119,7 +119,7 @@ async def command_owneradd(ctx, invocation):
         parse_mode="HTML",
     )
 
-async def command_ownerrm(ctx, invocation):
+async def command_owrm(ctx, invocation):
     user_id, _rest = await _resolve_target_user(ctx, invocation)
     if user_id is None:
         await ctx.respond(_usage(ctx), parse_mode="HTML")
@@ -134,7 +134,7 @@ async def command_ownerrm(ctx, invocation):
         parse_mode="HTML",
     )
 
-async def command_newsgroup(ctx, invocation):
+async def command_sgnew(ctx, invocation):
     if not invocation.args or not invocation.args[0].isalnum():
         await ctx.respond(ctx.t("acl.bad_group", "Имя группы: только буквы и цифры, до 32 символов."), parse_mode="HTML")
         return
@@ -146,7 +146,7 @@ async def command_newsgroup(ctx, invocation):
         return
     await ctx.respond(f"<b>Created group</b> <code>{_escape(name)}</code>", parse_mode="HTML")
 
-async def command_delsgroup(ctx, invocation):
+async def command_sgdel(ctx, invocation):
     if not invocation.args:
         await ctx.respond(_usage(ctx), parse_mode="HTML")
         return
@@ -156,15 +156,15 @@ async def command_delsgroup(ctx, invocation):
         parse_mode="HTML",
     )
 
-async def command_sgroups(ctx, invocation):
+async def command_sgls(ctx, invocation):
     groups = ctx.access_admin.sgroups()
     if not groups:
-        await ctx.respond(ctx.t("acl.no_groups", "Групп прав нет. Создай: !newsgroup <name>"), parse_mode="HTML")
+        await ctx.respond(ctx.t("acl.no_groups", "Групп прав нет. Создай: !sgnew <name>"), parse_mode="HTML")
         return
     rows = [f"<b>{_escape(g.name)}</b> — {len(g.users)} users, {len(g.permissions)} rules" for g in groups.values()]
     await ctx.respond("<b>Security groups</b><br>" + "<br>".join(rows), parse_mode="HTML")
 
-async def command_sgroup(ctx, invocation):
+async def command_sg(ctx, invocation):
     if not invocation.args:
         await ctx.respond(_usage(ctx), parse_mode="HTML")
         return
@@ -179,7 +179,7 @@ async def command_sgroup(ctx, invocation):
         parse_mode="HTML",
     )
 
-async def command_sgroupadd(ctx, invocation):
+async def command_sgadd(ctx, invocation):
     if len(invocation.args) < 2:
         await ctx.respond(_usage(ctx), parse_mode="HTML")
         return
@@ -200,7 +200,7 @@ async def command_sgroupadd(ctx, invocation):
     ctx.access_admin.save_sgroups(groups)
     await ctx.respond(f"<b>Added</b> <code>{user_id}</code> to <code>{_escape(name)}</code>", parse_mode="HTML")
 
-async def command_sgroupdel(ctx, invocation):
+async def command_sgrm(ctx, invocation):
     if len(invocation.args) < 2:
         await ctx.respond(_usage(ctx), parse_mode="HTML")
         return
@@ -221,7 +221,7 @@ async def command_sgroupdel(ctx, invocation):
     ctx.access_admin.save_sgroups(groups)
     await ctx.respond(f"<b>Removed</b> <code>{user_id}</code> from <code>{_escape(name)}</code>", parse_mode="HTML")
 
-async def command_tsec(ctx, invocation):
+async def command_rule(ctx, invocation):
     if len(invocation.args) < 3:
         await ctx.respond(_usage(ctx), parse_mode="HTML")
         return
@@ -270,7 +270,7 @@ async def command_tsec(ctx, invocation):
     until = f" до {_escape(invocation.args[3])}" if duration else ""
     await ctx.respond(f"<b>Rule added:</b> {_escape(kind)} <code>{_escape(target)}</code> → {_escape(rule_type)}/{_escape(rule)}{until}", parse_mode="HTML")
 
-async def command_tsecrm(ctx, invocation):
+async def command_rulerm(ctx, invocation):
     if len(invocation.args) < 3:
         await ctx.respond(_usage(ctx), parse_mode="HTML")
         return
@@ -294,7 +294,7 @@ async def command_tsecrm(ctx, invocation):
         parse_mode="HTML",
     )
 
-async def command_tsecclr(ctx, invocation):
+async def command_ruleclr(ctx, invocation):
     if not invocation.args:
         await ctx.respond(_usage(ctx), parse_mode="HTML")
         return
@@ -359,7 +359,7 @@ async def command_perm(ctx, invocation):
         await ctx.respond(ctx.t("acl.bad_label", f"Неизвестное право: {label}"), parse_mode="HTML")
         return
     if permission.name == "OWNER":
-        await ctx.respond(ctx.t("acl.no_owner_grant", "Право owner выдаётся через !owneradd."), parse_mode="HTML")
+        await ctx.respond(ctx.t("acl.no_owner_grant", "Право owner выдаётся через !owadd."), parse_mode="HTML")
         return
     if remove:
         ok = ctx.access_admin.store.revoke(user_id, permission)

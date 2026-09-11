@@ -202,15 +202,15 @@
           "description": "User permissions: whois <user_id>"
         }
       },
-      "usage": "使い方:\n!owneradd <user_id|reply> — owner を付与\n!ownerrm <user_id|reply> — owner を取り消す\n!ownerlist — オーナー一覧\n!newsgroup <name> — 権限グループを作成\n!sgroups — グループ一覧\n!sgroup <name> — グループのメンバーと権限\n!delsgroup <name> — グループを削除\n!sgroupadd <name> <user_id|reply> — グループに追加\n!sgroupdel <name> <user_id|reply> — グループから除外\n!tsec <user|chat|sgroup> <target> <command|module>/<name> [期限] — ルールを追加\n!tsecrm — ルールを削除\n!tsecclr — 対象のルールを全消去\n!perm <user_id> <admin|trusted|everyone> [remove] — 権限の付与/取り消し\n!perms — 権限一覧\n!whois <user_id> — ユーザーの権限",
+      "usage": "使い方:\n!owadd <user_id|reply> — owner を付与\n!owrm <user_id|reply> — owner を取り消す\n!owls — オーナー一覧\n!sgnew <name> — 権限グループを作成\n!sgls — グループ一覧\n!sg <name> — グループのメンバーと権限\n!sgdel <name> — グループを削除\n!sgadd <name> <user_id|reply> — グループに追加\n!sgrm <name> <user_id|reply> — グループから除外\n!rule <user|chat|sgroup> <target> <command|module>/<name> [期限] — ルールを追加\n!rulerm — ルールを削除\n!ruleclr — 対象のルールを全消去\n!perm <user_id> <admin|trusted|everyone> [remove] — 権限の付与/取り消し\n!perms — 権限一覧\n!whois <user_id> — ユーザーの権限",
       "bad_group": "グループ名: 英数字のみ、32文字まで。",
-      "no_groups": "権限グループはありません。作成: !newsgroup <name>",
+      "no_groups": "権限グループはありません。作成: !sgnew <name>",
       "bad_duration": "期限: 数字 + s/m/h/d/w、または forever。",
       "bad_rule": "ルール: command/名前 または module/名前。",
       "self_owner": "このユーザーはすでにアカウントのオーナーです。",
       "empty": "付与された権限はありません。!perm <user_id> <role> を使用。",
       "bad_label": "不明な権限: {label}。",
-      "no_owner_grant": "owner は !owneradd で付与されます。"
+      "no_owner_grant": "owner は !owadd で付与されます。"
     }
   },
   "inline_commands_hint": "コマンドを選択 — 任意のチャットで @<bot> とコマンド名を入力"
