@@ -1,6 +1,6 @@
 HOTARU = {
     "id": "updater",
-    "version": "1.4.0",
+    "version": "1.5.0",
     "description": "Hotaru self-updater: changelog, update confirmation, git pull, deps, restart",
     "commands": ["upd", "updlog", "updoff", "updon"],
     "capabilities": ["net", "mt"],
@@ -80,23 +80,127 @@ def _sync_deps(runtime):
     except Exception:
         pass
 
-async def _bot_edit(ctx, chat_id, message_id, text, inline_message_id=None):
-    params = {"text": text, "parse_mode": "HTML"}
-    if isinstance(inline_message_id, str) and inline_message_id:
-        params["inline_message_id"] = inline_message_id
-    else:
-        params.update({"chat_id": chat_id, "message_id": message_id})
-    await ctx.bot.call("editMessageText", **params)
+def _serialize_inline(mid):
+    if not isinstance(mid, dict):
+        return None
+    out = {}
+    for key in ("id", "access_hash"):
+        if isinstance(mid.get(key), int):
+            out[key] = int(mid[key])
+    if isinstance(mid.get("file_reference"), (bytes, bytearray)):
+        out["file_reference"] = bytes(mid["file_reference"]).hex()
+    elif isinstance(mid.get("file_reference"), str):
+        out["file_reference"] = mid["file_reference"]
+    return out if "id" in out else None
+
+def _restore_inline(stored):
+    if not isinstance(stored, dict) or not isinstance(stored.get("id"), int):
+        return None
+    mid = {"_": "inputBotInlineMessageID", "id": int(stored["id"])}
+    if isinstance(stored.get("access_hash"), int):
+        mid["access_hash"] = int(stored["access_hash"])
+    if isinstance(stored.get("file_reference"), str) and stored["file_reference"]:
+        try:
+            mid["file_reference"] = bytes.fromhex(stored["file_reference"])
+        except Exception:
+            pass
+    return mid
+
+def _pending_from_callback(ctx, callback):
+    existing = ctx.state.get("update_pending")
+    base = existing if isinstance(existing, dict) else {}
+    chat_id = getattr(callback, "chat_id", None)
+    msg_id = getattr(callback, "msg_id", None)
+    pending = None
+    if isinstance(msg_id, dict):
+        inline_id = _serialize_inline(msg_id)
+        if inline_id is not None:
+            pending = dict(base)
+            pending["inline_id"] = inline_id
+            pending["own"] = True
+            if isinstance(chat_id, int):
+                pending["chat_id"] = chat_id
+    elif isinstance(msg_id, int) and isinstance(chat_id, int):
+        pending = dict(base)
+        pending["chat_id"] = chat_id
+        pending["message_id"] = msg_id
+        pending["own"] = False
+        pending.pop("inline_id", None)
+    if pending is not None:
+        ctx.state.set("update_pending", pending)
+
+async def _edit_inline(ctx, text):
+    pending = ctx.state.get("update_pending")
+    if not isinstance(pending, dict):
+        return False
+    mid = _restore_inline(pending.get("inline_id"))
+    if mid is None:
+        return False
+    try:
+        await ctx.bot.call("editMessageText", inline_message_id=mid, text=text, parse_mode="HTML")
+        return True
+    except Exception:
+        return False
+
+async def _edit_own(ctx, text):
+    from goygram.sugar import html_to_entities
+
+    pending = ctx.state.get("update_pending")
+    if not isinstance(pending, dict):
+        return False
+    peer_hex = pending.get("peer") if isinstance(pending.get("peer"), str) else None
+    message_id = pending.get("message_id")
+    if not peer_hex or not isinstance(message_id, int):
+        return False
+    try:
+        plain, ents = html_to_entities(text)
+        data = {"id": int(message_id), "message": plain, "peer": bytes.fromhex(peer_hex)}
+        if ents:
+            data["entities"] = ents
+        await ctx.tg.call("messages.editMessage", data)
+        return True
+    except Exception:
+        return False
+
+async def _bot_edit(ctx, chat_id, message_id, text):
+    from goygram.sugar import html_to_entities
+
+    plain, ents = html_to_entities(text)
+    data = {"message": plain}
+    if ents:
+        data["entities"] = ents
+    try:
+        await ctx.bot.call("editMessageText", chat_id=chat_id, message_id=int(message_id), text=text, parse_mode="HTML")
+        return True
+    except Exception:
+        pass
+    app = getattr(ctx.runtime, "app", None)
+    if app is not None and getattr(app, "mt", None) is not None:
+        try:
+            await app.mt_req("messages.editMessage", peer=int(chat_id), id=int(message_id), **data)
+            return True
+        except Exception:
+            pass
+    return False
 
 async def _status(ctx, text):
     pending = ctx.state.get("update_pending")
-    if not (isinstance(pending, dict) and isinstance(pending.get("chat_id"), int) and isinstance(pending.get("message_id"), int)):
+    if not isinstance(pending, dict):
         await ctx.respond(text, parse_mode="HTML")
         return
-    try:
-        await _bot_edit(ctx, pending["chat_id"], pending["message_id"], text)
-    except Exception:
-        pass
+    if bool(pending.get("own")) and await _edit_inline(ctx, text):
+        return
+    chat_id = pending.get("chat_id")
+    message_id = pending.get("message_id")
+    if isinstance(chat_id, int) and isinstance(message_id, int):
+        if bool(pending.get("own")) and await _edit_own(ctx, text):
+            return
+        try:
+            if await _bot_edit(ctx, chat_id, message_id, text):
+                return
+        except Exception:
+            pass
+    await ctx.respond(text, parse_mode="HTML")
 
 async def afterglow(ctx):
     pending = ctx.state.get("update_pending")
@@ -105,34 +209,35 @@ async def afterglow(ctx):
     restarting = pending.get("restarting")
     if not restarting:
         return
-    chat_id = pending.get("chat_id")
-    message_id = pending.get("message_id")
-    peer_hex = pending.get("peer") if isinstance(pending.get("peer"), str) else None
-    own = bool(pending.get("own"))
     ctx.state.delete("update_pending")
     took = round(time.time() - float(restarting)) if isinstance(restarting, (int, float)) else None
     took = f"{took}s" if took is not None else "n/a"
     text = ctx.t("kernel.updater.restarted", "Hotaru обновлён и успешно перезапущен за {took}", took=took)
-    if not (isinstance(chat_id, int) and isinstance(message_id, int)):
-        return
     html = f"<b>{text}</b>"
-    if own:
-        rich = {"_": "inputRichMessageHTML", "html": html}
+    chat_id = pending.get("chat_id")
+    message_id = pending.get("message_id")
+    if bool(pending.get("own")):
+        ctx.state.set("update_pending", pending)
         try:
-            if peer_hex:
-                await ctx.tg.call("messages.editMessage", {"id": message_id, "rich_message": rich, "peer": bytes.fromhex(peer_hex)})
-            else:
-                await ctx.tg.edit_rich(message_id, html, peer=chat_id)
+            if await _edit_inline(ctx, html):
+                ctx.state.delete("update_pending")
+                return
         except Exception:
-            try:
-                await ctx.tg.edit_rich(message_id, html, peer=chat_id)
-            except Exception:
-                pass
+            pass
+        ctx.state.set("update_pending", pending)
+        try:
+            if await _edit_own(ctx, html):
+                ctx.state.delete("update_pending")
+                return
+        except Exception:
+            pass
+        ctx.state.delete("update_pending")
         return
-    try:
-        await _bot_edit(ctx, chat_id, message_id, html)
-    except Exception:
-        pass
+    if isinstance(chat_id, int) and isinstance(message_id, int):
+        try:
+            await _bot_edit(ctx, chat_id, message_id, html)
+        except Exception:
+            pass
 
 def _notify_text(current, latest, changelog):
     link = f'<a href="{REPO_URL}/compare/{current[:12]}...{latest[:12]}">{latest[:6]}</a>'
@@ -167,12 +272,9 @@ async def command_updon(ctx, invocation):
     ctx.state.set("notify", True)
     await ctx.respond("<b>Update notifications enabled</b>", parse_mode="HTML")
 
-async def _run_update(ctx, notify=None):
+async def _run_update(ctx):
     async def say(text):
-        if notify is not None:
-            await notify(text)
-        else:
-            await _status(ctx, text)
+        await _status(ctx, text)
     await say("<b>Downloading update…</b>")
     try:
         before, after, deps_changed = _pull(ctx.runtime)
@@ -187,30 +289,14 @@ async def _run_update(ctx, notify=None):
         _sync_deps(ctx.runtime)
     await say(f"<b>Updated to</b> <code>{_escape(after[:7])}</code>. Restarting…")
     pending = ctx.state.get("update_pending")
-    base = pending if isinstance(pending, dict) else {}
-    chat_id = base.get("chat_id")
-    message_id = base.get("message_id")
-    own = False
-    if not (isinstance(chat_id, int) and isinstance(message_id, int)):
-        chat_id = getattr(ctx.message, "chat_id", None)
-        message_id = getattr(ctx.message, "id", None)
-        own = True
-    if isinstance(chat_id, int) and isinstance(message_id, int):
-        peer_hex = None
-        if own:
-            try:
-                app = getattr(ctx.runtime, "app", None)
-                mt = getattr(app, "mt", None) if app is not None else None
-                if mt is not None and hasattr(mt, "resolve_peer"):
-                    peer_hex = (await mt.resolve_peer(chat_id)).hex()
-            except Exception:
-                peer_hex = None
-        ctx.state.set("update_pending", {"chat_id": chat_id, "message_id": message_id, "peer": peer_hex, "own": own, "restarting": time.time()})
+    if isinstance(pending, dict):
+        pending = dict(pending)
+        pending["restarting"] = time.time()
+        ctx.state.set("update_pending", pending)
     await asyncio.sleep(1)
     await _restart_service(ctx)
 
 async def _restart_service(ctx):
-    import sys
     runtime = ctx.runtime
     try:
         if runtime.app:
@@ -264,11 +350,21 @@ async def command_upd(ctx, invocation):
 
     async def update_handler(callback, payload):
         await callback.answer("Updating…")
+        _pending_from_callback(ctx, callback)
         await _run_update(ctx)
+
+    async def ignore_handler(callback, payload):
+        ctx.state.set("notified_commit", latest)
+        await callback.answer("Ignored")
+        try:
+            await callback.edit("<b>Update ignored.</b>")
+        except Exception:
+            pass
 
     buttons = [
         [
             ctx.ui.button("Update", update_handler, style="primary"),
+            ctx.ui.button("Ignore", ignore_handler, style="danger"),
         ]
     ]
     message = await ctx.respond(
@@ -277,12 +373,30 @@ async def command_upd(ctx, invocation):
         inline=True,
         parse_mode="HTML",
     )
-    body = message.get("result", message) if isinstance(message, dict) else message
-    if isinstance(body, dict):
-        chat_id = body.get("chat", {}).get("id") or body.get("chat_id")
-        message_id = body.get("message_id") or body.get("id")
+    pending = None
+    if isinstance(message, dict):
+        body = message.get("result", message)
+        if isinstance(body, dict):
+            message_id = body.get("id") if isinstance(body.get("id"), int) else body.get("message_id")
+            chat_id = getattr(ctx.message, "chat_id", None)
+            if isinstance(chat_id, int) and isinstance(message_id, int):
+                pending = {"chat_id": chat_id, "message_id": message_id, "own": True}
+    if pending is None:
+        chat_id = getattr(ctx.message, "chat_id", None)
+        message_id = getattr(ctx.message, "id", None)
         if isinstance(chat_id, int) and isinstance(message_id, int):
-            ctx.state.set("update_pending", {"chat_id": chat_id, "message_id": message_id})
+            pending = {"chat_id": chat_id, "message_id": message_id, "own": True}
+    if pending is not None:
+        peer_hex = None
+        try:
+            app = getattr(ctx.runtime, "app", None)
+            mt = getattr(app, "mt", None) if app is not None else None
+            if mt is not None and hasattr(mt, "resolve_peer"):
+                peer_hex = (await mt.resolve_peer(pending["chat_id"])).hex()
+        except Exception:
+            peer_hex = None
+        pending["peer"] = peer_hex
+        ctx.state.set("update_pending", pending)
 
 async def task_poller(ctx):
     runtime = ctx.runtime
@@ -311,11 +425,21 @@ async def task_poller(ctx):
 
     async def update_handler(callback, payload):
         await callback.answer("Updating…")
+        _pending_from_callback(ctx, callback)
         await _run_update(ctx)
+
+    async def ignore_handler(callback, payload):
+        ctx.state.set("notified_commit", latest)
+        await callback.answer("Ignored")
+        try:
+            await callback.edit("<b>Update ignored.</b>")
+        except Exception:
+            pass
 
     buttons = [
         [
             ctx.ui.button("Update", update_handler, style="primary"),
+            ctx.ui.button("Ignore", ignore_handler, style="danger"),
         ]
     ]
     text = _notify_text(current, latest, changelog)
@@ -323,10 +447,14 @@ async def task_poller(ctx):
         message = await ctx.bot.send_message(owner, text, buttons=buttons)
     except Exception:
         return
-    body = message.get("result", message) if isinstance(message, dict) else message
-    if isinstance(body, dict):
-        chat_id = body.get("chat", {}).get("id") or body.get("chat_id")
-        message_id = body.get("message_id")
-        if isinstance(chat_id, int) and isinstance(message_id, int):
-            ctx.state.set("update_pending", {"chat_id": chat_id, "message_id": message_id})
+    sent = None
+    if isinstance(message, dict):
+        body = message.get("result", message)
+        for upd in (body.get("updates") or []) if isinstance(body, dict) else []:
+            msg = upd.get("message") if isinstance(upd, dict) else None
+            if isinstance(msg, dict) and isinstance(msg.get("id"), int):
+                sent = msg
+                break
+    if sent is not None:
+        ctx.state.set("update_pending", {"chat_id": int(owner), "message_id": int(sent["id"]), "own": False})
     ctx.state.set("notified_commit", latest)
