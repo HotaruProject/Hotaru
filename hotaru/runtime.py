@@ -21,6 +21,7 @@ from goygram.types import InlineObj
 from .events import EventRouter
 from relay.inline import InlineManager
 from relay.inline_tl import to_tl_results
+from relay.inline_tl import answer_tl
 from relay.sandbox import ModuleSandbox
 from relay.caps import CapabilityHost, describe as describe_caps
 from relay.firewall import install as install_firewall, trusted_scope
@@ -173,6 +174,7 @@ class Runtime:
         self.callbacks.register("caps_confirm", self._caps_confirm)
         self.event_router = EventRouter(self._event_error)
         self.backups = BackupService()
+        self.observatory = Observatory(Path("observatory/runtime/events.jsonl"))
         self.tasks = TaskSupervisor()
         self.modules = ModuleManager(tasks=self.tasks)
         self.modules.form_cleanup = self.unload_module_forms

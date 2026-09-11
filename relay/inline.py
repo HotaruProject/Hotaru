@@ -549,6 +549,8 @@ class InlineManager:
             mt = getattr(app, "mt", None)
             if mt is not None and session is not None and session.is_bot:
                 self.ready.set()
+                if self.runtime.observatory is not None:
+                    self.runtime.observatory.emit("inline", "ready_set")
                 return
             await asyncio.sleep(0.2)
 
@@ -574,6 +576,8 @@ class InlineManager:
                 pass
 
     async def _dispatch_inline(self, query: Any) -> None:
+        if self.runtime.observatory is not None:
+            self.runtime.observatory.emit("inline", "query_received", src=str(getattr(query, "src", "")), qid=str(getattr(query, "id", "")), text=str(getattr(query, "query", ""))[:64])
         for handler in tuple(self._handlers):
             try:
                 await handler(query)
