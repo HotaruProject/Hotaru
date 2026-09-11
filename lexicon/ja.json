@@ -118,7 +118,14 @@
           "description": "更新通知を有効化"
         }
       },
-      "restarted": "Hotaruは更新され、{took}で正常に再起動されました"
+      "restarted": "Hotaruは更新され、{took}で正常に再起動されました",
+      "restarting": "{commit}に更新しました。再起動中…",
+      "updated": "Hotaruを{seconds}秒で更新しました",
+      "ignored": "更新を無視しました。",
+      "ignored_toast": "無視しました",
+      "updating": "更新中…",
+      "notify_on": "更新通知を有効にしました",
+      "notify_off": "更新通知を無効にしました"
     },
     "translations": {
       "description": "翻訳設定",

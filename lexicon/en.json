@@ -63,7 +63,12 @@
           "description": "Enable update notifications"
         }
       },
-      "restarted": "Hotaru updated and successfully restarted in {took}"
+      "restarted": "Hotaru updated and successfully restarted in {took}",
+      "ignored": "Update ignored.",
+      "ignored_toast": "Ignored",
+      "updating": "Updating…",
+      "notify_on": "Update notifications enabled",
+      "notify_off": "Update notifications disabled"
     },
     "kernel": {
       "runtime_unavailable": "Runtime unavailable",

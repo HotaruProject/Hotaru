@@ -118,7 +118,14 @@
           "description": "Жаңарту хабарламаларын қосу"
         }
       },
-      "restarted": "Hotaru жаңартылып, сәтті қайта қосылды ({took})"
+      "restarted": "Hotaru жаңартылып, сәтті қайта қосылды ({took})",
+      "restarting": "{commit} жаңартылды. Қайта қосыламын…",
+      "updated": "Hotaru {seconds} с ішінде жаңартылды",
+      "ignored": "Жаңарту еленбеді.",
+      "ignored_toast": "Еленбеді",
+      "updating": "Жаңартылуда…",
+      "notify_on": "Жаңарту хабарламалары қосылды",
+      "notify_off": "Жаңарту хабарламалары өшірілді"
     },
     "translations": {
       "description": "Аудармаларды басқару",
