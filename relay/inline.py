@@ -496,8 +496,11 @@ class InlineManager:
         self.ready.clear()
         self.bot_app = GoyGram(
             bot_token=self.info.token,
-            bot_timeout=self.poll_timeout,
-            default_transport="api",
+            api_id=self.runtime.config.api_id,
+            api_hash=self.runtime.config.api_hash,
+            session_name=str(self.runtime.config.session_dir / "hotaru-inline"),
+            intake="mtproto",
+            default_transport="mtproto",
         )
         self.bot_app.on_inline(self._dispatch_inline)
         self.bot_app.on_cb(self._dispatch_callback)
@@ -509,13 +512,10 @@ class InlineManager:
         assert app is not None
         delay = 1.0
         while not self._stop.is_set():
-            dispatch_task = None
+            ready_task = None
             try:
-                await app.core.bot.boot()
-                await app.bot_req("deleteWebhook", drop_pending_updates=False)
-                dispatch_task = asyncio.create_task(app.core.disp.consume(), name="hotaru:inline-dispatch")
-                self.ready.set()
-                await app.core.bot.spin()
+                ready_task = asyncio.create_task(self._await_ready(app), name="hotaru:inline-ready")
+                await app.run()
                 return
             except asyncio.CancelledError:
                 raise
@@ -540,11 +540,17 @@ class InlineManager:
                     pass
                 delay = min(delay * 2, 60.0)
             finally:
-                if app is self.bot_app:
-                    self.ready.clear()
-                if dispatch_task is not None and not dispatch_task.done():
-                    dispatch_task.cancel()
-                    await asyncio.gather(dispatch_task, return_exceptions=True)
+                if ready_task is not None and not ready_task.done():
+                    ready_task.cancel()
+
+    async def _await_ready(self, app: Any) -> None:
+        while not self._stop.is_set():
+            session = getattr(app, "session", None)
+            mt = getattr(app, "mt", None)
+            if mt is not None and session is not None and session.is_bot:
+                self.ready.set()
+                return
+            await asyncio.sleep(0.2)
 
     @staticmethod
     def _is_auth_failure(exc: Exception) -> bool:

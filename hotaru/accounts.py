@@ -145,7 +145,7 @@ class AccountManager:
             if match is None:
                 continue
             session_name = path.name[: -len(".vault")]
-            if session_name in known:
+            if session_name in known or session_name == "hotaru-inline":
                 continue
             user_id = int(match.group(1))
             profile = self.register(user_id, self.next_free_number(), session_name)

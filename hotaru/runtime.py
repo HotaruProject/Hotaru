@@ -20,6 +20,7 @@ from .commands import CommandParser
 from goygram.types import InlineObj
 from .events import EventRouter
 from relay.inline import InlineManager
+from relay.inline_tl import to_tl_results
 from relay.sandbox import ModuleSandbox
 from relay.caps import CapabilityHost, describe as describe_caps
 from relay.firewall import install as install_firewall, trusted_scope
@@ -274,7 +275,21 @@ class Runtime:
                 elif isinstance(button.get("url"), str):
                     current.append({"text": button.get("text", ""), "url": button["url"]})
             rebound.append(current)
-        await self.inline.bot_app.bot_req("editMessageText", chat_id=chat_id, message_id=form_id, text=text, parse_mode="HTML", reply_markup={"inline_keyboard": rebound})
+        bot_app = self.inline.bot_app
+        if getattr(bot_app, "mt", None) is not None:
+            from goygram.sugar import html_to_entities
+            from goygram.types.kbd import kbd_to_tl
+
+            plain, ents = html_to_entities(text)
+            edit_data = {"peer": chat_id, "id": form_id, "message": plain}
+            if ents:
+                edit_data["entities"] = ents
+            tl_markup = kbd_to_tl({"inline_keyboard": rebound})
+            if tl_markup is not None:
+                edit_data["reply_markup"] = tl_markup
+            await bot_app.mt_req("messages.editMessage", **edit_data)
+        else:
+            await bot_app.bot_req("editMessageText", chat_id=chat_id, message_id=form_id, text=text, parse_mode="HTML", reply_markup={"inline_keyboard": rebound})
         if hasattr(command, "delete"):
             await command.delete()
         return sent
@@ -672,12 +687,12 @@ class Runtime:
             result = InlineObj.article("hotaru-form", "Hotaru form", form_text)
             result["input_message_content"] = {"rich_message": {"_": "inputRichMessageHTML", **rich_html(form_text)}}
             result["reply_markup"] = {"inline_keyboard": buttons}
-            await query.answer(results=[result], cache_time=0, is_personal=True)
+            await answer_tl(query, results=[result], cache_time=0, is_personal=True)
             if self.observatory is not None:
                 self.observatory.emit("inline", "form_answered", buttons=len(buttons))
             return
         results = await self._dispatch_inline_command(text, query)
-        await query.answer(results=results, cache_time=0, is_personal=True)
+        await answer_tl(query, results=results, cache_time=0, is_personal=True)
 
     async def _dispatch_inline_command(self, text: str, query: Any) -> list[dict[str, Any]]:
         kernel = self.kernel
@@ -795,7 +810,7 @@ class Runtime:
             await query.answer(results=[], cache_time=0, is_personal=True)
             return
         body, buttons = form
-        await query.answer(results=[InlineObj.article("hotaru-form", "Hotaru form", body, kbd={"inline_keyboard": [buttons]})], cache_time=0, is_personal=True)
+        await answer_tl(query, results=[InlineObj.article("hotaru-form", "Hotaru form", body, kbd={"inline_keyboard": [buttons]})], cache_time=0, is_personal=True)
 
     async def _on_inline_callback(self, callback: Any) -> None:
         if self.security is None or self.callbacks is None:
@@ -813,7 +828,7 @@ class Runtime:
             return await self.callbacks.dispatch(callback)
         except CallbackDenied as exc:
             try:
-                await callback.answer("Callback expired, send the command again", show_alert=True)
+                await callback.answer("Callback expired, send the command again", alert=True)
             except Exception:
                 pass
             if self.observatory is not None:
@@ -821,7 +836,7 @@ class Runtime:
             return None
         except Exception as exc:
             try:
-                await callback.answer("Callback failed", show_alert=True)
+                await callback.answer("Callback failed", alert=True)
             except Exception:
                 pass
             if self.observatory is not None:
