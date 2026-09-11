@@ -1,6 +1,6 @@
 HOTARU = {
     "id": "updater",
-    "version": "1.5.0",
+    "version": "1.5.1",
     "description": "Hotaru self-updater: changelog, update confirmation, git pull, deps, restart",
     "commands": ["upd", "updlog", "updoff", "updon"],
     "capabilities": ["net", "mt"],
@@ -11,7 +11,6 @@ HOTARU = {
 }
 
 import asyncio
-import json
 import os
 import subprocess
 import sys
@@ -103,23 +102,38 @@ def _pending_from_callback(ctx, callback):
     base = existing if isinstance(existing, dict) else {}
     chat_id = getattr(callback, "chat_id", None)
     msg_id = getattr(callback, "msg_id", None)
-    pending = None
     if isinstance(msg_id, dict):
         inline_id = _serialize_inline(msg_id)
-        if inline_id is not None:
-            pending = dict(base)
-            pending["inline_id"] = inline_id
-            pending["own"] = True
-            if isinstance(chat_id, int):
-                pending["chat_id"] = chat_id
+        if inline_id is None:
+            return
+        pending = dict(base)
+        pending["inline_id"] = inline_id
+        pending["own"] = True
+        if isinstance(chat_id, int):
+            pending["chat_id"] = chat_id
+        ctx.state.set("update_pending", pending)
     elif isinstance(msg_id, int) and isinstance(chat_id, int):
         pending = dict(base)
         pending["chat_id"] = chat_id
         pending["message_id"] = msg_id
         pending["own"] = False
         pending.pop("inline_id", None)
-    if pending is not None:
         ctx.state.set("update_pending", pending)
+
+def _t(ctx, key, fallback, **params):
+    try:
+        value = ctx.t("kernel.updater." + key, fallback, **params)
+    except Exception:
+        value = None
+    if not isinstance(value, str) or not value:
+        try:
+            value = fallback.format(**params) if params else fallback
+        except Exception:
+            value = fallback
+    return value
+
+def _rich(text):
+    return {"_": "inputRichMessageHTML", "html": text}
 
 async def _edit_inline(ctx, text):
     pending = ctx.state.get("update_pending")
@@ -128,6 +142,11 @@ async def _edit_inline(ctx, text):
     mid = _restore_inline(pending.get("inline_id"))
     if mid is None:
         return False
+    try:
+        await ctx.bot.call("editMessageText", inline_message_id=mid, rich_message=_rich(text))
+        return True
+    except Exception:
+        pass
     try:
         await ctx.bot.call("editMessageText", inline_message_id=mid, text=text, parse_mode="HTML")
         return True
@@ -142,10 +161,8 @@ async def _edit_own(ctx, text):
     message_id = pending.get("message_id")
     if not peer_hex or not isinstance(message_id, int):
         return False
-    rich = {"_": "inputRichMessageHTML", "html": text}
-    data = {"id": int(message_id), "rich_message": rich, "peer": bytes.fromhex(peer_hex)}
     try:
-        await ctx.tg.call("messages.editMessage", data)
+        await ctx.tg.call("messages.editMessage", {"id": int(message_id), "rich_message": _rich(text), "peer": bytes.fromhex(peer_hex)})
         return True
     except Exception:
         pass
@@ -154,45 +171,39 @@ async def _edit_own(ctx, text):
         return True
     except Exception:
         return False
-async def _bot_edit(ctx, chat_id, message_id, text):
-    from goygram.sugar import html_to_entities
 
-    plain, ents = html_to_entities(text)
-    data = {"message": plain}
-    if ents:
-        data["entities"] = ents
+async def _bot_edit(ctx, chat_id, message_id, text):
     try:
-        await ctx.bot.call("editMessageText", chat_id=chat_id, message_id=int(message_id), text=text, parse_mode="HTML")
+        await ctx.bot.call("editMessageText", chat_id=int(chat_id), message_id=int(message_id), rich_message=_rich(text))
         return True
     except Exception:
         pass
-    app = getattr(ctx.runtime, "app", None)
-    if app is not None and getattr(app, "mt", None) is not None:
-        try:
-            await app.mt_req("messages.editMessage", peer=int(chat_id), id=int(message_id), **data)
-            return True
-        except Exception:
-            pass
+    try:
+        await ctx.bot.call("editMessageText", chat_id=int(chat_id), message_id=int(message_id), text=text, parse_mode="HTML")
+        return True
+    except Exception:
+        pass
     return False
 
 async def _status(ctx, text):
-    pending = ctx.state.get("update_pending")
-    if not isinstance(pending, dict):
-        await ctx.respond(text, parse_mode="HTML")
-        return
-    if bool(pending.get("own")) and await _edit_inline(ctx, text):
-        return
-    chat_id = pending.get("chat_id")
-    message_id = pending.get("message_id")
-    if isinstance(chat_id, int) and isinstance(message_id, int):
-        if bool(pending.get("own")) and await _edit_own(ctx, text):
-            return
-        try:
-            if await _bot_edit(ctx, chat_id, message_id, text):
+    try:
+        pending = ctx.state.get("update_pending")
+        if isinstance(pending, dict):
+            if bool(pending.get("own")) and await _edit_inline(ctx, text):
                 return
-        except Exception:
-            pass
-    await ctx.respond(text, parse_mode="HTML")
+            chat_id = pending.get("chat_id")
+            message_id = pending.get("message_id")
+            if isinstance(chat_id, int) and isinstance(message_id, int):
+                if bool(pending.get("own")) and await _edit_own(ctx, text):
+                    return
+                if await _bot_edit(ctx, chat_id, message_id, text):
+                    return
+    except Exception:
+        pass
+    try:
+        await ctx.respond(text, parse_mode="HTML")
+    except Exception:
+        pass
 
 async def afterglow(ctx):
     pending = ctx.state.get("update_pending")
@@ -204,32 +215,24 @@ async def afterglow(ctx):
     ctx.state.delete("update_pending")
     took = round(time.time() - float(restarting)) if isinstance(restarting, (int, float)) else None
     took = f"{took}s" if took is not None else "n/a"
-    text = ctx.t("kernel.updater.restarted", "Hotaru обновлён и успешно перезапущен за {took}", took=took)
+    text = _t(ctx, "restarted", "Hotaru updated and successfully restarted in {took}", took=took)
     html = f"<b>{text}</b>"
-    chat_id = pending.get("chat_id")
-    message_id = pending.get("message_id")
-    if bool(pending.get("own")):
-        ctx.state.set("update_pending", pending)
+    for _ in range(12):
         try:
-            if await _edit_inline(ctx, html):
-                ctx.state.delete("update_pending")
-                return
+            if bool(pending.get("own")):
+                if await _edit_inline(ctx, html):
+                    return
+                if await _edit_own(ctx, html):
+                    return
+            else:
+                chat_id = pending.get("chat_id")
+                message_id = pending.get("message_id")
+                if isinstance(chat_id, int) and isinstance(message_id, int):
+                    if await _bot_edit(ctx, chat_id, message_id, html):
+                        return
         except Exception:
             pass
-        ctx.state.set("update_pending", pending)
-        try:
-            if await _edit_own(ctx, html):
-                ctx.state.delete("update_pending")
-                return
-        except Exception:
-            pass
-        ctx.state.delete("update_pending")
-        return
-    if isinstance(chat_id, int) and isinstance(message_id, int):
-        try:
-            await _bot_edit(ctx, chat_id, message_id, html)
-        except Exception:
-            pass
+        await asyncio.sleep(1)
 
 def _notify_text(current, latest, changelog):
     link = f'<a href="{REPO_URL}/compare/{current[:12]}...{latest[:12]}">{latest[:6]}</a>'
@@ -241,7 +244,7 @@ def _notify_text(current, latest, changelog):
 async def command_updlog(ctx, invocation):
     runtime = ctx.runtime
     if runtime is None:
-        await ctx.respond("<b>Runtime unavailable</b>", parse_mode="HTML")
+        await ctx.respond(f"<b>{_t(ctx, 'unavailable', 'Runtime unavailable')}</b>", parse_mode="HTML")
         return
     try:
         _fetch_origin(runtime)
@@ -252,34 +255,34 @@ async def command_updlog(ctx, invocation):
         await ctx.respond(f"<b>Update check failed:</b> <i>{_escape(exc)}</i>", parse_mode="HTML")
         return
     if current == latest:
-        await ctx.respond(f"<b>Already up to date</b> <code>{_escape(current[:7])}</code>", parse_mode="HTML")
+        await ctx.respond(f"<b>{_t(ctx, 'up_to_date', 'Hotaru is up to date')}</b>", parse_mode="HTML")
         return
     await ctx.respond(_notify_text(current, latest, changelog), parse_mode="HTML")
 
 async def command_updoff(ctx, invocation):
     ctx.state.set("notify", False)
-    await ctx.respond("<b>Update notifications disabled</b>", parse_mode="HTML")
+    await ctx.respond(f"<b>{_t(ctx, 'notify_off', 'Update notifications disabled')}</b>", parse_mode="HTML")
 
 async def command_updon(ctx, invocation):
     ctx.state.set("notify", True)
-    await ctx.respond("<b>Update notifications enabled</b>", parse_mode="HTML")
+    await ctx.respond(f"<b>{_t(ctx, 'notify_on', 'Update notifications enabled')}</b>", parse_mode="HTML")
 
 async def _run_update(ctx):
     async def say(text):
         await _status(ctx, text)
-    await say("<b>Downloading update…</b>")
+    await say(f"<b>{_t(ctx, 'downloading', 'Downloading update…')}</b>")
     try:
         before, after, deps_changed = _pull(ctx.runtime)
     except Exception as exc:
         await say(f"<b>Update failed:</b> <i>{_escape(exc)}</i>")
         return
     if before == after:
-        await say("<b>Already up to date</b>")
+        await say(f"<b>{_t(ctx, 'up_to_date', 'Hotaru is up to date')}</b>")
         return
     if deps_changed:
-        await say("<b>Syncing dependencies…</b>")
+        await say(f"<b>{_t(ctx, 'syncing', 'Syncing dependencies…')}</b>")
         _sync_deps(ctx.runtime)
-    await say(f"<b>Updated to</b> <code>{_escape(after[:7])}</code>. Restarting…")
+    await say(f"<b>{_t(ctx, 'restarting', 'Updated to {commit}. Restarting…', commit=_escape(after[:7]))}</b>")
     pending = ctx.state.get("update_pending")
     if isinstance(pending, dict):
         pending = dict(pending)
@@ -318,7 +321,7 @@ async def _restart_service(ctx):
 async def command_upd(ctx, invocation):
     runtime = ctx.runtime
     if runtime is None:
-        await ctx.respond("<b>Runtime unavailable</b>", parse_mode="HTML")
+        await ctx.respond(f"<b>{_t(ctx, 'unavailable', 'Runtime unavailable')}</b>", parse_mode="HTML")
         return
     force = "force" in invocation.args or "-f" in invocation.args
     try:
@@ -333,7 +336,7 @@ async def command_upd(ctx, invocation):
         return
 
     if current == latest:
-        await ctx.respond(f"<b>Already up to date</b> <code>{_escape(current[:7])}</code>", parse_mode="HTML")
+        await ctx.respond(f"<b>{_t(ctx, 'up_to_date', 'Hotaru is up to date')}</b>", parse_mode="HTML")
         return
 
     if force:
@@ -341,15 +344,15 @@ async def command_upd(ctx, invocation):
         return
 
     async def update_handler(callback, payload):
-        await callback.answer("Updating…")
+        await callback.answer(_t(ctx, "updating", "Updating…"))
         _pending_from_callback(ctx, callback)
         await _run_update(ctx)
 
     async def ignore_handler(callback, payload):
         ctx.state.set("notified_commit", latest)
-        await callback.answer("Ignored")
+        await callback.answer(_t(ctx, "ignored_toast", "Ignored"))
         try:
-            await callback.edit("<b>Update ignored.</b>")
+            await callback.edit(f"<b>{_t(ctx, 'ignored', 'Update ignored.')}</b>")
         except Exception:
             pass
 
@@ -417,15 +420,15 @@ async def task_poller(ctx):
         return
 
     async def update_handler(callback, payload):
-        await callback.answer("Updating…")
+        await callback.answer(_t(ctx, "updating", "Updating…"))
         _pending_from_callback(ctx, callback)
         await _run_update(ctx)
 
     async def ignore_handler(callback, payload):
         ctx.state.set("notified_commit", latest)
-        await callback.answer("Ignored")
+        await callback.answer(_t(ctx, "ignored_toast", "Ignored"))
         try:
-            await callback.edit("<b>Update ignored.</b>")
+            await callback.edit(f"<b>{_t(ctx, 'ignored', 'Update ignored.')}</b>")
         except Exception:
             pass
 
@@ -443,11 +446,12 @@ async def task_poller(ctx):
     sent = None
     if isinstance(message, dict):
         body = message.get("result", message)
-        for upd in (body.get("updates") or []) if isinstance(body, dict) else []:
-            msg = upd.get("message") if isinstance(upd, dict) else None
-            if isinstance(msg, dict) and isinstance(msg.get("id"), int):
-                sent = msg
-                break
+        if isinstance(body, dict):
+            for upd in body.get("updates") or []:
+                msg = upd.get("message") if isinstance(upd, dict) else None
+                if isinstance(msg, dict) and isinstance(msg.get("id"), int):
+                    sent = msg
+                    break
     if sent is not None:
         ctx.state.set("update_pending", {"chat_id": int(owner), "message_id": int(sent["id"]), "own": False})
     ctx.state.set("notified_commit", latest)
