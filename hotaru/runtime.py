@@ -618,7 +618,7 @@ class Runtime:
         results = body.get("results") if isinstance(body, dict) else None
         if not isinstance(query_id, (int, str)) or not isinstance(results, list) or not results:
             raise RuntimeError("inline bot returned no form result")
-        await self.app.mt_req(
+        sent_result = await self.app.mt_req(
             "messages.sendInlineBotResult",
             peer=peer,
             reply_to={"_": "inputReplyToMessage", "reply_to_msg_id": message_id, **({"top_msg_id": options.get("topic_id")} if isinstance(options, dict) and isinstance(options.get("topic_id"), int) else {})},
@@ -629,7 +629,10 @@ class Runtime:
         )
         if options.get("delete_source", True):
             await self._delete_inline_source(command, chat_id, message_id)
-        return result
+        from goygram.sugar import extract_sent_message
+
+        sent = extract_sent_message(sent_result)
+        return sent if isinstance(sent, dict) and isinstance(sent.get("id"), int) else result
 
     async def _delete_inline_source(self, command: Any, chat_id: int | str, message_id: int) -> None:
         if getattr(command, "src", None) == "bot":

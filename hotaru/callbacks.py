@@ -45,19 +45,31 @@ class CallbackContext:
     async def edit(self, text: str, **kwargs: Any) -> Any:
         inline_mid = getattr(self, "inline_message_id", None)
         app = getattr(self, "app", None)
-        if inline_mid is not None and app is not None:
-            if getattr(self, "src", None) == "mt":
-                from goygram.types.kbd import kbd_to_tl
+        if getattr(self, "src", None) == "mt" and app is not None:
+            from goygram.sugar import html_to_entities
+            from goygram.types.kbd import kbd_to_tl
 
-                data = dict(kwargs)
-                raw_kbd = data.pop("reply_markup", data.pop("kbd", None))
-                if raw_kbd is not None:
-                    markup = kbd_to_tl(raw_kbd)
-                    if markup is not None:
-                        data["reply_markup"] = markup
+            data = dict(kwargs)
+            raw_kbd = data.pop("reply_markup", data.pop("kbd", None))
+            if raw_kbd is not None:
+                markup = kbd_to_tl(raw_kbd)
+                if markup is not None:
+                    data["reply_markup"] = markup
+            data.pop("parse_mode", None)
+            plain, ents = html_to_entities(text)
+            if ents:
+                data["entities"] = ents
+            if inline_mid is not None:
                 id_field = inline_mid if isinstance(inline_mid, dict) else {"_": "inputBotInlineMessageID", "raw": inline_mid} if isinstance(inline_mid, (str, bytes)) else None
-                if id_field is not None:
-                    return await app.mt_req("messages.editInlineBotMessage", id=id_field, message=text, **data)
+                if id_field is None:
+                    return None
+                return await app.mt_req("messages.editInlineBotMessage", id=id_field, message=plain, **data)
+            chat_id = getattr(self, "chat_id", None)
+            msg_id = getattr(self, "msg_id", None)
+            if isinstance(chat_id, int) and isinstance(msg_id, int):
+                return await app.mt_req("messages.editMessage", peer=chat_id, id=int(msg_id), message=plain, **data)
+            return None
+        if inline_mid is not None and app is not None:
             data = dict(kwargs)
             kbd = data.pop("kbd", None)
             if kbd is not None:

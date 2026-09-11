@@ -338,6 +338,20 @@ class BotGateway:
     def __init__(self, inline_manager: Any) -> None:
         self._manager = inline_manager
 
+    @staticmethod
+    def extract_sent(result: Any) -> dict[str, Any] | None:
+        from goygram.sugar import extract_sent_message
+
+        body = result.get("result", result) if isinstance(result, dict) else result
+        sent = extract_sent_message(body)
+        if sent is not None and isinstance(sent.get("id"), int):
+            return sent
+        if isinstance(result, dict) and isinstance(result.get("message_id"), int):
+            return result
+        if isinstance(body, dict) and isinstance(body.get("message_id"), int):
+            return {"id": body["message_id"], "message_id": body["message_id"]}
+        return None
+
     async def call(self, method: str, **kwargs: Any) -> Any:
         app = getattr(self._manager, "bot_app", None)
         if app is None:
