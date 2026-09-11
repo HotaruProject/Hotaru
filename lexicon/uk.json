@@ -202,15 +202,15 @@
           "description": "User permissions: whois <user_id>"
         }
       },
-      "usage": "використання:\n!owneradd <user_id|reply> — надати owner\n!ownerrm <user_id|reply> — зняти owner\n!ownerlist — власники\n!newsgroup <name> — створити групу прав\n!sgroups — список груп\n!sgroup <name> — учасники та права групи\n!delsgroup <name> — видалити групу\n!sgroupadd <name> <user_id|reply> — додати юзера в групу\n!sgroupdel <name> <user_id|reply> — прибрати юзера з групи\n!tsec <user|chat|sgroup> <target> <command|module>/<name> [термін] — надати право\n!tsecrm — прибрати правило\n!tsecclr — очистити всі правила цілі\n!perm <user_id> <admin|trusted|everyone> [remove] — надати/зняти право\n!perms — список прав\n!whois <user_id> — права користувача",
+      "usage": "використання:\n!owadd <user_id|reply> — надати owner\n!owrm <user_id|reply> — зняти owner\n!owls — власники\n!sgnew <name> — створити групу прав\n!sgls — список груп\n!sg <name> — учасники та права групи\n!sgdel <name> — видалити групу\n!sgadd <name> <user_id|reply> — додати юзера в групу\n!sgrm <name> <user_id|reply> — прибрати юзера з групи\n!rule <user|chat|sgroup> <target> <command|module>/<name> [термін] — надати право\n!rulerm — прибрати правило\n!ruleclr — очистити всі правила цілі\n!perm <user_id> <admin|trusted|everyone> [remove] — надати/зняти право\n!perms — список прав\n!whois <user_id> — права користувача",
       "bad_group": "Назва групи: лише літери та цифри, до 32 символів.",
-      "no_groups": "Груп прав немає. Створи: !newsgroup <name>",
+      "no_groups": "Груп прав немає. Створи: !sgnew <name>",
       "bad_duration": "Термін: число + s/m/h/d/w, або forever.",
       "bad_rule": "Правило: command/назва або module/назва.",
       "self_owner": "Цей користувач вже є власником акаунта.",
       "empty": "Наданих прав немає. Використай !perm <user_id> <role>.",
       "bad_label": "Невідоме право: {label}.",
-      "no_owner_grant": "Право owner надається через !owneradd."
+      "no_owner_grant": "Право owner надається через !owadd."
     }
   },
   "inline_commands_hint": "Обери команду — введи @<бот> і її назву в будь-якому чаті"
