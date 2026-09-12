@@ -1,57 +1,200 @@
 HOTARU = {
     "id": "executor",
     "version": "1.0.0",
-    "commands": ["sh"],
+    "commands": ["sh", "py"],
     "capabilities": ["mt", "files", "net", "state"],
     "description": "A simple module for execute commands in shell"
 }
 
-
 import asyncio
+import contextlib
+import html
+import io
+import os
+import sys
+import time
+import traceback
+from typing import Any
 
 
-async def _executeInShell(cmd: str) -> dict:
-    result = {"stdout": "",
-              "stderr": ""}
-    process = await asyncio.create_subprocess_shell(cmd,
-                                                    stdout=asyncio.subprocess.PIPE,
-                                                    stderr=asyncio.subprocess.PIPE)
-    stdout, stderr = await process.communicate()
-    if not stdout and not stderr:
-        result["stdout"] = "None"
-        result["stderr"] = "None"
-        return result
-    result["stdout"] = stdout.decode("UTF-8", errors="replace").strip()
-    result["stderr"] = stderr.decode("UTF-8", errors="replace").strip()
-    return result
+_ACTIVE: dict[str, Any] = {"sh": None, "py": None}
 
 
-async def command_sh(ctx, i):
+def _wrap_eval_code(code: str):
+    code = code.strip(); lines = code.splitlines()
+    keywords = (
+        "return ",
+        "import ",
+        "from ",
+        "for ",
+        "while ",
+        "if ",
+        "def ",
+        "class ",
+        "try:",
+        "except:",
+        "finally:"
+    )
+    if len(lines) == 1 and not lines[0].startswith(keywords):
+        return f"async def __executor_runner__(): return {lines[0]}"
+
+    indented = "\n".join(f"    {line}" for line in lines)
+    return f"async def __executor_runner__():\n{indented}"
+
+
+def _escape(value: str) -> str:
+    return html.escape(str(value), quote=False)
+
+
+def _clean_code(text: str) -> str:
+    text = text.strip()
+    if text.startswith("```") and text.endswith("```"):
+        lines = text.splitlines()
+        return "\n".join(lines[1:-1]).strip() if len(lines) > 1 else text.strip("`").strip()
+    return text
+
+
+def _truncate(text: str, max_len: int = 3500) -> str:
+    if len(text) > max_len:
+        return text[:max_len] + f"\n\n... [Cut: {len(text) - max_len} chars]"
+    return text
+
+
+async def _send_result(ctx, sections: list, elapsed_ms: float):
     premium = await ctx.premium()
-
-    args = getattr(i, "args", [])
-    if args == []:
-        if premium:
-            await ctx.respond("<b>usage:</b>\n.sh ...", parse_mode="HTML")
-        else:
-            await ctx.respond("<b>usage:</b>\n.sh ...", parse_mode="HTML", rich=False)
-        return
-
-    cmd = " ".join(args)
-    result = await _executeInShell(cmd)
-
-    stdout: str = __import__("html").escape(result["stdout"], quote=False)
-    stderr: str = __import__("html").escape(result["stderr"], quote=False)
+    header = f"<code>{elapsed_ms:.1f}ms</code>"
 
     if premium:
-        message = (
-            f"<details><summary><b>stdout</b></summary><p><pre><code>{stdout}</code></pre></p></details>"
-            f"<details><summary><b>stderr</b></summary><p><pre><code>{stderr}</code></pre></p></details>"
-        )
-        await ctx.respond(message, parse_mode="HTML")
+        parts = [f"<b>Executor</b> | {header}"]
+        for title, content, is_code in sections:
+            if not content:
+                continue
+            esc = _escape(_truncate(content))
+            body = f"<pre><code>{esc}</code></pre>" if is_code else f"<p>{esc}</p>"
+            parts.append(f"<details open><summary><b>{_escape(title)}</b></summary>{body}</details>")
+        await ctx.respond("".join(parts), parse_mode="HTML")
     else:
-        plain = (
-            f"<b>stdout:</b>\n<code>{stdout}</code>\n\n"
-            f"<b>stderr:</b>\n<code>{stderr}</code>"
-        )
-        await ctx.respond(plain, parse_mode="HTML", rich=False)
+        parts = [f"<b>Executor</b> | {header}\n"]
+        for title, content, is_code in sections:
+            if not content:
+                continue
+            esc = _escape(_truncate(content))
+            if is_code:
+                parts.append(f"<b>{_escape(title)}:</b>\n<pre><code>{esc}</code></pre>")
+            else:
+                parts.append(f"<b>{_escape(title)}:</b> {_escape(esc)}")
+        await ctx.respond("\n\n".join(parts), parse_mode="HTML", rich=False)
+
+
+async def command_sh(ctx, invocation):
+    args = getattr(invocation, "args", [])
+    if not args:
+        prefix = ctx.runtime.config.prefix if ctx.runtime else "."
+        await ctx.respond(f"<b>Usage:</b> <code>{prefix}sh &lt;command&gt;</code>", parse_mode="HTML", rich=False)
+        return
+
+    cmd = _clean_code(" ".join(args))
+    start_time = time.perf_counter()
+
+    process = await asyncio.create_subprocess_shell(
+        cmd,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+        env=os.environ.copy(),
+    )
+    _ACTIVE["shell"] = process
+
+    try:
+        stdout_bytes, stderr_bytes = await process.communicate()
+    except asyncio.CancelledError:
+        process.kill()
+        stdout_bytes, stderr_bytes = b"", b"Process terminated"
+    finally:
+        _ACTIVE["shell"] = None
+        elapsed = (time.perf_counter() - start_time) * 1000
+
+    stdout_str = stdout_bytes.decode("utf-8", errors="replace").strip()
+    stderr_str = stderr_bytes.decode("utf-8", errors="replace").strip()
+
+    sections = [("command", cmd, True)]
+    if stdout_str:
+        sections.append(("stdout", stdout_str, True))
+    if stderr_str:
+        sections.append(("stderr", stderr_str, True))
+    if not sections:
+        sections.append(("result", f"Exit code: {process.returncode}", False))
+
+    await _send_result(ctx, sections, elapsed)
+
+
+async def command_py(ctx, invocation):
+    args = getattr(invocation, "args", [])
+    if not args:
+        prefix = ctx.runtime.config.prefix if ctx.runtime else "."
+        await ctx.respond(f"<b>Usage:</b> <code>{prefix}e &lt;code&gt;</code>", parse_mode="HTML", rich=False)
+        return
+
+    raw_code = _clean_code(" ".join(args))
+    wrapped_code = _wrap_eval_code(raw_code)
+
+    env = {
+        "ctx": ctx,
+        "runtime": getattr(ctx, "runtime", None),
+        "client": getattr(ctx, "client", getattr(ctx, "tg", None)),
+        "tg": getattr(ctx, "tg", None),
+        "db": getattr(ctx, "state", None),
+        "state": getattr(ctx, "state", None),
+        "message": getattr(ctx, "message", None),
+        "msg": getattr(ctx, "message", None),
+        "reply": getattr(ctx, "reply", None) or getattr(ctx, "reply_to_message", None),
+        "invocation": invocation,
+        "i": invocation,
+        "asyncio": asyncio,
+        "os": os,
+        "sys": sys,
+        "time": time,
+    }
+
+    stdout_buf = io.StringIO()
+    stderr_buf = io.StringIO()
+    result_val = None
+    error_trace = None
+    start_time = time.perf_counter()
+
+    async def _task():
+        nonlocal result_val
+        exec_scope = dict(env)
+        exec(wrapped_code, exec_scope)
+        runner = exec_scope["__executor_runner__"]
+        result_val = await runner()
+
+    eval_task = asyncio.create_task(_task())
+    _ACTIVE["eval"] = eval_task
+
+    try:
+        with contextlib.redirect_stdout(stdout_buf), contextlib.redirect_stderr(stderr_buf):
+            await eval_task
+    except asyncio.CancelledError:
+        error_trace = "Execution cancelled"
+    except Exception:
+        error_trace = traceback.format_exc()
+    finally:
+        _ACTIVE["eval"] = None
+        elapsed = (time.perf_counter() - start_time) * 1000
+
+    stdout_str = stdout_buf.getvalue().strip()
+    stderr_str = stderr_buf.getvalue().strip()
+
+    sections = [("code", raw_code, True)]
+    if stdout_str:
+        sections.append(("stdout", stdout_str, True))
+    if stderr_str:
+        sections.append(("stderr", stderr_str, True))
+    if result_val is not None:
+        sections.append(("return", repr(result_val), True))
+    if error_trace:
+        sections.append(("traceback", error_trace, True))
+    if not sections:
+        sections.append(("result", "Done (None)", False))
+
+    await _send_result(ctx, sections, elapsed)
