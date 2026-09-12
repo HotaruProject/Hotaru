@@ -27,15 +27,18 @@ async def _executeInShell(cmd: str) -> dict:
 
 
 async def command_sh(ctx, i):
+    premium = await ctx.premium()
+
     args = getattr(i, "args", [])
     if args == []:
-        await ctx.respond("<b>usage:</b>\n.sh ...", parse_mode="HTML")
+        if premium:
+            await ctx.respond("<b>usage:</b>\n.sh ...", parse_mode="HTML")
+        else:
+            await ctx.respond("<b>usage:</b>\n.sh ...", parse_mode="HTML", rich=False)
         return
 
     cmd = " ".join(args)
     result = await _executeInShell(cmd)
-
-    premium = await ctx.premium()
 
     stdout: str = __import__("html").escape(result["stdout"], quote=False)
     stderr: str = __import__("html").escape(result["stderr"], quote=False)
