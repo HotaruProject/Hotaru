@@ -87,43 +87,71 @@ def _sync_deps(runtime):
 def _serialize_inline(mid):
     if not isinstance(mid, dict):
         return None
-    out = {}
-    for key in ("dc_id", "id", "access_hash"):
+    name = mid.get("_")
+    if not isinstance(name, str) or "InlineMessageID" not in name:
+        name = "inputBotInlineMessageID"
+    out = {"_": name}
+    for key in ("dc_id", "id", "access_hash", "owner_id"):
         if isinstance(mid.get(key), int):
             out[key] = int(mid[key])
-    return out if "id" in out else None
+    return out if isinstance(out.get("id"), int) else None
 
 def _restore_inline(stored):
     if not isinstance(stored, dict) or not isinstance(stored.get("id"), int):
         return None
-    mid = {"_": "inputBotInlineMessageID"}
-    for key in ("dc_id", "id", "access_hash"):
+    name = stored.get("_") if isinstance(stored.get("_"), str) else None
+    mid = {"_": name or "inputBotInlineMessageID"}
+    for key in ("dc_id", "id", "access_hash", "owner_id"):
         if isinstance(stored.get(key), int):
             mid[key] = int(stored[key])
-    return mid if "id" in mid else None
+    return mid
+
+def _add_surface(ctx, surface):
+    pending = ctx.state.get("update_pending")
+    if not isinstance(pending, dict):
+        pending = {}
+    surfaces = pending.get("surfaces")
+    if not isinstance(surfaces, list):
+        surfaces = []
+    if not surfaces and isinstance(pending.get("chat_id"), int):
+        legacy = {key: pending[key] for key in ("chat_id", "message_id", "inline_id", "own", "peer") if key in pending}
+        surfaces = [legacy]
+    merged = False
+    for index, existing in enumerate(surfaces):
+        if not isinstance(existing, dict) or existing.get("chat_id") != surface.get("chat_id") or bool(existing.get("own")) != bool(surface.get("own")):
+            continue
+        if isinstance(surface.get("inline_id"), dict) and "inline_id" not in existing:
+            surfaces[index] = {**existing, **surface}
+            merged = True
+            break
+        if isinstance(surface.get("message_id"), int) and "message_id" not in existing:
+            surfaces[index] = {**existing, **surface}
+            merged = True
+            break
+        if "message_id" in existing and existing.get("message_id") == surface.get("message_id"):
+            surfaces[index] = {**existing, **surface}
+            merged = True
+            break
+    if not merged:
+        surfaces.append(dict(surface))
+    pending["surfaces"] = surfaces
+    for key in ("chat_id", "message_id", "inline_id", "own", "peer"):
+        pending.pop(key, None)
+    ctx.state.set("update_pending", pending)
 
 def _pending_from_callback(ctx, callback):
-    existing = ctx.state.get("update_pending")
-    base = existing if isinstance(existing, dict) else {}
     chat_id = getattr(callback, "chat_id", None)
     msg_id = getattr(callback, "msg_id", None)
     if isinstance(msg_id, dict):
         inline_id = _serialize_inline(msg_id)
         if inline_id is None:
             return
-        pending = dict(base)
-        pending["inline_id"] = inline_id
-        pending["own"] = True
+        surface = {"own": True, "inline_id": inline_id}
         if isinstance(chat_id, int):
-            pending["chat_id"] = chat_id
-        ctx.state.set("update_pending", pending)
+            surface["chat_id"] = chat_id
+        _add_surface(ctx, surface)
     elif isinstance(msg_id, int) and isinstance(chat_id, int):
-        pending = dict(base)
-        pending["chat_id"] = chat_id
-        pending["message_id"] = msg_id
-        pending["own"] = False
-        pending.pop("inline_id", None)
-        ctx.state.set("update_pending", pending)
+        _add_surface(ctx, {"chat_id": chat_id, "message_id": msg_id, "own": False})
 
 def _t(ctx, key, fallback, **params):
     try:
@@ -140,71 +168,115 @@ def _t(ctx, key, fallback, **params):
 def _rich(text):
     return {"_": "inputRichMessageHTML", "html": text}
 
-async def _edit_inline(ctx, text, pending=None):
-    pending = pending if isinstance(pending, dict) else ctx.state.get("update_pending")
-    if not isinstance(pending, dict):
-        return False
-    mid = _restore_inline(pending.get("inline_id"))
+async def _edit_inline(ctx, text, surface):
+    mid = _restore_inline(surface.get("inline_id")) if isinstance(surface, dict) else None
     if mid is None:
         return False
     try:
         await ctx.bot.call("editMessageText", inline_message_id=mid, rich_message=_rich(text))
         return True
-    except Exception:
-        pass
+    except Exception as exc:
+        _emit(ctx, "edit_inline_error", error=type(exc).__name__, detail=str(exc)[:120])
     try:
         await ctx.bot.call("editMessageText", inline_message_id=mid, text=text, parse_mode="HTML")
         return True
-    except Exception:
-        return False
+    except Exception as exc:
+        _emit(ctx, "edit_inline_error", error=type(exc).__name__, detail=str(exc)[:120])
+    return False
 
-async def _edit_own(ctx, text, pending=None):
-    pending = pending if isinstance(pending, dict) else ctx.state.get("update_pending")
-    if not isinstance(pending, dict):
+async def _edit_own(ctx, text, surface):
+    if not isinstance(surface, dict):
         return False
-    peer_hex = pending.get("peer") if isinstance(pending.get("peer"), str) else None
-    message_id = pending.get("message_id")
+    peer_hex = surface.get("peer") if isinstance(surface.get("peer"), str) else None
+    message_id = surface.get("message_id")
     if not peer_hex or not isinstance(message_id, int):
         return False
     try:
         await ctx.tg.call("messages.editMessage", {"id": int(message_id), "rich_message": _rich(text), "peer": bytes.fromhex(peer_hex)})
         return True
-    except Exception:
-        pass
+    except Exception as exc:
+        _emit(ctx, "edit_own_error", error=type(exc).__name__, detail=str(exc)[:120])
     try:
-        await ctx.tg.edit_rich(message_id, text, peer=pending.get("chat_id"))
+        await ctx.tg.edit_rich(message_id, text, peer=surface.get("chat_id"))
         return True
-    except Exception:
-        return False
+    except Exception as exc:
+        _emit(ctx, "edit_own_error", error=type(exc).__name__, detail=str(exc)[:120])
+    return False
+
+def _surfaces(pending):
+    if not isinstance(pending, dict):
+        return []
+    out = []
+    raw = pending.get("surfaces")
+    for surface in raw if isinstance(raw, list) else []:
+        if isinstance(surface, dict):
+            out.append(surface)
+    if not out:
+        legacy = {key: pending[key] for key in ("chat_id", "message_id", "inline_id", "own", "peer") if key in pending}
+        if legacy:
+            out = [legacy]
+    return out
+
+async def _edit_surface(ctx, text, surface):
+    if not isinstance(surface, dict):
+        return None
+    if isinstance(surface.get("inline_id"), dict) and await _edit_inline(ctx, text, surface):
+        return "inline"
+    chat_id = surface.get("chat_id")
+    message_id = surface.get("message_id")
+    if not bool(surface.get("own")) and isinstance(chat_id, int) and isinstance(message_id, int):
+        if await _bot_edit(ctx, chat_id, message_id, text):
+            return "bot"
+        return None
+    if await _edit_own(ctx, text, surface):
+        return "own"
+    if isinstance(chat_id, int) and isinstance(message_id, int) and await _bot_edit(ctx, chat_id, message_id, text):
+        return "bot"
+    return None
+
+def _drop_surface(ctx, callback):
+    pending = ctx.state.get("update_pending")
+    if not isinstance(pending, dict):
+        return
+    surfaces = pending.get("surfaces")
+    if not isinstance(surfaces, list):
+        return
+    chat_id = getattr(callback, "chat_id", None)
+    msg_id = getattr(callback, "msg_id", None)
+    keep = []
+    for surface in surfaces:
+        if not isinstance(surface, dict):
+            continue
+        if isinstance(msg_id, dict):
+            same = surface.get("chat_id") == chat_id and isinstance(surface.get("inline_id"), dict)
+        else:
+            same = surface.get("chat_id") == chat_id and surface.get("message_id") == msg_id
+        if not same:
+            keep.append(surface)
+    pending["surfaces"] = keep
+    ctx.state.set("update_pending", pending)
 
 async def _bot_edit(ctx, chat_id, message_id, text):
     try:
         await ctx.bot.call("editMessageText", chat_id=int(chat_id), message_id=int(message_id), rich_message=_rich(text))
         return True
-    except Exception:
-        pass
+    except Exception as exc:
+        _emit(ctx, "bot_edit_error", variant="rich", error=type(exc).__name__, detail=str(exc)[:140])
     try:
         await ctx.bot.call("editMessageText", chat_id=int(chat_id), message_id=int(message_id), text=text, parse_mode="HTML")
         return True
-    except Exception:
-        pass
+    except Exception as exc:
+        _emit(ctx, "bot_edit_error", variant="plain", error=type(exc).__name__, detail=str(exc)[:140])
     return False
 
 async def _status(ctx, text):
     try:
         pending = ctx.state.get("update_pending")
-        if isinstance(pending, dict):
-            if bool(pending.get("own")) and await _edit_inline(ctx, text):
-                return
-            chat_id = pending.get("chat_id")
-            message_id = pending.get("message_id")
-            if isinstance(chat_id, int) and isinstance(message_id, int):
-                if bool(pending.get("own")) and await _edit_own(ctx, text):
-                    return
-                if await _bot_edit(ctx, chat_id, message_id, text):
-                    return
-    except Exception:
-        pass
+        for surface in _surfaces(pending):
+            await _edit_surface(ctx, text, surface)
+        return
+    except Exception as exc:
+        _emit(ctx, "status_error", error=type(exc).__name__, detail=str(exc)[:120])
     try:
         await ctx.respond(text, parse_mode="HTML")
     except Exception:
@@ -221,30 +293,34 @@ async def afterglow(ctx):
     asyncio.get_event_loop().create_task(_finalize_restart(ctx, pending))
 
 async def _finalize_restart(ctx, pending):
+    try:
+        runtime = ctx.runtime
+        inline = getattr(runtime, "inline", None)
+        if inline is not None:
+            await asyncio.wait_for(inline.ready.wait(), timeout=10.0)
+    except Exception:
+        pass
     took_raw = round(time.time() - float(pending["restarting"])) if isinstance(pending.get("restarting"), (int, float)) else None
     took = f"{took_raw}s" if took_raw is not None else "n/a"
     text = _t(ctx, "restarted", "Hotaru updated and successfully restarted in {took}", took=took)
     html = f"<b>{text}</b>"
+    surfaces = _surfaces(pending)
+    done = {}
     for attempt in range(30):
         try:
-            if bool(pending.get("own")):
-                if await _edit_inline(ctx, html, pending):
-                    _emit(ctx, "afterglow_edited", attempt=attempt, mode="inline")
-                    return
-                if await _edit_own(ctx, html, pending):
-                    _emit(ctx, "afterglow_edited", attempt=attempt, mode="own")
-                    return
-            else:
-                chat_id = pending.get("chat_id")
-                message_id = pending.get("message_id")
-                if isinstance(chat_id, int) and isinstance(message_id, int):
-                    if await _bot_edit(ctx, chat_id, message_id, html):
-                        _emit(ctx, "afterglow_edited", attempt=attempt, mode="bot")
-                        return
+            for index, surface in enumerate(surfaces):
+                if index in done:
+                    continue
+                mode = await _edit_surface(ctx, html, surface)
+                if mode is not None:
+                    done[index] = mode
+                    _emit(ctx, "afterglow_edited", attempt=attempt, mode=mode, surface=index)
+            if len(done) >= len(surfaces):
+                return
         except Exception as exc:
             _emit(ctx, "afterglow_error", attempt=attempt, error=type(exc).__name__)
         await asyncio.sleep(2)
-    _emit(ctx, "afterglow_gave_up")
+    _emit(ctx, "afterglow_gave_up", done=len(done), total=len(surfaces))
 
 def _emit(ctx, event, **fields):
     observatory = getattr(ctx.runtime, "observatory", None)
@@ -375,6 +451,7 @@ async def command_upd(ctx, invocation):
             await callback.edit(f"<b>{_t(ctx, 'ignored', 'Update ignored.')}</b>")
         except Exception:
             pass
+        _drop_surface(ctx, callback)
 
     buttons = [
         [
@@ -388,7 +465,7 @@ async def command_upd(ctx, invocation):
         inline=True,
         parse_mode="HTML",
     )
-    pending = None
+    surface = None
     sent = getattr(message, "value", None) if message is not None and not isinstance(message, dict) else message
     if isinstance(sent, dict):
         body = sent.get("result", sent)
@@ -396,23 +473,23 @@ async def command_upd(ctx, invocation):
             message_id = body.get("id") if isinstance(body.get("id"), int) else body.get("message_id")
             chat_id = getattr(ctx.message, "chat_id", None)
             if isinstance(chat_id, int) and isinstance(message_id, int):
-                pending = {"chat_id": chat_id, "message_id": message_id, "own": True}
-    if pending is None:
+                surface = {"chat_id": chat_id, "message_id": message_id, "own": True}
+    if surface is None:
         chat_id = getattr(ctx.message, "chat_id", None)
         message_id = getattr(ctx.message, "id", None)
         if isinstance(chat_id, int) and isinstance(message_id, int):
-            pending = {"chat_id": chat_id, "message_id": message_id, "own": True}
-    if pending is not None:
+            surface = {"chat_id": chat_id, "message_id": message_id, "own": True}
+    if surface is not None:
         peer_hex = None
         try:
             app = getattr(ctx.runtime, "app", None)
             mt = getattr(app, "mt", None) if app is not None else None
             if mt is not None and hasattr(mt, "resolve_peer"):
-                peer_hex = (await mt.resolve_peer(pending["chat_id"])).hex()
+                peer_hex = (await mt.resolve_peer(surface["chat_id"])).hex()
         except Exception:
             peer_hex = None
-        pending["peer"] = peer_hex
-        ctx.state.set("update_pending", pending)
+        surface["peer"] = peer_hex
+        _add_surface(ctx, surface)
 
 async def task_poller(ctx):
     runtime = ctx.runtime
@@ -454,6 +531,7 @@ async def task_poller(ctx):
             await callback.edit(f"<b>{_t(ctx, 'ignored', 'Update ignored.')}</b>")
         except Exception:
             pass
+        _drop_surface(ctx, callback)
 
     buttons = [
         [
@@ -478,6 +556,6 @@ async def task_poller(ctx):
         if sent is None and message_body.get("_") == "updateShortSentMessage" and isinstance(message_body.get("id"), int):
             sent = message_body
     if sent is not None:
-        ctx.state.set("update_pending", {"chat_id": int(owner), "message_id": int(sent["id"]), "own": False})
+        _add_surface(ctx, {"chat_id": int(owner), "message_id": int(sent["id"]), "own": False})
     ctx.state.set("notified_commit", latest)
     _emit(ctx, "poller_notified", latest=latest[:12], sent=bool(sent))
