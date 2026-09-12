@@ -108,14 +108,9 @@ async def _show_help(ctx, invocation):
         text += f"<details><summary>{_escape(ctx.t('kernel.help_ui.commands'))}</summary><p>{'<br>'.join(command_lines) or 'none'}</p></details>"
         text += f"<details><summary>{_escape(ctx.t('kernel.help_ui.capabilities'))}</summary><p>{capabilities}</p></details>"
         if premium:
-            await ctx.respond(text, parse_mode="HTML")
+            await ctx.respond(text, parse_mode="HTML", rich=True)
         else:
-            plain = (
-                f'<b>{_escape(manifest.module_id)}</b> <i>v{_escape(manifest.version)}</i>'
-                + (f"<br><i>{_escape(description)}</i>" if description else "")
-                + f"<br>{'<br>'.join(command_lines) or 'none'}<br><i>Capabilities: {capabilities}</i>"
-            )
-            await ctx.respond(plain, rich=False, parse_mode="HTML")
+            await ctx.respond(text, rich=False, parse_mode="HTML")
         return
 
     kernel_modules = []
@@ -133,7 +128,7 @@ async def _show_help(ctx, invocation):
                     module_id in runtime.modules._bindings
                     and runtime.modules._bindings[module_id][2]
                 )
-                line = _module_line(runtime, module_id, manifest, is_kernel) if premium else _plain_module_line(runtime, module_id, manifest)
+                line = _module_line(runtime, module_id, manifest, is_kernel)
                 if is_kernel:
                     kernel_modules.append(line)
                 else:
@@ -142,14 +137,12 @@ async def _show_help(ctx, invocation):
                 user_modules.append(
                     f'<p><tg-emoji emoji-id="5404553572727660202">❌</tg-emoji> '
                     f'<code>{_escape(module_id)}</code> <i>({_escape(ctx.t("kernel.help_ui.untrusted"))})</i></p>'
-                    if premium else f'<code>{_escape(module_id)}</code> <i>({_escape(ctx.t("kernel.help_ui.untrusted"))})</i>'
                 )
     else:
         for name in sorted(runtime.kernel.registry.names(), key=str.casefold):
             user_modules.append(
                 f'<p><tg-emoji emoji-id="4974508259839836856">▪️</tg-emoji> '
                 f'<code>{_escape(runtime.config.prefix)}{_escape(name)}</code></p>'
-                if premium else f'<code>{_escape(runtime.config.prefix)}{_escape(name)}</code>'
             )
 
     total = len(kernel_modules) + len(user_modules)
@@ -169,11 +162,6 @@ async def _show_help(ctx, invocation):
         )
 
     if premium:
-        await ctx.respond(text=text, parse_mode="HTML")
+        await ctx.respond(text=text, parse_mode="HTML", rich=True)
     else:
-        plain = f"<b>{_escape(ctx.t('kernel.help_ui.module_count', count=total))}</b>"
-        if kernel_modules:
-            plain += f"<br><b>{_escape(ctx.t('kernel.help_ui.kernel_modules'))} ({len(kernel_modules)})</b>" + _plain_section(kernel_modules)
-        if user_modules:
-            plain += f"<br><b>{_escape(ctx.t('kernel.help_ui.user_modules'))} ({len(user_modules)})</b>" + _plain_section(user_modules)
-        await ctx.respond(text=plain, rich=False, parse_mode="HTML")
+        await ctx.respond(text=text, parse_mode="HTML", rich=False)

@@ -694,7 +694,10 @@ class Runtime:
                 return
             form_text, buttons = form
             result = InlineObj.article("hotaru-form", "Hotaru form", form_text)
-            result["input_message_content"] = {"rich_message": {"_": "inputRichMessageHTML", **rich_html(form_text)}}
+            if await self.is_premium():
+                result["input_message_content"] = {"rich_message": {"_": "inputRichMessageHTML", **rich_html(form_text)}}
+            else:
+                result["input_message_content"] = {"message_text": form_text, "parse_mode": "HTML"}
             result["reply_markup"] = {"inline_keyboard": buttons}
             await answer_tl(query, results=[result], cache_time=0, is_personal=True)
             if self.observatory is not None:
@@ -1001,6 +1004,23 @@ class Runtime:
             return "ru"
         value = self.state.get_setting("language", "ru")
         return value.casefold() if isinstance(value, str) and value.casefold() in SUPPORTED_LANGUAGES else "ru"
+
+    async def is_premium(self) -> bool:
+        if getattr(self, "_premium_cache", None) is not None:
+            return self._premium_cache
+        app = self.app
+        if app is None or getattr(app, "mt", None) is None:
+            return False
+        try:
+            with trusted_scope():
+                result = await app.mt_req("users.getUsers", id=[{"_": "inputUserSelf"}])
+            body = result.get("result", result) if isinstance(result, dict) else {}
+            users = body.get("users") if isinstance(body, dict) else None
+            first = users[0] if isinstance(users, list) and users else None
+            self._premium_cache = bool(first.get("premium")) if isinstance(first, dict) else False
+        except Exception:
+            self._premium_cache = False
+        return self._premium_cache
 
     def set_language(self, language: str) -> str:
         if self.lexicon is None:
