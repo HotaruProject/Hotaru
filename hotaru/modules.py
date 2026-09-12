@@ -29,7 +29,7 @@ class ModuleManifest:
     tasks: dict[str, dict[str, Any]] = None
     aliases: dict[str, str] = None
     config_schema: dict[str, Any] = None
-    translations: dict[str, dict[str, Any]] = None
+    lexicon: dict[str, dict[str, Any]] = None
     requires: tuple[str, ...] = ()
     after: tuple[str, ...] = ()
     inline_commands: tuple[str, ...] = ()
@@ -47,12 +47,12 @@ class ModuleManifest:
             object.__setattr__(self, "aliases", {})
         if self.config_schema is None:
             object.__setattr__(self, "config_schema", {})
-        if self.translations is None:
-            object.__setattr__(self, "translations", {})
+        if self.lexicon is None:
+            object.__setattr__(self, "lexicon", {})
 
     def localized(self, language: str, fallback: str | None = None) -> dict[str, Any]:
-        if self.translations:
-            selected = self.translations.get(language) or self.translations.get("en") or {}
+        if self.lexicon:
+            selected = self.lexicon.get(language) or self.lexicon.get("en") or {}
         else:
             selected = _kernel_lexicon_lookup(self.module_id, language)
         result = dict(selected) if isinstance(selected, dict) else {}
@@ -205,9 +205,9 @@ class HmodLoader:
         if not isinstance(config_schema, dict):
             raise ModuleValidationError("manifest config_schema must be a dictionary")
 
-        translations = raw.get("translations", {})
+        translations = raw.get("lexicon", raw.get("translations", {}))
         if not isinstance(translations, dict):
-            raise ModuleValidationError("manifest translations must be a dictionary")
+            raise ModuleValidationError("manifest lexicon must be a dictionary")
         
         requires = raw.get("requires", [])
         if not HmodLoader._strings(requires):
