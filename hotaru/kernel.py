@@ -162,7 +162,7 @@ class Kernel:
             if self.response_service is not None:
                 return await self.response_service.answer(
                     message,
-                    text=f"command timed out after {self.command_timeout:.0f}s: {spec.name}",
+                    text=f"command timed out after {self.command_timeout:.0f}s: {spec.name}", #67 хахах
                     output="edit",
                 )
             return None
