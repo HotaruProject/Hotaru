@@ -174,6 +174,15 @@ class ResponseService:
             payload["reply_to"] = reply_to
         if topic_id is not None:
             payload["topic_id"] = topic_id
+        if text is not None and str(payload.get("parse_mode", "")).lower() == "html":
+            if getattr(message, "src", "mt") == "bot":
+                payload["parse_mode"] = "HTML"
+            else:
+                payload.pop("parse_mode", None)
+                from goygram.sugar import html_to_entities
+                plain, entities = html_to_entities(text)
+                payload["entities"] = entities
+                text = plain
         if output in ("edit", "auto") and hasattr(message, "edit"):
             try:
                 result = await message.edit(text or "", **payload)
@@ -483,7 +492,20 @@ class ModuleContext:
     async def answer(self, text: str | None = None, **kwargs: Any) -> Any:
         if text is not None:
             kwargs["text"] = text
-        use_rich = kwargs.pop("rich", True)
+        use_rich = kwargs.pop("rich", False)
+        if use_rich:
+            allowed = False
+            if self.runtime is not None:
+                try:
+                    allowed = await self.runtime.is_premium()
+                except Exception:
+                    allowed = False
+            if not allowed:
+                value = kwargs.pop("text", "")
+                if value:
+                    from .plainfmt import rich_to_plain
+                    kwargs["text"] = rich_to_plain(value)
+                use_rich = False
         if kwargs.get("text") is not None:
             kwargs.setdefault("parse_mode", "HTML")
         if kwargs.get("buttons"):
@@ -691,6 +713,16 @@ class ModuleContext:
         if buttons is not None and self.form_sender is not None:
             result = await self.form_sender(self._source, html, buttons, kwargs)
             return result if isinstance(result, Response) else Response(True, "reply", getattr(self._source, "src", None), result)
+        allowed = False
+        if self.runtime is not None:
+            try:
+                allowed = await self.runtime.is_premium()
+            except Exception:
+                allowed = False
+        if not allowed:
+            from .plainfmt import rich_to_plain
+            kwargs.pop("parse_mode", None)
+            return await self.answer(text=rich_to_plain(html), **kwargs)
         peer = getattr(self._source, "chat_id", None)
         if peer is None:
             raise ResponseError("rich message target is missing")

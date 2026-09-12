@@ -71,7 +71,7 @@ async def _send_result(ctx, sections: list, elapsed_ms: float):
             esc = _escape(_truncate(content))
             body = f"<pre><code>{esc}</code></pre>" if is_code else f"<p>{esc}</p>"
             parts.append(f"<details open><summary><b>{_escape(title)}</b></summary>{body}</details>")
-        await ctx.respond("".join(parts), parse_mode="HTML")
+        await ctx.respond("".join(parts), parse_mode="HTML", rich=True)
     else:
         parts = [f"<b>Executor</b> | {header}\n"]
         for title, content, is_code in sections:

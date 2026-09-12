@@ -12,6 +12,7 @@ from typing import Any
 
 from . import toolkit as _toolkit
 from goygram.rich import rich_html
+from goygram.sugar import html_to_entities
 from hotaru.callbacks import CallbackBinding
 
 _TOOLKIT_SOURCE = Path(_toolkit.__file__).read_text(encoding="utf-8")
@@ -1337,6 +1338,19 @@ class ModuleSandbox:
                 raise PermissionError("form transport is unavailable")
             return await form_sender(source, text or "", buttons, options)
         rich = bool(kwargs.pop("rich", False))
+        if rich:
+            allowed = False
+            runtime = getattr(self, "runtime", None)
+            if runtime is not None:
+                try:
+                    allowed = await runtime.is_premium()
+                except Exception:
+                    allowed = False
+            if not allowed:
+                rich = False
+                if isinstance(text, str):
+                    from hotaru.plainfmt import rich_to_plain
+                    text = rich_to_plain(text)
         output = kwargs.pop("output", "auto")
         media = kwargs.pop("media", None)
         kwargs.pop("parse_mode", None)
@@ -1356,10 +1370,14 @@ class ModuleSandbox:
                 break
 
         async def send_plain(value: str, *, mode: str) -> Any:
+            plain, entities = html_to_entities(value)
+            data_entities = entities or None
             if mode == "edit" and message_id is not None:
                 with trusted_scope():
-                    return await app.mt_req("messages.editMessage", peer=chat_id, id=int(message_id), message=value)
-            data: dict[str, Any] = {"peer": chat_id, "message": value, "random_id": _secrets.randbits(63)}
+                    return await app.mt_req("messages.editMessage", peer=chat_id, id=int(message_id), message=plain, entities=data_entities)
+            data: dict[str, Any] = {"peer": chat_id, "message": plain, "random_id": _secrets.randbits(63)}
+            if data_entities is not None:
+                data["entities"] = data_entities
             if topic_id is not None:
                 data["reply_to"] = {"_": "inputReplyToMessage", "reply_to_msg_id": int(message_id), "top_msg_id": topic_id} if message_id is not None else None
                 if data["reply_to"] is None:

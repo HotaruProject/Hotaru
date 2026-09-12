@@ -304,6 +304,27 @@ class CapabilityHost:
         if not isinstance(kwargs, dict):
             raise PermissionError("mt kwargs must be a mapping")
         kwargs = {k: v for k, v in kwargs.items() if isinstance(k, str) and k not in ("api_id", "api_hash")}
+        rich_message = kwargs.get("rich_message")
+        if rich_message is not None:
+            allowed = False
+            try:
+                allowed = await self.runtime.is_premium()
+            except Exception:
+                allowed = False
+            if not allowed:
+                html_text = rich_message.get("html") if isinstance(rich_message, dict) else None
+                kwargs.pop("rich_message", None)
+                if isinstance(html_text, str) and lowered.startswith(("messages.send", "messages.edit")):
+                    from hotaru.plainfmt import rich_to_plain
+                    from goygram.sugar import html_to_entities
+                    plain_html = rich_to_plain(html_text)
+                    plain, entities = html_to_entities(plain_html)
+                    kwargs["message"] = (kwargs.get("message") or "") + plain
+                    if entities:
+                        kwargs["entities"] = entities
+                else:
+                    raise PermissionError("rich transport requires premium")
+
         if lowered.startswith("messages.gethistory"):
             limit = kwargs.get("limit", 100)
             if isinstance(limit, (int, float)) and int(limit) > 500:
