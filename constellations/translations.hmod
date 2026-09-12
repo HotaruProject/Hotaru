@@ -1,7 +1,6 @@
 HOTARU = {
     "id": "translations",
     "version": "1.0.0",
-    "description": "Translation management",
     "commands": ["lang", "language"],
     "capabilities": ["mt"]
 }

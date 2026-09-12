@@ -218,6 +218,10 @@
       "empty": "Наданих прав немає. Використай !perm <user_id> <role>.",
       "bad_label": "Невідоме право: {label}.",
       "no_owner_grant": "Право owner надається через !owadd."
+    },
+    "lg": "хвіст логів:\n{lines}",
+    "commands": {
+      "lg": "view recent observatory log entries"
     }
   },
   "inline_commands_hint": "Обери команду — введи @<бот> і її назву в будь-якому чаті"

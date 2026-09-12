@@ -22,6 +22,8 @@ SANDBOX_GID = 65534
 
 WORKER_SOURCE = r'''
 import asyncio
+import contextlib
+import io
 import json
 import os
 import resource
@@ -174,6 +176,22 @@ def _cap_call(name, payload):
         if not resp.get("ok"):
             raise PermissionError(resp.get("error", "capability denied"))
         return resp.get("result")
+
+
+class _WorkerLogs:
+    def debug(self, *msg):
+        return _cap_call("logs", {"op": "write", "level": "debug", "msg": " ".join(str(m) for m in msg)})
+    def info(self, *msg):
+        return _cap_call("logs", {"op": "write", "level": "info", "msg": " ".join(str(m) for m in msg)})
+    def warn(self, *msg):
+        return _cap_call("logs", {"op": "write", "level": "warn", "msg": " ".join(str(m) for m in msg)})
+    def error(self, *msg):
+        return _cap_call("logs", {"op": "write", "level": "error", "msg": " ".join(str(m) for m in msg)})
+    def crit(self, *msg):
+        return _cap_call("logs", {"op": "write", "level": "crit", "msg": " ".join(str(m) for m in msg)})
+    def exc(self, err, *msg):
+        text = " ".join(str(m) for m in msg) if msg else type(err).__name__
+        return _cap_call("logs", {"op": "write", "level": "error", "msg": text, "name": type(err).__name__, "detail": str(err)[:500]})
 
 
 def _mt_call(method, **kwargs):
@@ -634,6 +652,44 @@ def _build_tools(source):
     return dict(func_map)
 
 
+class _ModuleOutput(io.TextIOBase):
+    def __init__(self, real, stream_name):
+        self.real = real
+        self.stream_name = stream_name
+        self._buf = ""
+
+    def write(self, data):
+        if not isinstance(data, str):
+            data = str(data)
+        self._buf += data
+        while "\n" in self._buf:
+            line, self._buf = self._buf.split("\n", 1)
+            if line.strip():
+                try:
+                    self.real.write(json.dumps({"log": line[:2000], "stream": self.stream_name}) + "\n")
+                    self.real.flush()
+                except Exception:
+                    pass
+        return len(data)
+
+    def flush(self):
+        pass
+
+    def isatty(self):
+        return False
+
+
+@contextlib.contextmanager
+def _capture_module_output():
+    old_out, old_err = sys.stdout, sys.stderr
+    sys.stdout = _ModuleOutput(old_out, "stdout")
+    sys.stderr = _ModuleOutput(old_err, "stderr")
+    try:
+        yield
+    finally:
+        sys.stdout, sys.stderr = old_out, old_err
+
+
 def main():
     cfg = json.loads(sys.stdin.readline())
     policy = cfg.get("seccomp") or {}
@@ -659,9 +715,10 @@ def main():
         cfg.get("net_blocked", True),
     )
     tools = _build_tools(cfg.get("toolkit_source", ""))
-    ns = {"__name__": cfg.get("module_id", "sandbox"), "cap": _cap_call, "mt": _mt_call, "net": _net_call, "tools": SimpleNamespace(**tools)}
+    ns = {"__name__": cfg.get("module_id", "sandbox"), "cap": _cap_call, "mt": _mt_call, "net": _net_call, "tools": SimpleNamespace(**tools), "logs": _WorkerLogs()}
     try:
-        exec(compile(cfg["source"], cfg.get("module_id", "sandbox"), "exec"), ns, ns)
+        with _capture_module_output():
+            exec(compile(cfg["source"], cfg.get("module_id", "sandbox"), "exec"), ns, ns)
     except BaseException as exc:
         sys.stdout.write(json.dumps({"ok": False, "error": type(exc).__name__}) + "\n")
         sys.stdout.flush()
@@ -679,9 +736,10 @@ def main():
             else:
                 cb_proxy = SandboxCallbackProxy(cb_data)
                 try:
-                    result = cb_handler(cb_proxy, cb_data.get("payload"))
-                    if asyncio.iscoroutine(result):
-                        result = asyncio.run(result)
+                    with _capture_module_output():
+                        result = cb_handler(cb_proxy, cb_data.get("payload"))
+                        if asyncio.iscoroutine(result):
+                            result = asyncio.run(result)
                     out = {"ok": True, "result": result}
                 except BaseException as exc:
                     out = {"ok": False, "error": type(exc).__name__}
@@ -699,9 +757,10 @@ def main():
                 ctx = SandboxContext(tools, {**payload, "args": args})
                 if str(target).startswith("inline_"):
                     query = SandboxInlineQuery(payload)
-                    result = handler(query, tuple(args))
-                    if asyncio.iscoroutine(result):
-                        result = asyncio.run(result)
+                    with _capture_module_output():
+                        result = handler(query, tuple(args))
+                        if asyncio.iscoroutine(result):
+                            result = asyncio.run(result)
                     out = {"ok": True, "result": result}
                 else:
                     invocation = SimpleNamespace(
@@ -711,12 +770,13 @@ def main():
                         message_id=payload.get("message_id"),
                         chat_id=payload.get("chat_id"),
                     )
-                    if payload.get("source") == "lifecycle":
-                        result = _invoke_lifecycle(handler, ctx)
-                    else:
-                        result = handler(ctx, invocation)
-                    if asyncio.iscoroutine(result):
-                        result = asyncio.run(result)
+                    with _capture_module_output():
+                        if payload.get("source") == "lifecycle":
+                            result = _invoke_lifecycle(handler, ctx)
+                        else:
+                            result = handler(ctx, invocation)
+                        if asyncio.iscoroutine(result):
+                            result = asyncio.run(result)
                     out = {"ok": True, "result": result}
         except BaseException as exc:
             out = {"ok": False, "error": type(exc).__name__}
@@ -1079,6 +1139,17 @@ class ModuleSandbox:
         self._booted[module_id] = True
         return process
 
+    def _sink_worker_log(self, module_id: str, message: dict[str, Any]) -> None:
+        observatory = getattr(self.runtime, "observatory", None)
+        if observatory is None:
+            return
+        stream = str(message.get("stream") or "stdout")
+        level = "error" if stream == "stderr" else "info"
+        text = message.get("log")
+        if not isinstance(text, str):
+            return
+        observatory.emit("module", "output", level=level, module=module_id, msg=text[:2048])
+
     def _readline(self, process: subprocess.Popen) -> str | None:
         assert process.stdout is not None
         line = process.stdout.readline()
@@ -1128,6 +1199,9 @@ class ModuleSandbox:
                 message = json.loads(line)
                 if isinstance(message, dict) and "cap" in message:
                     self._pending_caps.append(message)
+                    continue
+                if isinstance(message, dict) and "log" in message:
+                    self._sink_worker_log(module_id, message)
                     continue
                 if isinstance(message, dict) and "respond" in message:
                     self._respond_pending.append(message)
@@ -1405,6 +1479,9 @@ class ModuleSandbox:
                     if "cap" in message:
                         self._pending_caps = getattr(self, "_pending_caps", [])
                         self._pending_caps.append(message)
+                        continue
+                    if "log" in message:
+                        self._sink_worker_log(module_id, message)
                         continue
                     if "respond" in message:
                         self._respond_pending = getattr(self, "_respond_pending", [])

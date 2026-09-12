@@ -431,8 +431,6 @@ class AccessManager:
         )
 
     def set_default_permission(self, module_id: str, command: str, permission: Permission) -> None:
-        if command in RESERVED_COMMANDS:
-            raise AccessError(f"kernel command is reserved: {command}")
         raw = self.store.state.get_setting("access:defaults", {})
         if not isinstance(raw, dict):
             raw = {}
@@ -468,14 +466,6 @@ class AccessManager:
             if command:
                 result.append((module_id, command, Permission(bits) if isinstance(bits, int) else Permission(0)))
         return tuple(result)
-
-
-RESERVED_COMMANDS = frozenset({
-    "ver", "st", "ls", "mi", "ld", "ul", "rl", "rm", "bk", "bot", "trust", "untrust", "alias", "unalias",
-    "hlp", "help", "restart", "stop", "start", "upd", "updlog", "updoff", "updon",
-    "conf", "config", "acc", "acca", "accs", "perms", "perm", "whois", "grant", "revoke",
-    "owadd", "owrm", "owls", "sgls", "sg", "sgnew", "sgdel", "sgadd", "sgrm", "rule", "rulerm", "ruleclr",
-})
 
 
 def permission_from_label(label: str) -> Permission | None:

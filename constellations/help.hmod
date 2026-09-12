@@ -1,7 +1,6 @@
 HOTARU = {
     "id": "help",
     "version": "1.1.0",
-    "description": "Hotaru Help Module",
     "commands": ["hlp", "help"],
     "capabilities": ["mt"],
 }

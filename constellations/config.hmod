@@ -1,7 +1,6 @@
 HOTARU = {
     "id": "hotaru-config",
     "version": "1.0.0",
-    "description": "Hotaru Config Module",
     "commands": ["conf", "config"],
     "capabilities": ["mt"],
 }

@@ -5,6 +5,8 @@ from .commands import CommandInvocation
 
 Handler = Callable[..., Awaitable[object] | object]
 
+KERNEL_MODULES: set[str] = set()
+
 
 @dataclass(frozen=True, slots=True)
 class CommandSpec:
@@ -51,11 +53,14 @@ class CommandRegistry:
             raise ValueError("every command must belong to a module")
         key = name.casefold()
         current = self._items.get(key)
-        if current is not None and current.kernel and not kernel:
+        if current is not None and (current.kernel or current.module_id in KERNEL_MODULES):
             raise ValueError(f"kernel command is reserved: {key}")
         if current is not None:
             raise ValueError(f"command already registered: {key}")
         self._items[key] = CommandSpec(name=key, handler=handler, kernel=kernel, module_id=module_id, sandbox=sandbox)
+
+    def register_kernel_module(self, module_id: str) -> None:
+        KERNEL_MODULES.add(module_id.casefold())
 
     def register_watcher(self, name: str, handler: Handler, module_id: str, sandbox: bool = False) -> None:
         self._watchers.append(WatcherSpec(name, handler, module_id, sandbox))
@@ -77,7 +82,7 @@ class CommandRegistry:
     def unregister(self, name: str, *, module_id: str | None = None) -> bool:
         key = name.casefold()
         current = self._items.get(key)
-        if current is None or current.kernel or current.module_id != module_id:
+        if current is None or current.kernel or current.module_id in KERNEL_MODULES or current.module_id != module_id:
             return False
         del self._items[key]
         return True

@@ -23,7 +23,6 @@ class ModuleValidationError(ValueError):
 class ModuleManifest:
     module_id: str
     version: str
-    description: str
     commands: tuple[str, ...]
     capabilities: tuple[str, ...]
     watchers: tuple[str, ...] = ()
@@ -32,9 +31,14 @@ class ModuleManifest:
     config_schema: dict[str, Any] = None
     translations: dict[str, dict[str, Any]] = None
     requires: tuple[str, ...] = ()
+    after: tuple[str, ...] = ()
     inline_commands: tuple[str, ...] = ()
     rise: str = ""
     fade: str = ""
+
+    @property
+    def description(self) -> str:
+        return self.localized("en").get("description", "")
 
     def __post_init__(self):
         if self.tasks is None:
@@ -171,20 +175,17 @@ class HmodLoader:
 
     @staticmethod
     def _build_manifest(raw: dict[Any, Any]) -> ModuleManifest:
-        required = ("id", "version", "description", "commands", "capabilities")
+        required = ("id", "version", "commands", "capabilities")
         if any(key not in raw for key in required):
             raise ModuleValidationError("manifest is missing required fields")
         module_id = raw["id"]
         version = raw["version"]
-        description = raw["description"]
         commands = raw["commands"]
         capabilities = raw["capabilities"]
         if not isinstance(module_id, str) or not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,63}", module_id):
             raise ModuleValidationError("manifest id is invalid")
         if not isinstance(version, str) or not version:
             raise ModuleValidationError("manifest version is invalid")
-        if not isinstance(description, str):
-            raise ModuleValidationError("manifest description is invalid")
         if not HmodLoader._strings(commands) or not HmodLoader._strings(capabilities):
             raise ModuleValidationError("manifest lists must contain strings")
 
@@ -211,6 +212,13 @@ class HmodLoader:
         requires = raw.get("requires", [])
         if not HmodLoader._strings(requires):
             raise ModuleValidationError("manifest requires must contain strings")
+
+        after = raw.get("after", [])
+        if not HmodLoader._strings(after):
+            raise ModuleValidationError("manifest after must contain module ids")
+        for dep in after:
+            if not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,63}", dep):
+                raise ModuleValidationError(f"manifest after entry is invalid: {dep}")
 
         inline_commands = raw.get("inline_commands", [])
         if not HmodLoader._strings(inline_commands):
@@ -260,7 +268,6 @@ class HmodLoader:
         return ModuleManifest(
             module_id, 
             version, 
-            description, 
             tuple(commands), 
             tuple(capabilities),
             tuple(watchers), 
@@ -269,6 +276,7 @@ class HmodLoader:
             config_schema,
             translations,
             tuple(requires),
+            tuple(after),
             tuple(inline_commands),
             rise,
             fade,

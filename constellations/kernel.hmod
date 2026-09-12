@@ -1,8 +1,7 @@
 HOTARU = {
     "id": "hotaru-kernel",
     "version": "0.1.5",
-    "description": "Hotaru kernel module — system commands",
-    "commands": ['ver', 'st', 'ls', 'mi', 'ld', 'ul', 'rl', 'rm', 'bk', 'bot', 'trust', 'untrust', 'alias', 'unalias'],
+    "commands": ['ver', 'st', 'ls', 'mi', 'ld', 'ul', 'rl', 'rm', 'bk', 'bot', 'trust', 'untrust', 'alias', 'unalias', 'lg'],
     "capabilities": ["mt"],
 }
 
@@ -160,8 +159,12 @@ async def command_alias(ctx, invocation):
     runtime.kernel.registry.register_alias(alias, command)
     await ctx.respond(f"Alias set: {alias} -> {command}")
 
+
 async def command_unalias(ctx, invocation):
     runtime = ctx.runtime
+    if runtime is None:
+        await ctx.respond("runtime unavailable")
+        return
     if len(invocation.args) != 1:
         await ctx.respond("usage: !unalias <alias>")
         return
@@ -174,3 +177,33 @@ async def command_unalias(ctx, invocation):
         await ctx.respond(f"Alias removed: {alias}")
     else:
         await ctx.respond(f"Alias not found: {alias}")
+
+
+async def command_lg(ctx, invocation):
+    runtime = ctx.runtime
+    if runtime is None or runtime.observatory is None:
+        await ctx.respond("observatory unavailable")
+        return
+    level = "debug"
+    module_id = None
+    for arg in invocation.args[:2]:
+        lowered = arg.casefold()
+        if lowered in ("debug", "info", "warn", "error", "crit"):
+            level = lowered
+        else:
+            module_id = lowered
+    entries = runtime.observatory.tail(lines=30, level=level, module=module_id)
+    if not entries:
+        await ctx.respond("log: no entries at this level")
+        return
+    lines = []
+    for entry in reversed(entries):
+        stamp = str(entry.get("time") or "")[11:19]
+        tag = entry.get("module") or entry.get("component") or "core"
+        text = str(entry.get("msg") or entry.get("event") or "")
+        if entry.get("error"):
+            text = entry["error"]
+        if entry.get("detail"):
+            text = f"{text} {entry['detail']}"
+        lines.append(f"[{stamp}] {entry.get('level', 'info').upper():5} {tag}: {str(text)[:160]}")
+    await ctx.respond("log tail:\n" + "\n".join(lines))

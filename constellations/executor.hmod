@@ -3,7 +3,6 @@ HOTARU = {
     "version": "1.0.0",
     "commands": ["sh", "py"],
     "capabilities": ["mt", "files", "net", "state"],
-    "description": "A simple module for execute commands in shell"
 }
 
 import asyncio

@@ -95,7 +95,7 @@ class Kernel:
 
     async def _invoke_watcher(self, watcher: Any, context: Any, message: Any) -> None:
         try:
-            with module_scope():
+            with module_scope(getattr(watcher, "module_id", "")):
                 result = watcher.handler(context, message)
                 if inspect.isawaitable(result):
                     await result
@@ -184,10 +184,10 @@ class Kernel:
             if self.context_factory is None:
                 raise RuntimeError("module context factory is not configured")
             context = self.context_factory.create(spec.module_id, message)
-            with module_scope():
+            with module_scope(spec.module_id):
                 result = spec.handler(context, invocation)
         if inspect.isawaitable(result):
-            with module_scope():
+            with module_scope(spec.module_id):
                 return await result
         return result
 

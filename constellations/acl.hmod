@@ -1,7 +1,6 @@
 HOTARU = {
     "id": "acl",
     "version": "2.0.0",
-    "description": "Access control: owners, security groups, targeted rules, permission grants",
     "commands": ["perms", "perm", "whois", "owadd", "owrm", "owls", "sgls", "sg", "sgnew", "sgdel", "sgadd", "sgrm", "rule", "rulerm", "ruleclr"],
     "capabilities": ["mt"],
 }
