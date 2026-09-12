@@ -25,11 +25,13 @@ from relay.inline_tl import answer_tl
 from relay.sandbox import ModuleSandbox
 from relay.caps import CapabilityHost, describe as describe_caps
 from relay.firewall import install as install_firewall, trusted_scope
+
+log = logging.getLogger(__name__)
 from .kernel import Kernel
 from .i18n import Lexicon, SUPPORTED_LANGUAGES, Translator
 from .modules import ModuleStager
 from .activation import ModuleManager
-from .observatory import Observatory
+from .observatory import Observatory, hook_stdio as observatory_hook_stdio, install as observatory_install
 from .registry import Handler
 from .response import FormHandle, ModuleContextFactory, ResponseService
 from .security import SecurityGate
@@ -175,6 +177,8 @@ class Runtime:
         self.event_router = EventRouter(self._event_error)
         self.backups = BackupService()
         self.observatory = Observatory(Path("observatory/runtime/events.jsonl"))
+        observatory_install(self.observatory)
+        observatory_hook_stdio()
         self.tasks = TaskSupervisor()
         self.modules = ModuleManager(tasks=self.tasks)
         self.modules.form_cleanup = self.unload_module_forms
@@ -757,7 +761,12 @@ class Runtime:
         if self.modules is None:
             return False
         binding = self.modules._bindings.get(module_id)
-        return bool(binding and binding[2])
+        if binding and binding[2]:
+            return True
+        active = self.modules.get(module_id)
+        if active is not None:
+            return self._is_kernel_path(active.loaded.path)
+        return False
 
     def _normalize_inline_results(self, result: Any) -> list[dict[str, Any]]:
         if result is None:
@@ -1064,17 +1073,43 @@ class Runtime:
             raise ValueError("module file must be a document")
         await self.app.core.download_media(media, str(destination))
 
-    async def _command_ld(self, invocation: Any) -> str:
+    async def load_module(self, source: str | Path, *, consent_screen: Any = None) -> tuple[Any, str]:
+        if self.stager is None or self.state is None:
+            raise RuntimeError("runtime services are not ready")
+        if isinstance(source, str) and source.startswith("https://"):
+            loaded = self.stage_module_url(source)
+        else:
+            loaded = self.stage_module(source)
+        module_id = loaded.manifest.module_id
+        fingerprint = self._caps_fingerprint(loaded.manifest)
+        if self._caps_consented(module_id, fingerprint):
+            if self.modules is not None and self.modules.get(module_id) is not None:
+                result = await self._command_rl(SimpleNamespace(args=(module_id,)))
+                if isinstance(result, str) and result.startswith("reloaded:"):
+                    return loaded, "updated"
+                return loaded, result
+            try:
+                await self.activate_module(str(loaded.path))
+            except Exception as exc:
+                if self.observatory is not None:
+                    self.observatory.emit("modules", "load_error", module=module_id, error=type(exc).__name__, detail=str(exc)[:240])
+                return loaded, f"staged (activation failed): {type(exc).__name__}"
+            if self.observatory is not None:
+                self.observatory.emit("modules", "loaded", module=module_id, version=loaded.manifest.version)
+            return loaded, "active"
+        if self.state is not None:
+            namespace = self.state.namespace(module_id)
+            namespace.set("sourcepath", str(loaded.path))
+            namespace.set("moduleversion", loaded.manifest.version)
+        return loaded, "staged"
+
+    async def _command_ld(self, invocation: Any) -> str | tuple[str, list[dict[str, str]]]:
         if len(invocation.args) > 1:
             return "usage: .ld <raw-url> | reply to a .hmod file | .hmod caption"
         temporary: Path | None = None
         try:
             if invocation.args:
-                source = invocation.args[0]
-                if source.startswith("https://"):
-                    loaded = self.stage_module_url(source)
-                else:
-                    loaded = self.stage_module(source)
+                source: str | Path = invocation.args[0]
             else:
                 if invocation.message is None:
                     return "usage: .ld <raw-url> | reply to a .hmod file | .hmod caption"
@@ -1082,7 +1117,8 @@ class Runtime:
                 os.close(fd)
                 temporary = Path(raw_path)
                 await self._download_module_message(invocation.message, temporary)
-                loaded = self.stage_module(temporary)
+                source = temporary
+            loaded, action = await self.load_module(source)
         except Exception as exc:
             if self.observatory is not None:
                 self.observatory.emit("modules", "load_error", error=type(exc).__name__, detail=str(exc)[:240])
@@ -1090,32 +1126,25 @@ class Runtime:
         finally:
             if temporary is not None:
                 temporary.unlink(missing_ok=True)
-        fingerprint = self._caps_fingerprint(loaded.manifest)
-        if self._caps_consented(loaded.manifest.module_id, fingerprint):
-            if self.modules is not None and self.modules.get(loaded.manifest.module_id) is not None:
-                result = await self._command_rl(SimpleNamespace(args=(loaded.manifest.module_id,)))
-                if result.startswith("reloaded:"):
-                    return f"updated: {loaded.manifest.module_id} {loaded.manifest.version}"
-                return result
-            try:
-                await self.activate_module(str(loaded.path))
-            except Exception as exc:
-                return f"staged (activation failed): {type(exc).__name__}"
-            return f"active: {loaded.manifest.module_id} {loaded.manifest.version}"
+        module_id = loaded.manifest.module_id
+        if action in {"active", "updated"}:
+            return f"{action}: {module_id} {loaded.manifest.version}"
         screen = await self._render_caps_screen(
-            loaded.manifest.module_id,
+            module_id,
             loaded.manifest,
             invocation.chat_id,
             invocation.message_id,
         )
         if isinstance(screen, tuple):
-            return f"staged: {loaded.manifest.module_id} {loaded.manifest.version}\n" + screen[0], screen[1]
-        return f"staged (untrusted): {loaded.manifest.module_id} {loaded.manifest.version}\n{screen}"
+            return f"staged: {module_id} {loaded.manifest.version}\n" + screen[0], screen[1]
+        return f"staged (untrusted): {module_id} {loaded.manifest.version}\n{screen}"
 
-    async def _command_ul(self, invocation: Any) -> str:
-        if len(invocation.args) != 1 or self.modules is None or self.state is None:
-            return "usage: .ul <module-id>"
-        module_id = invocation.args[0].casefold()
+    async def unload_module(self, module_id: str) -> str | None:
+        if self.modules is None or self.state is None:
+            raise RuntimeError("runtime services are not ready")
+        module_id = module_id.casefold()
+        if self._is_kernel_module(module_id):
+            return f"kernel module is protected: {module_id}"
         active = self.modules.get(module_id)
         namespace = self.state.namespace(module_id)
         source_path = active.loaded.path if active is not None else Path(namespace.get("sourcepath", self.relay_dir / f"{module_id}.hmod"))
@@ -1132,9 +1161,19 @@ class Runtime:
                     await self.activate_module(str(source_path))
                 except Exception:
                     pass
+            if self.observatory is not None:
+                self.observatory.emit("modules", "unload_error", module=module_id, error=type(exc).__name__, detail=str(exc)[:240])
             return f"unload failed: {type(exc).__name__}"
         self.state.delete_module(module_id)
-        return f"unloaded permanently: {module_id}"
+        if self.observatory is not None:
+            self.observatory.emit("modules", "unloaded", module=module_id)
+        return None
+
+    async def _command_ul(self, invocation: Any) -> str:
+        if len(invocation.args) != 1 or self.modules is None or self.state is None:
+            return "usage: !ul <module-id>"
+        result = await self.unload_module(invocation.args[0])
+        return result or f"unloaded permanently: {invocation.args[0].casefold()}"
 
     @staticmethod
     def _version_key(value: str) -> tuple[int, ...] | None:
@@ -1349,6 +1388,8 @@ class Runtime:
         if self.kernel is None or self.kernel.owner_id is None:
             return "rm unavailable: explicit owner id required"
         module_id = invocation.args[0].casefold()
+        if self._is_kernel_module(module_id):
+            return f"kernel module is protected: {module_id}"
         if self.modules.get(module_id) is None:
             return f"module not active: {module_id}"
         handle = self.callbacks.store.issue(
@@ -1365,15 +1406,10 @@ class Runtime:
         if active is None:
             await callback.answer("Module is already unloaded", alert=True)
             return await callback.edit(f"module not active: {payload}")
-        path = active.loaded.path
-        self._backup_before_activation(path)
-        await self.deactivate_module(payload)
-        try:
-            path.unlink()
-        except OSError:
-            await self.modules.activate_source(path, self.kernel, sandbox=self.sandbox)
+        result = await self.unload_module(payload)
+        if result is not None:
             await callback.answer("Removal failed", alert=True)
-            return await callback.edit(f"removal failed: {payload}")
+            return await callback.edit(result)
         await callback.answer("Module removed", alert=True)
         return await callback.edit(f"removed: {payload}")
 
@@ -1408,7 +1444,9 @@ class Runtime:
 
     def _event_error(self, error: Exception) -> None:
         if self.observatory is not None:
-            self.observatory.emit("events", "handler_error", error=type(error).__name__)
+            self.observatory.emit("events", "handler_error", error=type(error).__name__, detail=str(error)[:240])
+        else:
+            log.error("event handler failed", exc_info=error)
 
     def register_callback(self, action: str, handler: Any) -> None:
         if self.callbacks is None:
@@ -1554,6 +1592,34 @@ class Runtime:
         status = self.status()
         return status["runtime"] == "ready" and all(value for key, value in status.items() if key != "runtime")
 
+    def _load_order(self, module_ids: tuple[str, ...]) -> tuple[str, ...]:
+        if self.state is None or self.modules is None:
+            return module_ids
+        edges: dict[str, tuple[str, ...]] = {}
+        for module_id in module_ids:
+            source_path = self.state.namespace(module_id).get("sourcepath")
+            after: tuple[str, ...] = ()
+            if isinstance(source_path, str):
+                try:
+                    after = getattr(self.modules.loader.load(source_path).manifest, "after", ()) or ()
+                except Exception:
+                    after = ()
+            edges[module_id] = tuple(dep for dep in after if dep in module_ids)
+        ordered: list[str] = []
+        placed: set[str] = set()
+        pending = dict(edges)
+        while pending:
+            ready = [mid for mid, deps in pending.items() if all(dep in placed for dep in deps)]
+            if not ready:
+                ready = list(pending)
+                if self.observatory is not None:
+                    self.observatory.emit("modules", "load_cycle", modules=",".join(sorted(pending)))
+            for mid in sorted(ready):
+                ordered.append(mid)
+                placed.add(mid)
+                pending.pop(mid, None)
+        return tuple(ordered)
+
     async def restore_enabled_modules(self, *, timeout: float = 60.0) -> tuple[str, ...]:
         if timeout <= 0:
             raise ValueError("timeout must be positive")
@@ -1562,7 +1628,7 @@ class Runtime:
         restored: list[str] = []
         try:
             async with asyncio.timeout(timeout):
-                for module_id in self.state.module_ids()[:256]:
+                for module_id in self._load_order(self.state.module_ids()[:256]):
                     namespace = self.state.namespace(module_id)
                     if self.modules.get(module_id) is not None:
                         continue

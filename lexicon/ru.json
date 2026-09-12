@@ -245,6 +245,10 @@
       "empty": "Нет выданных прав. Используй !perm <user_id> <role>.",
       "bad_label": "Неизвестное право: {label}.",
       "no_owner_grant": "Право owner выдаётся через !owadd."
+    },
+    "lg": "хвост логов:\n{lines}",
+    "commands": {
+      "lg": "view recent observatory log entries"
     }
   },
   "commands": {

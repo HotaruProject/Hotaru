@@ -245,6 +245,10 @@
       "empty": "No permissions granted. Use !perm <user_id> <role>.",
       "bad_label": "Unknown permission: {label}.",
       "no_owner_grant": "Owner is granted via !owadd."
+    },
+    "lg": "log tail:\n{lines}",
+    "commands": {
+      "lg": "view recent observatory log entries"
     }
   },
   "commands": {

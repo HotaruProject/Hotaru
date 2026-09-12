@@ -1,7 +1,6 @@
 HOTARU = {
     "id": "test-features",
     "version": "1.0.2",
-    "description": "Hotaru proxy and capability test module",
     "commands": ["tfstatus", "tfhistory", "tfstate", "tffile", "tfnet", "tfbutton", "tfmedia", "tfinlinerich", "tfrichboth"],
     "capabilities": ["mt", "state", "files", "net"],
 }

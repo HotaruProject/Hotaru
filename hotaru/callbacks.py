@@ -233,6 +233,7 @@ class CallbackRouter:
         value = self.store.consume(getattr(callback, "data", ""), binding)
         if not isinstance(value, dict):
             raise CallbackDenied("callback payload is invalid")
+        handler = None
         if isinstance(value.get("module"), str):
             handlers = self._module_handlers.get(value["module"], {})
             handler = handlers.get(str(value.get("action_id")))
@@ -240,7 +241,7 @@ class CallbackRouter:
             handler = self._handlers.get(value.get("action")) if isinstance(value.get("action"), str) else None
         if handler is None:
             raise CallbackDenied("callback action is unavailable")
-        with module_scope():
+        with module_scope(str(value.get("module") or "")):
             result = handler(CallbackContext(callback), value.get("payload"))
             if inspect.isawaitable(result):
                 return await result

@@ -1,7 +1,6 @@
 HOTARU = {
     "id": "power",
     "version": "1.4.0",
-    "description": "Power management: restart with post-restart success message",
     "commands": ["restart", "stop", "start"],
     "capabilities": ["mt"],
     "rise": "sunrise",

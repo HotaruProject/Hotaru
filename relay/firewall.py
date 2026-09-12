@@ -10,6 +10,7 @@ from typing import Any, Iterator
 
 _active = contextvars.ContextVar("hotaru_module_firewall", default=False)
 _trusted = contextvars.ContextVar("hotaru_module_trusted", default=False)
+_owner = contextvars.ContextVar("hotaru_module_owner", default="")
 _installed = False
 _protected: set[str] = set()
 
@@ -54,12 +55,18 @@ def _audit(event: str, args: tuple[Any, ...]) -> None:
 
 
 @contextlib.contextmanager
-def module_scope() -> Iterator[None]:
+def module_scope(owner: str = "") -> Iterator[None]:
     token = _active.set(True)
+    owner_token = _owner.set(owner)
     try:
         yield
     finally:
+        _owner.reset(owner_token)
         _active.reset(token)
+
+
+def current_module() -> str:
+    return _owner.get()
 
 
 @contextlib.contextmanager

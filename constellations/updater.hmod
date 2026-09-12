@@ -1,7 +1,6 @@
 HOTARU = {
     "id": "updater",
     "version": "1.5.1",
-    "description": "Hotaru self-updater: changelog, update confirmation, git pull, deps, restart",
     "commands": ["upd", "updlog", "updoff", "updon"],
     "capabilities": ["net", "mt"],
     "tasks": {

@@ -155,6 +155,11 @@ PROVIDERS: dict[str, dict[str, Any]] = {
         "detail": "developer shell commands in the module workspace with timeout and output limits",
         "side_effect": "write",
     },
+    "logs": {
+        "title": "Logs",
+        "detail": "write structured entries to the observatory log; always granted",
+        "side_effect": "write",
+    },
 }
 
 KNOWN = frozenset(PROVIDERS)
@@ -206,6 +211,8 @@ class CapabilityHost:
             op = payload.get("op") if isinstance(payload.get("op"), str) else ""
             if op in ("list", "info", "hashes", "unload", "reload") and not self._allowed(module_id, capability):
                 raise PermissionError(f"capability not granted to module: {capability}")
+        elif capability == "logs":
+            return self._logs_op(module_id, payload)
         elif not self._allowed(module_id, capability):
             raise PermissionError(f"capability not granted to module: {capability}")
         with trusted_scope():
@@ -226,6 +233,28 @@ class CapabilityHost:
             if capability == "shell":
                 return await self._shell_op(module_id, payload, meta)
         raise PermissionError(f"capability not implemented: {capability}")
+
+    def _logs_op(self, module_id: str, payload: dict[str, Any]) -> Any:
+        observatory = getattr(self.runtime, "observatory", None)
+        if observatory is None:
+            return {"ok": False}
+        op = payload.get("op") if isinstance(payload.get("op"), str) else "write"
+        if op == "write":
+            text = payload.get("msg")
+            if not isinstance(text, str) or not text.strip():
+                return {"ok": False}
+            level = str(payload.get("level") or "info")
+            fields: dict[str, Any] = {"msg": text[:2048]}
+            if isinstance(payload.get("name"), str):
+                fields["name"] = payload["name"][:120]
+            if isinstance(payload.get("detail"), str):
+                fields["detail"] = payload["detail"][:2048]
+            observatory.emit("module", "log", level=level, module=module_id, **fields)
+            return {"ok": True}
+        if op == "read":
+            entries = observatory.tail(lines=40, module=module_id, level=str(payload.get("level") or "info"))
+            return {"ok": True, "entries": entries}
+        return {"ok": False}
 
     async def _shell_op(self, module_id: str, payload: dict[str, Any], meta: dict[str, Any]) -> Any:
         command = payload.get("command")
@@ -463,46 +492,32 @@ class CapabilityHost:
         url = payload.get("url")
         text = payload.get("text")
         source = payload.get("source")
-        stager = runtime.stager
-        if stager is None or runtime.state is None:
+        if runtime.stager is None or runtime.state is None:
             raise PermissionError("module stager is not ready")
-        constellations = runtime.config.state_path.parent / "constellations"
         if isinstance(url, str) and url.startswith("https://"):
-            loaded = stager.stage_url(url, constellations)
+            loaded, action = await runtime.load_module(url)
         elif isinstance(text, str) and text:
-            loaded = stager.stage_text(text, constellations)
+            loaded, action = await runtime.load_module(text)
         elif isinstance(source, str) and source:
-            loaded = stager.stage_text(source, constellations)
+            loaded, action = await runtime.load_module(source)
         else:
             raise PermissionError("modules load requires an https url or module source text")
         module_id = loaded.manifest.module_id
-        existing = runtime.modules.get(module_id) if runtime.modules is not None else None
-        granted = self._allowed(caller_id, "modules")
-        if existing is not None:
-            await runtime._command_rl(SimpleNamespace(args=(module_id,)))
-            return {
-                "module_id": module_id,
-                "version": loaded.manifest.version,
-                "digest": loaded.digest,
-                "action": "updated",
-            }
-        if granted:
+        if action == "staged":
+            if not self._allowed(caller_id, "modules"):
+                return {
+                    "module_id": module_id,
+                    "version": loaded.manifest.version,
+                    "digest": loaded.digest,
+                    "action": "staged",
+                }
             runtime._mark_caps_consent(module_id, runtime._caps_fingerprint(loaded.manifest))
-            await runtime.activate_module(str(loaded.path))
-            return {
-                "module_id": module_id,
-                "version": loaded.manifest.version,
-                "digest": loaded.digest,
-                "action": "loaded",
-            }
-        namespace = runtime.state.namespace(module_id)
-        namespace.set("sourcepath", str(loaded.path))
-        namespace.set("moduleversion", loaded.manifest.version)
+            loaded, action = await runtime.load_module(str(loaded.path))
         return {
             "module_id": module_id,
             "version": loaded.manifest.version,
             "digest": loaded.digest,
-            "action": "staged",
+            "action": action,
         }
 
     async def _modules_unload(self, caller_id: str, payload: dict[str, Any]) -> Any:
@@ -510,20 +525,10 @@ class CapabilityHost:
         target = payload.get("module_id")
         if not isinstance(target, str) or not target:
             raise PermissionError("modules unload requires a module_id")
-        module_id = target.casefold()
-        active = runtime.modules.get(module_id) if runtime.modules is not None else None
-        if active is None:
-            raise PermissionError(f"module not active: {module_id}")
-        runtime._backup_before_activation(active.loaded.path)
-        await runtime.deactivate_module(module_id)
-        try:
-            active.loaded.path.unlink()
-        except OSError:
-            await runtime.activate_module(str(active.loaded.path))
-            raise PermissionError(f"module removal failed: {module_id}")
-        if runtime.state is not None:
-            runtime.state.delete_module(module_id)
-        return {"module_id": module_id, "action": "unloaded"}
+        result = await runtime.unload_module(target)
+        if result is not None:
+            raise PermissionError(result)
+        return {"module_id": target.casefold(), "action": "unloaded"}
 
     async def _modules_reload(self, caller_id: str, payload: dict[str, Any]) -> Any:
         runtime = self.runtime

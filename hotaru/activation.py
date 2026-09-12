@@ -63,6 +63,8 @@ class ModuleBinder:
         bound: list[str] = []
         bound_watchers: list[str] = []
         try:
+            if is_kernel:
+                kernel.registry.register_kernel_module(loaded.manifest.module_id)
             for name, handler in handlers:
                 kernel.registry.register(
                     name,
@@ -149,10 +151,10 @@ class ModuleManager:
         if callable(callback):
             self._rehydrators[module_id] = callback
 
-    async def _run_lifecycle(self, hook: Any, context: Any) -> None:
+    async def _run_lifecycle(self, hook: Any, context: Any, module_id: str = "") -> None:
         if not callable(hook):
             return
-        with module_scope():
+        with module_scope(module_id):
             if len(inspect.signature(hook).parameters) == 0:
                 result = hook()
             else:
@@ -163,13 +165,13 @@ class ModuleManager:
     async def _rise_host(self, loaded: LoadedModule, namespace: dict[str, Any], kernel: Any, context: Any) -> None:
         if not loaded.manifest.rise:
             return
-        await self._run_lifecycle(namespace.get(loaded.manifest.rise), context)
+        await self._run_lifecycle(namespace.get(loaded.manifest.rise), context, loaded.manifest.module_id)
 
     async def _fade_host(self, loaded: LoadedModule, namespace: dict[str, Any], context: Any) -> None:
         if not loaded.manifest.fade:
             return
         try:
-            await self._run_lifecycle(namespace.get(loaded.manifest.fade), context)
+            await self._run_lifecycle(namespace.get(loaded.manifest.fade), context, loaded.manifest.module_id)
         except Exception:
             pass
 
@@ -308,14 +310,14 @@ class ModuleManager:
             "__file__": str(loaded.path),
         }
         try:
-            with module_scope():
+            with module_scope(loaded.manifest.module_id):
                 exec(compile(loaded.source, str(loaded.path), "exec"), namespace, namespace)
             commands = self.binder.bind(loaded, namespace, kernel, is_kernel=is_kernel)
             instance = ModuleInstance(loaded, namespace, commands)
             if health is not None:
                 result = health(instance)
                 if inspect.isawaitable(result):
-                    with module_scope():
+                    with module_scope(loaded.manifest.module_id):
                         result = await asyncio.wait_for(result, timeout=self.timeout)
                 if result is False:
                     raise RuntimeError("health check returned false")
@@ -351,9 +353,10 @@ class ModuleManager:
 
     async def _run_task(self, name: str, task_def: dict[str, Any], handler: Any, ctx: Any) -> None:
         interval = float(task_def.get("interval", 60.0))
+        module_id = getattr(ctx, "module_id", "") if ctx is not None else ""
         while True:
             try:
-                with module_scope():
+                with module_scope(module_id):
                     result = handler(ctx)
                     if inspect.isawaitable(result):
                         await result

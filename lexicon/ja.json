@@ -218,6 +218,10 @@
       "empty": "付与された権限はありません。!perm <user_id> <role> を使用。",
       "bad_label": "不明な権限: {label}。",
       "no_owner_grant": "owner は !owadd で付与されます。"
+    },
+    "lg": "ログ末尾:\n{lines}",
+    "commands": {
+      "lg": "view recent observatory log entries"
     }
   },
   "inline_commands_hint": "コマンドを選択 — 任意のチャットで @<bot> とコマンド名を入力"

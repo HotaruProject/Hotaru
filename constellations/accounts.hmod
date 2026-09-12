@@ -1,7 +1,6 @@
 HOTARU = {
     "id": "accounts",
     "version": "2.0.0",
-    "description": "Multi-account management: auto primary registration, list, spawn, stop, delete",
     "commands": ["acc", "acca", "accs"],
     "capabilities": ["mt"],
 }
