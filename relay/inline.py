@@ -507,6 +507,53 @@ class InlineManager:
         self.bot_app.on_msg(self._dispatch_bot_pm)
         self._task = asyncio.create_task(self._run(), name="hotaru:inline-bot")
 
+    async def _warm_owner_peer(self) -> None:
+        app = self.bot_app
+        runtime = self.runtime
+        if app is None or runtime is None:
+            return
+        kernel = getattr(runtime, "kernel", None)
+        owner = getattr(kernel, "owner_id", None) if kernel is not None else None
+        if not isinstance(owner, int) or owner <= 0:
+            return
+        mt = getattr(app, "mt", None)
+        if mt is None:
+            return
+        username = None
+        main = getattr(runtime, "app", None)
+        main_mt = getattr(main, "mt", None) if main is not None else None
+        if main_mt is not None:
+            try:
+                result = await main_mt.call("users.getUsers", id=[{"_": "inputPeerSelf"}])
+                body = result.get("result", result) if isinstance(result, dict) else result
+                users = body.get("users") if isinstance(body, dict) else body
+                if isinstance(users, list) and users and isinstance(users[0], dict):
+                    username = users[0].get("username")
+                elif isinstance(body, dict) and isinstance(body.get("username"), str):
+                    username = body.get("username")
+            except Exception as exc:
+                if runtime.observatory is not None:
+                    runtime.observatory.emit("inline", "warmup_self_lookup_error", error=type(exc).__name__)
+        if not isinstance(username, str) or not username:
+            if runtime.observatory is not None:
+                runtime.observatory.emit("inline", "warmup_no_username")
+            return
+        for attempt in range(3):
+            if self._stop.is_set():
+                return
+            try:
+                await mt.resolve_peer("@" + username)
+            except Exception as exc:
+                if runtime.observatory is not None:
+                    runtime.observatory.emit("inline", "warmup_error", attempt=attempt, error=type(exc).__name__)
+                await asyncio.sleep(2.0 * (attempt + 1))
+                continue
+            entity = mt.entities.get(("user", int(owner)))
+            if entity is not None and entity.get("access_hash"):
+                if runtime.observatory is not None:
+                    runtime.observatory.emit("inline", "warmup_ok", username=username)
+                return
+
     async def _run(self) -> None:
         app = self.bot_app
         assert app is not None
@@ -551,6 +598,7 @@ class InlineManager:
                 self.ready.set()
                 if self.runtime.observatory is not None:
                     self.runtime.observatory.emit("inline", "ready_set")
+                asyncio.create_task(self._warm_owner_peer())
                 return
             await asyncio.sleep(0.2)
 
