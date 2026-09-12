@@ -468,14 +468,15 @@ async def task_poller(ctx):
         _emit(ctx, "poller_send_error", error=type(exc).__name__, detail=str(exc)[:200])
         return
     sent = None
-    if isinstance(message, dict):
-        body = message.get("result", message)
-        if isinstance(body, dict):
-            for upd in body.get("updates") or []:
-                msg = upd.get("message") if isinstance(upd, dict) else None
-                if isinstance(msg, dict) and isinstance(msg.get("id"), int):
-                    sent = msg
-                    break
+    message_body = message.get("result", message) if isinstance(message, dict) else message
+    if isinstance(message_body, dict):
+        for upd in message_body.get("updates") or []:
+            msg = upd.get("message") if isinstance(upd, dict) else None
+            if isinstance(msg, dict) and isinstance(msg.get("id"), int):
+                sent = msg
+                break
+        if sent is None and message_body.get("_") == "updateShortSentMessage" and isinstance(message_body.get("id"), int):
+            sent = message_body
     if sent is not None:
         ctx.state.set("update_pending", {"chat_id": int(owner), "message_id": int(sent["id"]), "own": False})
     ctx.state.set("notified_commit", latest)
