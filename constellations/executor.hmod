@@ -1,6 +1,6 @@
 HOTARU = {
     "id": "executor",
-    "version": "1.0.0",
+    "version": "2.0.0",
     "commands": ["sh", "py"],
     "capabilities": ["mt", "files", "net", "state"],
 }
@@ -10,6 +10,7 @@ import contextlib
 import html
 import io
 import os
+import re
 import sys
 import time
 import traceback
@@ -59,40 +60,62 @@ def _truncate(text: str, max_len: int = 3500) -> str:
     return text
 
 
-async def _send_result(ctx, sections: list, elapsed_ms: float):
-    premium = await ctx.premium()
-    header = f"<code>{elapsed_ms:.1f}ms</code>"
+async def _reply_text(ctx, invocation):
+    reply = getattr(invocation, "reply", None) or getattr(invocation, "reply_message", None)
+    if reply is None:
+        return None
+    text = getattr(reply, "text", None) or getattr(reply, "raw_text", None)
+    return text if isinstance(text, str) else None
 
-    if premium:
-        parts = [f"<b>Executor</b> | {header}"]
-        for title, content, is_code in sections:
-            if not content:
-                continue
-            esc = _escape(_truncate(content))
-            body = f"<pre><code>{esc}</code></pre>" if is_code else f"<p>{esc}</p>"
-            parts.append(f"<details open><summary><b>{_escape(title)}</b></summary>{body}</details>")
-        await ctx.respond("".join(parts), parse_mode="HTML", rich=True)
-    else:
-        parts = [f"<b>Executor</b> | {header}\n"]
-        for title, content, is_code in sections:
-            if not content:
-                continue
-            esc = _escape(_truncate(content))
-            if is_code:
-                parts.append(f"<b>{_escape(title)}:</b>\n<pre><code>{esc}</code></pre>")
-            else:
-                parts.append(f"<b>{_escape(title)}:</b> {_escape(esc)}")
-        await ctx.respond("\n\n".join(parts), parse_mode="HTML", rich=False)
+
+def _censor(ret: str, ctx) -> str:
+    runtime = getattr(ctx, "runtime", None)
+    if runtime is not None:
+        config = getattr(runtime, "config", None)
+        if config is not None:
+            for key in ("bot_token", "inline_bot_token", "api_hash"):
+                try:
+                    secret = getattr(config, key, None)
+                except Exception:
+                    secret = None
+                if secret:
+                    ret = ret.replace(str(secret), f'{str(secret).split(":")[0]}:{"*" * 26}' if ":" in str(secret) else "*" * 26)
+    return ret
+
+
+async def _send_result(ctx, sections: list, elapsed_ms: float):
+    header = f"<code>{elapsed_ms:.1f}ms</code>"
+    parts = [f"<b>Executor</b> | {header}\n"]
+    for title, content, is_code in sections:
+        if not content:
+            continue
+        esc = _escape(_truncate(_censor(content, ctx)))
+        if is_code:
+            parts.append(f"<b>{_escape(title)}:</b>\n<pre><code>{esc}</code></pre>")
+        else:
+            parts.append(f"<b>{_escape(title)}:</b> {_escape(esc)}")
+    await ctx.respond("\n\n".join(parts), parse_mode="HTML", rich=False)
 
 
 async def command_sh(ctx, invocation):
     args = getattr(invocation, "args", [])
-    if not args:
+
+    raw = " ".join(args)
+    skip_output = False
+    if match := re.match(r"^(?:-so|--skip-output)(?:\s+|$)", raw):
+        skip_output = True
+        raw = raw[match.end():]
+
+    cmd = _clean_code(raw)
+    if not cmd:
+        reply_code = await _reply_text(ctx, invocation)
+        if reply_code:
+            cmd = _clean_code(reply_code)
+    if not cmd:
         prefix = ctx.runtime.config.prefix if ctx.runtime else "."
         await ctx.respond(f"<b>Usage:</b> <code>{prefix}sh &lt;command&gt;</code>", parse_mode="HTML", rich=False)
         return
 
-    cmd = _clean_code(" ".join(args))
     start_time = time.perf_counter()
 
     process = await asyncio.create_subprocess_shell(
@@ -101,7 +124,7 @@ async def command_sh(ctx, invocation):
         stderr=asyncio.subprocess.PIPE,
         env=os.environ.copy(),
     )
-    _ACTIVE["shell"] = process
+    _ACTIVE["sh"] = process
 
     try:
         stdout_bytes, stderr_bytes = await process.communicate()
@@ -109,8 +132,11 @@ async def command_sh(ctx, invocation):
         process.kill()
         stdout_bytes, stderr_bytes = b"", b"Process terminated"
     finally:
-        _ACTIVE["shell"] = None
+        _ACTIVE["sh"] = None
         elapsed = (time.perf_counter() - start_time) * 1000
+
+    if skip_output:
+        return
 
     stdout_str = stdout_bytes.decode("utf-8", errors="replace").strip()
     stderr_str = stderr_bytes.decode("utf-8", errors="replace").strip()
@@ -128,24 +154,40 @@ async def command_sh(ctx, invocation):
 
 async def command_py(ctx, invocation):
     args = getattr(invocation, "args", [])
-    if not args:
+
+    raw = " ".join(args)
+    skip_output = False
+    if match := re.match(r"^(?:-so|--skip-output)(?:\s+|$)", raw):
+        skip_output = True
+        raw = raw[match.end():]
+
+    raw_code = _clean_code(raw)
+    if not raw_code:
+        reply_code = await _reply_text(ctx, invocation)
+        if reply_code:
+            raw_code = _clean_code(reply_code)
+    if not raw_code:
         prefix = ctx.runtime.config.prefix if ctx.runtime else "."
-        await ctx.respond(f"<b>Usage:</b> <code>{prefix}e &lt;code&gt;</code>", parse_mode="HTML", rich=False)
+        await ctx.respond(f"<b>Usage:</b> <code>{prefix}py &lt;code&gt;</code> | reply с кодом | -so без вывода", parse_mode="HTML", rich=False)
         return
 
-    raw_code = _clean_code(" ".join(args))
+    raw_code = raw_code.replace("\xa0", "\x20")
     wrapped_code = _wrap_eval_code(raw_code)
 
+    reply = getattr(invocation, "reply", None) or getattr(invocation, "reply_message", None)
     env = {
         "ctx": ctx,
         "runtime": getattr(ctx, "runtime", None),
         "client": getattr(ctx, "client", getattr(ctx, "tg", None)),
         "tg": getattr(ctx, "tg", None),
+        "c": getattr(ctx, "tg", None),
         "db": getattr(ctx, "state", None),
         "state": getattr(ctx, "state", None),
         "message": getattr(ctx, "message", None),
+        "m": getattr(ctx, "message", None),
         "msg": getattr(ctx, "message", None),
-        "reply": getattr(ctx, "reply", None) or getattr(ctx, "reply_to_message", None),
+        "reply": reply,
+        "r": reply,
         "invocation": invocation,
         "i": invocation,
         "asyncio": asyncio,
@@ -168,7 +210,7 @@ async def command_py(ctx, invocation):
         result_val = await runner()
 
     eval_task = asyncio.create_task(_task())
-    _ACTIVE["eval"] = eval_task
+    _ACTIVE["py"] = eval_task
 
     try:
         with contextlib.redirect_stdout(stdout_buf), contextlib.redirect_stderr(stderr_buf):
@@ -178,8 +220,11 @@ async def command_py(ctx, invocation):
     except Exception:
         error_trace = traceback.format_exc()
     finally:
-        _ACTIVE["eval"] = None
+        _ACTIVE["py"] = None
         elapsed = (time.perf_counter() - start_time) * 1000
+
+    if skip_output:
+        return
 
     stdout_str = stdout_buf.getvalue().strip()
     stderr_str = stderr_buf.getvalue().strip()
@@ -191,6 +236,7 @@ async def command_py(ctx, invocation):
         sections.append(("stderr", stderr_str, True))
     if result_val is not None:
         sections.append(("return", repr(result_val), True))
+        sections.append(("type", type(result_val).__name__, False))
     if error_trace:
         sections.append(("traceback", error_trace, True))
     if not sections:
