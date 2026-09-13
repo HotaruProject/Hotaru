@@ -1043,6 +1043,8 @@ async def command_sh(ctx, invocation):
     env = os.environ.copy()
     bindir = os.path.dirname(sys.executable)
     env["PATH"] = f"{bindir}{os.pathsep}{env.get('PATH', '')}"
+    if sys.prefix != getattr(sys, "base_prefix", sys.prefix):
+        env["VIRTUAL_ENV"] = sys.prefix
     
     process = await asyncio.create_subprocess_shell(
         cmd,
