@@ -56,12 +56,6 @@
         },
         "untrust": {
           "description": "Відкликати довіру"
-        },
-        "alias": {
-          "description": "Створити аліас"
-        },
-        "unalias": {
-          "description": "Видалити аліас"
         }
       }
     },
@@ -222,7 +216,36 @@
     "lg": "хвіст логів:\n{lines}",
     "commands": {
       "lg": "view recent observatory log entries"
+    },
+    "hotaru-settings": {
+      "description": "Керування аліасами та префіксом",
+      "commands": {
+        "alias": "Створити аліас",
+        "rmalias": "Видалити аліас",
+        "prefix": "Змінити префікс"
+      }
     }
   },
-  "inline_commands_hint": "Обери команду — введи @<бот> і її назву в будь-якому чаті"
+  "inline_commands_hint": "Обери команду — введи @<бот> і її назву в будь-якому чаті",
+  "hotaru-settings": {
+    "runtime_unavailable": "Runtime недоступен",
+    "usage_alias": "Использование: !alias <алиас> <команда>",
+    "alias_invalid": "Алиас: 1-32 символа, только a-z, 0-9 и _",
+    "alias_exists": "Такая команда уже существует: {alias}",
+    "command_not_found": "Команда не найдена: {command}\nДоступные: {known}",
+    "alias_taken": "Алиас уже занят: {alias} -> {command}. Сначала удали его через !rmalias {alias}",
+    "alias_set": "Алиас установлен: {alias} → {command}",
+    "usage_rmalias": "Использование: !rmalias <алиас>",
+    "alias_removed": "Алиас удалён: {alias}",
+    "alias_not_found": "Алиас не найден: {alias}",
+    "prefix_current": "Текущий префикс: {prefix}. Смена: !prefix <символ>",
+    "prefix_invalid": "Префикс должен быть одним не-пробельным символом",
+    "prefix_set": "Префикс сменён на {prefix}. Вступит в силу после перезапуска (!restart)",
+    "description": "Керування аліасами та префіксом",
+    "commands": {
+      "alias": "Створити аліас",
+      "rmalias": "Видалити аліас",
+      "prefix": "Змінити префікс"
+    }
+  }
 }

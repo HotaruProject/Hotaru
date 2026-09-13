@@ -1,7 +1,7 @@
 HOTARU = {
     "id": "hotaru-kernel",
     "version": "0.1.5",
-    "commands": ['ver', 'st', 'ls', 'mi', 'ld', 'ul', 'rl', 'rm', 'bk', 'bot', 'trust', 'untrust', 'alias', 'unalias', 'lg'],
+    "commands": ['ver', 'st', 'ls', 'mi', 'ld', 'ul', 'rl', 'rm', 'bk', 'bot', 'trust', 'untrust', 'lg'],
     "capabilities": ["mt"],
 }
 
@@ -147,36 +147,7 @@ async def command_untrust(ctx, invocation):
     result = await runtime._command_untrust(invocation)
     await ctx.respond(result)
 
-async def command_alias(ctx, invocation):
-    runtime = ctx.runtime
-    if len(invocation.args) != 2:
-        await ctx.respond("usage: !alias <alias> <command>")
-        return
-    alias, command = invocation.args
-    aliases = runtime.state.get_setting("user_aliases", {})
-    aliases[alias.casefold()] = command.casefold()
-    runtime.state.set_setting("user_aliases", aliases)
-    runtime.kernel.registry.register_alias(alias, command)
-    await ctx.respond(f"Alias set: {alias} -> {command}")
 
-
-async def command_unalias(ctx, invocation):
-    runtime = ctx.runtime
-    if runtime is None:
-        await ctx.respond("runtime unavailable")
-        return
-    if len(invocation.args) != 1:
-        await ctx.respond("usage: !unalias <alias>")
-        return
-    alias = invocation.args[0].casefold()
-    aliases = runtime.state.get_setting("user_aliases", {})
-    if alias in aliases:
-        del aliases[alias]
-        runtime.state.set_setting("user_aliases", aliases)
-        runtime.kernel.registry.unregister_alias(alias)
-        await ctx.respond(f"Alias removed: {alias}")
-    else:
-        await ctx.respond(f"Alias not found: {alias}")
 
 
 async def command_lg(ctx, invocation):
