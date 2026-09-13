@@ -1,6 +1,6 @@
 HOTARU = {
     "id": "acl",
-    "version": "2.0.0",
+    "version": "2.0.1",
     "commands": ["perms", "perm", "whois", "owadd", "owrm", "owls", "sgls", "sg", "sgnew", "sgdel", "sgadd", "sgrm", "rule", "rulerm", "ruleclr"],
     "capabilities": ["mt"],
 }
@@ -50,7 +50,7 @@ async def _reply_sender_id(ctx, invocation):
     try:
         raw = await ctx.tg.call(
             "messages.getHistory",
-            {"peer": chat_id, "offset_id": rid, "offset_date": 0, "add_offset": 0, "limit": 1, "max_id": 0, "min_id": 0, "hash": 0},
+            {"peer": chat_id, "offset_id": rid + 1, "offset_date": 0, "add_offset": -1, "limit": 1, "max_id": 0, "min_id": 0, "hash": 0},
         )
     except Exception:
         return None
@@ -70,8 +70,9 @@ async def _reply_sender_id(ctx, invocation):
 
 async def _resolve_target_user(ctx, invocation):
     args = invocation.args
-    if args and args[0].lstrip("-").isdigit():
-        return int(args[0]), args[1:]
+    for i, token in enumerate(args):
+        if token.lstrip("-").isdigit():
+            return int(token), args[i + 1:]
     sender = await _reply_sender_id(ctx, invocation)
     if sender is not None:
         return sender, args
@@ -84,7 +85,7 @@ def _parse_duration(raw):
     raw = (raw or "").strip().lower()
     if not raw or raw in {"forever", "навсегда"}:
         return 0
-    multipliers = {"s": 1, "м": 1, "m": 60, "х": 60, "h": 3600, "ч": 3600, "d": 86400, "д": 86400, "w": 604800, "н": 604800}
+    multipliers = {"s": 1, "м": 60, "m": 60, "х": 60, "h": 3600, "ч": 3600, "d": 86400, "д": 86400, "w": 604800, "н": 604800}
     suffix = raw[-1]
     if suffix.isdigit():
         return int(raw) * 60
