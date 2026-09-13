@@ -1045,6 +1045,16 @@ async def command_sh(ctx, invocation):
     env["PATH"] = f"{bindir}{os.pathsep}{env.get('PATH', '')}"
     if sys.prefix != getattr(sys, "base_prefix", sys.prefix):
         env["VIRTUAL_ENV"] = sys.prefix
+
+    pm = None
+    if "UV" in env or "UV_RUN_RECURSION_DEPTH" in env:
+        pm = "uv pip"
+    elif "PDM_PROJECT_ROOT" in env:
+        pm = "pdm run pip"
+    elif "POETRY_ACTIVE" in env:
+        pm = "poetry run pip"
+    if pm:
+        cmd = f"pip() {{ {pm} \"$@\"; }};\n" + cmd
     
     process = await asyncio.create_subprocess_shell(
         cmd,
