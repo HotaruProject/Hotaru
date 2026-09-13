@@ -85,17 +85,6 @@
       },
       "restarted": "ユーザーボットは{took}で正常に再起動されました"
     },
-    "hotaru-config": {
-      "description": "Hotaru 設定モジュール",
-      "commands": {
-        "conf": {
-          "description": "設定を開く"
-        },
-        "config": {
-          "description": "設定を開く"
-        }
-      }
-    },
     "updater": {
       "description": "Hotaru 自動更新",
       "commands": {
@@ -217,7 +206,18 @@
     "commands": {
       "lg": "view recent observatory log entries"
     },
-    "hotaru-settings": {
+    "config": {
+      "description": "Hotaru 設定モジュール",
+      "commands": {
+        "conf": {
+          "description": "設定を開く"
+        },
+        "config": {
+          "description": "設定を開く"
+        }
+      }
+    },
+    "settings": {
       "description": "エイリアスとプレフィックス管理",
       "commands": {
         "alias": "エイリアス作成",
@@ -227,7 +227,7 @@
     }
   },
   "inline_commands_hint": "コマンドを選択 — 任意のチャットで @<bot> とコマンド名を入力",
-  "hotaru-settings": {
+  "settings": {
     "runtime_unavailable": "Runtime unavailable",
     "usage_alias": "Usage: !alias <alias> <command>",
     "alias_invalid": "Alias: 1-32 chars, a-z, 0-9 and _ only",

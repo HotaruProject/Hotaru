@@ -12,12 +12,15 @@
   },
   "kernel": {
     "config": {
-      "title": "Configuration",
-      "no_modules": "No configurable modules found",
-      "select_module": "Select a module to configure",
-      "page": "Page {page} of {total}",
-      "module": "Module",
-      "edit": "Edit {key}"
+      "description": "Hotaru configuration module",
+      "commands": {
+        "conf": {
+          "description": "Open settings"
+        },
+        "config": {
+          "description": "Open settings"
+        }
+      }
     },
     "power": {
       "already_stopped": "Userbot is already stopped.",
@@ -137,17 +140,6 @@
         }
       }
     },
-    "hotaru-config": {
-      "description": "Hotaru configuration module",
-      "commands": {
-        "conf": {
-          "description": "Open settings"
-        },
-        "config": {
-          "description": "Open settings"
-        }
-      }
-    },
     "translations": {
       "description": "Translation management",
       "commands": {
@@ -244,7 +236,7 @@
     "commands": {
       "lg": "view recent observatory log entries"
     },
-    "hotaru-settings": {
+    "settings": {
       "description": "Alias and prefix management",
       "commands": {
         "alias": "Create alias",
@@ -277,7 +269,7 @@
     "ja": "Japanese"
   },
   "inline_commands_hint": "Pick a command — type @<bot> and its name in any chat",
-  "hotaru-settings": {
+  "settings": {
     "runtime_unavailable": "Runtime unavailable",
     "usage_alias": "Usage: !alias <alias> <command>",
     "alias_invalid": "Alias: 1-32 chars, a-z, 0-9 and _ only",

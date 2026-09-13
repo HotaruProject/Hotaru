@@ -12,12 +12,15 @@
   },
   "kernel": {
     "config": {
-      "title": "Конфигурация",
-      "no_modules": "Настраиваемых модулей нет",
-      "select_module": "Выберите модуль для настройки",
-      "page": "Страница {page} из {total}",
-      "module": "Модуль",
-      "edit": "Изменить {key}"
+      "description": "Модуль конфигурации Hotaru",
+      "commands": {
+        "conf": {
+          "description": "Открыть настройки"
+        },
+        "config": {
+          "description": "Открыть настройки"
+        }
+      }
     },
     "power": {
       "already_stopped": "Юзербот уже остановлен.",
@@ -137,17 +140,6 @@
         }
       }
     },
-    "hotaru-config": {
-      "description": "Модуль конфигурации Hotaru",
-      "commands": {
-        "conf": {
-          "description": "Открыть настройки"
-        },
-        "config": {
-          "description": "Открыть настройки"
-        }
-      }
-    },
     "translations": {
       "description": "Управление переводами",
       "commands": {
@@ -244,7 +236,7 @@
     "commands": {
       "lg": "view recent observatory log entries"
     },
-    "hotaru-settings": {
+    "settings": {
       "description": "Управление алиасами и префиксом",
       "commands": {
         "alias": "Создать алиас",
@@ -277,7 +269,7 @@
     "ja": "Японский"
   },
   "inline_commands_hint": "Выбери команду — введи @<бот> и её имя в любом чате",
-  "hotaru-settings": {
+  "settings": {
     "runtime_unavailable": "Runtime недоступен",
     "usage_alias": "Использование: !alias <алиас> <команда>",
     "alias_invalid": "Алиас: 1-32 символа, только a-z, 0-9 и _",
