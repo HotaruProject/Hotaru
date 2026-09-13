@@ -558,6 +558,137 @@ def countdown(seconds: int | float) -> str:
     return duration(seconds)
 
 
+def _rich_text(node: Any) -> str:
+    if not isinstance(node, dict):
+        return escape(node) if node else ""
+    kind = node.get("_", "")
+    inner = _rich_text(node.get("text")) if node.get("text") is not None else ""
+    if kind == "textPlain":
+        return escape(node.get("text") or "")
+    if kind == "textConcat":
+        return "".join(_rich_text(item) for item in node.get("texts") or [])
+    if kind == "textEmpty":
+        return ""
+    if kind == "textBold":
+        return f"<b>{inner}</b>"
+    if kind == "textItalic":
+        return f"<i>{inner}</i>"
+    if kind == "textUnderline":
+        return f"<u>{inner}</u>"
+    if kind == "textStrike":
+        return f"<s>{inner}</s>"
+    if kind == "textFixed":
+        return f"<code>{inner}</code>"
+    if kind == "textSpoiler":
+        return f"<tg-spoiler>{inner}</tg-spoiler>"
+    if kind == "textMarked":
+        return f"<mark>{inner}</mark>"
+    if kind == "textSubscript":
+        return f"<sub>{inner}</sub>"
+    if kind == "textSuperscript":
+        return f"<sup>{inner}</sup>"
+    if kind == "textUrl":
+        return f'<a href="{escape_attr(node.get("url") or "")}">{inner}</a>'
+    if kind == "textEmail":
+        return f'<a href="mailto:{escape_attr(node.get("email") or "")}">{inner}</a>'
+    if kind == "textAnchor":
+        return f'<a name="{escape_attr(node.get("name") or "")}"></a>'
+    if kind == "textMath":
+        return f"<tg-math>{escape(node.get('source') or '')}</tg-math>"
+    return inner
+
+
+def _rich_caption(node: Any) -> str:
+    return _rich_text(node) if node is not None else ""
+
+
+def _rich_block(block: Any) -> str:
+    if not isinstance(block, dict):
+        return ""
+    kind = block.get("_", "")
+    text = _rich_text(block.get("text")) if block.get("text") is not None else ""
+    if kind == "pageBlockParagraph":
+        return f"<p>{text}</p>"
+    if kind == "pageBlockTitle":
+        return f"<h1>{text}</h1>"
+    if kind == "pageBlockSubtitle":
+        return f"<h2>{text}</h2>"
+    if kind == "pageBlockHeader":
+        return f"<h3>{text}</h3>"
+    if kind == "pageBlockSubheader":
+        return f"<h4>{text}</h4>"
+    if kind == "pageBlockKicker":
+        return f"<h5>{text}</h5>"
+    if kind == "pageBlockFooter":
+        return f"<footer>{text}</footer>"
+    if kind == "pageBlockAuthorDate":
+        author = _rich_text(block.get("author"))
+        return f'<p><b>{author}</b> <tg-time unix="{block.get("published_date", 0)}" format="dMy"></tg-time></p>'
+    if kind == "pageBlockPreformatted":
+        lang = escape_attr(block.get("language") or "")
+        cls = f' class="language-{lang}"' if lang else ""
+        return f"<pre><code{cls}>{text}</code></pre>"
+    if kind == "pageBlockDivider":
+        return "<hr>"
+    if kind == "pageBlockAnchor":
+        return f'<a name="{escape_attr(block.get("name") or "")}"></a>'
+    if kind == "pageBlockList":
+        items = []
+        for item in block.get("items") or []:
+            if not isinstance(item, dict):
+                continue
+            if item.get("text") is not None:
+                inner = _rich_text(item.get("text"))
+            else:
+                inner = "".join(_rich_block(sub) for sub in item.get("blocks") or [])
+            items.append(f"<li>{inner}</li>")
+        return f"<ul>{''.join(items)}</ul>" if items else ""
+    if kind == "pageBlockOrderedList":
+        items = []
+        for item in block.get("items") or []:
+            if not isinstance(item, dict):
+                continue
+            if item.get("text") is not None:
+                inner = _rich_text(item.get("text"))
+            else:
+                inner = "".join(_rich_block(sub) for sub in item.get("blocks") or [])
+            items.append(f"<li>{inner}</li>")
+        return f"<ol>{''.join(items)}</ol>" if items else ""
+    if kind == "pageBlockBlockquote":
+        return f"<blockquote>{text}{_rich_caption(block.get('caption'))}</blockquote>"
+    if kind == "pageBlockPullquote":
+        return f"<aside>{text}<cite>{_rich_caption(block.get('caption'))}</cite></aside>"
+    if kind == "pageBlockDetails":
+        title = _rich_text(block.get("title")) if block.get("title") is not None else ""
+        inner = "".join(_rich_block(sub) for sub in block.get("blocks") or [])
+        open_attr = " open" if block.get("open") else ""
+        return f"<details{open_attr}><summary>{title}</summary>{inner}</details>"
+    if kind == "pageBlockTable":
+        rows = []
+        for row in block.get("rows") or []:
+            if not isinstance(row, dict):
+                continue
+            cells = []
+            for cell in row.get("cells") or []:
+                if not isinstance(cell, dict):
+                    continue
+                tag = "th" if cell.get("header") else "td"
+                cells.append(f"<{tag}>{_rich_text(cell.get('text'))}</{tag}>")
+            if cells:
+                rows.append(f"<tr>{''.join(cells)}</tr>")
+        return f"<table>{''.join(rows)}</table>" if rows else ""
+    return text
+
+
+def rich_to_html(message: Any) -> str:
+    if not isinstance(message, dict):
+        return ""
+    rich = message.get("rich_message") or message.get("richMessage")
+    if not isinstance(rich, dict):
+        return ""
+    return "".join(_rich_block(block) for block in rich.get("blocks") or [])
+
+
 TOOLKIT_FUNCS = {
     "args_parse": args_parse,
     "args_raw": args_raw,
@@ -616,6 +747,7 @@ TOOLKIT_FUNCS = {
     "hash_short": hash_short,
     "badge": badge,
     "countdown": countdown,
+    "rich_to_html": rich_to_html,
 }
 
 TOOLS = SimpleNamespace(**TOOLKIT_FUNCS)

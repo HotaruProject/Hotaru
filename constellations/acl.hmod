@@ -31,41 +31,23 @@ def _usage(ctx):
         "!whois <user_id> — права пользователя",
     )
 
-def _reply_to_msg_id(invocation):
-    message = invocation.message
-    if message is None or not hasattr(message, "get"):
-        return None
-    reply = message.get("reply_to")
-    if isinstance(reply, dict):
-        rid = reply.get("reply_to_msg_id") or reply.get("reply_to_id")
-        if isinstance(rid, int):
-            return rid
-    return None
-
 async def _reply_sender_id(ctx, invocation):
-    rid = _reply_to_msg_id(invocation)
-    chat_id = getattr(invocation.message, "chat_id", None)
-    if rid is None or not isinstance(chat_id, int):
+    reply = None
+    fetch = getattr(ctx, "reply", None)
+    if callable(fetch):
+        try:
+            reply = await fetch()
+        except Exception:
+            reply = None
+    if reply is None or not hasattr(reply, "get"):
         return None
-    try:
-        raw = await ctx.tg.call(
-            "messages.getHistory",
-            {"peer": chat_id, "offset_id": rid + 1, "offset_date": 0, "add_offset": -1, "limit": 1, "max_id": 0, "min_id": 0, "hash": 0},
-        )
-    except Exception:
-        return None
-    res = raw.get("result", raw) if isinstance(raw, dict) else {}
-    msgs = res.get("messages") if isinstance(res, dict) else None
-    if isinstance(msgs, list) and msgs and isinstance(msgs[0], dict):
-        if int(msgs[0].get("id", 0)) == rid:
-            from_peer = msgs[0].get("from_id")
-            if isinstance(from_peer, dict):
-                uid = from_peer.get("user_id")
-                if isinstance(uid, int):
-                    return uid
-            from_id = msgs[0].get("from_id")
-            if isinstance(from_id, int):
-                return from_id
+    from_peer = reply.get("from_id")
+    if isinstance(from_peer, dict):
+        uid = from_peer.get("user_id")
+        if isinstance(uid, int):
+            return uid
+    if isinstance(from_peer, int):
+        return from_peer
     return None
 
 async def _resolve_target_user(ctx, invocation):

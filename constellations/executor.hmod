@@ -1040,11 +1040,15 @@ async def command_sh(ctx, invocation):
     cmd = _unescape_tg_code(cmd)
 
     start_time = time.perf_counter()
+    env = os.environ.copy()
+    bindir = os.path.dirname(sys.executable)
+    env["PATH"] = f"{bindir}{os.pathsep}{env.get('PATH', '')}"
+    
     process = await asyncio.create_subprocess_shell(
         cmd,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
-        env=os.environ.copy(),
+        env=env,
     )
     _ACTIVE["sh"] = process
 

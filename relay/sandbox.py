@@ -376,6 +376,31 @@ class SandboxContext:
     def args_list(self):
         return list(self.args)
 
+    async def reply(self, message=None):
+        target = self._msg if message is None else message
+        if target is None:
+            return None
+        reply_to = target.get("reply_to")
+        if not isinstance(reply_to, dict):
+            return None
+        fetched = await _cap_call("fetch", {"op": "reply", "peer": self.chat_id, "reply_to": reply_to})
+        return fetched if isinstance(fetched, dict) else None
+
+    async def reply_text(self, message=None):
+        reply = await self.reply(message)
+        if reply is None:
+            return None
+        text = reply.get("message") or reply.get("text") or reply.get("caption")
+        return str(text) if text is not None else None
+
+    async def msg(self, chat_id, message_id):
+        fetched = await _cap_call("fetch", {"op": "message", "peer": chat_id, "id": int(message_id)})
+        return fetched if isinstance(fetched, dict) else None
+
+    async def resolve(self, value):
+        fetched = await _cap_call("fetch", {"op": "entity", "value": value})
+        return fetched if isinstance(fetched, dict) else None
+
     @staticmethod
     def escape(value):
         import html as _html
