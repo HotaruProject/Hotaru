@@ -10,6 +10,7 @@ from typing import Any, Callable, Literal
 from goygram.errors import FloodWaitError, MessageNotModifiedError
 
 from .state import StateNamespace
+from .plainfmt import rich_to_plain
 from goygram.rich import rich_html
 
 
@@ -479,10 +480,15 @@ class ModuleContext:
             if found is None:
                 with trusted_scope():
                     result = await app.mt_req("users.getUsers", id=[{"_": "inputUserSelf"}])
-                body = result.get("result", result) if isinstance(result, dict) else {}
-                users = body.get("users") if isinstance(body, dict) else None
+                body = result.get("result", result) if isinstance(result, dict) else result
+                if isinstance(body, dict):
+                    users = body.get("users") or body.get("result") or []
+                else:
+                    users = body
                 first = users[0] if isinstance(users, list) and users else None
-                found = bool(first.get("premium")) if isinstance(first, dict) else False
+                if not isinstance(first, dict):
+                    first = body if isinstance(body, dict) else {}
+                found = bool(first.get("premium"))
             self.is_premium = found
             return found
         except Exception:
@@ -503,7 +509,6 @@ class ModuleContext:
             if not allowed:
                 value = kwargs.pop("text", "")
                 if value:
-                    from .plainfmt import rich_to_plain
                     kwargs["text"] = rich_to_plain(value)
                 use_rich = False
         if kwargs.get("text") is not None:
@@ -720,7 +725,6 @@ class ModuleContext:
             except Exception:
                 allowed = False
         if not allowed:
-            from .plainfmt import rich_to_plain
             kwargs.pop("parse_mode", None)
             return await self.answer(text=rich_to_plain(html), **kwargs)
         peer = getattr(self._source, "chat_id", None)

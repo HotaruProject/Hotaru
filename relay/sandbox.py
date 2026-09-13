@@ -14,6 +14,7 @@ from . import toolkit as _toolkit
 from goygram.rich import rich_html
 from goygram.sugar import html_to_entities
 from hotaru.callbacks import CallbackBinding
+from hotaru.plainfmt import rich_to_plain
 
 _TOOLKIT_SOURCE = Path(_toolkit.__file__).read_text(encoding="utf-8")
 
@@ -1349,7 +1350,6 @@ class ModuleSandbox:
             if not allowed:
                 rich = False
                 if isinstance(text, str):
-                    from hotaru.plainfmt import rich_to_plain
                     text = rich_to_plain(text)
         output = kwargs.pop("output", "auto")
         media = kwargs.pop("media", None)

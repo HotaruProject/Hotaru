@@ -12,6 +12,7 @@ from typing import Any
 
 from .denylist import is_blocked_host, payload_hits_blocked
 from .firewall import trusted_scope
+from hotaru.plainfmt import rich_to_plain
 
 MT_READ_ONLY = frozenset({
     "get",
@@ -315,7 +316,6 @@ class CapabilityHost:
                 html_text = rich_message.get("html") if isinstance(rich_message, dict) else None
                 kwargs.pop("rich_message", None)
                 if isinstance(html_text, str) and lowered.startswith(("messages.send", "messages.edit")):
-                    from hotaru.plainfmt import rich_to_plain
                     from goygram.sugar import html_to_entities
                     plain_html = rich_to_plain(html_text)
                     plain, entities = html_to_entities(plain_html)
