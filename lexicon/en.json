@@ -290,7 +290,7 @@
     "alias_not_found": "Alias not found: {alias}",
     "prefix_current": "Current prefix: {prefix}. Change: !prefix <char>",
     "prefix_invalid": "Prefix must be a single non-whitespace character",
-    "prefix_set": "Prefix changed to {prefix}. Takes effect after restart (!restart)",
+    "prefix_set": "Prefix changed to {prefix}",
     "description": "Alias and prefix management",
     "commands": {
       "alias": "Create alias",

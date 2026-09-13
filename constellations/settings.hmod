@@ -78,4 +78,5 @@ async def command_prefix(ctx, invocation):
         await ctx.respond(ctx.t("hotaru-settings.prefix_invalid", "Префикс должен быть одним не-пробельным символом"))
         return
     runtime.state.set_setting("prefix", new_prefix)
-    await ctx.respond(ctx.t("hotaru-settings.prefix_set", "Префикс сменён на {prefix}. Вступит в силу после перезапуска (!restart)", prefix=new_prefix))
+    runtime.kernel.parser.prefix = new_prefix
+    await ctx.respond(ctx.t("hotaru-settings.prefix_set", "Префикс сменён на {prefix}", prefix=new_prefix))
