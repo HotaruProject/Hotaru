@@ -8,7 +8,7 @@ from .caps import MT_BLOCKED, normalize_method
 from .denylist import payload_hits_blocked
 from .firewall import trusted_scope
 from goygram.rich import rich_html
-from goygram.sugar import extract_sent_message
+from goygram.sugar import extract_sent_message, html_to_entities
 from goygram.types.kbd import kbd_to_tl
 
 
@@ -78,6 +78,34 @@ class Gateway:
 
     async def send_message(self, text: str, **kwargs: Any) -> Any:
         return await self.call("messages.sendMessage", {"message": text, **kwargs})
+
+    async def send_html(self, text: str, **kwargs: Any) -> Any:
+        plain, entities = html_to_entities(str(text))
+        payload: dict[str, Any] = {"message": plain, **kwargs}
+        if entities:
+            payload["entities"] = entities
+        return await self.call("messages.sendMessage", payload)
+
+    async def send_file(self, path: Any, caption: str = "", **kwargs: Any) -> Any:
+        return await self.call("messages.sendMedia", {
+            "media": {"_": "inputMediaUploadedDocument", "file": path, "mime_type": "application/octet-stream"},
+            "message": caption, **kwargs,
+        })
+
+    async def send_to(self, chat: int | str, text: str, **kwargs: Any) -> Any:
+        return await self.send_message(text, peer=chat, **kwargs)
+
+    async def reply_to_message(self, chat: int | str, message_id: int, text: str, **kwargs: Any) -> Any:
+        payload: dict[str, Any] = {"message": text, "peer": chat, "reply_to": {"_": "inputReplyToMessage", "reply_to_msg_id": int(message_id)}, **kwargs}
+        return await self.call("messages.sendMessage", payload)
+
+    async def react(self, chat: int | str, message_id: int, emoji: str = "👍", **kwargs: Any) -> Any:
+        reaction = [{"_": "reactionEmoji", "emoticon": emoji}]
+        if kwargs.get("big"):
+            reaction[0] = {"_": "reactionEmoji", "emoticon": emoji, "flags": 1}
+        return await self.call("messages.sendReaction", {
+            "peer": chat, "msg_id": int(message_id), "reaction": reaction, **{k: v for k, v in kwargs.items() if k != "big"},
+        })
 
     async def send_media(self, media: Any, caption: str = "", **kwargs: Any) -> Any:
         return await self.call("messages.sendMedia", {"media": media, "message": caption, **kwargs})

@@ -90,10 +90,7 @@ async def _send_result(ctx, sections: list, elapsed_ms: float):
         if not content:
             continue
         esc = _escape(_truncate(_censor(content, ctx)))
-        if is_code:
-            parts.append(f"<b>{_escape(title)}:</b>\n<pre><code>{esc}</code></pre>")
-        else:
-            parts.append(f"<b>{_escape(title)}:</b> {_escape(esc)}")
+        parts.append(f"<b>{_escape(title)}:</b>\n<pre><code>{esc}</code></pre>")
     await ctx.respond("\n\n".join(parts), parse_mode="HTML", rich=False)
 
 
