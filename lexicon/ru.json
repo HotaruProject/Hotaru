@@ -290,7 +290,7 @@
     "alias_not_found": "Алиас не найден: {alias}",
     "prefix_current": "Текущий префикс: {prefix}. Смена: !prefix <символ>",
     "prefix_invalid": "Префикс должен быть одним не-пробельным символом",
-    "prefix_set": "Префикс сменён на {prefix}. Вступит в силу после перезапуска (!restart)",
+    "prefix_set": "Префикс сменён на {prefix}",
     "description": "Управление алиасами и префиксом",
     "commands": {
       "alias": "Создать алиас",
