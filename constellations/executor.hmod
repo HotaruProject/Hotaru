@@ -1,7 +1,7 @@
 HOTARU = {
     "id": "executor",
     "version": "3.2.0",
-    "commands": ["sh", "py"],
+    "commands": ["sh", "py", "kill"],
     "capabilities": ["mt", "files", "net", "state"],
 }
 
@@ -14,14 +14,15 @@ import io
 import os
 import re
 import sys
+import pty
 import textwrap
 import time
 import traceback
 from typing import Any
 
 
-_ACTIVE: dict[str, Any] = {"sh": None, "py": None}
-
+_ACTIVE_SH: dict[int, Any] = {}
+_ACTIVE_PY: dict[int, Any] = {}
 
 _TG_REPLACEMENTS: list[tuple[str, str]] = [
     ("\u00a0", " "),
@@ -203,6 +204,116 @@ def _tools(ctx: Any) -> Any:
         return TOOLS
     except Exception:
         return None
+
+
+class OutputUpdater:
+    def __init__(self, ctx: Any, cmd: str, is_py: bool = False):
+        self.ctx = ctx
+        self.cmd = cmd
+        self.is_py = is_py
+        self.buffer = ""
+        self.last_update = 0.0
+        self.msg = None
+        self.closed = False
+        self.start_time = time.perf_counter()
+        self.ansi_re = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+        self._sending = False
+        self._pending = False
+
+    def _strip_ansi(self, text: str) -> str:
+        text = self.ansi_re.sub('', text)
+        lines = text.split('\n')
+        res = []
+        for line in lines:
+            parts = line.split('\r')
+            valid_parts = [p for p in parts if p]
+            if valid_parts:
+                res.append(valid_parts[-1])
+            elif parts:
+                res.append('')
+        return '\n'.join(res)
+
+    async def _send(self, sections: list | None = None, returncode: int | None = None) -> None:
+        elapsed = (time.perf_counter() - self.start_time) * 1000
+        buffer_str = self._strip_ansi(self.buffer).strip()
+
+        if sections is None:
+            sections = []
+            sections.append(("code" if self.is_py else "command", self.cmd, True))
+            if buffer_str:
+                sections.append(("output", buffer_str, True))
+            else:
+                sections.append(("output", "Running...", False))
+
+        if returncode is not None:
+            sections.append(("result", f"Exit code: {returncode}", False))
+
+        header = f"<code>{elapsed:.1f}ms</code>"
+        parts = [f"<b>Executor</b> | {header}\n"]
+        for entry in sections:
+            title, content, is_code = entry[0], entry[1], entry[2]
+            lang = entry[3] if len(entry) > 3 else None
+            if not content:
+                continue
+            esc = _escape(_truncate(_censor(content, self.ctx)))
+            if is_code:
+                block = f'<pre><code class="language-{lang}">{esc}</code></pre>' if lang else f"<pre>{esc}</pre>"
+                parts.append(f"<b>{_escape(title)}:</b>\n{block}")
+            else:
+                parts.append(f"<code>{_escape(title)}:</code> {esc}")
+
+        text = "\n\n".join(parts)
+
+        if not self.msg:
+            self.msg = await self.ctx.respond(text, parse_mode="HTML", rich=False)
+        else:
+            try:
+                if hasattr(self.msg, "message") and hasattr(self.msg.message, "edit"):
+                    await self.msg.message.edit(text, parse_mode="HTML")
+                elif hasattr(self.msg, "edit"):
+                    await self.msg.edit(text, parse_mode="HTML")
+                else:
+                    await self.ctx.respond(text, parse_mode="HTML", rich=False, output="edit")
+            except Exception:
+                pass
+
+    async def update(self, new_text: str, force: bool = False) -> None:
+        if self.closed:
+            return
+        self.buffer += new_text
+        now = time.time()
+        self._pending = True
+        if force or now - self.last_update > 2.0:
+            if not self._sending:
+                asyncio.create_task(self._trigger_send())
+
+    async def _trigger_send(self) -> None:
+        self._sending = True
+        while self._pending and not self.closed:
+            self._pending = False
+            self.last_update = time.time()
+            try:
+                await self._send()
+            except Exception:
+                pass
+            if self._pending and not self.closed:
+                await asyncio.sleep(2.0)
+        self._sending = False
+
+    async def finish(self, sections: list | None = None, returncode: int | None = None) -> None:
+        self.closed = True
+        await self._send(sections, returncode=returncode)
+
+
+class StreamInterceptor(io.StringIO):
+    def __init__(self, updater: OutputUpdater) -> None:
+        super().__init__()
+        self.updater = updater
+
+    def write(self, s: str) -> int:
+        res = super().write(s)
+        asyncio.create_task(self.updater.update(s))
+        return res
 
 
 async def _send_result(ctx: Any, sections: list, elapsed_ms: float) -> None:
@@ -1039,8 +1150,13 @@ async def command_sh(ctx, invocation):
 
     cmd = _unescape_tg_code(cmd)
 
+    inv_msg_id = getattr(invocation, "message", None)
+    if inv_msg_id:
+        inv_msg_id = getattr(inv_msg_id, "id", None)
+
     start_time = time.perf_counter()
     env = os.environ.copy()
+    env["TERM"] = "xterm"
     bindir = os.path.dirname(sys.executable)
     env["PATH"] = f"{bindir}{os.pathsep}{env.get('PATH', '')}"
     if sys.prefix != getattr(sys, "base_prefix", sys.prefix):
@@ -1055,39 +1171,81 @@ async def command_sh(ctx, invocation):
         pm = "poetry run pip"
     if pm:
         cmd = f"pip() {{ {pm} \"$@\"; }};\n" + cmd
-    
-    process = await asyncio.create_subprocess_shell(
-        cmd,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
+
+    shell = os.environ.get("SHELL", "/bin/bash")
+    master, slave = pty.openpty()
+
+    process = await asyncio.create_subprocess_exec(
+        shell, "-c", cmd,
+        stdin=slave,
+        stdout=slave,
+        stderr=slave,
         env=env,
     )
-    _ACTIVE["sh"] = process
+    os.close(slave)
+    os.set_blocking(master, False)
+    updater = OutputUpdater(ctx, cmd)
+    updater.master_fd = master
+    updater.process = process
 
+    if inv_msg_id:
+        _ACTIVE_SH[inv_msg_id] = process
+    if not skip_output:
+        await updater.update("", force=True)
+        if updater.msg:
+            msg_obj = getattr(updater.msg, "message", updater.msg)
+            resp_msg_id = getattr(msg_obj, "id", None)
+            if resp_msg_id:
+                _ACTIVE_SH[resp_msg_id] = process
+
+    async def read_pty():
+        while True:
+            try:
+                data = os.read(master, 4096)
+                if data:
+                    text = data.decode("utf-8", errors="replace")
+                    if not skip_output:
+                        await updater.update(text)
+                else:
+                    break
+            except BlockingIOError:
+                await asyncio.sleep(0.1)
+            except OSError:
+                break
+
+    reader_task = asyncio.create_task(read_pty())
+    
     try:
-        stdout_bytes, stderr_bytes = await process.communicate()
+        await process.wait()
+        try:
+            await asyncio.wait_for(reader_task, timeout=1.0)
+        except asyncio.TimeoutError:
+            pass
     except asyncio.CancelledError:
         process.kill()
-        stdout_bytes, stderr_bytes = b"", b"Process terminated"
+        await process.wait()
     finally:
-        _ACTIVE["sh"] = None
-        elapsed = (time.perf_counter() - start_time) * 1000
+        if not reader_task.done():
+            reader_task.cancel()
+        os.close(master)
+
+    if inv_msg_id and inv_msg_id in _ACTIVE_SH:
+        del _ACTIVE_SH[inv_msg_id]
+    if updater.msg:
+        msg_obj = getattr(updater.msg, "message", updater.msg)
+        resp_msg_id = getattr(msg_obj, "id", None)
+        if resp_msg_id and resp_msg_id in _ACTIVE_SH:
+            del _ACTIVE_SH[resp_msg_id]
 
     if skip_output:
         return
 
-    stdout_str = stdout_bytes.decode("utf-8", errors="replace").strip()
-    stderr_str = stderr_bytes.decode("utf-8", errors="replace").strip()
-
+    buffer_str = updater._strip_ansi(updater.buffer).strip()
     sections = [("command", cmd, True)]
-    if stdout_str:
-        sections.append(("stdout", stdout_str, True))
-    if stderr_str:
-        sections.append(("stderr", stderr_str, True))
-    if not stdout_str and not stderr_str:
-        sections.append(("result", f"Exit code: {process.returncode}", False))
-
-    await _send_result(ctx, sections, elapsed)
+    if buffer_str:
+        sections.append(("output", buffer_str, True))
+    
+    await updater.finish(sections, returncode=process.returncode)
 
 
 async def command_py(ctx, invocation):
@@ -1145,11 +1303,16 @@ async def command_py(ctx, invocation):
     env["reply"] = env["r"]
     env["rep"] = env["r"]
 
-    stdout_buf = io.StringIO()
-    stderr_buf = io.StringIO()
+    inv_msg_id = getattr(invocation, "message", None)
+    if inv_msg_id:
+        inv_msg_id = getattr(inv_msg_id, "id", None)
+
+    updater = OutputUpdater(ctx, raw_code, is_py=True)
+    if not skip_output:
+        await updater.update("", force=True)
+
     result_val = None
     error_trace = None
-    start_time = time.perf_counter()
 
     async def _task():
         nonlocal result_val
@@ -1165,7 +1328,17 @@ async def command_py(ctx, invocation):
         result_val = await runner()
 
     eval_task = asyncio.create_task(_task())
-    _ACTIVE["py"] = eval_task
+    updater.process = eval_task
+    if inv_msg_id:
+        _ACTIVE_PY[inv_msg_id] = eval_task
+    if not skip_output and updater.msg:
+        msg_obj = getattr(updater.msg, "message", updater.msg)
+        resp_msg_id = getattr(msg_obj, "id", None)
+        if resp_msg_id:
+            _ACTIVE_PY[resp_msg_id] = eval_task
+
+    stdout_buf = StreamInterceptor(updater)
+    stderr_buf = StreamInterceptor(updater)
 
     try:
         with contextlib.redirect_stdout(stdout_buf), contextlib.redirect_stderr(stderr_buf):
@@ -1175,20 +1348,21 @@ async def command_py(ctx, invocation):
     except Exception:
         error_trace = traceback.format_exc()
     finally:
-        _ACTIVE["py"] = None
-        elapsed = (time.perf_counter() - start_time) * 1000
+        if inv_msg_id and inv_msg_id in _ACTIVE_PY:
+            del _ACTIVE_PY[inv_msg_id]
+        if updater.msg:
+            msg_obj = getattr(updater.msg, "message", updater.msg)
+            resp_msg_id = getattr(msg_obj, "id", None)
+            if resp_msg_id and resp_msg_id in _ACTIVE_PY:
+                del _ACTIVE_PY[resp_msg_id]
 
     if skip_output:
         return
 
-    stdout_str = stdout_buf.getvalue().strip()
-    stderr_str = stderr_buf.getvalue().strip()
-
     sections = [("code", raw_code, True)]
-    if stdout_str:
-        sections.append(("stdout", stdout_str, True))
-    if stderr_str:
-        sections.append(("stderr", stderr_str, True))
+    buffer_str = updater._strip_ansi(updater.buffer).strip()
+    if buffer_str:
+        sections.append(("output", buffer_str, True))
     if result_val is not None:
         rendered = str(result_val) if isinstance(result_val, str) else repr(result_val)
         sections.append(("return", rendered if rendered else "''", True, "python"))
@@ -1197,4 +1371,39 @@ async def command_py(ctx, invocation):
     if len(sections) == 1:
         sections.append(("result", "Done ✓", False))
 
-    await _send_result(ctx, sections, elapsed)
+    await updater.finish(sections)
+    
+async def command_kill(ctx, invocation):
+    reply = await _get_reply(ctx, invocation)
+    if not reply:
+        await ctx.respond("<b>Reply to a running py/sh output message to kill it.</b>", parse_mode="HTML")
+        return
+        
+    target_id = getattr(reply, "id", None)
+    if not target_id:
+        target_id = getattr(reply, "message_id", None)
+        
+    killed = False
+    
+    if target_id in _ACTIVE_SH:
+        try:
+            _ACTIVE_SH[target_id].kill()
+            killed = True
+        except Exception:
+            pass
+        del _ACTIVE_SH[target_id]
+        
+    if target_id in _ACTIVE_PY:
+        try:
+            _ACTIVE_PY[target_id].cancel()
+            killed = True
+        except Exception:
+            pass
+        del _ACTIVE_PY[target_id]
+        
+    if killed:
+        await ctx.respond("<b>Process killed!</b>", parse_mode="HTML")
+    else:
+        await ctx.respond("<b>No active process found for this message.</b>", parse_mode="HTML")
+
+
