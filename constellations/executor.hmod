@@ -1,10 +1,11 @@
 HOTARU = {
     "id": "executor",
-    "version": "2.0.0",
+    "version": "2.1.0",
     "commands": ["sh", "py"],
     "capabilities": ["mt", "files", "net", "state"],
 }
 
+import ast
 import asyncio
 import contextlib
 import html
@@ -20,24 +21,30 @@ from typing import Any
 _ACTIVE: dict[str, Any] = {"sh": None, "py": None}
 
 
+async def _auto_await(value):
+    while asyncio.iscoroutine(value) or asyncio.isfuture(value):
+        value = await value
+    return value
+
+
 def _wrap_eval_code(code: str):
     code = code.strip(); lines = code.splitlines()
-    keywords = (
-        "return ",
-        "import ",
-        "from ",
-        "for ",
-        "while ",
-        "if ",
-        "def ",
-        "class ",
-        "try:",
-        "except:",
-        "finally:"
-    )
-    if len(lines) == 1 and not lines[0].startswith(keywords):
-        return f"async def __executor_runner__(): return {lines[0]}"
-
+    try:
+        tree = ast.parse(code)
+    except SyntaxError:
+        indented = "\n".join(f"    {line}" for line in lines)
+        return f"async def __executor_runner__():\n{indented}"
+    if not tree.body:
+        indented = "\n".join(f"    {line}" for line in lines)
+        return f"async def __executor_runner__():\n{indented}"
+    last = tree.body[-1]
+    if isinstance(last, ast.Expr) and not isinstance(last.value, (ast.Yield, ast.YieldFrom)):
+        if len(tree.body) > 1 and tree.body[-2].end_lineno >= last.lineno:
+            head = "\n".join(f"    {ast.unparse(stmt)}" for stmt in tree.body[:-1])
+        else:
+            head = "\n".join(f"    {line}" for line in lines[: last.lineno - 1])
+        tail = f"    return await _auto_await({ast.unparse(last.value)})"
+        return f"async def __executor_runner__():\n{head}\n{tail}"
     indented = "\n".join(f"    {line}" for line in lines)
     return f"async def __executor_runner__():\n{indented}"
 
