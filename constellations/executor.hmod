@@ -231,15 +231,37 @@ def _censor(ret: str, ctx: Any) -> str:
     return ret
 
 
+def _tools(ctx: Any) -> Any:
+    tools = getattr(ctx, "tools", None)
+    if tools is not None and hasattr(tools, "rich_to_html"):
+        return tools
+    if hasattr(ctx, "runtime") and ctx.runtime is not None:
+        runtime_tools = getattr(ctx.runtime, "tools", None)
+        if runtime_tools is not None and hasattr(runtime_tools, "rich_to_html"):
+            return runtime_tools
+    try:
+        from relay.toolkit import TOOLS
+
+        return TOOLS
+    except Exception:
+        return None
+
+
 async def _send_result(ctx: Any, sections: list, elapsed_ms: float) -> None:
     header = f"<code>{elapsed_ms:.1f}ms</code>"
     parts = [f"<b>Executor</b> | {header}\n"]
-    for title, content, is_code in sections:
+    for entry in sections:
+        title, content, is_code = entry[0], entry[1], entry[2]
+        lang = entry[3] if len(entry) > 3 else None
         if not content:
             continue
         esc = _escape(_truncate(_censor(content, ctx)))
         if is_code:
-            parts.append(f"<b>{_escape(title)}:</b>\n<pre>{esc}</pre>")
+            if lang:
+                block = f'<pre><code class="language-{lang}">{esc}</code></pre>'
+            else:
+                block = f"<pre>{esc}</pre>"
+            parts.append(f"<b>{_escape(title)}:</b>\n{block}")
         else:
             parts.append(f"<code>{_escape(title)}:</code> {esc}")
     await ctx.respond("\n\n".join(parts), parse_mode="HTML", rich=False)
@@ -280,87 +302,21 @@ def _get_raw_text(invocation: Any) -> str:
 
 # ─── Reply helpers ────────────────────────────────────────────────────────────
 
-def _reply_header_id(invocation: Any) -> int | None:
-    msg = getattr(invocation, "message", None)
-    if msg is None:
-        return None
-    reply = msg.get("reply_to") if hasattr(msg, "get") else None
-    if not isinstance(reply, dict):
-        return None
-    rid = reply.get("reply_to_msg_id") or reply.get("reply_to_id")
-    return rid if isinstance(rid, int) else None
-
-
-async def _fetch_reply_message(ctx: Any, invocation: Any) -> dict | None:
-    rid = _reply_header_id(invocation)
-    chat_id = None
-    msg = getattr(invocation, "message", None)
-    if msg is not None:
-        chat_id = getattr(msg, "chat_id", None)
-    if rid is None or not isinstance(chat_id, int):
-        return None
-    try:
-        raw = await ctx.mt(
-            "messages.getHistory",
-            peer=chat_id,
-            offset_id=rid + 1,
-            offset_date=0,
-            add_offset=-1,
-            limit=3,
-            max_id=0,
-            min_id=0,
-            hash=0,
-        )
-    except Exception:
-        return None
-    res = raw.get("result", raw) if isinstance(raw, dict) else {}
-    msgs = res.get("messages") if isinstance(res, dict) else None
-    for item in msgs or []:
-        if isinstance(item, dict) and item.get("id") == rid:
-            return item
-    return None
-
-
-def _reply_from_dict(data: dict) -> Any:
-    class _ReplyView:
-        def __init__(self, d):
-            self.__dict__["_d"] = d
-
-        @property
-        def text(self):
-            return self._d.get("message") or self._d.get("text") or ""
-
-        @property
-        def id(self):
-            return self._d.get("id")
-
-        @property
-        def chat_id(self):
-            return self._d.get("chat_id")
-
-        @property
-        def user_id(self):
-            fid = self._d.get("from_id")
-            if isinstance(fid, dict):
-                return fid.get("user_id")
-            return fid
-
-        def get(self, key, default=None):
-            return self._d.get(key, default)
-
-    return _ReplyView(data)
-
-
 async def _get_reply(ctx: Any, invocation: Any) -> Any:
-    for obj in (invocation, ctx):
-        for attr in ("reply", "reply_message", "reply_to_message"):
-            candidate = getattr(obj, attr, None)
-            if candidate is not None:
-                return candidate
-    data = await _fetch_reply_message(ctx, invocation)
-    if data is not None:
-        return _reply_from_dict(data)
-    return None
+    reply = None
+    fetch = getattr(ctx, "reply", None)
+    if callable(fetch):
+        try:
+            reply = await fetch()
+        except Exception:
+            reply = None
+    if reply is None:
+        for obj in (invocation, ctx):
+            for attr in ("reply", "reply_message", "reply_to_message"):
+                candidate = getattr(obj, attr, None)
+                if candidate is not None:
+                    return candidate
+    return reply
 
 
 async def _reply_text(ctx: Any, invocation: Any) -> str | None:
@@ -419,12 +375,44 @@ class _MsgProxy:
                     return v
         return default
 
+    def _rich_html(self) -> str:
+        raw = self.__dict__["_raw"]
+        if raw is None:
+            return ""
+        rich = None
+        if hasattr(raw, "get"):
+            rich = raw.get("rich_message") or raw.get("richMessage")
+        if not isinstance(rich, dict):
+            return ""
+        tools = _tools(self.__dict__["_ctx"])
+        render = getattr(tools, "rich_to_html", None) if tools is not None else None
+        if render is None:
+            return ""
+        try:
+            return render(raw)
+        except Exception:
+            return ""
+
     # ── text ─────────────────────────────────────────────────────────────────
 
     @property
-    def text(self) -> str:
-        """Full raw message text (includes command prefix for source msg)."""
+    def plain_text(self) -> str:
+        """Raw plain text, no HTML formatting."""
         return self._g("text", "raw_text", "message", "caption") or ""
+
+    @property
+    def text(self) -> str:
+        """HTML-formatted text (same as .html). Use .plain_text for raw text."""
+        return self.html
+
+    @property
+    def html(self) -> str:
+        """HTML rendering: rich_message blocks (if any) or escaped plain text."""
+        rich = self._rich_html()
+        if rich:
+            return rich
+        plain = self._g("text", "raw_text", "message", "caption") or ""
+        return html.escape(plain) if plain else ""
 
     @property
     def content(self) -> str:
@@ -590,7 +578,83 @@ class _MsgProxy:
         return self.__dict__.get("_raw") is not None
 
     def __repr__(self) -> str:
-        return f"<Msg id={self.id} chat={self.chat_id} text={self.text[:60]!r}>"
+        raw = self.__dict__.get("_raw")
+        if raw is None:
+            return "MsgProxy(empty)"
+
+        def _clean_dict(d: dict) -> dict:
+            cleaned = {}
+            for k, v in d.items():
+                if k in ("raw", "bytes", "access_hash", "file_reference"):
+                    continue
+                if isinstance(v, dict):
+                    cleaned[k] = _clean_dict(v)
+                elif isinstance(v, list):
+                    cleaned[k] = [_clean_dict(i) if isinstance(i, dict) else i for i in v]
+                else:
+                    cleaned[k] = v
+            return cleaned
+
+        import datetime
+
+        def _format_val(v: Any, indent: int) -> str:
+            if isinstance(v, dict):
+                if not v:
+                    return "{}"
+                type_name = v.get("_", "dict")
+                # Hide the '_' key itself if it's there
+                items = [(k, val) for k, val in v.items() if k != "_"]
+                if not items:
+                    return f"{type_name}()"
+                lines = [f"{type_name}("]
+                for k, val in items:
+                    lines.append(" " * (indent + 4) + f"{k}={_format_val(val, indent + 4)},")
+                lines.append(" " * indent + ")")
+                return "\n".join(lines)
+            elif isinstance(v, list):
+                if not v:
+                    return "[]"
+                lines = ["["]
+                for val in v:
+                    lines.append(" " * (indent + 4) + f"{_format_val(val, indent + 4)},")
+                lines.append(" " * indent + "]")
+                return "\n".join(lines)
+            elif isinstance(v, datetime.datetime):
+                return repr(v)
+            elif isinstance(v, str):
+                return repr(v)
+            else:
+                return repr(v)
+
+        data = {}
+        if hasattr(raw, "items"):
+            data = dict(raw)
+        elif hasattr(raw, "__dict__"):
+            data = vars(raw)
+            data = {k: v for k, v in data.items() if not k.startswith("_")}
+            
+        data = _clean_dict(data)
+        
+        # Ensure we always add basic info if it's missing from raw or named differently
+        if "id" not in data and self.id is not None:
+            data["id"] = self.id
+        
+        # Override with rich_message and html for clarity if they exist
+        rich_html = self._rich_html()
+        if rich_html:
+            data["html"] = rich_html
+            
+        plain = self.plain_text
+        if plain and "text" not in data and "message" not in data:
+            data["text"] = plain
+
+        lines = ["Message("]
+        for k, v in data.items():
+            if v is not None and v != {} and v != []:
+                lines.append(f"    {k}={_format_val(v, 4)},")
+        lines.append(")")
+        return "\n".join(lines)
+
 
     # ── HTML formatting ────────────────────────────────────────────────────────
 
@@ -678,11 +742,17 @@ class _MsgProxy:
         )
 
     async def get_sender(self) -> Any:
-        """Resolve the full sender user object via MTProto."""
+        """Resolve the full sender user object via entity cache."""
         ctx = self.__dict__["_ctx"]
         uid = self.user_id
         if uid is None:
             return None
+        resolve = getattr(ctx, "resolve", None)
+        if callable(resolve):
+            try:
+                return await resolve(uid)
+            except Exception:
+                return None
         return await ctx.mt(
             "users.getUsers",
             id=[{"_": "inputUser", "user_id": uid, "access_hash": 0}],
@@ -890,14 +960,18 @@ def _build_py_helpers(ctx: Any, invocation: Any, reply: Any) -> dict[str, Any]:
         - with msg arg: returns that message's text
         """
         if msg is not None:
-            return _attr_or(msg, "text", "raw_text", "message", "caption")
+            if hasattr(msg, "html"):
+                html_text = msg.html
+            else:
+                html_text = _attr_or(msg, "text", "raw_text", "message", "caption")
+            return html_text or None
         if r_proxy:
-            return r_proxy.text or None
+            return r_proxy.html or None
         return m_proxy.content or None
 
     def get_reply_text() -> str | None:
         """Text of the replied-to message."""
-        return r_proxy.text if r_proxy else None
+        return (r_proxy.html if r_proxy else None) or None
 
     def get_args() -> str:
         """Text after the command name."""
@@ -1265,8 +1339,9 @@ async def command_py(ctx, invocation):
     if stderr_str:
         sections.append(("stderr", stderr_str, True))
     if result_val is not None:
-        type_name = type(result_val).__name__
-        sections.append((f"return ({type_name})", repr(result_val), True))
+        rendered = str(result_val) if isinstance(result_val, str) else repr(result_val)
+        # Use None-safe fallback so empty string shows as explicit placeholder
+        sections.append(("return", rendered if rendered else "''", True, "python"))
     if error_trace:
         sections.append(("traceback", error_trace, True))
     if len(sections) == 1:  # only "code" section → nothing happened

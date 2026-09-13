@@ -75,6 +75,9 @@ class Kernel:
             "attachment": self._sandbox_attachment(message),
             "reply_attachment": self._sandbox_attachment(self._reply_of(message)),
         }
+        reply_header = message.get("reply_to") if hasattr(message, "get") else None
+        if isinstance(reply_header, dict):
+            payload["reply_to"] = reply_header
         topic_id = getattr(message, "topic_id", None) or getattr(message, "message_thread_id", None)
         if isinstance(topic_id, int) and topic_id > 0:
             payload["topic_id"] = topic_id
@@ -146,11 +149,7 @@ class Kernel:
             name=f"hotaru:cmd:{spec.name}",
         )
         self._running[task_key] = task
-        try:
-            return await task
-        finally:
-            if self._running.get(task_key) is task:
-                self._running.pop(task_key, None)
+        task.add_done_callback(lambda t: self._running.pop(task_key, None) if self._running.get(task_key) is t else None)
 
     async def _execute(self, spec: Any, invocation: CommandInvocation, message: Any) -> object | None:
         try:
@@ -199,6 +198,10 @@ class Kernel:
             "attachment": self._sandbox_attachment(invocation.message),
             "reply_attachment": self._sandbox_attachment(self._reply_of(invocation.message)),
         }
+        message = invocation.message
+        reply_header = message.get("reply_to") if hasattr(message, "get") else None
+        if isinstance(reply_header, dict):
+            payload["reply_to"] = reply_header
         runtime = getattr(self.context_factory, "runtime", None)
         lexicon = getattr(runtime, "lexicon", None)
         if runtime is not None and lexicon is not None:
