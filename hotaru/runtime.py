@@ -25,6 +25,10 @@ from relay.inline_tl import answer_tl
 from relay.sandbox import ModuleSandbox
 from relay.caps import CapabilityHost, describe as describe_caps
 from relay.firewall import install as install_firewall, trusted_scope
+from goygram.sugar import html_to_entities, extract_sent_message
+from goygram import GoyGram, Session
+from goygram.types.kbd import kbd_to_tl
+from goygram.security import bootstrap_session
 
 log = logging.getLogger(__name__)
 from .kernel import Kernel
@@ -122,8 +126,6 @@ class Runtime:
         self.config.validate()
         if self.app is not None:
             return self.app
-        from goygram import GoyGram, Session
-
         self.config.session_dir.mkdir(parents=True, exist_ok=True)
         install_firewall(self.config.session_dir, self.config.session_dir / f"{self.config.session_name}.vault", self.config.session_dir / f"{self.config.session_name}.session")
         session_name = str(self.config.session_dir / self.config.session_name)
@@ -283,9 +285,6 @@ class Runtime:
             rebound.append(current)
         bot_app = self.inline.bot_app
         if getattr(bot_app, "mt", None) is not None:
-            from goygram.sugar import html_to_entities
-            from goygram.types.kbd import kbd_to_tl
-
             plain, ents = html_to_entities(text)
             edit_data = {"peer": chat_id, "id": form_id, "message": plain}
             if ents:
@@ -633,8 +632,6 @@ class Runtime:
         )
         if options.get("delete_source", True):
             await self._delete_inline_source(command, chat_id, message_id)
-        from goygram.sugar import extract_sent_message
-
         sent = extract_sent_message(sent_result)
         return sent if isinstance(sent, dict) and isinstance(sent.get("id"), int) else result
 
@@ -1024,7 +1021,8 @@ class Runtime:
                 first = body if isinstance(body, dict) else {}
             self._premium_cache = bool(first.get("premium"))
         except Exception:
-            self._premium_cache = False
+            log.error("premium check failed", exc_info=True)
+            return False
         return self._premium_cache
 
     def set_language(self, language: str) -> str:
@@ -1713,8 +1711,6 @@ class Runtime:
     async def authorize(self) -> None:
         if self.app is None or self.app.mt is None:
             return
-        from goygram.security import bootstrap_session
-
         with trusted_scope():
             fresh = self.app.session.path is not None and not self.app.session.path.exists()
             result = await bootstrap_session(

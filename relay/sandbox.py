@@ -13,8 +13,8 @@ from typing import Any
 from . import toolkit as _toolkit
 from goygram.rich import rich_html
 from goygram.sugar import html_to_entities
-from hotaru.callbacks import CallbackBinding
 from hotaru.plainfmt import rich_to_plain
+from goygram.types.kbd import kbd_to_tl
 
 _TOOLKIT_SOURCE = Path(_toolkit.__file__).read_text(encoding="utf-8")
 
@@ -1280,20 +1280,17 @@ class ModuleSandbox:
                     raise PermissionError("callback context is unavailable")
                 action = data.get("action")
                 if action == "answer":
-                    from .firewall import trusted_scope
                     with trusted_scope():
                         if getattr(callback, "src", None) == "mt":
                             value = await callback.app.mt_req("messages.setBotCallbackAnswer", query_id=int(callback.id), message=str(data.get("text", "")), alert=bool(data.get("alert", False)), cache_time=0)
                         else:
                             value = await callback.app.bot_req("answerCallbackQuery", callback_query_id=str(callback.id), text=str(data.get("text", "")), show_alert=bool(data.get("alert", False)))
                 elif action == "edit":
-                    from .firewall import trusted_scope
                     inline_mid = getattr(callback, "inline_message_id", None)
                     if getattr(callback, "src", None) == "mt" and inline_mid is not None:
                         params = {"id": inline_mid if isinstance(inline_mid, dict) else {"_": "inputBotInlineMessageID", "raw": inline_mid}, "message": str(data.get("text", ""))}
                         markup = data.get("reply_markup")
                         if markup is not None:
-                            from goygram.types.kbd import kbd_to_tl
                             tl_markup = kbd_to_tl(markup)
                             if tl_markup is not None:
                                 params["reply_markup"] = tl_markup
@@ -1314,8 +1311,6 @@ class ModuleSandbox:
 
     async def _trusted_respond(self, module_id: str, source: Any, payload: dict[str, Any]) -> Any:
         import secrets as _secrets
-
-        from .firewall import trusted_scope
 
         content = payload.get("content")
         kwargs = dict(payload.get("kwargs") or {})
@@ -1454,6 +1449,7 @@ class ModuleSandbox:
                     if router is not None:
                         if not router.module_action_exists(module_id, action_id):
                             router.register_module_action_id(module_id, action_id, self._make_sandbox_cb(module_id, action_id))
+                        from hotaru.callbacks import CallbackBinding
                         binding = CallbackBinding(int(owner or 0), None, 0)
                         item["callback_data"] = router.issue_module(module_id, action_id, binding, btn.get("payload"))
                     else:

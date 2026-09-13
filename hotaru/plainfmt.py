@@ -19,11 +19,13 @@ class _Converter(HTMLParser):
         at = dict(attrs)
         if tag in _KEEP:
             self._emit(self.get_starttag_text() or f"<{tag}>")
-        elif tag in ("p", "section", "details"):
+        elif tag in ("p", "section"):
             pass
+        elif tag == "details":
+            self._emit('<blockquote expandable="true">')
         elif tag == "summary":
             self._emit("<b>")
-            if self.out and self.out[-1] not in ("\n", "<br>") and any(self.out):
+            if self.out and self.out[-1] not in ("\n", "<br>", '<blockquote expandable="true">') and any(self.out):
                 self.out.insert(-1, "\n")
         elif tag in ("tg-emoji", "tg-time", "tg-button", "button", "tg-button-row"):
             if tag == "tg-emoji":
@@ -62,8 +64,10 @@ class _Converter(HTMLParser):
     def handle_endtag(self, tag: str) -> None:
         if tag in _KEEP:
             self._emit(f"</{tag}>")
-        elif tag in ("p", "section", "details"):
+        elif tag in ("p", "section"):
             self._emit("<br>")
+        elif tag == "details":
+            self._emit("</blockquote>")
         elif tag == "summary":
             self._emit("</b><br>")
         elif tag in ("tg-emoji", "tg-time", "tg-button", "button", "tg-button-row"):

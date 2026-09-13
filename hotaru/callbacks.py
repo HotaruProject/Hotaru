@@ -12,6 +12,8 @@ from typing import Any
 
 from goygram import ext
 from relay.firewall import module_scope
+from goygram.sugar import html_to_entities
+from goygram.types.kbd import kbd_to_tl
 
 
 class CallbackDenied(PermissionError):
@@ -46,9 +48,6 @@ class CallbackContext:
         inline_mid = getattr(self, "inline_message_id", None)
         app = getattr(self, "app", None)
         if getattr(self, "src", None) == "mt" and app is not None:
-            from goygram.sugar import html_to_entities
-            from goygram.types.kbd import kbd_to_tl
-
             data = dict(kwargs)
             raw_kbd = data.pop("reply_markup", data.pop("kbd", None))
             if raw_kbd is not None:
