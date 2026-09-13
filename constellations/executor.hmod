@@ -23,38 +23,31 @@ from typing import Any
 _ACTIVE: dict[str, Any] = {"sh": None, "py": None}
 
 
-# ─── Code sanitiser ───────────────────────────────────────────────────────────
-
-# Characters Telegram silently replaces / mangles inside code blocks
 _TG_REPLACEMENTS: list[tuple[str, str]] = [
-    ("\u00a0", " "),        # non-breaking space → regular space
-    ("\u202f", " "),        # narrow no-break space
-    ("\u2009", " "),        # thin space
-    ("\u2019", "'"),        # right single quotation mark → apostrophe
-    ("\u2018", "'"),        # left single quotation mark
-    ("\u201c", '"'),        # left double quotation mark
-    ("\u201d", '"'),        # right double quotation mark
-    ("\u2013", "-"),        # en-dash
-    ("\u2014", "--"),       # em-dash
-    ("\u2026", "..."),      # ellipsis
-    ("\u00b7", "."),        # middle dot
-    ("\u2022", "-"),        # bullet
-    ("\ufeff", ""),         # BOM / zero-width no-break space
-    ("\u200b", ""),         # zero-width space
-    ("\u200c", ""),         # zero-width non-joiner
-    ("\u200d", ""),         # zero-width joiner
+    ("\u00a0", " "),
+    ("\u202f", " "),
+    ("\u2009", " "),
+    ("\u2019", "'"),
+    ("\u2018", "'"),
+    ("\u201c", '"'),
+    ("\u201d", '"'),
+    ("\u2013", "-"),
+    ("\u2014", "--"),
+    ("\u2026", "..."),
+    ("\u00b7", "."),
+    ("\u2022", "-"),
+    ("\ufeff", ""),
+    ("\u200b", ""),
+    ("\u200c", ""),
+    ("\u200d", ""),
 ]
 
-# Telegram italic markers that can corrupt Python underscores/asterisks
-# e.g. __init__ → *init* if Telegram decides to parse it
 _TG_MARKDOWN_PATTERNS: list[tuple[re.Pattern, str]] = [
-    # Restore doubled underscores that became italic markdown (*word* → __word__)
     (re.compile(r"\*([A-Za-z_][A-Za-z0-9_]*)\*"), r"__\1__"),
 ]
 
 
 def _unescape_tg_code(code: str) -> str:
-    """Undo common Telegram message text mangling that breaks Python code."""
     for bad, good in _TG_REPLACEMENTS:
         code = code.replace(bad, good)
     for pattern, replacement in _TG_MARKDOWN_PATTERNS:
@@ -68,14 +61,6 @@ _BLOCK_STARTERS = re.compile(
 
 
 def _fix_indentation(code: str) -> str:
-    """
-    Attempt to fix broken indentation caused by Telegram's copy-paste rendering.
-
-    Strategy:
-    - Strip common leading indent (textwrap.dedent).
-    - Detect lines that follow a block-opening statement (ends with ':') but have
-      zero indent → add 4 spaces relative to the block header.
-    """
     code = textwrap.dedent(code)
     lines = code.splitlines()
     result: list[str] = []
@@ -90,7 +75,6 @@ def _fix_indentation(code: str) -> str:
             continue
 
         if indent_next and not line[0].isspace():
-            # This line should be indented but isn't – fix it
             result.append("    " * (current_indent + 1) + stripped)
         else:
             result.append(line)
@@ -104,27 +88,12 @@ def _fix_indentation(code: str) -> str:
 
 
 def _sanitise_code(code: str) -> str:
-    """Full sanitisation pipeline: unescape TG mangling then fix indentation."""
     code = _unescape_tg_code(code)
     code = _fix_indentation(code)
     return code
 
 
-# ─── AST-based code wrapper ───────────────────────────────────────────────────
-
 def _wrap_eval_code(code: str) -> str:
-    """
-    Wrap arbitrary code into ``async def __executor_runner__()``.
-
-    Rules (in order):
-    1. Empty → pass.
-    2. Single bare expression → ``return await _auto_await(expr)``.
-    3. Last statement is a bare expression, rest are statements → wrap all,
-       convert last to ``return await _auto_await(last_expr)``.
-    4. Code is already a single async/sync function def → exec, then call it.
-    5. Everything else → wrap naively (just indent).
-    6. SyntaxError → try single-expression eval mode, else wrap verbatim.
-    """
     code = code.strip()
     if not code:
         return "async def __executor_runner__():\n    pass"
@@ -132,20 +101,17 @@ def _wrap_eval_code(code: str) -> str:
     try:
         tree = ast.parse(code, mode="exec")
     except SyntaxError:
-        # Try eval mode (single expression without assignment)
         try:
             ast.parse(code, mode="eval")
             return f"async def __executor_runner__():\n    return await _auto_await({code})"
         except SyntaxError:
             pass
-        # Give up and wrap verbatim
         indented = textwrap.indent(code, "    ")
         return f"async def __executor_runner__():\n{indented}"
 
     if not tree.body:
         return "async def __executor_runner__():\n    pass"
 
-    # Case 4: single function / async function definition
     if (
         len(tree.body) == 1
         and isinstance(tree.body[0], (ast.AsyncFunctionDef, ast.FunctionDef))
@@ -160,19 +126,15 @@ def _wrap_eval_code(code: str) -> str:
 
     last = tree.body[-1]
 
-    # Case 5: last is not a returnable bare expression
     if not isinstance(last, ast.Expr) or isinstance(last.value, (ast.Yield, ast.YieldFrom)):
         indented = textwrap.indent(code, "    ")
         return f"async def __executor_runner__():\n{indented}"
 
     last_src = ast.unparse(last.value)
 
-    # Case 2: single bare expression
     if len(tree.body) == 1:
         return f"async def __executor_runner__():\n    return await _auto_await({last_src})"
 
-    # Case 3: multi-statement, last is bare expr
-    # Re-unparse preceding statements to avoid line-slice issues
     preceding = ast.Module(body=tree.body[:-1], type_ignores=[])
     head_src = ast.unparse(preceding)
     head = textwrap.indent(head_src, "    ")
@@ -181,20 +143,16 @@ def _wrap_eval_code(code: str) -> str:
 
 
 async def _auto_await(value: Any) -> Any:
-    """Recursively await coroutines/futures until a plain value is reached."""
     while asyncio.iscoroutine(value) or asyncio.isfuture(value):
         value = await value
     return value
 
-
-# ─── Output helpers ───────────────────────────────────────────────────────────
 
 def _escape(value: str) -> str:
     return html.escape(str(value), quote=False)
 
 
 def _clean_code(text: str) -> str:
-    """Strip markdown code fences."""
     text = text.strip()
     if text.startswith("```") and text.endswith("```"):
         lines = text.splitlines()
@@ -267,40 +225,24 @@ async def _send_result(ctx: Any, sections: list, elapsed_ms: float) -> None:
     await ctx.respond("\n\n".join(parts), parse_mode="HTML", rich=False)
 
 
-# ─── Raw text extraction (preserves newlines) ─────────────────────────────────
-
 def _get_raw_text(invocation: Any) -> str:
-    """
-    Extract the raw text after the command name from the originating message,
-    preserving newlines that ``CommandParser`` destroys via ``.split()``.
-
-    Falls back to ``" ".join(invocation.args)`` if the raw message isn't accessible.
-    """
     msg = getattr(invocation, "message", None)
     if msg is None:
         return " ".join(getattr(invocation, "args", []))
-    # Try text attributes in priority order
     for attr in ("text", "raw_text", "message", "caption"):
         raw = getattr(msg, attr, None)
         if raw is None and hasattr(msg, "get"):
             raw = msg.get(attr)
         if isinstance(raw, str) and raw:
-            # Strip the command prefix+name (e.g. "!py " or ".py ")
             name = getattr(invocation, "name", "")
-            # The message starts with: <prefix><name><whitespace><code>
-            # Find where the code starts by skipping the first "word"
             idx = raw.find(name)
             if idx != -1:
                 after = raw[idx + len(name):]
-                # Strip one leading whitespace character (the space after the command)
                 if after and after[0] in " \t":
                     after = after[1:]
                 return after
-    # Fallback: reconstruct from args (loses newlines but better than crashing)
     return " ".join(getattr(invocation, "args", []))
 
-
-# ─── Reply helpers ────────────────────────────────────────────────────────────
 
 async def _get_reply(ctx: Any, invocation: Any) -> Any:
     reply = None
@@ -335,17 +277,10 @@ async def _reply_text(ctx: Any, invocation: Any) -> str | None:
     return None
 
 
-# ─── Smart proxy objects for !py ─────────────────────────────────────────────
-
 _SENTINEL = object()
 
 
 class _MsgProxy:
-    """
-    Rich message proxy — wraps a raw message and exposes clean attributes,
-    HTML helpers, and async Telegram actions.  Exposed as ``m`` (current
-    message) and ``r`` (reply) inside every !py script.
-    """
 
     def __init__(
         self,
@@ -359,7 +294,6 @@ class _MsgProxy:
         self.__dict__["_inv"] = invocation
         self.__dict__["_is_cmd"] = is_cmd
 
-    # ── internal ──────────────────────────────────────────────────────────────
 
     def _g(self, *attrs: str, default: Any = None) -> Any:
         raw = self.__dict__["_raw"]
@@ -393,21 +327,17 @@ class _MsgProxy:
         except Exception:
             return ""
 
-    # ── text ─────────────────────────────────────────────────────────────────
 
     @property
     def plain_text(self) -> str:
-        """Raw plain text, no HTML formatting."""
         return self._g("text", "raw_text", "message", "caption") or ""
 
     @property
     def text(self) -> str:
-        """HTML-formatted text (same as .html). Use .plain_text for raw text."""
         return self.html
 
     @property
     def html(self) -> str:
-        """HTML rendering: rich_message blocks (if any) or escaped plain text."""
         rich = self._rich_html()
         if rich:
             return rich
@@ -416,24 +346,20 @@ class _MsgProxy:
 
     @property
     def content(self) -> str:
-        """Smart text: args after command (source) or full text (reply/other)."""
         if self.__dict__["_is_cmd"] and self.__dict__["_inv"]:
             return " ".join(getattr(self.__dict__["_inv"], "args", []))
         return self.text
 
     @property
     def args(self) -> str:
-        """Text after the command name."""
         return self.content
 
     @property
     def args_list(self) -> list[str]:
-        """Args split into a list of tokens."""
         if self.__dict__["_is_cmd"] and self.__dict__["_inv"]:
             return list(getattr(self.__dict__["_inv"], "args", []))
         return self.text.split()
 
-    # ── IDs ───────────────────────────────────────────────────────────────────
 
     @property
     def id(self) -> int | None:
@@ -455,7 +381,6 @@ class _MsgProxy:
     def from_id(self) -> int | None:
         return self.user_id
 
-    # ── sender ────────────────────────────────────────────────────────────────
 
     @property
     def first_name(self) -> str:
@@ -472,7 +397,6 @@ class _MsgProxy:
 
     @property
     def name(self) -> str:
-        """Alias for full_name."""
         return self.full_name
 
     @property
@@ -481,7 +405,6 @@ class _MsgProxy:
 
     @property
     def mention(self) -> str:
-        """Inline HTML mention of the sender."""
         uid = self.user_id
         display = html.escape(self.full_name)
         if uid:
@@ -490,7 +413,6 @@ class _MsgProxy:
             return f"@{self.username}"
         return display
 
-    # ── flags ────────────────────────────────────────────────────────────────
 
     @property
     def is_me(self) -> bool:
@@ -506,10 +428,8 @@ class _MsgProxy:
 
     @property
     def src(self) -> str | None:
-        """Transport source ('mt' or 'bot')."""
         return self._g("src", "source")
 
-    # ── media ────────────────────────────────────────────────────────────────
 
     @property
     def has_media(self) -> bool:
@@ -547,17 +467,14 @@ class _MsgProxy:
     def animation(self) -> Any:
         return self._g("animation")
 
-    # ── topic / thread ────────────────────────────────────────────────────────
 
     @property
     def topic_id(self) -> int | None:
         return self._g("topic_id", "message_thread_id", "top_msg_id")
 
-    # ── raw access ────────────────────────────────────────────────────────────
 
     @property
     def raw(self) -> Any:
-        """The underlying raw message object."""
         return self.__dict__["_raw"]
 
     def get(self, key: str, default: Any = None) -> Any:
@@ -602,7 +519,6 @@ class _MsgProxy:
                 if not v:
                     return "{}"
                 type_name = v.get("_", "dict")
-                # Hide the '_' key itself if it's there
                 items = [(k, val) for k, val in v.items() if k != "_"]
                 if not items:
                     return f"{type_name}()"
@@ -635,11 +551,9 @@ class _MsgProxy:
             
         data = _clean_dict(data)
         
-        # Ensure we always add basic info if it's missing from raw or named differently
         if "id" not in data and self.id is not None:
             data["id"] = self.id
         
-        # Override with rich_message and html for clarity if they exist
         rich_html = self._rich_html()
         if rich_html:
             data["html"] = rich_html
@@ -656,34 +570,25 @@ class _MsgProxy:
         return "\n".join(lines)
 
 
-    # ── HTML formatting ────────────────────────────────────────────────────────
-
     def as_mention(self, name: str | None = None) -> str:
-        """Mention with optional custom display name."""
         uid = self.user_id
         display = html.escape(name or self.full_name)
         return f'<a href="tg://user?id={uid}">{display}</a>' if uid else display
 
     def fmt_text(self, text: str | None = None) -> str:
-        """HTML-escape this message's text (or provided string)."""
         return html.escape(str(text if text is not None else self.text))
 
-    # ── async Telegram actions ─────────────────────────────────────────────────
 
     async def respond(self, text: str, **kwargs: Any) -> Any:
-        """Send auto edit/reply response."""
         return await self.__dict__["_ctx"].respond(text, **kwargs)
 
     async def edit(self, text: str, **kwargs: Any) -> Any:
-        """Edit the bot's current message."""
         return await self.__dict__["_ctx"].respond(text, output="edit", **kwargs)
 
     async def reply(self, text: str, **kwargs: Any) -> Any:
-        """Reply to this message."""
         return await self.__dict__["_ctx"].respond(text, output="reply", **kwargs)
 
     async def delete(self) -> Any:
-        """Delete this message."""
         raw = self.__dict__["_raw"]
         deleter = getattr(raw, "delete", None)
         if callable(deleter):
@@ -693,7 +598,6 @@ class _MsgProxy:
             return result
 
     async def pin(self, both_sides: bool = False, **kwargs: Any) -> Any:
-        """Pin this message in the chat."""
         ctx = self.__dict__["_ctx"]
         return await ctx.mt(
             "messages.pinMessage",
@@ -704,12 +608,10 @@ class _MsgProxy:
         )
 
     async def unpin(self) -> Any:
-        """Unpin this message."""
         ctx = self.__dict__["_ctx"]
         return await ctx.mt("messages.unpinMessage", peer=self.chat_id, id=self.id)
 
     async def forward(self, to_chat: Any, **kwargs: Any) -> Any:
-        """Forward this message to another chat."""
         import secrets as _s
         ctx = self.__dict__["_ctx"]
         return await ctx.mt(
@@ -722,7 +624,6 @@ class _MsgProxy:
         )
 
     async def react(self, emoji: str) -> Any:
-        """Send an emoji reaction to this message."""
         ctx = self.__dict__["_ctx"]
         return await ctx.mt(
             "messages.sendReaction",
@@ -732,7 +633,6 @@ class _MsgProxy:
         )
 
     async def unreact(self) -> Any:
-        """Remove all reactions from this message."""
         ctx = self.__dict__["_ctx"]
         return await ctx.mt(
             "messages.sendReaction",
@@ -742,7 +642,6 @@ class _MsgProxy:
         )
 
     async def get_sender(self) -> Any:
-        """Resolve the full sender user object via entity cache."""
         ctx = self.__dict__["_ctx"]
         uid = self.user_id
         if uid is None:
@@ -759,7 +658,6 @@ class _MsgProxy:
         )
 
     async def get_chat(self) -> Any:
-        """Get full chat/channel info via MTProto."""
         ctx = self.__dict__["_ctx"]
         cid = self.chat_id
         if cid is None:
@@ -767,12 +665,10 @@ class _MsgProxy:
         return await ctx.mt("messages.getChats", id=[abs(cid)])
 
     async def download(self, destination: Any = None) -> Any:
-        """Download media attached to this message."""
         ctx = self.__dict__["_ctx"]
         return await ctx.download(destination=destination)
 
     async def read(self) -> Any:
-        """Mark this message as read."""
         ctx = self.__dict__["_ctx"]
         return await ctx.mt(
             "messages.readHistory",
@@ -782,10 +678,6 @@ class _MsgProxy:
 
 
 class _DBProxy:
-    """
-    Smart database proxy — wraps StateNamespace with a dict-like API.
-    Exposed as ``db`` in every !py script.
-    """
 
     def __init__(self, state: Any, module_id: str = "executor") -> None:
         ns = None
@@ -803,10 +695,8 @@ class _DBProxy:
     def _ns(self) -> Any:
         return self.__dict__["_ns"]
 
-    # ── core CRUD ─────────────────────────────────────────────────────────────
 
     def get(self, key: str, default: Any = None) -> Any:
-        """Get a value by key."""
         ns = self.__dict__["_ns"]
         if ns is None:
             return default
@@ -816,7 +706,6 @@ class _DBProxy:
             return default
 
     def set(self, key: str, value: Any) -> None:
-        """Persist a value by key."""
         ns = self.__dict__["_ns"]
         if ns is None:
             return
@@ -826,7 +715,6 @@ class _DBProxy:
             pass
 
     def delete(self, key: str) -> bool:
-        """Delete a key. Returns True if it existed."""
         ns = self.__dict__["_ns"]
         if ns is None:
             return False
@@ -837,7 +725,6 @@ class _DBProxy:
             return False
 
     def has(self, key: str) -> bool:
-        """True if key exists in the database."""
         ns = self.__dict__["_ns"]
         if ns is None:
             return False
@@ -847,7 +734,6 @@ class _DBProxy:
             return False
 
     def keys(self) -> tuple[str, ...]:
-        """All stored keys for this module."""
         ns = self.__dict__["_ns"]
         if ns is None:
             return ()
@@ -857,28 +743,23 @@ class _DBProxy:
             return ()
 
     def all(self) -> dict[str, Any]:
-        """All key-value pairs for this module."""
         return {k: self.get(k) for k in self.keys()}
 
     def update(self, data: dict[str, Any]) -> None:
-        """Set multiple values at once."""
         for k, v in data.items():
             self.set(k, v)
 
     def clear(self) -> None:
-        """Delete all stored keys for this module."""
         for k in self.keys():
             self.delete(k)
 
     def incr(self, key: str, by: int | float = 1, default: int | float = 0) -> int | float:
-        """Atomically increment a numeric value."""
         current = self.get(key, default)
         new_val = (current or 0) + by
         self.set(key, new_val)
         return new_val
 
     def append(self, key: str, item: Any, max_len: int | None = None) -> list:
-        """Append an item to a stored list."""
         lst = self.get(key, [])
         if not isinstance(lst, list):
             lst = [lst]
@@ -889,13 +770,11 @@ class _DBProxy:
         return lst
 
     def pointer(self, key: str, default: Any = None) -> Any:
-        """Return a StatePointer for this key (if available)."""
         ns = self.__dict__["_ns"]
         if ns is not None and hasattr(ns, "pointer"):
             return ns.pointer(key, default)
         raise AttributeError("pointer() requires a StateNamespace backend")
 
-    # ── dict-like interface ────────────────────────────────────────────────────
 
     def __getitem__(self, key: str) -> Any:
         v = self.get(key, _SENTINEL)
@@ -922,20 +801,13 @@ class _DBProxy:
         return f"<DB keys={list(self.keys())}>"
 
     def ns(self, module_id: str) -> "_DBProxy":
-        """Return a DB proxy for a different module's namespace."""
         return _DBProxy(self.__dict__["_raw_state"], module_id)
 
 
-# ─── Rich helpers exposed to user code in !py ─────────────────────────────────
-
 def _build_py_helpers(ctx: Any, invocation: Any, reply: Any) -> dict[str, Any]:
-    """
-    Build a namespace of useful helpers and smart proxy objects for !py.
-    """
     source = getattr(ctx, "_source", None)
     state = getattr(ctx, "state", None)
 
-    # Smart proxy objects
     m_proxy = _MsgProxy(source, ctx=ctx, invocation=invocation, is_cmd=True)
     r_proxy = _MsgProxy(reply, ctx=ctx, invocation=invocation, is_cmd=False) if reply else None
     db_proxy = _DBProxy(state)
@@ -951,14 +823,8 @@ def _build_py_helpers(ctx: Any, invocation: Any, reply: Any) -> dict[str, Any]:
                     return v
         return default
 
-    # ── smart get_text: reply-first ──────────────────────────────────────────
 
     def get_text(msg=None) -> str | None:
-        """
-        Smart text helper:
-        - with no args: returns reply text if reply exists, else command args
-        - with msg arg: returns that message's text
-        """
         if msg is not None:
             if hasattr(msg, "html"):
                 html_text = msg.html
@@ -970,15 +836,12 @@ def _build_py_helpers(ctx: Any, invocation: Any, reply: Any) -> dict[str, Any]:
         return m_proxy.content or None
 
     def get_reply_text() -> str | None:
-        """Text of the replied-to message."""
         return (r_proxy.html if r_proxy else None) or None
 
     def get_args() -> str:
-        """Text after the command name."""
         return m_proxy.args
 
     def get_args_list() -> list[str]:
-        """Args split into tokens."""
         return m_proxy.args_list
 
     def get_chat_id(msg=None) -> int | None:
@@ -1028,7 +891,6 @@ def _build_py_helpers(ctx: Any, invocation: Any, reply: Any) -> dict[str, Any]:
             return _attr_or(msg, "username")
         return m_proxy.username
 
-    # ── network / entity ──────────────────────────────────────────────────────
 
     async def get_entity(peer) -> Any:
         tg = getattr(ctx, "tg", None)
@@ -1054,7 +916,6 @@ def _build_py_helpers(ctx: Any, invocation: Any, reply: Any) -> dict[str, Any]:
         except Exception:
             return None
 
-    # ── formatting ────────────────────────────────────────────────────────────
 
     def mention(user_id: int, name: str = "user") -> str:
         return f'<a href="tg://user?id={user_id}">{html.escape(str(name))}</a>'
@@ -1103,7 +964,6 @@ def _build_py_helpers(ctx: Any, invocation: Any, reply: Any) -> dict[str, Any]:
         h, mi = divmod(mi, 60)
         return f"{h}h {mi}m {s}s"
 
-    # ── response shortcuts ────────────────────────────────────────────────────
 
     async def respond(text: str, **kwargs) -> Any:
         return await ctx.respond(text, **kwargs)
@@ -1115,11 +975,9 @@ def _build_py_helpers(ctx: Any, invocation: Any, reply: Any) -> dict[str, Any]:
         return await ctx.respond(text, output="reply", **kwargs)
 
     return {
-        # ── smart proxy objects (the main attraction) ──
-        "m": m_proxy,           # current message — m.text, m.chat_id, m.reply(), m.pin(), ...
-        "r": r_proxy,           # reply message   — r.text, r.user_id, r.forward(), ...
-        "db": db_proxy,         # database        — db["key"], db.set(), db.incr(), db.ns(), ...
-        # ── message info shortcuts ──
+        "m": m_proxy,
+        "r": r_proxy,
+        "db": db_proxy,
         "get_text": get_text,
         "get_reply_text": get_reply_text,
         "get_args": get_args,
@@ -1134,11 +992,9 @@ def _build_py_helpers(ctx: Any, invocation: Any, reply: Any) -> dict[str, Any]:
         "get_media": get_media,
         "get_sender_name": get_sender_name,
         "get_username": get_username,
-        # ── network/entity ──
         "get_entity": get_entity,
         "get_full_user": get_full_user,
         "get_peers_count": get_peers_count,
-        # ── HTML formatting ──
         "mention": mention,
         "bold": bold,
         "italic": italic,
@@ -1151,19 +1007,15 @@ def _build_py_helpers(ctx: Any, invocation: Any, reply: Any) -> dict[str, Any]:
         "hesc": hesc,
         "fmt_size": fmt_size,
         "fmt_time": fmt_time,
-        # ── response shortcuts ──
         "respond": respond,
         "edit_msg": edit_msg,
         "reply_to": reply_to,
-        # ── stdlib ──
         "html": html,
         "re": re,
         "json": __import__("json"),
         "inspect": inspect,
     }
 
-
-# ─── Shell command ────────────────────────────────────────────────────────────
 
 async def command_sh(ctx, invocation):
     raw = _get_raw_text(invocation)
@@ -1173,7 +1025,6 @@ async def command_sh(ctx, invocation):
         raw = raw[match.end():]
 
     cmd = _clean_code(raw)
-    # Auto-use reply message if no inline command
     if not cmd:
         reply_code = await _reply_text(ctx, invocation)
         if reply_code:
@@ -1186,7 +1037,6 @@ async def command_sh(ctx, invocation):
         )
         return
 
-    # Sanitise: unescape TG smart chars only (not indentation – shell is different)
     cmd = _unescape_tg_code(cmd)
 
     start_time = time.perf_counter()
@@ -1224,8 +1074,6 @@ async def command_sh(ctx, invocation):
     await _send_result(ctx, sections, elapsed)
 
 
-# ─── Python REPL command ──────────────────────────────────────────────────────
-
 async def command_py(ctx, invocation):
     raw = _get_raw_text(invocation)
     skip_output = False
@@ -1234,7 +1082,6 @@ async def command_py(ctx, invocation):
         raw = raw[match.end():]
 
     raw_code = _clean_code(raw)
-    # Auto-use reply message text if no inline code
     if not raw_code:
         reply_code = await _reply_text(ctx, invocation)
         if reply_code:
@@ -1247,34 +1094,25 @@ async def command_py(ctx, invocation):
         )
         return
 
-    # Full sanitisation: fix TG mangling + indentation
     raw_code = _sanitise_code(raw_code)
 
-    # Wrap into async runner function
     wrapped_code = _wrap_eval_code(raw_code)
 
-    # Resolve reply object (works for both bot and MT contexts)
     reply = await _get_reply(ctx, invocation)
 
-    # Build exec environment — helpers override base entries for m/r/db
     helpers = _build_py_helpers(ctx, invocation, reply)
     env: dict[str, Any] = {
-        # !! _auto_await must be in scope — used by _wrap_eval_code output !!
         "_auto_await": _auto_await,
-        # core context
         "ctx": ctx,
         "runtime": getattr(ctx, "runtime", None),
         "tg": getattr(ctx, "tg", None),
         "c": getattr(ctx, "tg", None),
         "client": getattr(ctx, "client", getattr(ctx, "tg", None)),
         "state": getattr(ctx, "state", None),
-        # raw low-level access (for advanced use)
         "_source_raw": getattr(ctx, "_source", None),
         "_reply_raw": reply,
-        # invocation
         "invocation": invocation,
         "i": invocation,
-        # stdlib
         "asyncio": asyncio,
         "os": os,
         "sys": sys,
@@ -1284,10 +1122,8 @@ async def command_py(ctx, invocation):
         "io": io,
         "traceback": traceback,
         "inspect": inspect,
-        # helpers override m/r/db with smart proxies
         **helpers,
     }
-    # Extra aliases that point to the proxy objects from helpers
     env["msg"] = env["m"]
     env["message"] = env["m"]
     env["reply"] = env["r"]
@@ -1305,7 +1141,6 @@ async def command_py(ctx, invocation):
         try:
             bytecode = compile(wrapped_code, "<executor>", "exec")
         except SyntaxError as exc:
-            # Raise clean error without chaining — avoids double traceback in output
             raise SyntaxError(f"SyntaxError: {exc.msg} (line {exc.lineno})") from None
         exec(bytecode, exec_scope)
         runner = exec_scope.get("__executor_runner__")
@@ -1340,11 +1175,10 @@ async def command_py(ctx, invocation):
         sections.append(("stderr", stderr_str, True))
     if result_val is not None:
         rendered = str(result_val) if isinstance(result_val, str) else repr(result_val)
-        # Use None-safe fallback so empty string shows as explicit placeholder
         sections.append(("return", rendered if rendered else "''", True, "python"))
     if error_trace:
         sections.append(("traceback", error_trace, True))
-    if len(sections) == 1:  # only "code" section → nothing happened
+    if len(sections) == 1:
         sections.append(("result", "Done ✓", False))
 
     await _send_result(ctx, sections, elapsed)
