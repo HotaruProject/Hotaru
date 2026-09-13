@@ -1064,21 +1064,9 @@ class Runtime:
             reply_to = message.get("reply_to")
             reply_id = reply_to.get("reply_to_msg_id") if isinstance(reply_to, dict) else None
             if isinstance(reply_id, int) and getattr(message, "src", None) != "bot":
-                peer = await message.app.mt.resolve_peer(message.chat_id)
-                result = await message.app.mt_req(
-                    "messages.getHistory",
-                    peer=peer,
-                    offset_id=reply_id + 1,
-                    offset_date=0,
-                    add_offset=-1,
-                    limit=3,
-                    max_id=0,
-                    min_id=0,
-                    hash=0,
-                )
-                body = result.get("result") if isinstance(result, dict) and isinstance(result.get("result"), dict) else result
-                messages = body.get("messages") if isinstance(body, dict) else None
-                source = next((item for item in messages or [] if item.get("id") == reply_id), None)
+                cap_host = getattr(self, "cap_host", None)
+                if cap_host is not None:
+                    source = await cap_host.call("loader", "fetch", {"op": "message", "peer": message.chat_id, "id": reply_id})
         if source is None or not hasattr(source, "get"):
             raise ValueError("module file is missing")
         if getattr(source, "src", getattr(message, "src", None)) == "bot":

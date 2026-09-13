@@ -163,6 +163,11 @@ PROVIDERS: dict[str, dict[str, Any]] = {
         "detail": "write structured entries to the observatory log; always granted",
         "side_effect": "write",
     },
+    "fetch": {
+        "title": "Fetch",
+        "detail": "read-only access to messages, entities and reply resolution; always granted",
+        "side_effect": "read",
+    },
 }
 
 KNOWN = frozenset(PROVIDERS)
@@ -214,6 +219,8 @@ class CapabilityHost:
                 raise PermissionError(f"capability not granted to module: {capability}")
         elif capability == "logs":
             return self._logs_op(module_id, payload)
+        elif capability == "fetch":
+            return await self._fetch_op(module_id, payload)
         elif not self._allowed(module_id, capability):
             raise PermissionError(f"capability not granted to module: {capability}")
         with trusted_scope():
@@ -234,6 +241,76 @@ class CapabilityHost:
             if capability == "shell":
                 return await self._shell_op(module_id, payload, meta)
         raise PermissionError(f"capability not implemented: {capability}")
+
+    async def _fetch_op(self, module_id: str, payload: dict[str, Any]) -> Any:
+        app = self.runtime.app
+        if app is None or app.mt is None:
+            raise PermissionError("userbot transport is not ready")
+        op = payload.get("op")
+
+        async def _history(peer_value: Any, offset_id: int, limit: int) -> list[dict[str, Any]]:
+            peer = await app.mt.resolve_peer(peer_value)
+            result = await app.mt_req(
+                "messages.getHistory",
+                peer=peer,
+                offset_id=offset_id,
+                offset_date=0,
+                add_offset=0,
+                limit=min(max(limit, 1), 100),
+                max_id=0,
+                min_id=0,
+                hash=0,
+            )
+            body = result.get("result") if isinstance(result, dict) and isinstance(result.get("result"), dict) else result
+            return [m for m in (body.get("messages") if isinstance(body, dict) else []) or [] if isinstance(m, dict)]
+
+        if op == "message":
+            peer_value = payload.get("peer")
+            msg_id = payload.get("id")
+            if not isinstance(msg_id, int) or peer_value is None:
+                raise PermissionError("fetch message requires peer and id")
+            for message in await _history(peer_value, msg_id + 1, 3):
+                if message.get("id") == msg_id:
+                    return message
+            return None
+        if op == "messages":
+            return await _history(payload.get("peer"), int(payload.get("offset_id") or 0), int(payload.get("limit") or 20))
+        if op == "reply":
+            header = payload.get("reply_to")
+            reply_id = header.get("reply_to_msg_id") or header.get("reply_to_id") if isinstance(header, dict) else None
+            if not isinstance(reply_id, int):
+                return None
+            for message in await _history(payload.get("peer"), reply_id + 1, 3):
+                if message.get("id") == reply_id:
+                    return message
+            return None
+        if op == "entity":
+            value = payload.get("value")
+            if value is None:
+                raise PermissionError("fetch entity requires a value")
+            if isinstance(value, str) and value.lstrip("-").isdigit():
+                value = int(value)
+            if isinstance(value, str):
+                username = value.lstrip("@").casefold()
+                entity = app.mt.entity_usernames.get(username)
+                if entity is None:
+                    result = await app.mt_req("contacts.resolveUsername", username=username)
+                    body = result.get("result") if isinstance(result, dict) and isinstance(result.get("result"), dict) else result
+                    app.mt._ingest_entities(body if isinstance(body, dict) else {})
+                    entity = app.mt.entity_usernames.get(username)
+                return entity
+            if isinstance(value, int):
+                if value > 0:
+                    entity = app.mt.entities.get(("user", value))
+                    if entity is None:
+                        return None
+                    return entity
+                raw = -value
+                if raw > 1000000000000:
+                    raw -= 1000000000000
+                return app.mt.entities.get(("chat", raw))
+            raise PermissionError("fetch entity requires a username or an id")
+        raise PermissionError(f"unknown fetch op: {op}")
 
     def _logs_op(self, module_id: str, payload: dict[str, Any]) -> Any:
         observatory = getattr(self.runtime, "observatory", None)

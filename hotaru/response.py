@@ -789,15 +789,33 @@ class ModuleContext:
             return candidate
         return None
 
-    @property
-    def reply_text(self) -> str | None:
-        reply = self.reply_message
+    async def reply(self, message: Any = None) -> Any | None:
+        target = message if message is not None else self._source
+        if target is None:
+            return None
+        reply_to = target.get("reply_to") if hasattr(target, "get") else None
+        if reply_to is not None:
+            fetched = await self.cap("fetch", {"op": "reply", "peer": getattr(target, "chat_id", None), "reply_to": reply_to})
+            if fetched is not None:
+                return fetched
+        direct = self.reply_message
+        return direct
+
+    async def msg(self, chat_id: Any, message_id: int) -> Any | None:
+        return await self.cap("fetch", {"op": "message", "peer": chat_id, "id": int(message_id)})
+
+    async def resolve(self, value: Any) -> Any | None:
+        return await self.cap("fetch", {"op": "entity", "value": value})
+
+    async def reply_text(self, message: Any = None) -> str | None:
+        reply = await self.reply(message)
         if reply is None:
             return None
         if hasattr(reply, "get"):
-            text = reply.get("text") or reply.get("message") or reply.get("caption")
+            text = reply.get("message") or reply.get("text") or reply.get("caption")
             return str(text) if text is not None else None
-        return None
+        text = getattr(reply, "text", None) or getattr(reply, "message", None) or getattr(reply, "caption", None)
+        return str(text) if text else None
 
     @property
     def has_media(self) -> bool:
@@ -851,6 +869,10 @@ class ModuleContext:
 
     async def download(self, attachment: Attachment | None = None, destination: str | Path | None = None) -> Path:
         target = attachment or self.attachment or self.reply_attachment
+        if target is None and self.message.get("reply_to") is not None:
+            fetched = await self.reply()
+            if fetched is not None:
+                target = self._attachment_of(fetched)
         if target is None:
             raise ResponseError("no attachment to download")
         if destination is None:
@@ -859,8 +881,11 @@ class ModuleContext:
             destination = raw
         path = Path(destination)
         source = self.message
-        if self.attachment is None and self.reply_message is not None:
-            source = self.reply_message
+        if self.attachment is None and target is not self.attachment:
+            if not hasattr(source, "get") or source.get("reply_to") is not None:
+                fetched = await self.reply()
+                if fetched is not None:
+                    source = fetched
         if getattr(source, "src", None) == "bot" and hasattr(source, "download"):
             await source.download(str(path))
             return path
