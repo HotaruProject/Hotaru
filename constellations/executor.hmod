@@ -1,6 +1,6 @@
 HOTARU = {
     "id": "executor",
-    "version": "2.1.0",
+    "version": "3.2.0",
     "commands": ["sh", "py"],
     "capabilities": ["mt", "files", "net", "state"],
 }
@@ -9,10 +9,12 @@ import ast
 import asyncio
 import contextlib
 import html
+import inspect
 import io
 import os
 import re
 import sys
+import textwrap
 import time
 import traceback
 from typing import Any
@@ -21,43 +23,185 @@ from typing import Any
 _ACTIVE: dict[str, Any] = {"sh": None, "py": None}
 
 
-async def _auto_await(value):
+# ─── Code sanitiser ───────────────────────────────────────────────────────────
+
+# Characters Telegram silently replaces / mangles inside code blocks
+_TG_REPLACEMENTS: list[tuple[str, str]] = [
+    ("\u00a0", " "),        # non-breaking space → regular space
+    ("\u202f", " "),        # narrow no-break space
+    ("\u2009", " "),        # thin space
+    ("\u2019", "'"),        # right single quotation mark → apostrophe
+    ("\u2018", "'"),        # left single quotation mark
+    ("\u201c", '"'),        # left double quotation mark
+    ("\u201d", '"'),        # right double quotation mark
+    ("\u2013", "-"),        # en-dash
+    ("\u2014", "--"),       # em-dash
+    ("\u2026", "..."),      # ellipsis
+    ("\u00b7", "."),        # middle dot
+    ("\u2022", "-"),        # bullet
+    ("\ufeff", ""),         # BOM / zero-width no-break space
+    ("\u200b", ""),         # zero-width space
+    ("\u200c", ""),         # zero-width non-joiner
+    ("\u200d", ""),         # zero-width joiner
+]
+
+# Telegram italic markers that can corrupt Python underscores/asterisks
+# e.g. __init__ → *init* if Telegram decides to parse it
+_TG_MARKDOWN_PATTERNS: list[tuple[re.Pattern, str]] = [
+    # Restore doubled underscores that became italic markdown (*word* → __word__)
+    (re.compile(r"\*([A-Za-z_][A-Za-z0-9_]*)\*"), r"__\1__"),
+]
+
+
+def _unescape_tg_code(code: str) -> str:
+    """Undo common Telegram message text mangling that breaks Python code."""
+    for bad, good in _TG_REPLACEMENTS:
+        code = code.replace(bad, good)
+    for pattern, replacement in _TG_MARKDOWN_PATTERNS:
+        code = pattern.sub(replacement, code)
+    return code
+
+
+_BLOCK_STARTERS = re.compile(
+    r"^(if |elif |else:|for |while |def |async def |class |try:|except|finally:|with )"
+)
+
+
+def _fix_indentation(code: str) -> str:
+    """
+    Attempt to fix broken indentation caused by Telegram's copy-paste rendering.
+
+    Strategy:
+    - Strip common leading indent (textwrap.dedent).
+    - Detect lines that follow a block-opening statement (ends with ':') but have
+      zero indent → add 4 spaces relative to the block header.
+    """
+    code = textwrap.dedent(code)
+    lines = code.splitlines()
+    result: list[str] = []
+    indent_next = False
+    current_indent = 0
+
+    for line in lines:
+        stripped = line.lstrip()
+        if not stripped:
+            result.append("")
+            indent_next = False
+            continue
+
+        if indent_next and not line[0].isspace():
+            # This line should be indented but isn't – fix it
+            result.append("    " * (current_indent + 1) + stripped)
+        else:
+            result.append(line)
+
+        ends_block = stripped.rstrip().endswith(":") and bool(_BLOCK_STARTERS.match(stripped))
+        if ends_block:
+            current_indent = (len(line) - len(stripped)) // 4
+        indent_next = ends_block
+
+    return "\n".join(result)
+
+
+def _sanitise_code(code: str) -> str:
+    """Full sanitisation pipeline: unescape TG mangling then fix indentation."""
+    code = _unescape_tg_code(code)
+    code = _fix_indentation(code)
+    return code
+
+
+# ─── AST-based code wrapper ───────────────────────────────────────────────────
+
+def _wrap_eval_code(code: str) -> str:
+    """
+    Wrap arbitrary code into ``async def __executor_runner__()``.
+
+    Rules (in order):
+    1. Empty → pass.
+    2. Single bare expression → ``return await _auto_await(expr)``.
+    3. Last statement is a bare expression, rest are statements → wrap all,
+       convert last to ``return await _auto_await(last_expr)``.
+    4. Code is already a single async/sync function def → exec, then call it.
+    5. Everything else → wrap naively (just indent).
+    6. SyntaxError → try single-expression eval mode, else wrap verbatim.
+    """
+    code = code.strip()
+    if not code:
+        return "async def __executor_runner__():\n    pass"
+
+    try:
+        tree = ast.parse(code, mode="exec")
+    except SyntaxError:
+        # Try eval mode (single expression without assignment)
+        try:
+            ast.parse(code, mode="eval")
+            return f"async def __executor_runner__():\n    return await _auto_await({code})"
+        except SyntaxError:
+            pass
+        # Give up and wrap verbatim
+        indented = textwrap.indent(code, "    ")
+        return f"async def __executor_runner__():\n{indented}"
+
+    if not tree.body:
+        return "async def __executor_runner__():\n    pass"
+
+    # Case 4: single function / async function definition
+    if (
+        len(tree.body) == 1
+        and isinstance(tree.body[0], (ast.AsyncFunctionDef, ast.FunctionDef))
+    ):
+        fname = tree.body[0].name
+        indented = textwrap.indent(code, "    ")
+        return (
+            "async def __executor_runner__():\n"
+            f"{indented}\n"
+            f"    return await _auto_await({fname}())"
+        )
+
+    last = tree.body[-1]
+
+    # Case 5: last is not a returnable bare expression
+    if not isinstance(last, ast.Expr) or isinstance(last.value, (ast.Yield, ast.YieldFrom)):
+        indented = textwrap.indent(code, "    ")
+        return f"async def __executor_runner__():\n{indented}"
+
+    last_src = ast.unparse(last.value)
+
+    # Case 2: single bare expression
+    if len(tree.body) == 1:
+        return f"async def __executor_runner__():\n    return await _auto_await({last_src})"
+
+    # Case 3: multi-statement, last is bare expr
+    # Re-unparse preceding statements to avoid line-slice issues
+    preceding = ast.Module(body=tree.body[:-1], type_ignores=[])
+    head_src = ast.unparse(preceding)
+    head = textwrap.indent(head_src, "    ")
+    tail = f"    return await _auto_await({last_src})"
+    return f"async def __executor_runner__():\n{head}\n{tail}"
+
+
+async def _auto_await(value: Any) -> Any:
+    """Recursively await coroutines/futures until a plain value is reached."""
     while asyncio.iscoroutine(value) or asyncio.isfuture(value):
         value = await value
     return value
 
 
-def _wrap_eval_code(code: str):
-    code = code.strip(); lines = code.splitlines()
-    try:
-        tree = ast.parse(code)
-    except SyntaxError:
-        indented = "\n".join(f"    {line}" for line in lines)
-        return f"async def __executor_runner__():\n{indented}"
-    if not tree.body:
-        indented = "\n".join(f"    {line}" for line in lines)
-        return f"async def __executor_runner__():\n{indented}"
-    last = tree.body[-1]
-    if isinstance(last, ast.Expr) and not isinstance(last.value, (ast.Yield, ast.YieldFrom)):
-        if len(tree.body) > 1 and tree.body[-2].end_lineno >= last.lineno:
-            head = "\n".join(f"    {ast.unparse(stmt)}" for stmt in tree.body[:-1])
-        else:
-            head = "\n".join(f"    {line}" for line in lines[: last.lineno - 1])
-        tail = f"    return await _auto_await({ast.unparse(last.value)})"
-        return f"async def __executor_runner__():\n{head}\n{tail}"
-    indented = "\n".join(f"    {line}" for line in lines)
-    return f"async def __executor_runner__():\n{indented}"
-
+# ─── Output helpers ───────────────────────────────────────────────────────────
 
 def _escape(value: str) -> str:
     return html.escape(str(value), quote=False)
 
 
 def _clean_code(text: str) -> str:
+    """Strip markdown code fences."""
     text = text.strip()
     if text.startswith("```") and text.endswith("```"):
         lines = text.splitlines()
-        return "\n".join(lines[1:-1]).strip() if len(lines) > 1 else text.strip("`").strip()
+        inner = "\n".join(lines[1:-1]) if len(lines) > 1 else text.strip("`")
+        return inner.strip()
+    if text.startswith("`") and text.endswith("`") and len(text) > 2:
+        return text[1:-1]
     return text
 
 
@@ -67,15 +211,7 @@ def _truncate(text: str, max_len: int = 3500) -> str:
     return text
 
 
-async def _reply_text(ctx, invocation):
-    reply = getattr(invocation, "reply", None) or getattr(invocation, "reply_message", None)
-    if reply is None:
-        return None
-    text = getattr(reply, "text", None) or getattr(reply, "raw_text", None)
-    return text if isinstance(text, str) else None
-
-
-def _censor(ret: str, ctx) -> str:
+def _censor(ret: str, ctx: Any) -> str:
     runtime = getattr(ctx, "runtime", None)
     if runtime is not None:
         config = getattr(runtime, "config", None)
@@ -86,42 +222,828 @@ def _censor(ret: str, ctx) -> str:
                 except Exception:
                     secret = None
                 if secret:
-                    ret = ret.replace(str(secret), f'{str(secret).split(":")[0]}:{"*" * 26}' if ":" in str(secret) else "*" * 26)
+                    masked = (
+                        f'{str(secret).split(":")[0]}:{"*" * 26}'
+                        if ":" in str(secret)
+                        else "*" * 26
+                    )
+                    ret = ret.replace(str(secret), masked)
     return ret
 
 
-async def _send_result(ctx, sections: list, elapsed_ms: float):
+async def _send_result(ctx: Any, sections: list, elapsed_ms: float) -> None:
     header = f"<code>{elapsed_ms:.1f}ms</code>"
     parts = [f"<b>Executor</b> | {header}\n"]
     for title, content, is_code in sections:
         if not content:
             continue
         esc = _escape(_truncate(_censor(content, ctx)))
-        parts.append(f"<b>{_escape(title)}:</b>\n<pre><code>{esc}</code></pre>")
+        if is_code:
+            parts.append(f"<b>{_escape(title)}:</b>\n<pre>{esc}</pre>")
+        else:
+            parts.append(f"<code>{_escape(title)}:</code> {esc}")
     await ctx.respond("\n\n".join(parts), parse_mode="HTML", rich=False)
 
 
-async def command_sh(ctx, invocation):
-    args = getattr(invocation, "args", [])
+# ─── Raw text extraction (preserves newlines) ─────────────────────────────────
 
-    raw = " ".join(args)
+def _get_raw_text(invocation: Any) -> str:
+    """
+    Extract the raw text after the command name from the originating message,
+    preserving newlines that ``CommandParser`` destroys via ``.split()``.
+
+    Falls back to ``" ".join(invocation.args)`` if the raw message isn't accessible.
+    """
+    msg = getattr(invocation, "message", None)
+    if msg is None:
+        return " ".join(getattr(invocation, "args", []))
+    # Try text attributes in priority order
+    for attr in ("text", "raw_text", "message", "caption"):
+        raw = getattr(msg, attr, None)
+        if raw is None and hasattr(msg, "get"):
+            raw = msg.get(attr)
+        if isinstance(raw, str) and raw:
+            # Strip the command prefix+name (e.g. "!py " or ".py ")
+            name = getattr(invocation, "name", "")
+            # The message starts with: <prefix><name><whitespace><code>
+            # Find where the code starts by skipping the first "word"
+            idx = raw.find(name)
+            if idx != -1:
+                after = raw[idx + len(name):]
+                # Strip one leading whitespace character (the space after the command)
+                if after and after[0] in " \t":
+                    after = after[1:]
+                return after
+    # Fallback: reconstruct from args (loses newlines but better than crashing)
+    return " ".join(getattr(invocation, "args", []))
+
+
+# ─── Reply helpers ────────────────────────────────────────────────────────────
+
+def _get_reply(ctx: Any, invocation: Any) -> Any:
+    """Return the reply message object, checking both invocation and ctx."""
+    for obj in (invocation, ctx):
+        for attr in ("reply", "reply_message", "reply_to_message"):
+            candidate = getattr(obj, attr, None)
+            if candidate is not None:
+                return candidate
+    return None
+
+
+async def _reply_text(ctx: Any, invocation: Any) -> str | None:
+    """Get text of the replied-to message, supporting both bot and MT contexts."""
+    reply = _get_reply(ctx, invocation)
+    if reply is None:
+        return None
+    for attr in ("text", "raw_text", "message", "caption"):
+        text = getattr(reply, attr, None)
+        if isinstance(text, str) and text:
+            return text
+    if hasattr(reply, "get"):
+        for key in ("text", "message", "caption"):
+            text = reply.get(key)
+            if isinstance(text, str) and text:
+                return text
+    return None
+
+
+# ─── Smart proxy objects for !py ─────────────────────────────────────────────
+
+_SENTINEL = object()
+
+
+class _MsgProxy:
+    """
+    Rich message proxy — wraps a raw message and exposes clean attributes,
+    HTML helpers, and async Telegram actions.  Exposed as ``m`` (current
+    message) and ``r`` (reply) inside every !py script.
+    """
+
+    def __init__(
+        self,
+        raw: Any,
+        ctx: Any = None,
+        invocation: Any = None,
+        is_cmd: bool = False,
+    ) -> None:
+        self.__dict__["_raw"] = raw
+        self.__dict__["_ctx"] = ctx
+        self.__dict__["_inv"] = invocation
+        self.__dict__["_is_cmd"] = is_cmd
+
+    # ── internal ──────────────────────────────────────────────────────────────
+
+    def _g(self, *attrs: str, default: Any = None) -> Any:
+        raw = self.__dict__["_raw"]
+        if raw is None:
+            return default
+        for a in attrs:
+            v = getattr(raw, a, _SENTINEL)
+            if v is not _SENTINEL and v is not None:
+                return v
+            if hasattr(raw, "get"):
+                v = raw.get(a)
+                if v is not None:
+                    return v
+        return default
+
+    # ── text ─────────────────────────────────────────────────────────────────
+
+    @property
+    def text(self) -> str:
+        """Full raw message text (includes command prefix for source msg)."""
+        return self._g("text", "raw_text", "message", "caption") or ""
+
+    @property
+    def content(self) -> str:
+        """Smart text: args after command (source) or full text (reply/other)."""
+        if self.__dict__["_is_cmd"] and self.__dict__["_inv"]:
+            return " ".join(getattr(self.__dict__["_inv"], "args", []))
+        return self.text
+
+    @property
+    def args(self) -> str:
+        """Text after the command name."""
+        return self.content
+
+    @property
+    def args_list(self) -> list[str]:
+        """Args split into a list of tokens."""
+        if self.__dict__["_is_cmd"] and self.__dict__["_inv"]:
+            return list(getattr(self.__dict__["_inv"], "args", []))
+        return self.text.split()
+
+    # ── IDs ───────────────────────────────────────────────────────────────────
+
+    @property
+    def id(self) -> int | None:
+        return self._g("id", "message_id")
+
+    @property
+    def msg_id(self) -> int | None:
+        return self.id
+
+    @property
+    def chat_id(self) -> int | None:
+        return self._g("chat_id", "peer_id", "chat")
+
+    @property
+    def user_id(self) -> int | None:
+        return self._g("from_id", "sender_id", "user_id")
+
+    @property
+    def from_id(self) -> int | None:
+        return self.user_id
+
+    # ── sender ────────────────────────────────────────────────────────────────
+
+    @property
+    def first_name(self) -> str:
+        return self._g("first_name") or ""
+
+    @property
+    def last_name(self) -> str:
+        return self._g("last_name") or ""
+
+    @property
+    def full_name(self) -> str:
+        name = f"{self.first_name} {self.last_name}".strip()
+        return name or self.username or str(self.user_id or "?")
+
+    @property
+    def name(self) -> str:
+        """Alias for full_name."""
+        return self.full_name
+
+    @property
+    def username(self) -> str | None:
+        return self._g("username")
+
+    @property
+    def mention(self) -> str:
+        """Inline HTML mention of the sender."""
+        uid = self.user_id
+        display = html.escape(self.full_name)
+        if uid:
+            return f'<a href="tg://user?id={uid}">{display}</a>'
+        if self.username:
+            return f"@{self.username}"
+        return display
+
+    # ── flags ────────────────────────────────────────────────────────────────
+
+    @property
+    def is_me(self) -> bool:
+        return bool(self._g("is_me", "out"))
+
+    @property
+    def out(self) -> bool:
+        return self.is_me
+
+    @property
+    def date(self) -> Any:
+        return self._g("date")
+
+    @property
+    def src(self) -> str | None:
+        """Transport source ('mt' or 'bot')."""
+        return self._g("src", "source")
+
+    # ── media ────────────────────────────────────────────────────────────────
+
+    @property
+    def has_media(self) -> bool:
+        return self._g("media") is not None
+
+    @property
+    def media(self) -> Any:
+        return self._g("media")
+
+    @property
+    def photo(self) -> Any:
+        return self._g("photo")
+
+    @property
+    def document(self) -> Any:
+        return self._g("document")
+
+    @property
+    def video(self) -> Any:
+        return self._g("video")
+
+    @property
+    def audio(self) -> Any:
+        return self._g("audio")
+
+    @property
+    def voice(self) -> Any:
+        return self._g("voice")
+
+    @property
+    def sticker(self) -> Any:
+        return self._g("sticker")
+
+    @property
+    def animation(self) -> Any:
+        return self._g("animation")
+
+    # ── topic / thread ────────────────────────────────────────────────────────
+
+    @property
+    def topic_id(self) -> int | None:
+        return self._g("topic_id", "message_thread_id", "top_msg_id")
+
+    # ── raw access ────────────────────────────────────────────────────────────
+
+    @property
+    def raw(self) -> Any:
+        """The underlying raw message object."""
+        return self.__dict__["_raw"]
+
+    def get(self, key: str, default: Any = None) -> Any:
+        raw = self.__dict__["_raw"]
+        if hasattr(raw, "get"):
+            return raw.get(key, default)
+        return getattr(raw, key, default)
+
+    def __getattr__(self, name: str) -> Any:
+        raw = self.__dict__.get("_raw")
+        if raw is not None:
+            v = getattr(raw, name, _SENTINEL)
+            if v is not _SENTINEL:
+                return v
+        raise AttributeError(f"MsgProxy has no attribute {name!r}")
+
+    def __bool__(self) -> bool:
+        return self.__dict__.get("_raw") is not None
+
+    def __repr__(self) -> str:
+        return f"<Msg id={self.id} chat={self.chat_id} text={self.text[:60]!r}>"
+
+    # ── HTML formatting ────────────────────────────────────────────────────────
+
+    def as_mention(self, name: str | None = None) -> str:
+        """Mention with optional custom display name."""
+        uid = self.user_id
+        display = html.escape(name or self.full_name)
+        return f'<a href="tg://user?id={uid}">{display}</a>' if uid else display
+
+    def fmt_text(self, text: str | None = None) -> str:
+        """HTML-escape this message's text (or provided string)."""
+        return html.escape(str(text if text is not None else self.text))
+
+    # ── async Telegram actions ─────────────────────────────────────────────────
+
+    async def respond(self, text: str, **kwargs: Any) -> Any:
+        """Send auto edit/reply response."""
+        return await self.__dict__["_ctx"].respond(text, **kwargs)
+
+    async def edit(self, text: str, **kwargs: Any) -> Any:
+        """Edit the bot's current message."""
+        return await self.__dict__["_ctx"].respond(text, output="edit", **kwargs)
+
+    async def reply(self, text: str, **kwargs: Any) -> Any:
+        """Reply to this message."""
+        return await self.__dict__["_ctx"].respond(text, output="reply", **kwargs)
+
+    async def delete(self) -> Any:
+        """Delete this message."""
+        raw = self.__dict__["_raw"]
+        deleter = getattr(raw, "delete", None)
+        if callable(deleter):
+            result = deleter()
+            if asyncio.iscoroutine(result):
+                return await result
+            return result
+
+    async def pin(self, both_sides: bool = False, **kwargs: Any) -> Any:
+        """Pin this message in the chat."""
+        ctx = self.__dict__["_ctx"]
+        return await ctx.mt(
+            "messages.pinMessage",
+            peer=self.chat_id,
+            id=self.id,
+            pm_oneside=not both_sides,
+            **kwargs,
+        )
+
+    async def unpin(self) -> Any:
+        """Unpin this message."""
+        ctx = self.__dict__["_ctx"]
+        return await ctx.mt("messages.unpinMessage", peer=self.chat_id, id=self.id)
+
+    async def forward(self, to_chat: Any, **kwargs: Any) -> Any:
+        """Forward this message to another chat."""
+        import secrets as _s
+        ctx = self.__dict__["_ctx"]
+        return await ctx.mt(
+            "messages.forwardMessages",
+            from_peer=self.chat_id,
+            id=[self.id],
+            to_peer=to_chat,
+            random_id=[_s.randbits(63)],
+            **kwargs,
+        )
+
+    async def react(self, emoji: str) -> Any:
+        """Send an emoji reaction to this message."""
+        ctx = self.__dict__["_ctx"]
+        return await ctx.mt(
+            "messages.sendReaction",
+            peer=self.chat_id,
+            msg_id=self.id,
+            reaction=[{"_": "reactionEmoji", "emoticon": emoji}],
+        )
+
+    async def unreact(self) -> Any:
+        """Remove all reactions from this message."""
+        ctx = self.__dict__["_ctx"]
+        return await ctx.mt(
+            "messages.sendReaction",
+            peer=self.chat_id,
+            msg_id=self.id,
+            reaction=[],
+        )
+
+    async def get_sender(self) -> Any:
+        """Resolve the full sender user object via MTProto."""
+        ctx = self.__dict__["_ctx"]
+        uid = self.user_id
+        if uid is None:
+            return None
+        return await ctx.mt(
+            "users.getUsers",
+            id=[{"_": "inputUser", "user_id": uid, "access_hash": 0}],
+        )
+
+    async def get_chat(self) -> Any:
+        """Get full chat/channel info via MTProto."""
+        ctx = self.__dict__["_ctx"]
+        cid = self.chat_id
+        if cid is None:
+            return None
+        return await ctx.mt("messages.getChats", id=[abs(cid)])
+
+    async def download(self, destination: Any = None) -> Any:
+        """Download media attached to this message."""
+        ctx = self.__dict__["_ctx"]
+        return await ctx.download(destination=destination)
+
+    async def read(self) -> Any:
+        """Mark this message as read."""
+        ctx = self.__dict__["_ctx"]
+        return await ctx.mt(
+            "messages.readHistory",
+            peer=self.chat_id,
+            max_id=self.id,
+        )
+
+
+class _DBProxy:
+    """
+    Smart database proxy — wraps StateNamespace with a dict-like API.
+    Exposed as ``db`` in every !py script.
+    """
+
+    def __init__(self, state: Any, module_id: str = "executor") -> None:
+        ns = None
+        if state is not None:
+            if hasattr(state, "namespace"):
+                try:
+                    ns = state.namespace(module_id)
+                except Exception:
+                    ns = state
+            else:
+                ns = state
+        self.__dict__["_ns"] = ns
+        self.__dict__["_raw_state"] = state
+
+    def _ns(self) -> Any:
+        return self.__dict__["_ns"]
+
+    # ── core CRUD ─────────────────────────────────────────────────────────────
+
+    def get(self, key: str, default: Any = None) -> Any:
+        """Get a value by key."""
+        ns = self.__dict__["_ns"]
+        if ns is None:
+            return default
+        try:
+            return ns.get(key, default)
+        except Exception:
+            return default
+
+    def set(self, key: str, value: Any) -> None:
+        """Persist a value by key."""
+        ns = self.__dict__["_ns"]
+        if ns is None:
+            return
+        try:
+            ns.set(key, value)
+        except Exception:
+            pass
+
+    def delete(self, key: str) -> bool:
+        """Delete a key. Returns True if it existed."""
+        ns = self.__dict__["_ns"]
+        if ns is None:
+            return False
+        try:
+            result = ns.delete(key)
+            return bool(result)
+        except Exception:
+            return False
+
+    def has(self, key: str) -> bool:
+        """True if key exists in the database."""
+        ns = self.__dict__["_ns"]
+        if ns is None:
+            return False
+        try:
+            return ns.get(key) is not None
+        except Exception:
+            return False
+
+    def keys(self) -> tuple[str, ...]:
+        """All stored keys for this module."""
+        ns = self.__dict__["_ns"]
+        if ns is None:
+            return ()
+        try:
+            return ns.keys()
+        except Exception:
+            return ()
+
+    def all(self) -> dict[str, Any]:
+        """All key-value pairs for this module."""
+        return {k: self.get(k) for k in self.keys()}
+
+    def update(self, data: dict[str, Any]) -> None:
+        """Set multiple values at once."""
+        for k, v in data.items():
+            self.set(k, v)
+
+    def clear(self) -> None:
+        """Delete all stored keys for this module."""
+        for k in self.keys():
+            self.delete(k)
+
+    def incr(self, key: str, by: int | float = 1, default: int | float = 0) -> int | float:
+        """Atomically increment a numeric value."""
+        current = self.get(key, default)
+        new_val = (current or 0) + by
+        self.set(key, new_val)
+        return new_val
+
+    def append(self, key: str, item: Any, max_len: int | None = None) -> list:
+        """Append an item to a stored list."""
+        lst = self.get(key, [])
+        if not isinstance(lst, list):
+            lst = [lst]
+        lst.append(item)
+        if max_len is not None:
+            lst = lst[-max_len:]
+        self.set(key, lst)
+        return lst
+
+    def pointer(self, key: str, default: Any = None) -> Any:
+        """Return a StatePointer for this key (if available)."""
+        ns = self.__dict__["_ns"]
+        if ns is not None and hasattr(ns, "pointer"):
+            return ns.pointer(key, default)
+        raise AttributeError("pointer() requires a StateNamespace backend")
+
+    # ── dict-like interface ────────────────────────────────────────────────────
+
+    def __getitem__(self, key: str) -> Any:
+        v = self.get(key, _SENTINEL)
+        if v is _SENTINEL:
+            raise KeyError(key)
+        return v
+
+    def __setitem__(self, key: str, value: Any) -> None:
+        self.set(key, value)
+
+    def __delitem__(self, key: str) -> None:
+        self.delete(key)
+
+    def __contains__(self, key: str) -> bool:
+        return self.has(key)
+
+    def __len__(self) -> int:
+        return len(self.keys())
+
+    def __iter__(self):
+        return iter(self.keys())
+
+    def __repr__(self) -> str:
+        return f"<DB keys={list(self.keys())}>"
+
+    def ns(self, module_id: str) -> "_DBProxy":
+        """Return a DB proxy for a different module's namespace."""
+        return _DBProxy(self.__dict__["_raw_state"], module_id)
+
+
+# ─── Rich helpers exposed to user code in !py ─────────────────────────────────
+
+def _build_py_helpers(ctx: Any, invocation: Any, reply: Any) -> dict[str, Any]:
+    """
+    Build a namespace of useful helpers and smart proxy objects for !py.
+    """
+    source = getattr(ctx, "_source", None)
+    state = getattr(ctx, "state", None)
+
+    # Smart proxy objects
+    m_proxy = _MsgProxy(source, ctx=ctx, invocation=invocation, is_cmd=True)
+    r_proxy = _MsgProxy(reply, ctx=ctx, invocation=invocation, is_cmd=False) if reply else None
+    db_proxy = _DBProxy(state)
+
+    def _attr_or(obj, *attrs, default=None):
+        for a in attrs:
+            v = getattr(obj, a, None)
+            if v is not None:
+                return v
+            if hasattr(obj, "get"):
+                v = obj.get(a)
+                if v is not None:
+                    return v
+        return default
+
+    # ── smart get_text: reply-first ──────────────────────────────────────────
+
+    def get_text(msg=None) -> str | None:
+        """
+        Smart text helper:
+        - with no args: returns reply text if reply exists, else command args
+        - with msg arg: returns that message's text
+        """
+        if msg is not None:
+            return _attr_or(msg, "text", "raw_text", "message", "caption")
+        if r_proxy:
+            return r_proxy.text or None
+        return m_proxy.content or None
+
+    def get_reply_text() -> str | None:
+        """Text of the replied-to message."""
+        return r_proxy.text if r_proxy else None
+
+    def get_args() -> str:
+        """Text after the command name."""
+        return m_proxy.args
+
+    def get_args_list() -> list[str]:
+        """Args split into tokens."""
+        return m_proxy.args_list
+
+    def get_chat_id(msg=None) -> int | None:
+        if msg is not None:
+            return _attr_or(msg, "chat_id", "peer_id", "chat")
+        return m_proxy.chat_id
+
+    def get_user_id(msg=None) -> int | None:
+        if msg is not None:
+            return _attr_or(msg, "from_id", "sender_id", "user_id")
+        return m_proxy.user_id
+
+    def get_msg_id(msg=None) -> int | None:
+        if msg is not None:
+            return _attr_or(msg, "id", "message_id")
+        return m_proxy.id
+
+    def get_reply_id() -> int | None:
+        return r_proxy.id if r_proxy else None
+
+    def is_reply() -> bool:
+        return r_proxy is not None
+
+    def is_me() -> bool:
+        return m_proxy.is_me
+
+    def has_media(msg=None) -> bool:
+        if msg is not None:
+            return _attr_or(msg, "media") is not None
+        return m_proxy.has_media
+
+    def get_media(msg=None) -> Any:
+        if msg is not None:
+            return _attr_or(msg, "media", "photo", "document", "video", "audio")
+        return m_proxy.media
+
+    def get_sender_name(msg=None) -> str | None:
+        if msg is not None:
+            first = _attr_or(msg, "first_name") or ""
+            last = _attr_or(msg, "last_name") or ""
+            full = f"{first} {last}".strip()
+            return full or _attr_or(msg, "username")
+        return m_proxy.full_name
+
+    def get_username(msg=None) -> str | None:
+        if msg is not None:
+            return _attr_or(msg, "username")
+        return m_proxy.username
+
+    # ── network / entity ──────────────────────────────────────────────────────
+
+    async def get_entity(peer) -> Any:
+        tg = getattr(ctx, "tg", None)
+        if tg is None:
+            raise RuntimeError("tg gateway unavailable")
+        return await tg.get_entity(peer)
+
+    async def get_full_user(user_id=None) -> Any:
+        uid = user_id or get_user_id()
+        return await ctx.mt(
+            "users.getFullUser",
+            id={"_": "inputUser", "user_id": uid, "access_hash": 0},
+        )
+
+    async def get_peers_count(chat_id=None) -> int | None:
+        cid = chat_id or get_chat_id()
+        try:
+            res = await ctx.mt(
+                "channels.getFullChannel",
+                channel={"_": "inputChannel", "channel_id": cid, "access_hash": 0},
+            )
+            return res.get("full_chat", {}).get("participants_count")
+        except Exception:
+            return None
+
+    # ── formatting ────────────────────────────────────────────────────────────
+
+    def mention(user_id: int, name: str = "user") -> str:
+        return f'<a href="tg://user?id={user_id}">{html.escape(str(name))}</a>'
+
+    def bold(text: str) -> str:
+        return f"<b>{html.escape(str(text))}</b>"
+
+    def italic(text: str) -> str:
+        return f"<i>{html.escape(str(text))}</i>"
+
+    def under(text: str) -> str:
+        return f"<u>{html.escape(str(text))}</u>"
+
+    def strike(text: str) -> str:
+        return f"<s>{html.escape(str(text))}</s>"
+
+    def spoiler(text: str) -> str:
+        return f"<tg-spoiler>{html.escape(str(text))}</tg-spoiler>"
+
+    def code(text: str) -> str:
+        return f"<code>{html.escape(str(text))}</code>"
+
+    def pre(text: str, lang: str = "") -> str:
+        lang_attr = f' class="language-{html.escape(lang)}"' if lang else ""
+        return f"<pre><code{lang_attr}>{html.escape(str(text))}</code></pre>"
+
+    def link(url: str, text: str) -> str:
+        return f'<a href="{url}">{html.escape(str(text))}</a>'
+
+    def hesc(text: str) -> str:
+        return html.escape(str(text))
+
+    def fmt_size(size: int) -> str:
+        for unit in ("B", "KB", "MB", "GB", "TB"):
+            if abs(size) < 1024:
+                return f"{size:.1f} {unit}"
+            size /= 1024
+        return f"{size:.1f} PB"
+
+    def fmt_time(seconds: float) -> str:
+        if seconds < 60:
+            return f"{seconds:.1f}s"
+        mi, s = divmod(int(seconds), 60)
+        if mi < 60:
+            return f"{mi}m {s}s"
+        h, mi = divmod(mi, 60)
+        return f"{h}h {mi}m {s}s"
+
+    # ── response shortcuts ────────────────────────────────────────────────────
+
+    async def respond(text: str, **kwargs) -> Any:
+        return await ctx.respond(text, **kwargs)
+
+    async def edit_msg(text: str, **kwargs) -> Any:
+        return await ctx.respond(text, output="edit", **kwargs)
+
+    async def reply_to(text: str, **kwargs) -> Any:
+        return await ctx.respond(text, output="reply", **kwargs)
+
+    return {
+        # ── smart proxy objects (the main attraction) ──
+        "m": m_proxy,           # current message — m.text, m.chat_id, m.reply(), m.pin(), ...
+        "r": r_proxy,           # reply message   — r.text, r.user_id, r.forward(), ...
+        "db": db_proxy,         # database        — db["key"], db.set(), db.incr(), db.ns(), ...
+        # ── message info shortcuts ──
+        "get_text": get_text,
+        "get_reply_text": get_reply_text,
+        "get_args": get_args,
+        "get_args_list": get_args_list,
+        "get_chat_id": get_chat_id,
+        "get_user_id": get_user_id,
+        "get_msg_id": get_msg_id,
+        "get_reply_id": get_reply_id,
+        "is_reply": is_reply,
+        "is_me": is_me,
+        "has_media": has_media,
+        "get_media": get_media,
+        "get_sender_name": get_sender_name,
+        "get_username": get_username,
+        # ── network/entity ──
+        "get_entity": get_entity,
+        "get_full_user": get_full_user,
+        "get_peers_count": get_peers_count,
+        # ── HTML formatting ──
+        "mention": mention,
+        "bold": bold,
+        "italic": italic,
+        "under": under,
+        "strike": strike,
+        "spoiler": spoiler,
+        "code": code,
+        "pre": pre,
+        "link": link,
+        "hesc": hesc,
+        "fmt_size": fmt_size,
+        "fmt_time": fmt_time,
+        # ── response shortcuts ──
+        "respond": respond,
+        "edit_msg": edit_msg,
+        "reply_to": reply_to,
+        # ── stdlib ──
+        "html": html,
+        "re": re,
+        "json": __import__("json"),
+        "inspect": inspect,
+    }
+
+
+# ─── Shell command ────────────────────────────────────────────────────────────
+
+async def command_sh(ctx, invocation):
+    raw = _get_raw_text(invocation)
     skip_output = False
     if match := re.match(r"^(?:-so|--skip-output)(?:\s+|$)", raw):
         skip_output = True
         raw = raw[match.end():]
 
     cmd = _clean_code(raw)
+    # Auto-use reply message if no inline command
     if not cmd:
         reply_code = await _reply_text(ctx, invocation)
         if reply_code:
             cmd = _clean_code(reply_code)
     if not cmd:
         prefix = ctx.runtime.config.prefix if ctx.runtime else "."
-        await ctx.respond(f"<b>Usage:</b> <code>{prefix}sh &lt;command&gt;</code>", parse_mode="HTML", rich=False)
+        await ctx.respond(
+            f"<b>Usage:</b> <code>{prefix}sh &lt;command&gt;</code>",
+            parse_mode="HTML", rich=False,
+        )
         return
 
-    start_time = time.perf_counter()
+    # Sanitise: unescape TG smart chars only (not indentation – shell is different)
+    cmd = _unescape_tg_code(cmd)
 
+    start_time = time.perf_counter()
     process = await asyncio.create_subprocess_shell(
         cmd,
         stdout=asyncio.subprocess.PIPE,
@@ -150,55 +1072,80 @@ async def command_sh(ctx, invocation):
         sections.append(("stdout", stdout_str, True))
     if stderr_str:
         sections.append(("stderr", stderr_str, True))
-    if not sections:
+    if not stdout_str and not stderr_str:
         sections.append(("result", f"Exit code: {process.returncode}", False))
 
     await _send_result(ctx, sections, elapsed)
 
 
-async def command_py(ctx, invocation):
-    args = getattr(invocation, "args", [])
+# ─── Python REPL command ──────────────────────────────────────────────────────
 
-    raw = " ".join(args)
+async def command_py(ctx, invocation):
+    raw = _get_raw_text(invocation)
     skip_output = False
     if match := re.match(r"^(?:-so|--skip-output)(?:\s+|$)", raw):
         skip_output = True
         raw = raw[match.end():]
 
     raw_code = _clean_code(raw)
+    # Auto-use reply message text if no inline code
     if not raw_code:
         reply_code = await _reply_text(ctx, invocation)
         if reply_code:
             raw_code = _clean_code(reply_code)
     if not raw_code:
         prefix = ctx.runtime.config.prefix if ctx.runtime else "."
-        await ctx.respond(f"<b>Usage:</b> <code>{prefix}py &lt;code&gt;</code> | reply с кодом | -so без вывода", parse_mode="HTML", rich=False)
+        await ctx.respond(
+            f"<b>Usage:</b> <code>{prefix}py &lt;code&gt;</code> | reply с кодом | -so без вывода",
+            parse_mode="HTML", rich=False,
+        )
         return
 
-    raw_code = raw_code.replace("\xa0", "\x20")
+    # Full sanitisation: fix TG mangling + indentation
+    raw_code = _sanitise_code(raw_code)
+
+    # Wrap into async runner function
     wrapped_code = _wrap_eval_code(raw_code)
 
-    reply = getattr(invocation, "reply", None) or getattr(invocation, "reply_message", None)
-    env = {
+    # Resolve reply object (works for both bot and MT contexts)
+    reply = _get_reply(ctx, invocation)
+
+    # Build exec environment — helpers override base entries for m/r/db
+    helpers = _build_py_helpers(ctx, invocation, reply)
+    env: dict[str, Any] = {
+        # !! _auto_await must be in scope — used by _wrap_eval_code output !!
+        "_auto_await": _auto_await,
+        # core context
         "ctx": ctx,
         "runtime": getattr(ctx, "runtime", None),
-        "client": getattr(ctx, "client", getattr(ctx, "tg", None)),
         "tg": getattr(ctx, "tg", None),
         "c": getattr(ctx, "tg", None),
-        "db": getattr(ctx, "state", None),
+        "client": getattr(ctx, "client", getattr(ctx, "tg", None)),
         "state": getattr(ctx, "state", None),
-        "message": getattr(ctx, "message", None),
-        "m": getattr(ctx, "message", None),
-        "msg": getattr(ctx, "message", None),
-        "reply": reply,
-        "r": reply,
+        # raw low-level access (for advanced use)
+        "_source_raw": getattr(ctx, "_source", None),
+        "_reply_raw": reply,
+        # invocation
         "invocation": invocation,
         "i": invocation,
+        # stdlib
         "asyncio": asyncio,
         "os": os,
         "sys": sys,
         "time": time,
+        "re": re,
+        "html": html,
+        "io": io,
+        "traceback": traceback,
+        "inspect": inspect,
+        # helpers override m/r/db with smart proxies
+        **helpers,
     }
+    # Extra aliases that point to the proxy objects from helpers
+    env["msg"] = env["m"]
+    env["message"] = env["m"]
+    env["reply"] = env["r"]
+    env["rep"] = env["r"]
 
     stdout_buf = io.StringIO()
     stderr_buf = io.StringIO()
@@ -209,8 +1156,15 @@ async def command_py(ctx, invocation):
     async def _task():
         nonlocal result_val
         exec_scope = dict(env)
-        exec(wrapped_code, exec_scope)
-        runner = exec_scope["__executor_runner__"]
+        try:
+            bytecode = compile(wrapped_code, "<executor>", "exec")
+        except SyntaxError as exc:
+            # Raise clean error without chaining — avoids double traceback in output
+            raise SyntaxError(f"SyntaxError: {exc.msg} (line {exc.lineno})") from None
+        exec(bytecode, exec_scope)
+        runner = exec_scope.get("__executor_runner__")
+        if runner is None:
+            raise NameError("__executor_runner__ missing — code wrapping failed") from None
         result_val = await runner()
 
     eval_task = asyncio.create_task(_task())
@@ -239,11 +1193,11 @@ async def command_py(ctx, invocation):
     if stderr_str:
         sections.append(("stderr", stderr_str, True))
     if result_val is not None:
-        sections.append(("return", repr(result_val), True))
-        sections.append(("type", type(result_val).__name__, False))
+        type_name = type(result_val).__name__
+        sections.append((f"return ({type_name})", repr(result_val), True))
     if error_trace:
         sections.append(("traceback", error_trace, True))
-    if not sections:
-        sections.append(("result", "Done (None)", False))
+    if len(sections) == 1:  # only "code" section → nothing happened
+        sections.append(("result", "Done ✓", False))
 
     await _send_result(ctx, sections, elapsed)
