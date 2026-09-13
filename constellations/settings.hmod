@@ -1,0 +1,81 @@
+HOTARU = {
+    "id": "hotaru-settings",
+    "version": "1.0.0",
+    "commands": ["alias", "rmalias", "prefix"],
+    "capabilities": ["mt"],
+}
+
+import re
+
+
+_ALIAS_RE = re.compile(r"^[a-z0-9_]{1,32}$")
+
+
+async def command_alias(ctx, invocation):
+    runtime = ctx.runtime
+    if runtime is None:
+        await ctx.respond(ctx.t("hotaru-settings.runtime_unavailable", "Runtime недоступен"))
+        return
+    if len(invocation.args) != 2:
+        await ctx.respond(ctx.t("hotaru-settings.usage_alias", "Использование: !alias <алиас> <команда>"))
+        return
+    alias, command = invocation.args
+    alias = alias.casefold()
+    command = command.casefold().lstrip("/")
+    if not _ALIAS_RE.match(alias):
+        await ctx.respond(ctx.t("hotaru-settings.alias_invalid", "Алиас: 1-32 символа, только a-z, 0-9 и _"))
+        return
+    if runtime.kernel.registry.resolve_name(alias) is None and command not in runtime.kernel.registry.names():
+        pass
+    if runtime.kernel.registry.resolve_name(alias) is not None:
+        await ctx.respond(ctx.t("hotaru-settings.alias_exists", "Такая команда уже существует: {alias}", alias=alias))
+        return
+    target = runtime.kernel.registry.resolve_name(command)
+    if target is None:
+        known = ", ".join(sorted(runtime.kernel.registry.names()))[:800]
+        await ctx.respond(ctx.t("hotaru-settings.command_not_found", "Команда не найдена: {command}\nДоступные: {known}", command=command, known=known))
+        return
+    aliases = runtime.state.get_setting("user_aliases", {})
+    if alias in aliases:
+        await ctx.respond(ctx.t("hotaru-settings.alias_taken", "Алиас уже занят: {alias} -> {command}. Сначала удали его через !rmalias {alias}", alias=alias, command=aliases[alias]))
+        return
+    aliases[alias] = command
+    runtime.state.set_setting("user_aliases", aliases)
+    runtime.kernel.registry.register_alias(alias, command)
+    await ctx.respond(ctx.t("hotaru-settings.alias_set", "Алиас установлен: {alias} → {command}", alias=alias, command=command))
+
+
+async def command_rmalias(ctx, invocation):
+    runtime = ctx.runtime
+    if runtime is None:
+        await ctx.respond(ctx.t("hotaru-settings.runtime_unavailable", "Runtime недоступен"))
+        return
+    if len(invocation.args) != 1:
+        await ctx.respond(ctx.t("hotaru-settings.usage_rmalias", "Использование: !rmalias <алиас>"))
+        return
+    alias = invocation.args[0].casefold()
+    aliases = runtime.state.get_setting("user_aliases", {})
+    if alias in aliases:
+        del aliases[alias]
+        runtime.state.set_setting("user_aliases", aliases)
+        runtime.kernel.registry.unregister_alias(alias)
+        await ctx.respond(ctx.t("hotaru-settings.alias_removed", "Алиас удалён: {alias}", alias=alias))
+    else:
+        await ctx.respond(ctx.t("hotaru-settings.alias_not_found", "Алиас не найден: {alias}", alias=alias))
+
+
+async def command_prefix(ctx, invocation):
+    runtime = ctx.runtime
+    if runtime is None:
+        await ctx.respond(ctx.t("hotaru-settings.runtime_unavailable", "Runtime недоступен"))
+        return
+    if len(invocation.args) != 1:
+        current = runtime.state.get_setting("prefix", "!")
+        await ctx.respond(ctx.t("hotaru-settings.prefix_current", "Текущий префикс: {prefix}. Смена: !prefix <символ>", prefix=current))
+        return
+    new_prefix = invocation.args[0]
+    if len(new_prefix) != 1 or new_prefix.isspace():
+        await ctx.respond(ctx.t("hotaru-settings.prefix_invalid", "Префикс должен быть одним не-пробельным символом"))
+        return
+    runtime.state.set_setting("prefix", new_prefix)
+    await ctx.respond(ctx.t("hotaru-settings.prefix_set", "Префикс сменён на {prefix}. Вступит в силу после перезапуска (!restart)", prefix=new_prefix))

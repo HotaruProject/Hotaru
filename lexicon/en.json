@@ -123,12 +123,6 @@
         },
         "untrust": {
           "description": "Untrust module"
-        },
-        "alias": {
-          "description": "Set command alias"
-        },
-        "unalias": {
-          "description": "Remove alias"
         }
       }
     },
@@ -249,6 +243,14 @@
     "lg": "log tail:\n{lines}",
     "commands": {
       "lg": "view recent observatory log entries"
+    },
+    "hotaru-settings": {
+      "description": "Alias and prefix management",
+      "commands": {
+        "alias": "Create alias",
+        "rmalias": "Remove alias",
+        "prefix": "Change prefix"
+      }
     }
   },
   "commands": {
@@ -274,5 +276,26 @@
     "uk": "Ukrainian",
     "ja": "Japanese"
   },
-  "inline_commands_hint": "Pick a command — type @<bot> and its name in any chat"
+  "inline_commands_hint": "Pick a command — type @<bot> and its name in any chat",
+  "hotaru-settings": {
+    "runtime_unavailable": "Runtime unavailable",
+    "usage_alias": "Usage: !alias <alias> <command>",
+    "alias_invalid": "Alias: 1-32 chars, a-z, 0-9 and _ only",
+    "alias_exists": "Such command already exists: {alias}",
+    "command_not_found": "Command not found: {command}\nAvailable: {known}",
+    "alias_taken": "Alias already taken: {alias} -> {command}. Remove it first via !rmalias {alias}",
+    "alias_set": "Alias set: {alias} → {command}",
+    "usage_rmalias": "Usage: !rmalias <alias>",
+    "alias_removed": "Alias removed: {alias}",
+    "alias_not_found": "Alias not found: {alias}",
+    "prefix_current": "Current prefix: {prefix}. Change: !prefix <char>",
+    "prefix_invalid": "Prefix must be a single non-whitespace character",
+    "prefix_set": "Prefix changed to {prefix}. Takes effect after restart (!restart)",
+    "description": "Alias and prefix management",
+    "commands": {
+      "alias": "Create alias",
+      "rmalias": "Remove alias",
+      "prefix": "Change prefix"
+    }
+  }
 }

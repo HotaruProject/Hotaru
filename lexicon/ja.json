@@ -56,12 +56,6 @@
         },
         "untrust": {
           "description": "信頼を取り消す"
-        },
-        "alias": {
-          "description": "エイリアス設定"
-        },
-        "unalias": {
-          "description": "エイリアス削除"
         }
       }
     },
@@ -222,7 +216,36 @@
     "lg": "ログ末尾:\n{lines}",
     "commands": {
       "lg": "view recent observatory log entries"
+    },
+    "hotaru-settings": {
+      "description": "エイリアスとプレフィックス管理",
+      "commands": {
+        "alias": "エイリアス作成",
+        "rmalias": "エイリアス削除",
+        "prefix": "プレフィックス変更"
+      }
     }
   },
-  "inline_commands_hint": "コマンドを選択 — 任意のチャットで @<bot> とコマンド名を入力"
+  "inline_commands_hint": "コマンドを選択 — 任意のチャットで @<bot> とコマンド名を入力",
+  "hotaru-settings": {
+    "runtime_unavailable": "Runtime unavailable",
+    "usage_alias": "Usage: !alias <alias> <command>",
+    "alias_invalid": "Alias: 1-32 chars, a-z, 0-9 and _ only",
+    "alias_exists": "Such command already exists: {alias}",
+    "command_not_found": "Command not found: {command}\nAvailable: {known}",
+    "alias_taken": "Alias already taken: {alias} -> {command}. Remove it first via !rmalias {alias}",
+    "alias_set": "Alias set: {alias} → {command}",
+    "usage_rmalias": "Usage: !rmalias <alias>",
+    "alias_removed": "Alias removed: {alias}",
+    "alias_not_found": "Alias not found: {alias}",
+    "prefix_current": "Current prefix: {prefix}. Change: !prefix <char>",
+    "prefix_invalid": "Prefix must be a single non-whitespace character",
+    "prefix_set": "Prefix changed to {prefix}. Takes effect after restart (!restart)",
+    "description": "エイリアスとプレフィックス管理",
+    "commands": {
+      "alias": "エイリアス作成",
+      "rmalias": "エイリアス削除",
+      "prefix": "プレフィックス変更"
+    }
+  }
 }
