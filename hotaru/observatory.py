@@ -312,17 +312,17 @@ class _Writer(io.TextIOBase):
     def _emit_line(self, line: str) -> None:
         observatory = _sink.get()
         if observatory is None:
-            try:
-                self.original.write(line + "\n")
-                self.original.flush()
-            except Exception:
-                pass
             return
         observatory.emit("module", "output", level="info", stream=self.stream_name, msg=line[: observatory.max_value])
 
     def write(self, data: str) -> int:
         if not isinstance(data, str):
             data = str(data)
+        try:
+            self.original.write(data)
+            self.original.flush()
+        except Exception:
+            pass
         self._buffer += data
         while "\n" in self._buffer:
             line, self._buffer = self._buffer.split("\n", 1)
