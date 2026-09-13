@@ -85,17 +85,6 @@
       },
       "restarted": "Юзербот сәтті қайта қосылды ({took})"
     },
-    "hotaru-config": {
-      "description": "Hotaru конфигурация модулі",
-      "commands": {
-        "conf": {
-          "description": "Параметрлерді ашу"
-        },
-        "config": {
-          "description": "Параметрлерді ашу"
-        }
-      }
-    },
     "updater": {
       "description": "Hotaru жаңарту",
       "commands": {
@@ -217,7 +206,18 @@
     "commands": {
       "lg": "view recent observatory log entries"
     },
-    "hotaru-settings": {
+    "config": {
+      "description": "Hotaru конфигурация модулі",
+      "commands": {
+        "conf": {
+          "description": "Параметрлерді ашу"
+        },
+        "config": {
+          "description": "Параметрлерді ашу"
+        }
+      }
+    },
+    "settings": {
       "description": "Управление алиасами и префиксом",
       "commands": {
         "alias": "Создать алиас",
@@ -227,7 +227,7 @@
     }
   },
   "inline_commands_hint": "Команданы таңда — кез келген чатта @<бот> және оның атын тер",
-  "hotaru-settings": {
+  "settings": {
     "runtime_unavailable": "Runtime недоступен",
     "usage_alias": "Использование: !alias <алиас> <команда>",
     "alias_invalid": "Алиас: 1-32 символа, только a-z, 0-9 и _",

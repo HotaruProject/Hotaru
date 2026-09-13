@@ -85,17 +85,6 @@
       },
       "restarted": "Юзербот успішно перезапущений за {took}"
     },
-    "hotaru-config": {
-      "description": "Модуль конфігурації Hotaru",
-      "commands": {
-        "conf": {
-          "description": "Відкрити налаштування"
-        },
-        "config": {
-          "description": "Відкрити налаштування"
-        }
-      }
-    },
     "updater": {
       "description": "Автооновлення Hotaru",
       "commands": {
@@ -217,7 +206,18 @@
     "commands": {
       "lg": "view recent observatory log entries"
     },
-    "hotaru-settings": {
+    "config": {
+      "description": "Модуль конфігурації Hotaru",
+      "commands": {
+        "conf": {
+          "description": "Відкрити налаштування"
+        },
+        "config": {
+          "description": "Відкрити налаштування"
+        }
+      }
+    },
+    "settings": {
       "description": "Керування аліасами та префіксом",
       "commands": {
         "alias": "Створити аліас",
@@ -227,7 +227,7 @@
     }
   },
   "inline_commands_hint": "Обери команду — введи @<бот> і її назву в будь-якому чаті",
-  "hotaru-settings": {
+  "settings": {
     "runtime_unavailable": "Runtime недоступен",
     "usage_alias": "Использование: !alias <алиас> <команда>",
     "alias_invalid": "Алиас: 1-32 символа, только a-z, 0-9 и _",
