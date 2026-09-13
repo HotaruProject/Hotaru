@@ -1014,10 +1014,15 @@ class Runtime:
         try:
             with trusted_scope():
                 result = await app.mt_req("users.getUsers", id=[{"_": "inputUserSelf"}])
-            body = result.get("result", result) if isinstance(result, dict) else {}
-            users = body.get("users") if isinstance(body, dict) else None
+            body = result.get("result", result) if isinstance(result, dict) else result
+            if isinstance(body, dict):
+                users = body.get("users") or body.get("result") or []
+            else:
+                users = body
             first = users[0] if isinstance(users, list) and users else None
-            self._premium_cache = bool(first.get("premium")) if isinstance(first, dict) else False
+            if not isinstance(first, dict):
+                first = body if isinstance(body, dict) else {}
+            self._premium_cache = bool(first.get("premium"))
         except Exception:
             self._premium_cache = False
         return self._premium_cache
