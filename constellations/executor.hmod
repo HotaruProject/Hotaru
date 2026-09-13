@@ -280,19 +280,91 @@ def _get_raw_text(invocation: Any) -> str:
 
 # ─── Reply helpers ────────────────────────────────────────────────────────────
 
-def _get_reply(ctx: Any, invocation: Any) -> Any:
-    """Return the reply message object, checking both invocation and ctx."""
+def _reply_header_id(invocation: Any) -> int | None:
+    msg = getattr(invocation, "message", None)
+    if msg is None:
+        return None
+    reply = msg.get("reply_to") if hasattr(msg, "get") else None
+    if not isinstance(reply, dict):
+        return None
+    rid = reply.get("reply_to_msg_id") or reply.get("reply_to_id")
+    return rid if isinstance(rid, int) else None
+
+
+async def _fetch_reply_message(ctx: Any, invocation: Any) -> dict | None:
+    rid = _reply_header_id(invocation)
+    chat_id = None
+    msg = getattr(invocation, "message", None)
+    if msg is not None:
+        chat_id = getattr(msg, "chat_id", None)
+    if rid is None or not isinstance(chat_id, int):
+        return None
+    try:
+        raw = await ctx.mt(
+            "messages.getHistory",
+            peer=chat_id,
+            offset_id=rid + 1,
+            offset_date=0,
+            add_offset=-1,
+            limit=3,
+            max_id=0,
+            min_id=0,
+            hash=0,
+        )
+    except Exception:
+        return None
+    res = raw.get("result", raw) if isinstance(raw, dict) else {}
+    msgs = res.get("messages") if isinstance(res, dict) else None
+    for item in msgs or []:
+        if isinstance(item, dict) and item.get("id") == rid:
+            return item
+    return None
+
+
+def _reply_from_dict(data: dict) -> Any:
+    class _ReplyView:
+        def __init__(self, d):
+            self.__dict__["_d"] = d
+
+        @property
+        def text(self):
+            return self._d.get("message") or self._d.get("text") or ""
+
+        @property
+        def id(self):
+            return self._d.get("id")
+
+        @property
+        def chat_id(self):
+            return self._d.get("chat_id")
+
+        @property
+        def user_id(self):
+            fid = self._d.get("from_id")
+            if isinstance(fid, dict):
+                return fid.get("user_id")
+            return fid
+
+        def get(self, key, default=None):
+            return self._d.get(key, default)
+
+    return _ReplyView(data)
+
+
+async def _get_reply(ctx: Any, invocation: Any) -> Any:
     for obj in (invocation, ctx):
         for attr in ("reply", "reply_message", "reply_to_message"):
             candidate = getattr(obj, attr, None)
             if candidate is not None:
                 return candidate
+    data = await _fetch_reply_message(ctx, invocation)
+    if data is not None:
+        return _reply_from_dict(data)
     return None
 
 
 async def _reply_text(ctx: Any, invocation: Any) -> str | None:
-    """Get text of the replied-to message, supporting both bot and MT contexts."""
-    reply = _get_reply(ctx, invocation)
+    reply = await _get_reply(ctx, invocation)
     if reply is None:
         return None
     for attr in ("text", "raw_text", "message", "caption"):
@@ -1108,7 +1180,7 @@ async def command_py(ctx, invocation):
     wrapped_code = _wrap_eval_code(raw_code)
 
     # Resolve reply object (works for both bot and MT contexts)
-    reply = _get_reply(ctx, invocation)
+    reply = await _get_reply(ctx, invocation)
 
     # Build exec environment — helpers override base entries for m/r/db
     helpers = _build_py_helpers(ctx, invocation, reply)
