@@ -321,8 +321,6 @@ class InlineManager:
         app = self.runtime.app
         if app is None or app.mt is None:
             return
-        from relay.firewall import trusted_scope
-
         with trusted_scope():
             peer = await app.mt.resolve_peer("@" + username)
             await app.mt_req(
@@ -674,3 +672,4 @@ class InlineManager:
     async def stop(self) -> None:
         self._stop.set()
         await self.stop_polling()
+from relay.firewall import trusted_scope

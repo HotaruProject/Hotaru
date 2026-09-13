@@ -147,8 +147,6 @@ class Observatory:
         if tag:
             return tag
         try:
-            from relay.firewall import current_module
-
             return current_module()
         except Exception:
             return ""

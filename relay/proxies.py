@@ -8,6 +8,8 @@ from .caps import MT_BLOCKED, normalize_method
 from .denylist import payload_hits_blocked
 from .firewall import trusted_scope
 from goygram.rich import rich_html
+from goygram.sugar import extract_sent_message
+from goygram.types.kbd import kbd_to_tl
 
 
 class AssetsHelper:
@@ -340,8 +342,6 @@ class BotGateway:
 
     @staticmethod
     def extract_sent(result: Any) -> dict[str, Any] | None:
-        from goygram.sugar import extract_sent_message
-
         body = result.get("result", result) if isinstance(result, dict) else result
         sent = extract_sent_message(body)
         if sent is not None and isinstance(sent.get("id"), int):
@@ -365,8 +365,6 @@ class BotGateway:
             return await app.bot_req(method, **kwargs)
 
     def _tl_markup(self, markup: Any) -> Any:
-        from goygram.types.kbd import kbd_to_tl
-
         if markup is None:
             return None
         if isinstance(markup, list):
@@ -651,7 +649,6 @@ class UiHelper:
 
     def button(self, text: str, action: str | Callable[[Any, Any], Any], payload: Any = None, *, style: str | None = None) -> dict[str, str]:
         from hotaru.callbacks import CallbackBinding
-
         if callable(action):
             action_id = self.on(action)
         else:

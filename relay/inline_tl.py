@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from typing import Any
 
+from goygram.sugar import html_to_entities
+from goygram.types.kbd import kbd_to_tl
+
 _MEDIA_KINDS = {"photo", "video", "mpeg4_gif", "audio", "voice", "document", "gif"}
 
 
@@ -23,14 +26,10 @@ def _mime_of(result: dict[str, Any], kind: str) -> str:
 
 
 def _html_to_entities(html_src: str) -> tuple[str, list[dict[str, Any]]]:
-    from goygram.sugar import html_to_entities
-
     return html_to_entities(html_src)
 
 
 def _kbd(buttons: Any) -> dict[str, Any] | None:
-    from goygram.types.kbd import kbd_to_tl
-
     if buttons is None:
         return None
     if isinstance(buttons, dict) and buttons.get("_") in {"replyInlineMarkup", "replyKeyboardMarkup", "replyKeyboardHide", "replyForceReply"}:

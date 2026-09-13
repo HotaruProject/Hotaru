@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 import secrets
 import tempfile
@@ -11,7 +12,22 @@ from goygram.errors import FloodWaitError, MessageNotModifiedError
 
 from .state import StateNamespace
 from .plainfmt import rich_to_plain
+from relay.firewall import trusted_scope
 from goygram.rich import rich_html
+from goygram.sugar import html_to_entities, split_html_text
+from relay.proxies import (
+    Gateway,
+    RichGateway,
+    BotGateway,
+    InlineHelper,
+    HtmlHelper,
+    AssetsHelper,
+    ModulesHelper,
+    UiHelper,
+)
+from relay.toolkit import TOOLS
+
+log = logging.getLogger(__name__)
 
 
 OutputMode = Literal["edit", "reply", "auto"]
@@ -180,7 +196,6 @@ class ResponseService:
                 payload["parse_mode"] = "HTML"
             else:
                 payload.pop("parse_mode", None)
-                from goygram.sugar import html_to_entities
                 plain, entities = html_to_entities(text)
                 payload["entities"] = entities
                 text = plain
@@ -270,7 +285,6 @@ class ResponseService:
         return result
 
     async def split_html(self, message: Any, text: str, *, limit: int = 4096, max_parts: int = 20, **kwargs: Any) -> list[Any]:
-        from goygram.sugar import split_html_text
         if limit < 256:
             raise ValueError("limit must be at least 256")
         parts = [part for part in split_html_text(text, limit) if part.strip()]
@@ -370,28 +384,23 @@ class ModuleContext:
 
     @property
     def tg(self) -> Any:
-        from relay.proxies import Gateway
-        return Gateway(self.cap_host, self.module_id)
+            return Gateway(self.cap_host, self.module_id)
 
     @property
     def rich(self) -> Any:
-        from relay.proxies import RichGateway
-        return RichGateway(self.tg, self._source)
+            return RichGateway(self.tg, self._source)
 
     @property
     def bot(self) -> Any:
-        from relay.proxies import BotGateway
-        return BotGateway(self.inline_manager)
+            return BotGateway(self.inline_manager)
 
     @property
     def inline(self) -> Any:
-        from relay.proxies import InlineHelper
-        return InlineHelper(self.inline_manager)
+            return InlineHelper(self.inline_manager)
 
     @property
     def html(self) -> Any:
-        from relay.proxies import HtmlHelper
-        return HtmlHelper()
+            return HtmlHelper()
 
     @property
     def i18n(self) -> Any:
@@ -431,22 +440,18 @@ class ModuleContext:
 
     @property
     def tools(self) -> Any:
-        from relay.toolkit import TOOLS
         return TOOLS
 
     @property
     def assets(self) -> Any:
-        from relay.proxies import AssetsHelper
-        return AssetsHelper(self)
+            return AssetsHelper(self)
 
     @property
     def modules(self) -> Any:
-        from relay.proxies import ModulesHelper
         return ModulesHelper(self)
 
     @property
     def ui(self) -> Any:
-        from relay.proxies import UiHelper
         owner_id = getattr(self._source, "from_id", None)
         if not isinstance(owner_id, int) and self.runtime is not None:
             owner_id = getattr(getattr(self.runtime, "kernel", None), "owner_id", None)
@@ -472,28 +477,21 @@ class ModuleContext:
         if app is None or getattr(app, "mt", None) is None:
             return False
         try:
-            from relay.firewall import trusted_scope
-
             with trusted_scope():
-                user = await app.core.get_self(refresh=True)
-            found = bool(user.get("premium")) if isinstance(user, dict) else None
-            if found is None:
-                with trusted_scope():
-                    result = await app.mt_req("users.getUsers", id=[{"_": "inputUserSelf"}])
-                body = result.get("result", result) if isinstance(result, dict) else result
-                if isinstance(body, dict):
-                    users = body.get("users") or body.get("result") or []
-                else:
-                    users = body
-                first = users[0] if isinstance(users, list) and users else None
-                if not isinstance(first, dict):
-                    first = body if isinstance(body, dict) else {}
-                found = bool(first.get("premium"))
-            self.is_premium = found
-            return found
+                result = await app.mt_req("users.getUsers", id=[{"_": "inputUserSelf"}])
+            body = result.get("result", result) if isinstance(result, dict) else result
+            if isinstance(body, dict):
+                users = body.get("users") or body.get("result") or []
+            else:
+                users = body
+            first = users[0] if isinstance(users, list) and users else None
+            if not isinstance(first, dict):
+                first = body if isinstance(body, dict) else {}
+            self.is_premium = bool(first.get("premium"))
         except Exception:
-            pass
-        return False
+            log.error("premium check failed", exc_info=True)
+            return False
+        return self.is_premium
 
     async def answer(self, text: str | None = None, **kwargs: Any) -> Any:
         if text is not None:
@@ -750,7 +748,6 @@ class ModuleContext:
         return Response(True, "reply", getattr(self._source, "src", None), result)
 
     async def _trusted_send_rich(self, html: str, peer: Any, *, output: str = "reply", message_id: int | None = None, **kwargs: Any) -> Response:
-        from relay.firewall import trusted_scope
         import secrets as _secrets
         app = self.runtime.app
         rich_message = {"_": "inputRichMessageHTML", **rich_html(html)}
