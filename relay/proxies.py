@@ -727,23 +727,31 @@ class ForumHelper:
 
     async def _sync_channel_to_bot(self, chat_id: int) -> None:
         now = time.monotonic()
-        if now - self._sync_ts < 300.0:
+        if now - self._sync_ts < 30.0:
             return
         self._sync_ts = now
         app = self._bot_app()
-        mt = getattr(app, "mt", None)
-        raw = -chat_id - 1000000000000
-        if mt is None:
+        bot_mt = getattr(app, "mt", None)
+        if bot_mt is None:
             return
+        # Have the BOT call messages.getDialogs from its own session.
+        # After being invited to the forum channel the channel appears in
+        # the bot's dialog list with the bot-side access_hash (which is
+        # different from the userbot's access_hash — MTProto access_hashes
+        # are per-account).  This populates the bot's entity cache so that
+        # subsequent resolve_peer(chat_id) calls succeed.
         try:
-            res = await self._bot_call("channels.getChannels", channel=[{"_": "inputChannel", "channel_id": raw, "access_hash": 0}])
+            res = await self._bot_call(
+                "messages.getDialogs",
+                offset_date=0,
+                offset_id=0,
+                offset_peer={"_": "inputPeerEmpty"},
+                limit=100,
+                hash=0,
+            )
+            self._ingest_bot(res)
         except Exception:
             return
-        body = self._body(res)
-        for chat in body.get("chats") or []:
-            if isinstance(chat, dict) and chat.get("_") == "channel" and int(chat.get("id") or 0) == raw and chat.get("access_hash"):
-                mt._ingest_entities({"chats": [chat]})
-                return
 
     async def ensure_topic(self, title: str) -> int | None:
         chat_id = await self.ensure_group()

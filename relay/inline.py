@@ -517,21 +517,27 @@ class InlineManager:
         mt = getattr(app, "mt", None)
         if mt is None:
             return
-        username = None
-        main = getattr(runtime, "app", None)
-        main_mt = getattr(main, "mt", None) if main is not None else None
-        if main_mt is not None:
-            try:
-                result = await main_mt.call("users.getUsers", id=[{"_": "inputPeerSelf"}])
-                body = result.get("result", result) if isinstance(result, dict) else result
-                users = body.get("users") if isinstance(body, dict) else body
-                if isinstance(users, list) and users and isinstance(users[0], dict):
-                    username = users[0].get("username")
-                elif isinstance(body, dict) and isinstance(body.get("username"), str):
-                    username = body.get("username")
-            except Exception as exc:
-                if runtime.observatory is not None:
-                    runtime.observatory.emit("inline", "warmup_self_lookup_error", error=type(exc).__name__)
+        # Prefer username from already-resolved bot info — it's available
+        # immediately without any network round-trip and avoids the startup
+        # timeout that occurred when querying the userbot MT before its
+        # connection was fully established.
+        username = getattr(self.info, "username", None) if self.info is not None else None
+        if not isinstance(username, str) or not username:
+            # Fall back to fetching via userbot MT only if info has no username.
+            main = getattr(runtime, "app", None)
+            main_mt = getattr(main, "mt", None) if main is not None else None
+            if main_mt is not None:
+                try:
+                    result = await main_mt.call("users.getUsers", id=[{"_": "inputPeerSelf"}])
+                    body = result.get("result", result) if isinstance(result, dict) else result
+                    users = body.get("users") if isinstance(body, dict) else body
+                    if isinstance(users, list) and users and isinstance(users[0], dict):
+                        username = users[0].get("username")
+                    elif isinstance(body, dict) and isinstance(body.get("username"), str):
+                        username = body.get("username")
+                except Exception as exc:
+                    if runtime.observatory is not None:
+                        runtime.observatory.emit("inline", "warmup_self_lookup_error", error=type(exc).__name__)
         if not isinstance(username, str) or not username:
             if runtime.observatory is not None:
                 runtime.observatory.emit("inline", "warmup_no_username")

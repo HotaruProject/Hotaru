@@ -15,7 +15,24 @@ import html
 import time
 
 TOPIC_TITLE = "Logs"
-LEVELS = {"error": 0, "critical": 0, "warn": 1, "warning": 1, "info": 2, "debug": 3}
+
+# Standard production log levels — numeric value matches Python logging convention.
+# Higher = more severe; filter passes events with level >= floor.
+# ALL (0) captures everything including custom trace-level events.
+LEVELS = {
+    "all":      0,
+    "debug":    10,
+    "info":     20,
+    "warn":     30,
+    "warning":  30,
+    "error":    40,
+    "critical": 50,
+    "fatal":    50,
+}
+# Canonical names shown in help / status (excludes aliases)
+LEVEL_NAMES = ["all", "debug", "info", "warn", "error", "fatal"]
+_DEFAULT_FLOOR = LEVELS["info"]
+
 _state = {"sub": None, "queue": None, "topic_id": None, "last_sync": 0.0, "failed": 0, "last_error": ""}
 
 
@@ -36,7 +53,7 @@ def _level_floor(state):
     raw = state.get("level") if state is not None else None
     if isinstance(raw, str) and raw.lower() in LEVELS:
         return LEVELS[raw.lower()]
-    return LEVELS["info"]
+    return _DEFAULT_FLOOR
 
 
 def _fmt(payload):
@@ -59,7 +76,8 @@ def _sink(payload):
     if payload.get("component") == "logger":
         return
     level = str(payload.get("level") or "info").lower()
-    if LEVELS.get(level, 2) > _state.get("floor", 2):
+    # Pass events whose numeric severity >= current floor (more severe = higher number).
+    if LEVELS.get(level, LEVELS["info"]) < _state.get("floor", _DEFAULT_FLOOR):
         return
     queue = _state["queue"]
     if queue is None:
@@ -140,10 +158,11 @@ async def command_logs(ctx, invocation):
         key = "kernel.logger.mirror_on" if enabled else "kernel.logger.mirror_off"
         await ctx.respond(f"<b>{ctx.t(key, 'Log mirror ' + args[0])}</b>", parse_mode="HTML")
         return
-    if args and args[0] in LEVELS and len(args) == 1:
-        ctx.state.set("level", args[0].lower())
-        _state["floor"] = LEVELS[args[0].lower()]
-        await ctx.respond(f"<code>{ctx.t('kernel.logger.level_set', 'Mirror level: ' + args[0].lower(), level=args[0].lower())}</code>", parse_mode="HTML")
+    if args and args[0].lower() in LEVELS and len(args) == 1:
+        name = args[0].lower()
+        ctx.state.set("level", name)
+        _state["floor"] = LEVELS[name]
+        await ctx.respond(f"<code>{ctx.t('kernel.logger.level_set', 'Mirror level: ' + name, level=name)}</code>", parse_mode="HTML")
         return
     if args and args[0] in ("status", "st"):
         failed = _state.get("failed", 0)
@@ -157,7 +176,7 @@ async def command_logs(ctx, invocation):
     if obs is None:
         await ctx.respond(ctx.t("kernel.logger.no_observatory", "Обсерватория недоступна"), parse_mode="HTML")
         return
-    level = args[0] if args and args[0] in LEVELS else "debug"
+    level = args[0].lower() if args and args[0].lower() in LEVELS else "debug"
     entries = obs.tail(lines=60, level=level)
     if not entries:
         await ctx.respond(ctx.t("kernel.logger.no_entries", "Нет записей этого уровня"), parse_mode="HTML")

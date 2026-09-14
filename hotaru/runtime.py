@@ -1513,16 +1513,15 @@ class Runtime:
     async def activate_module(self, path: str, *, health: Any = None, trusted: bool | None = None) -> Any:
         if self.modules is None or self.kernel is None:
             raise RuntimeError("build the runtime before activating modules")
-        self._backup_before_activation(path)
-                                                                                               
         is_kernel = self._is_kernel_path(path)
         if is_kernel:
-                                                              
             trusted = True
         elif trusted is None:
             loaded = self.modules.loader.load(path)
             module_id = loaded.manifest.module_id
             trusted = bool(self.state is not None and self.state.namespace(module_id).get("trusted") == "1")
+        if not is_kernel:
+            self._backup_before_activation(path)
         result = await self.modules.activate_source(
             path, self.kernel, health=health, sandbox=self.sandbox, trusted=bool(trusted), is_kernel=is_kernel,
         )
