@@ -11,6 +11,7 @@ from .caps import MT_BLOCKED, normalize_method
 from .denylist import payload_hits_blocked
 from .firewall import trusted_scope
 from goygram import ext as rx
+from goygram.errors import ChannelNotFoundError
 from goygram.rich import rich_html
 from goygram.sugar import extract_sent_message, html_to_entities
 from goygram.types.kbd import kbd_to_tl
@@ -732,9 +733,17 @@ class ForumHelper:
         app = self._bot_app()
         mt = getattr(app, "mt", None)
         raw = -chat_id - 1000000000000
-        entity = self._user_mt().entities.get(("chat", raw))
-        if mt is not None and entity:
-            mt._ingest_entities({"chats": [entity]})
+        if mt is None:
+            return
+        try:
+            res = await self._bot_call("channels.getChannels", channel=[{"_": "inputChannel", "channel_id": raw, "access_hash": 0}])
+        except Exception:
+            return
+        body = self._body(res)
+        for chat in body.get("chats") or []:
+            if isinstance(chat, dict) and chat.get("_") == "channel" and int(chat.get("id") or 0) == raw and chat.get("access_hash"):
+                mt._ingest_entities({"chats": [chat]})
+                return
 
     async def ensure_topic(self, title: str) -> int | None:
         chat_id = await self.ensure_group()
