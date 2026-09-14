@@ -725,6 +725,23 @@ class ForumHelper:
         except Exception:
             return
 
+    def _state_key_bot_hash(self, raw_channel_id: int) -> str:
+        return f"forum-bot-hash-{raw_channel_id}"
+
+    def _load_bot_hash(self, chat_id: int) -> int | None:
+        state = getattr(self._runtime, "state", None)
+        if state is None:
+            return None
+        raw = -chat_id - 1000000000000
+        stored = state.get_setting(self._state_key_bot_hash(raw))
+        return int(stored) if isinstance(stored, int) and stored != 0 else None
+
+    def _save_bot_hash(self, chat_id: int, access_hash: int) -> None:
+        state = getattr(self._runtime, "state", None)
+        if state is not None and access_hash:
+            raw = -chat_id - 1000000000000
+            state.set_setting(self._state_key_bot_hash(raw), access_hash)
+
     async def _sync_channel_to_bot(self, chat_id: int) -> None:
         now = time.monotonic()
         if now - self._sync_ts < 30.0:
@@ -734,12 +751,32 @@ class ForumHelper:
         bot_mt = getattr(app, "mt", None)
         if bot_mt is None:
             return
-        # Have the BOT call messages.getDialogs from its own session.
-        # After being invited to the forum channel the channel appears in
-        # the bot's dialog list with the bot-side access_hash (which is
-        # different from the userbot's access_hash — MTProto access_hashes
-        # are per-account).  This populates the bot's entity cache so that
-        # subsequent resolve_peer(chat_id) calls succeed.
+        raw = -chat_id - 1000000000000
+
+        # Phase 1: if we already have a persisted bot-side access_hash from a
+        # previous session, inject it directly into the bot's entity cache.
+        # This is the reliable path after restarts: messages.getDialogs only
+        # returns the most-recent 100 dialogs, so an inactive forum channel
+        # won't appear there and the entity cache would stay empty, causing
+        # resolve_peer to raise ValueError and fall back to the userbot.
+        stored_hash = self._load_bot_hash(chat_id)
+        if stored_hash is not None:
+            try:
+                res = await self._bot_call(
+                    "channels.getChannels",
+                    channel=[{"_": "inputChannel", "channel_id": raw, "access_hash": stored_hash}],
+                )
+                self._ingest_bot(res)
+                # Verify it actually worked before returning
+                if await self._bot_resolve(chat_id) is not None:
+                    return
+                # Hash may have changed (e.g. channel migrated) — fall through
+            except Exception:
+                pass  # Fall through to getDialogs
+
+        # Phase 2: discover the channel via getDialogs (works when channel is
+        # recent, e.g. right after bot is first invited).  Extract and persist
+        # the bot-side access_hash so future restarts use Phase 1 instead.
         try:
             res = await self._bot_call(
                 "messages.getDialogs",
@@ -750,6 +787,14 @@ class ForumHelper:
                 hash=0,
             )
             self._ingest_bot(res)
+            # Extract and persist the bot-side access_hash for the forum channel
+            body = self._body(res)
+            for chat in body.get("chats") or []:
+                if isinstance(chat, dict) and int(chat.get("id") or 0) == raw:
+                    ah = chat.get("access_hash")
+                    if isinstance(ah, int) and ah:
+                        self._save_bot_hash(chat_id, ah)
+                    break
         except Exception:
             return
 
