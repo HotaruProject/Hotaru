@@ -605,7 +605,7 @@ class ForumHelper:
         if state is not None:
             state.set_setting("forum-channel-id", int(chat_id))
 
-    async def _find_group_by_title(self, title: str) -> int | None:
+    async def _find_groups_by_title(self, title: str) -> list[tuple[dict[str, Any], int]]:
         mt = self._user_mt()
         with trusted_scope():
             dialogs = await mt.call(
@@ -617,56 +617,148 @@ class ForumHelper:
                 hash=0,
             )
         self._ingest_user(dialogs)
+        found: list[tuple[dict[str, Any], int]] = []
         for chat in self._body(dialogs).get("chats") or []:
             if isinstance(chat, dict) and chat.get("_") == "channel" and str(chat.get("title") or "") == title:
-                return -1000000000000 - int(chat["id"])
-        return None
+                found.append((chat, -1000000000000 - int(chat["id"])))
+        return found
 
-    async def _warm_user_entity(self, chat_id: int) -> bool:
+    async def _delete_owned_group(self, chat: dict[str, Any], chat_id: int) -> None:
+        if chat.get("creator") is not True:
+            return
+        peer = await self._user_peer(chat_id)
+        if peer is None:
+            return
+        try:
+            await self._user_call("channels.deleteChannel", channel=peer)
+        except Exception:
+            return
+
+    async def _hide_general(self, chat_id: int) -> None:
+        peer = await self._user_peer(chat_id)
+        if peer is None:
+            return
+        try:
+            await self._user_call("messages.editForumTopic", peer=peer, topic_id=1, hidden=True)
+        except Exception:
+            return
+
+    def _emit(self, event: str, **fields: Any) -> None:
+        obs = getattr(self._runtime, "observatory", None)
+        if obs is not None:
+            try:
+                obs.emit("forum", event, **fields)
+            except Exception:
+                pass
+
+    async def _warm_user_entity(self, chat_id: int, force: bool = False) -> bool:
         if chat_id in self._warmed:
             return True
         now = time.monotonic()
-        if now - self._warm_tries.get(chat_id, 0.0) < 30.0:
+        if not force and now - self._warm_tries.get(chat_id, 0.0) < 30.0:
             return False
         self._warm_tries[chat_id] = now
         mt = self._user_mt()
+        raw = -chat_id - 1000000000000
         with trusted_scope():
             try:
                 await mt.resolve_peer(chat_id)
-                self._warmed.add(chat_id)
-                return True
             except Exception:
-                pass
-            dialogs = await mt.call(
-                "messages.getDialogs",
-                offset_date=0,
-                offset_id=0,
-                offset_peer={"_": "inputPeerEmpty"},
-                limit=100,
-                hash=0,
-            )
-        self._ingest_user(dialogs)
-        with trusted_scope():
-            try:
-                await mt.resolve_peer(chat_id)
-                self._warmed.add(chat_id)
-                return True
-            except Exception:
+                try:
+                    dialogs = await mt.call(
+                        "messages.getDialogs",
+                        offset_date=0,
+                        offset_id=0,
+                        offset_peer={"_": "inputPeerEmpty"},
+                        limit=100,
+                        hash=0,
+                    )
+                    self._ingest_user(dialogs)
+                    await mt.resolve_peer(chat_id)
+                except Exception as exc:
+                    self._emit("warm_failed", chat=chat_id, reason="resolve", detail=str(exc)[:160])
+                    return False
+            entity = mt.entities.get(("chat", raw))
+            if not isinstance(entity, dict):
+                self._emit("warm_failed", chat=chat_id, reason="entity")
                 return False
+            access_hash = int(entity.get("access_hash") or 0)
+            if not access_hash:
+                self._emit("warm_failed", chat=chat_id, reason="hash")
+                return False
+            try:
+                res = await mt.call(
+                    "channels.getChannels",
+                    id=[{"_": "inputChannel", "channel_id": raw, "access_hash": access_hash}],
+                )
+            except Exception as exc:
+                text = str(exc).upper()
+                self._emit("warm_failed", chat=chat_id, reason="getchannels", detail=str(exc)[:160])
+                if "CHANNEL_PRIVATE" in text or "CHANNEL_INVALID" in text:
+                    self._warmed.discard(chat_id)
+                    await self._reset_group()
+                return False
+        alive = False
+        for chat in self._body(res).get("chats") or []:
+            if isinstance(chat, dict) and int(chat.get("id") or 0) == raw:
+                alive = True
+                break
+        if not alive:
+            self._emit("warm_failed", chat=chat_id, reason="missing")
+            return False
+        self._ingest_user(res)
+        self._warmed.add(chat_id)
+        return True
+
+    async def _drop_if_private(self, chat_id: int, exc: Exception) -> None:
+        text = str(exc).upper()
+        if "CHANNEL_PRIVATE" not in text and "CHANNEL_INVALID" not in text:
+            return
+        self._warmed.discard(chat_id)
+        if await self._warm_user_entity(chat_id, force=True):
+            return
+        await self._reset_group()
+
+    async def _recover_bot_membership(self, chat_id: int, exc: Exception) -> bool:
+        text = str(exc).upper()
+        if "CHANNEL_PRIVATE" not in text and "USER_NOT_PARTICIPANT" not in text:
+            return False
+        self._sync_ts = 0.0
+        await self._invite_bot(chat_id)
+        await self._sync_channel_to_bot(chat_id)
+        return await self._bot_resolve(chat_id) is not None
+
+    async def _reset_group(self) -> None:
+        state = getattr(self._runtime, "state", None)
+        if state is not None:
+            state.set_setting("forum-channel-id", 0)
+        self._warmed.clear()
+        self._topic_tries.clear()
+        self._group_try_ts = 0.0
 
     async def ensure_group(self) -> int | None:
         chat_id = await self.group()
-        if chat_id is not None and await self._warm_user_entity(chat_id):
-            return chat_id
+        if chat_id is not None:
+            return chat_id if await self._warm_user_entity(chat_id) else None
         async with self._lock:
             chat_id = await self.group()
-            if chat_id is not None and await self._warm_user_entity(chat_id):
-                return chat_id
+            if chat_id is not None:
+                return chat_id if await self._warm_user_entity(chat_id) else None
             now = time.monotonic()
             if now - self._group_try_ts < 60.0:
                 return None
             self._group_try_ts = now
             title = str(getattr(self._runtime, "forum_title", None) or "Hotaru")
+            found = await self._find_groups_by_title(title)
+            if found:
+                for chat, cid in found[1:]:
+                    await self._delete_owned_group(chat, cid)
+                await self._save_group(found[0][1])
+                self._sync_ts = 0.0
+                self._warmed.add(found[0][1])
+                await self._invite_bot(found[0][1])
+                await self._sync_channel_to_bot(found[0][1])
+                return found[0][1]
             result = await self._user_call(
                 "channels.createChannel",
                 megagroup=True,
@@ -678,12 +770,14 @@ class ForumHelper:
             for chat in body.get("chats") or []:
                 if isinstance(chat, dict) and chat.get("_") == "channel" and isinstance(chat.get("id"), int):
                     self._ingest_user(result)
-                    await self._save_group(-1000000000000 - int(chat["id"]))
-                    return -1000000000000 - int(chat["id"])
-            found = await self._find_group_by_title(title)
-            if found is not None:
-                await self._save_group(found)
-                return found
+                    new_id = -1000000000000 - int(chat["id"])
+                    await self._save_group(new_id)
+                    self._sync_ts = 0.0
+                    self._warmed.add(new_id)
+                    await self._invite_bot(new_id)
+                    await self._sync_channel_to_bot(new_id)
+                    await self._hide_general(new_id)
+                    return new_id
             return None
 
     async def _bot_resolve(self, chat_id: int) -> bytes | None:
@@ -717,10 +811,11 @@ class ForumHelper:
             if bot_user is None:
                 return
             with trusted_scope():
+                user_hex = bytes(rx.serialize_constructor("inputUser", json.dumps({"_": "inputUser", "user_id": bot_id, "access_hash": int(bot_user["access_hash"])}))).hex()
                 await mt.call(
                     "channels.inviteToChannel",
                     channel=peer,
-                    users=[{"_": "inputUser", "user_id": bot_id, "access_hash": int(bot_user["access_hash"])}],
+                    users=[user_hex],
                 )
         except Exception:
             return
@@ -758,7 +853,7 @@ class ForumHelper:
             try:
                 res = await self._bot_call(
                     "channels.getChannels",
-                    channel=[{"_": "inputChannel", "channel_id": raw, "access_hash": stored_hash}],
+                    id=[{"_": "inputChannel", "channel_id": raw, "access_hash": stored_hash}],
                 )
                 self._ingest_bot(res)
                 if await self._bot_resolve(chat_id) is not None:
@@ -769,7 +864,7 @@ class ForumHelper:
         try:
             res = await self._bot_call(
                 "channels.getChannels",
-                channel=[{"_": "inputChannel", "channel_id": raw, "access_hash": 0}],
+                id=[{"_": "inputChannel", "channel_id": raw, "access_hash": 0}],
             )
             self._ingest_bot(res)
             for chat in self._body(res).get("chats") or []:
@@ -805,6 +900,12 @@ class ForumHelper:
             action = msg.get("action")
             if isinstance(action, dict) and action.get("_") == "messageActionTopicCreate" and isinstance(msg.get("id"), int):
                 return int(msg["id"])
+        self._topic_tries.pop(title, None)
+        recheck = await self._user_call("messages.getForumTopics", peer=chat_id, offset_date=0, offset_id=0, offset_topic=0, limit=100)
+        self._ingest_user(recheck)
+        for topic in self._body(recheck).get("topics") or []:
+            if isinstance(topic, dict) and isinstance(topic.get("id"), int) and str(topic.get("title") or "") == title:
+                return int(topic["id"])
         return None
 
     async def _user_peer(self, chat_id: int) -> bytes | None:
@@ -827,6 +928,15 @@ class ForumHelper:
         chat_id = await self.ensure_group()
         if chat_id is None:
             raise RuntimeError("forum group is not available")
+        try:
+            return await self._send_once(chat_id, topic_id, text, rich=rich, reply_to=reply_to)
+        except Exception as exc:
+            await self._drop_if_private(chat_id, exc)
+            if await self._recover_bot_membership(chat_id, exc):
+                return await self._send_once(chat_id, topic_id, text, rich=rich, reply_to=reply_to)
+            raise
+
+    async def _send_once(self, chat_id: int, topic_id: int, text: str, *, rich: Any = None, reply_to: int | None = None) -> Any:
         use_bot = await self._bot_ready(chat_id)
         data: dict[str, Any] = {"random_id": secrets.randbits(63)}
         if isinstance(rich, dict):
@@ -856,6 +966,16 @@ class ForumHelper:
         chat_id = await self.ensure_group()
         if chat_id is None:
             raise RuntimeError("forum group is not available")
+        try:
+            return await self._send_file_once(chat_id, topic_id, path, caption, file_name=file_name)
+        except Exception as exc:
+            await self._drop_if_private(chat_id, exc)
+            chat_id = await self.ensure_group()
+            if chat_id is None:
+                raise
+            return await self._send_file_once(chat_id, topic_id, path, caption, file_name=file_name)
+
+    async def _send_file_once(self, chat_id: int, topic_id: int, path: Any, caption: str, *, file_name: str | None = None) -> Any:
         use_bot = await self._bot_ready(chat_id)
         app = self._bot_app() if use_bot else None
         mt = self._user_mt() if app is None else None
@@ -879,6 +999,13 @@ class ForumHelper:
         chat_id = await self.ensure_group()
         if chat_id is None:
             raise RuntimeError("forum group is not available")
+        try:
+            return await self._edit_once(chat_id, message_id, text, rich=rich)
+        except Exception as exc:
+            await self._drop_if_private(chat_id, exc)
+            raise
+
+    async def _edit_once(self, chat_id: int, message_id: int, text: str, *, rich: Any = None) -> Any:
         use_bot = await self._bot_ready(chat_id)
         data: dict[str, Any] = {"id": int(message_id), "message": ""}
         if isinstance(rich, dict):

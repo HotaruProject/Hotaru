@@ -18,8 +18,10 @@ import pty
 import textwrap
 import time
 import traceback
+import json
 from typing import Any
 
+from goygram import ext as rx
 from goygram.sugar import extract_sent_message
 
 
@@ -1059,17 +1061,19 @@ def _build_py_helpers(ctx: Any, invocation: Any, reply: Any) -> dict[str, Any]:
 
     async def get_full_user(user_id=None) -> Any:
         uid = user_id or get_user_id()
+        user_hex = bytes(rx.serialize_constructor("inputUser", json.dumps({"_": "inputUser", "user_id": uid, "access_hash": 0}))).hex()
         return await ctx.mt(
             "users.getFullUser",
-            id={"_": "inputUser", "user_id": uid, "access_hash": 0},
+            id=user_hex,
         )
 
     async def get_peers_count(chat_id=None) -> int | None:
         cid = chat_id or get_chat_id()
         try:
+            chan_hex = bytes(rx.serialize_constructor("inputChannel", json.dumps({"_": "inputChannel", "channel_id": cid, "access_hash": 0}))).hex()
             res = await ctx.mt(
                 "channels.getFullChannel",
-                channel={"_": "inputChannel", "channel_id": cid, "access_hash": 0},
+                channel=chan_hex,
             )
             return res.get("full_chat", {}).get("participants_count")
         except Exception:
