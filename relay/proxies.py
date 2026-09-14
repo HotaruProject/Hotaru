@@ -753,12 +753,6 @@ class ForumHelper:
             return
         raw = -chat_id - 1000000000000
 
-        # Phase 1: if we already have a persisted bot-side access_hash from a
-        # previous session, inject it directly into the bot's entity cache.
-        # This is the reliable path after restarts: messages.getDialogs only
-        # returns the most-recent 100 dialogs, so an inactive forum channel
-        # won't appear there and the entity cache would stay empty, causing
-        # resolve_peer to raise ValueError and fall back to the userbot.
         stored_hash = self._load_bot_hash(chat_id)
         if stored_hash is not None:
             try:
@@ -767,29 +761,18 @@ class ForumHelper:
                     channel=[{"_": "inputChannel", "channel_id": raw, "access_hash": stored_hash}],
                 )
                 self._ingest_bot(res)
-                # Verify it actually worked before returning
                 if await self._bot_resolve(chat_id) is not None:
                     return
-                # Hash may have changed (e.g. channel migrated) — fall through
             except Exception:
-                pass  # Fall through to getDialogs
+                pass
 
-        # Phase 2: discover the channel via getDialogs (works when channel is
-        # recent, e.g. right after bot is first invited).  Extract and persist
-        # the bot-side access_hash so future restarts use Phase 1 instead.
         try:
             res = await self._bot_call(
-                "messages.getDialogs",
-                offset_date=0,
-                offset_id=0,
-                offset_peer={"_": "inputPeerEmpty"},
-                limit=100,
-                hash=0,
+                "channels.getChannels",
+                channel=[{"_": "inputChannel", "channel_id": raw, "access_hash": 0}],
             )
             self._ingest_bot(res)
-            # Extract and persist the bot-side access_hash for the forum channel
-            body = self._body(res)
-            for chat in body.get("chats") or []:
+            for chat in self._body(res).get("chats") or []:
                 if isinstance(chat, dict) and int(chat.get("id") or 0) == raw:
                     ah = chat.get("access_hash")
                     if isinstance(ah, int) and ah:
