@@ -116,6 +116,7 @@ class Observatory:
         self.max_bytes = max_bytes
         self.level = norm_level(level)
         self._failed = 0.0
+        self._subscribers: list = []
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.path.parent.chmod(0o700)
         self.path.touch(exist_ok=True)
@@ -182,6 +183,11 @@ class Observatory:
         for key, value in fields.items():
             payload[key] = self._redact(key, value)
         line = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+        for sub in list(self._subscribers):
+            try:
+                sub(payload)
+            except Exception:
+                pass
         now = time.monotonic()
         if now - self._failed < 30.0:
             return
@@ -192,6 +198,15 @@ class Observatory:
             self._rotate()
         except OSError:
             self._failed = now
+
+    def subscribe(self, callback: Any) -> Any:
+        if callback not in self._subscribers:
+            self._subscribers.append(callback)
+        return callback
+
+    def unsubscribe(self, callback: Any) -> None:
+        with contextlib.suppress(ValueError):
+            self._subscribers.remove(callback)
 
     def tail(self, *, lines: int = 40, component: str | None = None, level: str = "debug", module: str | None = None) -> list[dict[str, Any]]:
         floor = _numeric[norm_level(level)]

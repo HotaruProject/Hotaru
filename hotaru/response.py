@@ -24,6 +24,7 @@ from relay.proxies import (
     AssetsHelper,
     ModulesHelper,
     UiHelper,
+    ForumHelper,
 )
 from relay.toolkit import TOOLS
 
@@ -393,6 +394,14 @@ class ModuleContext:
     @property
     def bot(self) -> Any:
             return BotGateway(self.inline_manager)
+
+    @property
+    def forum(self) -> Any:
+        helper = getattr(self.runtime, "_forum_helper", None)
+        if helper is None:
+            helper = ForumHelper(self.runtime)
+            self.runtime._forum_helper = helper
+        return helper
 
     @property
     def inline(self) -> Any:
