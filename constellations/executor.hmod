@@ -20,6 +20,8 @@ import time
 import traceback
 from typing import Any
 
+from goygram.sugar import extract_sent_message
+
 
 _ACTIVE_SH: dict[int, Any] = {}
 _ACTIVE_PY: dict[int, Any] = {}
@@ -355,7 +357,35 @@ def _get_raw_text(invocation: Any) -> str:
     return " ".join(getattr(invocation, "args", []))
 
 
-async def _get_reply(ctx: Any, invocation: Any) -> Any:
+def _msg_id(value):
+    if value is None:
+        return None
+    if isinstance(value, dict):
+        mid = value.get("id") or value.get("message_id") or value.get("msg_id")
+        return int(mid) if isinstance(mid, int) else None
+    mid = getattr(value, "id", None) or getattr(value, "message_id", None) or getattr(value, "msg_id", None)
+    if callable(mid):
+        return None
+    return int(mid) if isinstance(mid, int) else None
+
+
+def _attr_or(obj, *names):
+    if obj is None:
+        return None
+    if isinstance(obj, dict):
+        for name in names:
+            if name in obj:
+                return obj[name]
+        return None
+    for name in names:
+        value = getattr(obj, name, None)
+        if callable(value) or value is None:
+            continue
+        return value
+    return None
+
+
+async def _get_reply(ctx, invocation):
     reply = None
     fetch = getattr(ctx, "reply", None)
     if callable(fetch):
@@ -366,7 +396,9 @@ async def _get_reply(ctx: Any, invocation: Any) -> Any:
     if reply is None:
         for obj in (invocation, ctx):
             for attr in ("reply", "reply_message", "reply_to_message"):
-                candidate = getattr(obj, attr, None)
+                candidate = _attr_or(obj, attr)
+                if callable(candidate):
+                    continue
                 if candidate is not None:
                     return candidate
     return reply
@@ -386,6 +418,22 @@ async def _reply_text(ctx: Any, invocation: Any) -> str | None:
             if isinstance(text, str) and text:
                 return text
     return None
+
+
+def _sent_id(result):
+    if result is None:
+        return None
+    body = getattr(result, "message", result) if hasattr(result, "delivered") else result
+    if isinstance(body, dict):
+        body = body.get("result", body)
+    sent = extract_sent_message(body)
+    if sent is not None:
+        mid = sent.get("id") if isinstance(sent, dict) else getattr(sent, "id", None)
+        if isinstance(mid, int):
+            return int(mid)
+    if isinstance(result, dict) and isinstance(result.get("message_id"), int):
+        return int(result["message_id"])
+    return _msg_id(body)
 
 
 _SENTINEL = object()
@@ -1150,9 +1198,7 @@ async def command_sh(ctx, invocation):
 
     cmd = _unescape_tg_code(cmd)
 
-    inv_msg_id = getattr(invocation, "message", None)
-    if inv_msg_id:
-        inv_msg_id = getattr(inv_msg_id, "id", None)
+    inv_msg_id = _msg_id(invocation.message)
 
     start_time = time.perf_counter()
     env = os.environ.copy()
@@ -1192,11 +1238,9 @@ async def command_sh(ctx, invocation):
         _ACTIVE_SH[inv_msg_id] = process
     if not skip_output:
         await updater.update("", force=True)
-        if updater.msg:
-            msg_obj = getattr(updater.msg, "message", updater.msg)
-            resp_msg_id = getattr(msg_obj, "id", None)
-            if resp_msg_id:
-                _ACTIVE_SH[resp_msg_id] = process
+        resp_msg_id = _sent_id(updater.msg)
+        if resp_msg_id:
+            _ACTIVE_SH[resp_msg_id] = process
 
     async def read_pty():
         while True:
@@ -1231,11 +1275,9 @@ async def command_sh(ctx, invocation):
 
     if inv_msg_id and inv_msg_id in _ACTIVE_SH:
         del _ACTIVE_SH[inv_msg_id]
-    if updater.msg:
-        msg_obj = getattr(updater.msg, "message", updater.msg)
-        resp_msg_id = getattr(msg_obj, "id", None)
-        if resp_msg_id and resp_msg_id in _ACTIVE_SH:
-            del _ACTIVE_SH[resp_msg_id]
+    resp_msg_id = _sent_id(updater.msg)
+    if resp_msg_id and resp_msg_id in _ACTIVE_SH:
+        del _ACTIVE_SH[resp_msg_id]
 
     if skip_output:
         return
@@ -1303,9 +1345,7 @@ async def command_py(ctx, invocation):
     env["reply"] = env["r"]
     env["rep"] = env["r"]
 
-    inv_msg_id = getattr(invocation, "message", None)
-    if inv_msg_id:
-        inv_msg_id = getattr(inv_msg_id, "id", None)
+    inv_msg_id = _msg_id(invocation.message)
 
     updater = OutputUpdater(ctx, raw_code, is_py=True)
     if not skip_output:
@@ -1331,9 +1371,8 @@ async def command_py(ctx, invocation):
     updater.process = eval_task
     if inv_msg_id:
         _ACTIVE_PY[inv_msg_id] = eval_task
-    if not skip_output and updater.msg:
-        msg_obj = getattr(updater.msg, "message", updater.msg)
-        resp_msg_id = getattr(msg_obj, "id", None)
+    if not skip_output:
+        resp_msg_id = _sent_id(updater.msg)
         if resp_msg_id:
             _ACTIVE_PY[resp_msg_id] = eval_task
 
@@ -1350,11 +1389,9 @@ async def command_py(ctx, invocation):
     finally:
         if inv_msg_id and inv_msg_id in _ACTIVE_PY:
             del _ACTIVE_PY[inv_msg_id]
-        if updater.msg:
-            msg_obj = getattr(updater.msg, "message", updater.msg)
-            resp_msg_id = getattr(msg_obj, "id", None)
-            if resp_msg_id and resp_msg_id in _ACTIVE_PY:
-                del _ACTIVE_PY[resp_msg_id]
+        resp_msg_id = _sent_id(updater.msg)
+        if resp_msg_id and resp_msg_id in _ACTIVE_PY:
+            del _ACTIVE_PY[resp_msg_id]
 
     if skip_output:
         return
@@ -1378,29 +1415,28 @@ async def command_kill(ctx, invocation):
     if not reply:
         await ctx.respond("<b>Reply to a running py/sh output message to kill it.</b>", parse_mode="HTML")
         return
-        
-    target_id = getattr(reply, "id", None)
-    if not target_id:
-        target_id = getattr(reply, "message_id", None)
-        
+
+    target_id = _msg_id(reply)
     killed = False
-    
-    if target_id in _ACTIVE_SH:
+
+    proc = _ACTIVE_SH.get(target_id)
+    if proc is not None:
         try:
-            _ACTIVE_SH[target_id].kill()
+            proc.kill()
             killed = True
         except Exception:
             pass
-        del _ACTIVE_SH[target_id]
-        
-    if target_id in _ACTIVE_PY:
+        _ACTIVE_SH.pop(target_id, None)
+
+    task = _ACTIVE_PY.get(target_id)
+    if task is not None:
         try:
-            _ACTIVE_PY[target_id].cancel()
+            task.cancel()
             killed = True
         except Exception:
             pass
-        del _ACTIVE_PY[target_id]
-        
+        _ACTIVE_PY.pop(target_id, None)
+
     if killed:
         await ctx.respond("<b>Process killed!</b>", parse_mode="HTML")
     else:
