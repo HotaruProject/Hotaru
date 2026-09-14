@@ -144,6 +144,8 @@ async def task_pump(ctx):
         await ctx.forum.send(topic_id, "\n".join(_fmt(p) for p in batch))
         _state["failed"] = 0
     except Exception as exc:
+        _state["topic_id"] = None
+        _state["last_sync"] = 0.0
         _state["failed"] += 1
         _state["last_error"] = f"{type(exc).__name__}: {exc}"[:200]
         _emit(ctx, "send_error", error=type(exc).__name__, detail=str(exc)[:160])
