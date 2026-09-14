@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+import asyncio
 import html
+import json
 import secrets
+import time
 from typing import Any, Awaitable, Callable
 
 from .caps import MT_BLOCKED, normalize_method
 from .denylist import payload_hits_blocked
 from .firewall import trusted_scope
+from goygram import ext as rx
 from goygram.rich import rich_html
 from goygram.sugar import extract_sent_message, html_to_entities
 from goygram.types.kbd import kbd_to_tl
@@ -533,6 +537,358 @@ class BotGateway:
         async def method(**kwargs: Any) -> Any:
             return await self.call(name, **kwargs)
         return method
+
+
+class ForumHelper:
+    def __init__(self, runtime: Any) -> None:
+        self._runtime = runtime
+        self._lock = asyncio.Lock()
+        self._group_try_ts = 0.0
+        self._sync_ts = 0.0
+        self._topic_tries: dict[str, float] = {}
+        self._warmed: set[int] = set()
+        self._warm_tries: dict[int, float] = {}
+        self._invite_ts = 0.0
+
+    def _bot_app(self) -> Any:
+        manager = getattr(self._runtime, "inline", None)
+        app = getattr(manager, "bot_app", None) if manager is not None else None
+        if app is None or getattr(app, "mt", None) is None:
+            raise RuntimeError("inline bot is not ready")
+        return app
+
+    def _user_mt(self) -> Any:
+        app = getattr(self._runtime, "app", None)
+        mt = getattr(app, "mt", None) if app is not None else None
+        if mt is None:
+            raise RuntimeError("userbot transport is not ready")
+        return mt
+
+    async def _user_call(self, act: str, **kw: Any) -> Any:
+        mt = self._user_mt()
+        with trusted_scope():
+            return await mt.call(act, **kw)
+
+    async def _bot_call(self, act: str, **kw: Any) -> Any:
+        app = self._bot_app()
+        with trusted_scope():
+            return await app.mt_req(act, **kw)
+
+    @staticmethod
+    def _body(result: Any) -> dict[str, Any]:
+        body = result.get("result", result) if isinstance(result, dict) else result
+        return body if isinstance(body, dict) else {}
+
+    def _ingest_user(self, result: Any) -> None:
+        mt = self._user_mt()
+        body = self._body(result)
+        if body:
+            mt._ingest_entities(body)
+
+    def _ingest_bot(self, result: Any) -> None:
+        app = self._bot_app()
+        mt = getattr(app, "mt", None)
+        body = self._body(result)
+        if mt is not None and body:
+            mt._ingest_entities(body)
+
+    async def group(self) -> int | None:
+        state = getattr(self._runtime, "state", None)
+        stored = state.get_setting("forum-channel-id") if state is not None else None
+        if isinstance(stored, int) and stored < -1000000000000:
+            return stored
+        return None
+
+    async def _save_group(self, chat_id: int) -> None:
+        state = getattr(self._runtime, "state", None)
+        if state is not None:
+            state.set_setting("forum-channel-id", int(chat_id))
+
+    async def _find_group_by_title(self, title: str) -> int | None:
+        mt = self._user_mt()
+        with trusted_scope():
+            dialogs = await mt.call(
+                "messages.getDialogs",
+                offset_date=0,
+                offset_id=0,
+                offset_peer={"_": "inputPeerEmpty"},
+                limit=100,
+                hash=0,
+            )
+        self._ingest_user(dialogs)
+        for chat in self._body(dialogs).get("chats") or []:
+            if isinstance(chat, dict) and chat.get("_") == "channel" and str(chat.get("title") or "") == title:
+                return -1000000000000 - int(chat["id"])
+        return None
+
+    async def _warm_user_entity(self, chat_id: int) -> bool:
+        if chat_id in self._warmed:
+            return True
+        now = time.monotonic()
+        if now - self._warm_tries.get(chat_id, 0.0) < 30.0:
+            return False
+        self._warm_tries[chat_id] = now
+        mt = self._user_mt()
+        with trusted_scope():
+            try:
+                await mt.resolve_peer(chat_id)
+                self._warmed.add(chat_id)
+                return True
+            except Exception:
+                pass
+            dialogs = await mt.call(
+                "messages.getDialogs",
+                offset_date=0,
+                offset_id=0,
+                offset_peer={"_": "inputPeerEmpty"},
+                limit=100,
+                hash=0,
+            )
+        self._ingest_user(dialogs)
+        with trusted_scope():
+            try:
+                await mt.resolve_peer(chat_id)
+                self._warmed.add(chat_id)
+                return True
+            except Exception:
+                return False
+
+    async def ensure_group(self) -> int | None:
+        chat_id = await self.group()
+        if chat_id is not None and await self._warm_user_entity(chat_id):
+            return chat_id
+        async with self._lock:
+            chat_id = await self.group()
+            if chat_id is not None and await self._warm_user_entity(chat_id):
+                return chat_id
+            now = time.monotonic()
+            if now - self._group_try_ts < 60.0:
+                return None
+            self._group_try_ts = now
+            title = str(getattr(self._runtime, "forum_title", None) or "Hotaru")
+            result = await self._user_call(
+                "channels.createChannel",
+                megagroup=True,
+                forum=True,
+                title=title,
+                about="Hotaru observatory",
+            )
+            body = self._body(result)
+            for chat in body.get("chats") or []:
+                if isinstance(chat, dict) and chat.get("_") == "channel" and isinstance(chat.get("id"), int):
+                    self._ingest_user(result)
+                    await self._save_group(-1000000000000 - int(chat["id"]))
+                    return -1000000000000 - int(chat["id"])
+            found = await self._find_group_by_title(title)
+            if found is not None:
+                await self._save_group(found)
+                return found
+            return None
+
+    async def _bot_resolve(self, chat_id: int) -> bytes | None:
+        app = self._bot_app()
+        with trusted_scope():
+            try:
+                return await app.mt.resolve_peer(chat_id)
+            except Exception:
+                return None
+
+    async def _invite_bot(self, chat_id: int) -> None:
+        manager = getattr(self._runtime, "inline", None)
+        info = getattr(manager, "info", None)
+        bot_id = getattr(info, "bot_id", None)
+        username = getattr(info, "username", None)
+        if not isinstance(bot_id, int) or not isinstance(username, str) or not username:
+            return
+        now = time.monotonic()
+        if now - self._invite_ts < 60.0:
+            return
+        self._invite_ts = now
+        peer = await self._user_peer(chat_id)
+        if peer is None:
+            return
+        try:
+            mt = self._user_mt()
+            with trusted_scope():
+                resolved = await mt.call("contacts.resolveUsername", username=username.lstrip("@"))
+            users = self._body(resolved).get("users") or []
+            bot_user = next((u for u in users if isinstance(u, dict) and int(u.get("id") or 0) == bot_id and u.get("access_hash")), None)
+            if bot_user is None:
+                return
+            with trusted_scope():
+                await mt.call(
+                    "channels.inviteToChannel",
+                    channel=peer,
+                    users=[{"_": "inputUser", "user_id": bot_id, "access_hash": int(bot_user["access_hash"])}],
+                )
+        except Exception:
+            return
+
+    async def _sync_channel_to_bot(self, chat_id: int) -> None:
+        now = time.monotonic()
+        if now - self._sync_ts < 300.0:
+            return
+        self._sync_ts = now
+        app = self._bot_app()
+        mt = getattr(app, "mt", None)
+        raw = -chat_id - 1000000000000
+        entity = self._user_mt().entities.get(("chat", raw))
+        if mt is not None and entity:
+            mt._ingest_entities({"chats": [entity]})
+
+    async def ensure_topic(self, title: str) -> int | None:
+        chat_id = await self.ensure_group()
+        if chat_id is None:
+            return None
+        result = await self._user_call("messages.getForumTopics", peer=chat_id, offset_date=0, offset_id=0, offset_topic=0, limit=100)
+        self._ingest_user(result)
+        for topic in self._body(result).get("topics") or []:
+            if isinstance(topic, dict) and isinstance(topic.get("id"), int) and str(topic.get("title") or "") == title:
+                return int(topic["id"])
+        now = time.monotonic()
+        last = self._topic_tries.get(title, 0.0)
+        if now - last < 60.0:
+            return None
+        self._topic_tries[title] = now
+        created = await self._user_call("messages.createForumTopic", peer=chat_id, title=title, random_id=secrets.randbits(63))
+        body = self._body(created)
+        self._ingest_user(created)
+        for upd in body.get("updates") or []:
+            msg = upd.get("message") if isinstance(upd, dict) else None
+            if not isinstance(msg, dict):
+                continue
+            action = msg.get("action")
+            if isinstance(action, dict) and action.get("_") == "messageActionTopicCreate" and isinstance(msg.get("id"), int):
+                return int(msg["id"])
+        return None
+
+    async def _user_peer(self, chat_id: int) -> bytes | None:
+        mt = self._user_mt()
+        with trusted_scope():
+            try:
+                return await mt.resolve_peer(chat_id)
+            except Exception:
+                return None
+
+    async def _bot_ready(self, chat_id: int) -> bool:
+        peer = await self._bot_resolve(chat_id)
+        if peer is not None:
+            return True
+        await self._invite_bot(chat_id)
+        await self._sync_channel_to_bot(chat_id)
+        return await self._bot_resolve(chat_id) is not None
+
+    async def send(self, topic_id: int, text: str, *, rich: Any = None, reply_to: int | None = None) -> Any:
+        chat_id = await self.ensure_group()
+        if chat_id is None:
+            raise RuntimeError("forum group is not available")
+        use_bot = await self._bot_ready(chat_id)
+        data: dict[str, Any] = {"random_id": secrets.randbits(63)}
+        if isinstance(rich, dict):
+            data["message"] = ""
+            data["rich_message"] = rich
+        else:
+            plain, ents = html_to_entities(str(text))
+            data["message"] = plain
+            if ents:
+                data["entities"] = ents
+        reply = {"_": "inputReplyToMessage", "reply_to_msg_id": int(reply_to or topic_id)}
+        if reply_to is not None:
+            reply["top_msg_id"] = int(topic_id)
+        data["reply_to"] = reply
+        if use_bot:
+            data["peer"] = await self._bot_resolve(chat_id)
+            return await self._bot_call("messages.sendMessage", **data)
+        data["peer"] = chat_id
+        return await self._user_call("messages.sendMessage", **data)
+
+    def _media_document(self, up: dict[str, Any], file_name: str | None) -> tuple[str, list[str]]:
+        file_hex = bytes(rx.serialize_constructor("inputFile", json.dumps({"id": up["id"], "parts": up["parts"], "name": up["name"], "md5_checksum": up.get("md5", "")}))).hex()
+        attr_hex = [bytes(rx.serialize_constructor("documentAttributeFilename", json.dumps({"file_name": file_name or up["name"]}))).hex()]
+        return file_hex, attr_hex
+
+    async def send_file(self, topic_id: int, path: Any, caption: str = "", *, file_name: str | None = None) -> Any:
+        chat_id = await self.ensure_group()
+        if chat_id is None:
+            raise RuntimeError("forum group is not available")
+        use_bot = await self._bot_ready(chat_id)
+        app = self._bot_app() if use_bot else None
+        mt = self._user_mt() if app is None else None
+        if app is not None:
+            up = await app.mt.upload_file(path, file_name=file_name)
+        else:
+            up = await mt.upload_file(path, file_name=file_name)
+        file_hex, attr_hex = self._media_document(up, file_name)
+        media = {"_": "inputMediaUploadedDocument", "file": file_hex, "mime_type": "text/plain", "attributes": attr_hex, "force_file": True}
+        plain, ents = html_to_entities(str(caption))
+        data: dict[str, Any] = {"media": media, "message": plain, "random_id": secrets.randbits(63), "reply_to": {"_": "inputReplyToMessage", "reply_to_msg_id": int(topic_id)}}
+        if ents:
+            data["entities"] = ents
+        if use_bot:
+            data["peer"] = await self._bot_resolve(chat_id)
+            return await self._bot_call("messages.sendMedia", **data)
+        data["peer"] = chat_id
+        return await self._user_call("messages.sendMedia", **data)
+
+    async def edit(self, message_id: int, text: str, *, rich: Any = None) -> Any:
+        chat_id = await self.ensure_group()
+        if chat_id is None:
+            raise RuntimeError("forum group is not available")
+        use_bot = await self._bot_ready(chat_id)
+        data: dict[str, Any] = {"id": int(message_id), "message": ""}
+        if isinstance(rich, dict):
+            data["rich_message"] = rich
+        else:
+            plain, ents = html_to_entities(str(text))
+            data["message"] = plain
+            if ents:
+                data["entities"] = ents
+        if use_bot:
+            data["peer"] = await self._bot_resolve(chat_id)
+            return await self._bot_call("messages.editMessage", **data)
+        data["peer"] = chat_id
+        return await self._user_call("messages.editMessage", **data)
+
+    async def edit_file(self, message_id: int, path: Any, caption: str = "", *, file_name: str | None = None) -> Any:
+        chat_id = await self.ensure_group()
+        if chat_id is None:
+            raise RuntimeError("forum group is not available")
+        use_bot = await self._bot_ready(chat_id)
+        app = self._bot_app() if use_bot else None
+        mt = self._user_mt() if app is None else None
+        if app is not None:
+            up = await app.mt.upload_file(path, file_name=file_name)
+        else:
+            up = await mt.upload_file(path, file_name=file_name)
+        file_hex, attr_hex = self._media_document(up, file_name)
+        media_hex = bytes(rx.serialize_constructor("inputMediaUploadedDocument", json.dumps({"file": file_hex, "mime_type": "text/plain", "attributes": attr_hex, "force_file": True}))).hex()
+        plain, ents = html_to_entities(str(caption))
+        data: dict[str, Any] = {"id": int(message_id), "media": media_hex, "message": plain}
+        if ents:
+            data["entities"] = ents
+        if use_bot:
+            data["peer"] = await self._bot_resolve(chat_id)
+            return await self._bot_call("messages.editMessage", **data)
+        data["peer"] = chat_id
+        return await self._user_call("messages.editMessage", **data)
+
+    async def topic_id_of(self, message_id: int) -> int:
+        chat_id = await self.ensure_group()
+        if chat_id is None:
+            raise RuntimeError("forum group is not available")
+        peer = await self._bot_resolve(chat_id) or await self._user_peer(chat_id)
+        result = await self._bot_call("messages.getHistory", peer=peer, offset_id=int(message_id) + 1, offset_date=0, add_offset=0, limit=3, max_id=0, min_id=0, hash=0)
+        for message in self._body(result).get("messages") or []:
+            if isinstance(message, dict) and message.get("id") == int(message_id):
+                reply = message.get("reply_to") or {}
+                if isinstance(reply, dict):
+                    top = reply.get("reply_to_top_id")
+                    if isinstance(top, int):
+                        return top
+                    rid = reply.get("reply_to_msg_id")
+                    if isinstance(rid, int):
+                        return rid
+        raise RuntimeError("topic not resolvable for message {mid}".format(mid=message_id))
 
 
 class InlineHelper:

@@ -116,6 +116,7 @@ class Runtime:
     _form_expiry: dict[str, float] | None = None
     _form_gc_task: asyncio.Task[None] | None = None
     _premium_cache: bool | None = None
+    _forum_helper: Any = None
 
     @classmethod
     def from_database(cls, path: str | Path | None = None) -> "Runtime":

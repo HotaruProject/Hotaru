@@ -233,6 +233,24 @@
       "no_owner_grant": "Право owner выдаётся через !owadd."
     },
     "lg": "хвост логов:\n{lines}",
+    "logger": {
+      "description": "Зеркало логов в топик",
+      "mirror_on": "Зеркало логов включено",
+      "mirror_off": "Зеркало логов выключено",
+      "level_set": "Уровень зеркала: {level}",
+      "status": "Топик: {topic} • ошибок: {failed}",
+      "status_error": " • последняя: {error}",
+      "no_observatory": "Обсерватория недоступна",
+      "no_entries": "Нет записей этого уровня",
+      "topic_unavailable": "Топик недоступен: {error}",
+      "logs_caption": "Логи Hotaru: {count} записей (уровень {level})",
+      "logs_sent": "Логи отправлены: {count} записей",
+      "commands": {
+        "logs": {
+          "description": "Логи юзербота с файлом"
+        }
+      }
+    },
     "commands": {
       "lg": "view recent observatory log entries"
     },

@@ -1,0 +1,196 @@
+HOTARU = {
+    "id": "logger",
+    "version": "1.0.0",
+    "commands": ["logs"],
+    "capabilities": ["mt", "state"],
+    "tasks": {
+        "pump": {"interval": 2, "autostart": True},
+    },
+    "rise": "hookup",
+    "fade": "unhook",
+}
+
+import asyncio
+import html
+import time
+
+TOPIC_TITLE = "Logs"
+LEVELS = {"error": 0, "critical": 0, "warn": 1, "warning": 1, "info": 2, "debug": 3}
+_state = {"sub": None, "queue": None, "topic_id": None, "last_sync": 0.0, "failed": 0, "last_error": ""}
+
+
+def _obs(ctx):
+    return getattr(ctx.runtime, "observatory", None)
+
+
+def _emit(ctx, event, **fields):
+    obs = _obs(ctx)
+    if obs is not None:
+        try:
+            obs.emit("logger", event, **fields)
+        except Exception:
+            pass
+
+
+def _level_floor(state):
+    raw = state.get("level") if state is not None else None
+    if isinstance(raw, str) and raw.lower() in LEVELS:
+        return LEVELS[raw.lower()]
+    return LEVELS["info"]
+
+
+def _fmt(payload):
+    level = str(payload.get("level") or "info").upper()
+    comp = str(payload.get("component") or "-")
+    event = str(payload.get("event") or "-")
+    stamp = time.strftime("%H:%M:%S", time.localtime(payload.get("ts") or 0))
+    parts = [f"[{stamp}]", level, comp, event]
+    for key in ("module", "error", "detail", "msg", "name", "path", "username", "target"):
+        value = payload.get(key)
+        if value is None:
+            continue
+        parts.append(f"{key}={value}")
+    return html.escape(" ".join(str(p) for p in parts if p), quote=False)
+
+
+def _sink(payload):
+    if not isinstance(payload, dict):
+        return
+    if payload.get("component") == "logger":
+        return
+    level = str(payload.get("level") or "info").lower()
+    if LEVELS.get(level, 2) > _state.get("floor", 2):
+        return
+    queue = _state["queue"]
+    if queue is None:
+        return
+    try:
+        queue.put_nowait((time.monotonic(), payload))
+    except Exception:
+        pass
+
+
+async def hookup(ctx):
+    _state["queue"] = asyncio.Queue(maxsize=500)
+    _state["floor"] = _level_floor(ctx.state)
+    obs = _obs(ctx)
+    if obs is not None:
+        _state["sub"] = obs.subscribe(_sink)
+    _emit(ctx, "hooked")
+
+
+async def unhook(ctx):
+    obs = _obs(ctx)
+    sub = _state.get("sub")
+    if obs is not None and sub is not None:
+        try:
+            obs.unsubscribe(sub)
+        except Exception:
+            pass
+    _state["sub"] = None
+    _emit(ctx, "unhooked")
+
+
+async def task_pump(ctx):
+    queue = _state.get("queue")
+    if queue is None:
+        return
+    if ctx.state.get("enabled", True) is False:
+        return
+    now = time.monotonic()
+    batch = []
+    while not queue.empty() and len(batch) < 40:
+        try:
+            stamped, payload = queue.get_nowait()
+        except Exception:
+            break
+        if now - stamped > 60.0:
+            continue
+        batch.append(payload)
+    if not batch:
+        return
+    topic_id = _state.get("topic_id")
+    if topic_id is None or now - _state.get("last_sync", 0.0) > 900:
+        try:
+            topic_id = await ctx.forum.ensure_topic(TOPIC_TITLE)
+            _state["topic_id"] = topic_id
+            _state["last_sync"] = now
+        except Exception as exc:
+            _state["failed"] += 1
+            _state["last_error"] = f"{type(exc).__name__}: {exc}"[:200]
+            _emit(ctx, "topic_error", error=type(exc).__name__, detail=str(exc)[:160])
+            return
+    if topic_id is None:
+        return
+    try:
+        await ctx.forum.send(topic_id, "\n".join(_fmt(p) for p in batch))
+        _state["failed"] = 0
+    except Exception as exc:
+        _state["failed"] += 1
+        _state["last_error"] = f"{type(exc).__name__}: {exc}"[:200]
+        _emit(ctx, "send_error", error=type(exc).__name__, detail=str(exc)[:160])
+
+
+async def command_logs(ctx, invocation):
+    raw = " ".join(invocation.args)
+    args = raw.split()
+    if args and args[0] in ("on", "off"):
+        enabled = args[0] == "on"
+        ctx.state.set("enabled", enabled)
+        key = "kernel.logger.mirror_on" if enabled else "kernel.logger.mirror_off"
+        await ctx.respond(f"<b>{ctx.t(key, 'Log mirror ' + args[0])}</b>", parse_mode="HTML")
+        return
+    if args and args[0] in LEVELS and len(args) == 1:
+        ctx.state.set("level", args[0].lower())
+        _state["floor"] = LEVELS[args[0].lower()]
+        await ctx.respond(f"<code>{ctx.t('kernel.logger.level_set', 'Mirror level: ' + args[0].lower()).format(level=args[0].lower())}</code>", parse_mode="HTML")
+        return
+    if args and args[0] in ("status", "st"):
+        failed = _state.get("failed", 0)
+        err = _state.get("last_error", "")
+        text = ctx.t("kernel.logger.status", "Топик: {topic} • ошибок: {failed}").format(topic=_state.get("topic_id") or "pending", failed=failed)
+        if err:
+            text += ctx.t("kernel.logger.status_error", " • последняя: {error}").format(error=html.escape(err, quote=False))
+        await ctx.respond(f"<code>{html.escape(text, quote=False)}</code>", parse_mode="HTML")
+        return
+    obs = _obs(ctx)
+    if obs is None:
+        await ctx.respond(ctx.t("kernel.logger.no_observatory", "Обсерватория недоступна"), parse_mode="HTML")
+        return
+    level = args[0] if args and args[0] in LEVELS else "debug"
+    entries = obs.tail(lines=60, level=level)
+    if not entries:
+        await ctx.respond(ctx.t("kernel.logger.no_entries", "Нет записей этого уровня"), parse_mode="HTML")
+        return
+    try:
+        await ctx.forum.ensure_topic(TOPIC_TITLE)
+    except Exception as exc:
+        await ctx.respond(ctx.t("kernel.logger.topic_unavailable", "Топик недоступен: {error}").format(error=html.escape(str(exc), quote=False)), parse_mode="HTML")
+        return
+    import json
+    import os
+    import tempfile
+    fd, raw_path = tempfile.mkstemp(prefix="hotaru-logs-", suffix=".txt")
+    os.close(fd)
+    try:
+        with open(raw_path, "w", encoding="utf-8") as stream:
+            stream.write("\n".join(_fmt(entry) for entry in entries))
+        caption = ctx.t("kernel.logger.logs_caption", "Логи Hotaru: {count} записей (уровень {level})").format(count=len(entries), level=level)
+        app = getattr(ctx.runtime, "app", None)
+        mt = getattr(app, "mt", None) if app is not None else None
+        up = await mt.upload_file(raw_path, file_name="hotaru-logs.txt")
+        from goygram import ext as rx
+        file_hex = bytes(rx.serialize_constructor("inputFile", json.dumps({"id": up["id"], "parts": up["parts"], "name": up["name"], "md5_checksum": up.get("md5", "")}))).hex()
+        attr_hex = [bytes(rx.serialize_constructor("documentAttributeFilename", json.dumps({"file_name": "hotaru-logs.txt"}))).hex()]
+        media_hex = bytes(rx.serialize_constructor("inputMediaUploadedDocument", json.dumps({"file": file_hex, "mime_type": "text/plain", "attributes": attr_hex, "force_file": True}))).hex()
+        chat_id = invocation.chat_id if invocation is not None else None
+        message_id = invocation.message_id if invocation is not None else None
+        if not (isinstance(chat_id, int) and isinstance(message_id, int)):
+            return
+        await ctx.tg.call("messages.editMessage", {"id": message_id, "message": caption, "peer": chat_id, "media": media_hex})
+        _emit(ctx, "logs_delivered", count=len(entries))
+    finally:
+        try:
+            os.unlink(raw_path)
+        except OSError:
+            pass
