@@ -189,7 +189,7 @@
       "user_modules": "User Modules",
       "commands": "Commands",
       "capabilities": "Capabilities",
-      "untrusted": "untrusted"
+      "untrusted": "not loaded"
     },
     "accounts": {
       "description": "Multi-account management: register, authorize, spawn, stop accounts",

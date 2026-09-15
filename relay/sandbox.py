@@ -286,6 +286,9 @@ class SandboxCallbackProxy:
     async def edit(self, text, **kwargs):
         return _cb_respond_call({"action": "edit", "text": str(text), **{k: v for k, v in kwargs.items() if isinstance(v, (str, int, float, bool, type(None)))}})
 
+    async def delete(self):
+        return _cb_respond_call({"action": "delete"})
+
     @property
     def chat_id(self):
         return self._data.get("chat_id")
@@ -1325,6 +1328,9 @@ class ModuleSandbox:
                         params = {"inline_message_id": inline_mid, "text": str(data.get("text", "")), "parse_mode": "HTML"}
                         with trusted_scope():
                             value = await callback.app.bot_req("editMessageText", **params)
+                elif action == "delete":
+                    with trusted_scope():
+                        value = await callback.delete()
                 else:
                     raise PermissionError("unknown callback action")
                 result = {"ok": True, "result": value}

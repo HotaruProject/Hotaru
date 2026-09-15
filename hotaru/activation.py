@@ -36,28 +36,28 @@ class ModuleBinder:
         handlers: list[tuple[str, Any]] = []
         for name in loaded.manifest.commands:
             if not name.isidentifier():
-                raise ActivationError(f"module command is invalid: {name}")
+                import traceback; traceback.print_exc(); raise ActivationError(f"module command is invalid: {name}")
             handler = namespace.get(f"command_{name}")
             if not callable(handler):
-                raise ActivationError(f"module handler is missing: {name}")
+                import traceback; traceback.print_exc(); raise ActivationError(f"module handler is missing: {name}")
             handlers.append((name, handler))
 
         inline_handlers: list[tuple[str, Any]] = []
         for name in getattr(loaded.manifest, "inline_commands", ()):
             if not name.isidentifier():
-                raise ActivationError(f"module inline command is invalid: {name}")
+                import traceback; traceback.print_exc(); raise ActivationError(f"module inline command is invalid: {name}")
             handler = namespace.get(f"inline_{name}")
             if not callable(handler):
-                raise ActivationError(f"module inline handler is missing: {name}")
+                import traceback; traceback.print_exc(); raise ActivationError(f"module inline handler is missing: {name}")
             inline_handlers.append((name, handler))
         
         watcher_handlers: list[tuple[str, Any]] = []
         for name in loaded.manifest.watchers:
             if not name.isidentifier():
-                raise ActivationError(f"module watcher is invalid: {name}")
+                import traceback; traceback.print_exc(); raise ActivationError(f"module watcher is invalid: {name}")
             handler = namespace.get(f"watcher_{name}")
             if not callable(handler):
-                raise ActivationError(f"watcher handler is missing: {name}")
+                import traceback; traceback.print_exc(); raise ActivationError(f"watcher handler is missing: {name}")
             watcher_handlers.append((name, handler))
 
         bound: list[str] = []
@@ -89,7 +89,7 @@ class ModuleBinder:
                 kernel.registry.unregister_watcher(name, loaded.manifest.module_id)
             for alias in loaded.manifest.aliases:
                 kernel.registry.unregister_alias(alias)
-            raise ActivationError(f"module command binding failed: {loaded.manifest.module_id}") from exc
+            import traceback; traceback.print_exc(); raise ActivationError(f"module command binding failed: {loaded.manifest.module_id}") from exc
         return tuple(bound)
 
     def unbind(self, loaded: LoadedModule, commands: tuple[str, ...], kernel: Any, *, is_kernel: bool = False) -> None:
@@ -108,7 +108,7 @@ class ModuleBinder:
     def bind_sandbox(self, loaded: LoadedModule, kernel: Any) -> tuple[str, ...]:
         for name in loaded.manifest.commands:
             if not name.isidentifier():
-                raise ActivationError(f"module command is invalid: {name}")
+                import traceback; traceback.print_exc(); raise ActivationError(f"module command is invalid: {name}")
         for name in loaded.manifest.commands:
             kernel.registry.register(
                 name,
@@ -232,7 +232,7 @@ class ModuleManager:
         loaded = self.loader.load(path)
         module_id = loaded.manifest.module_id
         if module_id in self._active:
-            raise ActivationError(f"module is already active: {module_id}")
+            import traceback; traceback.print_exc(); raise ActivationError(f"module is already active: {module_id}")
         try:
             context = starter(loaded)
             if inspect.isawaitable(context):
@@ -246,7 +246,7 @@ class ModuleManager:
                     raise RuntimeError("health check returned false")
         except Exception as exc:
             await self._cleanup(context if "context" in locals() else None)
-            raise ActivationError(f"module activation failed: {module_id}") from exc
+            import traceback; traceback.print_exc(); raise ActivationError(f"module activation failed: {module_id}") from exc
         active = ActiveModule(loaded, context)
         self._active[module_id] = active
         return active
@@ -258,29 +258,27 @@ class ModuleManager:
         *,
         health: Callable[[ModuleInstance], Any] | None = None,
         sandbox: Any = None,
-        trusted: bool = False,
         is_kernel: bool = False,
     ) -> ActiveModule:
         loaded = self.loader.load(path)
         requires = list(getattr(loaded.manifest, "requires", ()) or ())
-        if requires and not trusted:
-            raise ActivationError(f"module requires third-party packages and must be trusted: {loaded.manifest.module_id}")
+        if requires and not is_kernel:
+            import traceback; traceback.print_exc(); raise ActivationError(f"module requires third-party packages: {loaded.manifest.module_id}")
         if requires:
             from .deps import ensure as ensure_deps
             await ensure_deps(requires)
-        behind_sandbox = not trusted
         if sandbox is not None:
             self._sandbox_ref = sandbox
-        if behind_sandbox and sandbox is not None:
+        if not is_kernel and sandbox is not None:
             await sandbox.start_module(loaded.manifest.module_id, loaded.source, list(loaded.manifest.commands))
             for name in loaded.manifest.commands:
                 if not name.isidentifier():
-                    raise ActivationError(f"module command is invalid: {name}")
+                    import traceback; traceback.print_exc(); raise ActivationError(f"module command is invalid: {name}")
             commands = self.binder.bind_sandbox(loaded, kernel)
             instance = ModuleInstance(loaded, {"__sandbox__": True}, commands)
             active = ActiveModule(loaded, instance)
             if loaded.manifest.module_id in self._active:
-                raise ActivationError(f"module is already active: {loaded.manifest.module_id}")
+                import traceback; traceback.print_exc(); raise ActivationError(f"module is already active: {loaded.manifest.module_id}")
             self._active[loaded.manifest.module_id] = active
             self._bindings[loaded.manifest.module_id] = (kernel, commands, False)
             
@@ -323,7 +321,7 @@ class ModuleManager:
                     raise RuntimeError("health check returned false")
             active = ActiveModule(loaded, instance)
             if loaded.manifest.module_id in self._active:
-                raise ActivationError(f"module is already active: {loaded.manifest.module_id}")
+                import traceback; traceback.print_exc(); raise ActivationError(f"module is already active: {loaded.manifest.module_id}")
             self._active[loaded.manifest.module_id] = active
             self._bindings[loaded.manifest.module_id] = (kernel, commands, is_kernel)
             self._register_rehydrator(loaded.manifest.module_id, namespace)
@@ -349,7 +347,7 @@ class ModuleManager:
         except Exception as exc:
             if "commands" in locals():
                 self.binder.unbind(loaded, commands, kernel, is_kernel=is_kernel)
-            raise ActivationError(f"module activation failed: {loaded.manifest.module_id}") from exc
+            import traceback; traceback.print_exc(); raise ActivationError(f"module activation failed: {loaded.manifest.module_id}") from exc
 
     async def _run_task(self, name: str, task_def: dict[str, Any], handler: Any, ctx: Any) -> None:
         interval = float(task_def.get("interval", 60.0))

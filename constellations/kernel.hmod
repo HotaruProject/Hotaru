@@ -1,17 +1,13 @@
 HOTARU = {
     "id": "hotaru-kernel",
-    "version": "0.1.5",
-    "commands": ['ver', 'st', 'ls', 'mi', 'ld', 'ul', 'rl', 'rm', 'bk', 'bot', 'trust', 'untrust', 'lg'],
+    "version": "0.1.6",
+    "commands": ['ver', 'st', 'ls', 'mi', 'bk', 'bot', 'lg'],
     "capabilities": ["mt"],
 }
-
-
-
 
 async def command_ver(ctx, invocation):
     from hotaru import __version__
     await ctx.respond(f"Hotaru {__version__}")
-
 
 async def command_st(ctx, invocation):
     runtime = ctx.runtime
@@ -33,7 +29,6 @@ async def command_st(ctx, invocation):
         lines.append(f"inline: @{runtime.inline.info.username} ({'running' if running else 'stopped'})")
     await ctx.respond("\n".join(lines))
 
-
 async def command_ls(ctx, invocation):
     runtime = ctx.runtime
     if runtime is None or runtime.modules is None:
@@ -45,7 +40,6 @@ async def command_ls(ctx, invocation):
         return
     await ctx.respond("modules:\n" + "\n".join(sorted(item.loaded.manifest.module_id for item in items)))
 
-
 async def command_mi(ctx, invocation):
     runtime = ctx.runtime
     if runtime is None:
@@ -55,54 +49,6 @@ async def command_mi(ctx, invocation):
         await ctx.respond("usage: !mi <module-id>")
         return
     await ctx.respond(runtime._module_detail_text(invocation.args[0].casefold()))
-
-
-
-
-
-async def command_ld(ctx, invocation):
-    runtime = ctx.runtime
-    if runtime is None:
-        await ctx.respond("runtime unavailable")
-        return
-    result = await runtime._command_ld(invocation)
-    if isinstance(result, tuple):
-        text, buttons = result
-        await ctx.respond(text, buttons=buttons)
-    else:
-        await ctx.respond(result)
-
-
-async def command_ul(ctx, invocation):
-    runtime = ctx.runtime
-    if runtime is None:
-        await ctx.respond("runtime unavailable")
-        return
-    result = await runtime._command_ul(invocation)
-    await ctx.respond(result)
-
-
-async def command_rl(ctx, invocation):
-    runtime = ctx.runtime
-    if runtime is None:
-        await ctx.respond("runtime unavailable")
-        return
-    result = await runtime._command_rl(invocation)
-    await ctx.respond(result)
-
-
-async def command_rm(ctx, invocation):
-    runtime = ctx.runtime
-    if runtime is None:
-        await ctx.respond("runtime unavailable")
-        return
-    result = await runtime._command_rm(invocation)
-    if isinstance(result, tuple):
-        text, buttons = result
-        await ctx.respond(text, buttons=buttons)
-    else:
-        await ctx.respond(result)
-
 
 async def command_bk(ctx, invocation):
     runtime = ctx.runtime
@@ -116,7 +62,6 @@ async def command_bk(ctx, invocation):
     else:
         await ctx.respond(result)
 
-
 async def command_bot(ctx, invocation):
     runtime = ctx.runtime
     if runtime is None:
@@ -124,31 +69,6 @@ async def command_bot(ctx, invocation):
         return
     result = await runtime._command_bot(invocation)
     await ctx.respond(result)
-
-
-async def command_trust(ctx, invocation):
-    runtime = ctx.runtime
-    if runtime is None:
-        await ctx.respond("runtime unavailable")
-        return
-    result = await runtime._command_trust(invocation)
-    if isinstance(result, tuple):
-        text, buttons = result
-        await ctx.respond(text, buttons=buttons)
-    else:
-        await ctx.respond(result)
-
-
-async def command_untrust(ctx, invocation):
-    runtime = ctx.runtime
-    if runtime is None:
-        await ctx.respond("runtime unavailable")
-        return
-    result = await runtime._command_untrust(invocation)
-    await ctx.respond(result)
-
-
-
 
 async def command_lg(ctx, invocation):
     runtime = ctx.runtime
