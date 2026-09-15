@@ -178,6 +178,7 @@ class Runtime:
         self.context_factory.cap_host = self.cap_host
         self.context_factory.callback_router = self.callbacks
         self.callbacks.register("caps_confirm", self._caps_confirm)
+        self.callbacks.register("caps_cancel", self._caps_cancel)
         self.event_router = EventRouter(self._event_error)
         self.backups = BackupService()
         self.observatory = Observatory(Path("observatory/runtime/events.jsonl"))
@@ -900,7 +901,7 @@ class Runtime:
         if active is None:
             if self.state is not None and module_id in self.state.module_ids():
                 return f"module: {module_id}\nstatus: disabled\nlasterror: {self.state.namespace(module_id).get('lasterror', 'none')}"
-            return f"module not active: {module_id}"
+            return f"module not loaded: {module_id}"
         manifest = active.loaded.manifest
         language = self.language()
         localized = manifest.localized(language, manifest.description)
@@ -942,7 +943,7 @@ class Runtime:
                 if module_id in active:
                     entries.append(f"{module_id} [loaded] v{active[module_id]}")
                 else:
-                    entries.append(f"{module_id} [untrusted]")
+                    entries.append(f"{module_id} [not loaded]")
                 entry_ids.append(module_id)
         if not entries:
             entries = [f"{self.config.prefix}{name}" for name in names]
@@ -1094,8 +1095,9 @@ class Runtime:
         else:
             loaded = self.stage_module(source)
         module_id = loaded.manifest.module_id
+        caps = list(getattr(loaded.manifest, "capabilities", ()) or ())
         fingerprint = self._caps_fingerprint(loaded.manifest)
-        if self._caps_consented(module_id, fingerprint):
+        if not caps or self._caps_consented(module_id, fingerprint):
             if self.modules is not None and self.modules.get(module_id) is not None:
                 result = await self._command_rl(SimpleNamespace(args=(module_id,)))
                 if isinstance(result, str) and result.startswith("reloaded:"):
@@ -1106,15 +1108,15 @@ class Runtime:
             except Exception as exc:
                 if self.observatory is not None:
                     self.observatory.emit("modules", "load_error", module=module_id, error=type(exc).__name__, detail=str(exc)[:240])
-                return loaded, f"staged (activation failed): {type(exc).__name__}"
+                return loaded, f"load failed: {type(exc).__name__}"
             if self.observatory is not None:
                 self.observatory.emit("modules", "loaded", module=module_id, version=loaded.manifest.version)
-            return loaded, "active"
+            return loaded, "loaded"
         if self.state is not None:
             namespace = self.state.namespace(module_id)
             namespace.set("sourcepath", str(loaded.path))
             namespace.set("moduleversion", loaded.manifest.version)
-        return loaded, "staged"
+        return loaded, "confirm"
 
     async def _command_ld(self, invocation: Any) -> str | tuple[str, list[dict[str, str]]]:
         if len(invocation.args) > 1:
@@ -1140,7 +1142,7 @@ class Runtime:
             if temporary is not None:
                 temporary.unlink(missing_ok=True)
         module_id = loaded.manifest.module_id
-        if action in {"active", "updated"}:
+        if action in {"loaded", "updated"}:
             return f"{action}: {module_id} {loaded.manifest.version}"
         screen = await self._render_caps_screen(
             module_id,
@@ -1149,8 +1151,8 @@ class Runtime:
             invocation.message_id,
         )
         if isinstance(screen, tuple):
-            return f"staged: {module_id} {loaded.manifest.version}\n" + screen[0], screen[1]
-        return f"staged (untrusted): {module_id} {loaded.manifest.version}\n{screen}"
+            return screen
+        return f"load failed: {module_id} {loaded.manifest.version}\n{screen}"
 
     async def unload_module(self, module_id: str) -> str | None:
         if self.modules is None or self.state is None:
@@ -1204,7 +1206,7 @@ class Runtime:
         module_id = invocation.args[0].casefold()
         active = self.modules.get(module_id)
         if active is None:
-            return f"module not active: {module_id}"
+            return f"module not loaded: {module_id}"
         old_path = active.loaded.path
         old_source = active.loaded.source
         candidate = self.relay_dir / f"{module_id}.hmod"
@@ -1239,53 +1241,8 @@ class Runtime:
             self.observatory.emit("modules", "update_applied", module=module_id, version=self.modules.get(module_id).loaded.manifest.version)
         return f"reloaded: {module_id}"
 
-    async def _command_trust(self, invocation: Any) -> tuple[str, list[dict[str, str]]] | str:
-        if len(invocation.args) != 1 or self.modules is None or self.state is None:
-            return "usage: !trust <module-id>"
-        module_id = invocation.args[0].casefold()
-        namespace = self.state.namespace(module_id)
-        source_path = namespace.get("sourcepath")
-        if not isinstance(source_path, str):
-            candidate = self.relay_dir / f"{module_id}.hmod"
-            if not candidate.is_file():
-                return f"module not found: {module_id}"
-            source_path = str(candidate)
-        try:
-            loaded = self.modules.loader.load(source_path)
-        except Exception as exc:
-            return f"trust failed: {type(exc).__name__}"
-        fingerprint = self._caps_fingerprint(loaded.manifest)
-        if not self._caps_consented(module_id, fingerprint):
-            return await self._render_caps_screen(module_id, loaded.manifest, invocation.chat_id, invocation.message_id, trusted=True)
-        try:
-            await self._activate_trusted(module_id, source_path)
-        except Exception as exc:
-            return f"trust failed: {type(exc).__name__}"
-        return f"trusted: {module_id}"
 
-    async def _activate_trusted(self, module_id: str, source_path: str) -> None:
-        if self.modules is None:
-            raise RuntimeError("module manager is not ready")
-        if self.modules.get(module_id) is not None:
-            await self.deactivate_module(module_id)
-        self.state.namespace(module_id).set("trusted", "1")
-        await self.activate_module(source_path, trusted=True)
 
-    async def _command_untrust(self, invocation: Any) -> str:
-        if len(invocation.args) != 1 or self.state is None:
-            return "usage: !untrust <module-id>"
-        module_id = invocation.args[0].casefold()
-        namespace = self.state.namespace(module_id)
-        if self.modules is not None and self.modules.get(module_id) is not None:
-            await self.deactivate_module(module_id)
-        namespace.delete("trusted")
-        source_path = namespace.get("sourcepath")
-        if isinstance(source_path, str):
-            try:
-                await self.activate_module(source_path)
-            except Exception:
-                pass
-        return f"untrusted (sandbox): {module_id}"
 
     def _caps_fingerprint(self, manifest: Any) -> str:
         import hashlib
@@ -1303,25 +1260,46 @@ class Runtime:
         if self.state is not None:
             self.state.namespace(module_id).set("caps-consent", fingerprint)
 
-    async def _render_caps_screen(self, module_id: str, manifest: Any, chat_id: int | str | None, message_id: int, *, trusted: bool = False) -> tuple[str, list[dict[str, str]]] | str:
+    async def _render_caps_screen(self, module_id: str, manifest: Any, chat_id: int | str | None, message_id: int) -> tuple[str, list[dict[str, str]]] | str:
+        caps = list(getattr(manifest, "capabilities", ()) or ())
+        if not caps:
+            await self.activate_module(self.state.namespace(module_id).get("sourcepath") if self.state else self.relay_dir / f"{module_id}.hmod")
+            return f"loaded: {module_id} {manifest.version}"
         if self.callbacks is None or self.kernel is None or self.kernel.owner_id is None or chat_id is None:
             lines = [f"module {module_id} v{manifest.version} requests capabilities:"]
             lines.append(describe_caps(manifest.capabilities) or "none")
-            lines.append("re-run !trust from your Saved Messages to confirm")
+            lines.append("re-run the load command to confirm")
             return "\n".join(lines)
-        text = f"module {module_id} v{manifest.version} requests capabilities:\n" + (describe_caps(manifest.capabilities) or "none") + "\n\nНажми кнопку Confirm ниже, чтобы загрузить модуль."
-        handle = self.callbacks.store.issue(
+        text = f"module {module_id} v{manifest.version} requests capabilities:\n" + (describe_caps(manifest.capabilities) or "none")
+        confirm_handle = self.callbacks.store.issue(
             CallbackBinding(self.kernel.owner_id, chat_id, 0),
-            {"action": "caps_confirm", "payload": {"module": module_id, "trusted": bool(trusted)}},
+            {"action": "caps_confirm", "payload": {"module": module_id}},
         )
-        return (text, [{"text": "Confirm", "callback_data": handle}])
+        cancel_handle = self.callbacks.store.issue(
+            CallbackBinding(self.kernel.owner_id, chat_id, 0),
+            {"action": "caps_cancel", "payload": {"module": module_id}},
+        )
+        return (
+            text,
+            [
+                {"text": "Confirm", "callback_data": confirm_handle},
+                {"text": "Cancel", "callback_data": cancel_handle},
+            ],
+        )
+
+    async def _caps_cancel(self, callback: Any, payload: Any) -> object:
+        if not isinstance(payload, dict):
+            await callback.answer("Invalid request", alert=True)
+            return None
+        module_id = str(payload.get("module", "")).casefold()
+        await callback.answer("Cancelled")
+        return await callback.edit(f"module not loaded: {module_id}")
 
     async def _caps_confirm(self, callback: Any, payload: Any) -> object:
         if not isinstance(payload, dict) or self.modules is None or self.state is None:
             await callback.answer("Invalid request", alert=True)
             return None
         module_id = str(payload.get("module", "")).casefold()
-        want_trust = bool(payload.get("trusted"))
         namespace = self.state.namespace(module_id)
         source_path = namespace.get("sourcepath")
         if not isinstance(source_path, str):
@@ -1334,21 +1312,18 @@ class Runtime:
             loaded = self.modules.loader.load(source_path)
         except Exception as exc:
             await callback.answer("Load failed", alert=True)
-            return await callback.edit(f"trust failed: {type(exc).__name__}")
+            return await callback.edit(f"load failed: {type(exc).__name__}")
         try:
             self._mark_caps_consent(module_id, self._caps_fingerprint(loaded.manifest))
-            if want_trust:
-                await self._activate_trusted(module_id, source_path)
-            else:
-                await self.activate_module(source_path)
+            await self.activate_module(source_path)
         except Exception as exc:
             namespace.set("lasterror", f"{type(exc).__name__}: {str(exc)[:240]}")
             if self.observatory is not None:
                 self.observatory.emit("modules", "activation_error", module=module_id, error=type(exc).__name__, detail=str(exc)[:240])
             await callback.answer("Activation failed", alert=True)
-            return await callback.edit(f"trust failed: {type(exc).__name__}: {str(exc)[:120]}")
+            return await callback.edit(f"load failed: {type(exc).__name__}: {str(exc)[:120]}")
         await callback.answer("Module loaded")
-        text = f"trusted: {module_id}" if want_trust else f"active: {module_id}"
+        text = f"loaded: {module_id} {loaded.manifest.version}"
         if getattr(callback, "inline_message_id", None) and getattr(callback, "app", None) is not None:
             return await callback.app.bot_req("editMessageText", inline_message_id=callback.inline_message_id, text=text)
         return await callback.edit(text)
@@ -1404,7 +1379,7 @@ class Runtime:
         if self._is_kernel_module(module_id):
             return f"kernel module is protected: {module_id}"
         if self.modules.get(module_id) is None:
-            return f"module not active: {module_id}"
+            return f"module not loaded: {module_id}"
         handle = self.callbacks.store.issue(
             CallbackBinding(self.kernel.owner_id, invocation.chat_id, invocation.message_id),
             {"action": "remove_confirm", "payload": module_id},
@@ -1418,7 +1393,7 @@ class Runtime:
         active = self.modules.get(payload)
         if active is None:
             await callback.answer("Module is already unloaded", alert=True)
-            return await callback.edit(f"module not active: {payload}")
+            return await callback.edit(f"module not loaded: {payload}")
         result = await self.unload_module(payload)
         if result is not None:
             await callback.answer("Removal failed", alert=True)
@@ -1510,20 +1485,14 @@ class Runtime:
         except (OSError, ValueError):
             return False
 
-    async def activate_module(self, path: str, *, health: Any = None, trusted: bool | None = None) -> Any:
+    async def activate_module(self, path: str, *, health: Any = None) -> Any:
         if self.modules is None or self.kernel is None:
             raise RuntimeError("build the runtime before activating modules")
         is_kernel = self._is_kernel_path(path)
-        if is_kernel:
-            trusted = True
-        elif trusted is None:
-            loaded = self.modules.loader.load(path)
-            module_id = loaded.manifest.module_id
-            trusted = bool(self.state is not None and self.state.namespace(module_id).get("trusted") == "1")
         if not is_kernel:
             self._backup_before_activation(path)
         result = await self.modules.activate_source(
-            path, self.kernel, health=health, sandbox=self.sandbox, trusted=bool(trusted), is_kernel=is_kernel,
+            path, self.kernel, health=health, sandbox=self.sandbox, is_kernel=is_kernel,
         )
         module_id = result.loaded.manifest.module_id
         namespace = self.state.namespace(module_id) if self.state is not None else None

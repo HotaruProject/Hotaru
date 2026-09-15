@@ -1254,8 +1254,31 @@ class UiHelper:
 
     def close(self, text: str = "Close") -> dict[str, str]:
         async def handler(callback: Any, payload: Any) -> Any:
-            return await callback.delete()
-
+            try:
+                await callback.answer()
+            except Exception:
+                pass
+            chat_id = getattr(callback, "chat_id", None)
+            msg_id = getattr(callback, "msg_id", None)
+            if not (isinstance(chat_id, int) and isinstance(msg_id, int)):
+                return await getattr(callback, "delete", lambda: None)()
+            inline_mid = getattr(callback, "inline_message_id", None)
+            if inline_mid is not None:
+                return await getattr(callback, "delete", lambda: None)()
+            app = getattr(callback, "app", None)
+            if app is not None and getattr(app, "bot_req", None) is not None:
+                from relay.firewall import trusted_scope
+                with trusted_scope():
+                    try:
+                        await app.bot_req(
+                            "deleteMessage",
+                            chat_id=chat_id,
+                            message_id=msg_id
+                        )
+                        return None
+                    except Exception:
+                        pass
+            return await getattr(callback, "delete", lambda: None)()
         return self.button(text, handler, style="danger")
 
     def back(self, text: str, handler: Callable[[Any, Any], Any], payload: Any = None) -> dict[str, str]:

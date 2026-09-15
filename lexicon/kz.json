@@ -159,7 +159,7 @@
       "user_modules": "Пайдаланушы модульдері",
       "commands": "Командалар",
       "capabilities": "Мүмкіндіктер",
-      "untrusted": "сенімсіз"
+      "untrusted": "жүктелмеген"
     },
     "accounts": {
       "description": "Multi-account management: register, authorize, spawn, stop accounts",

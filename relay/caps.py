@@ -634,7 +634,7 @@ class CapabilityHost:
             raise PermissionError("modules reload requires a module_id")
         module_id = target.casefold()
         if runtime.modules.get(module_id) is None:
-            raise PermissionError(f"module not active: {module_id}")
+            raise PermissionError(f"module not loaded: {module_id}")
         result = await runtime._command_rl(SimpleNamespace(args=(module_id, "force")))
         return {"module_id": module_id, "action": "reloaded", "detail": result}
 

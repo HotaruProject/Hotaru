@@ -77,18 +77,31 @@ class CallbackContext:
         return await self._callback.edit(text, **kwargs)
 
     async def delete(self) -> Any:
+        app = getattr(self, "app", None)
+        chat_id = getattr(self, "chat_id", None)
+        msg_id = getattr(self, "msg_id", None)
+        if isinstance(chat_id, int) and isinstance(msg_id, int) and app is not None:
+            try:
+                if getattr(self, "src", None) == "mt":
+                    return await app.mt_req("messages.deleteMessages", id=[msg_id], revoke=True, peer=chat_id)
+                else:
+                    return await app.bot_req("deleteMessage", chat_id=chat_id, message_id=msg_id)
+            except Exception:
+                pass
+
         inline_mid = getattr(self, "inline_message_id", None)
         if inline_mid is not None:
-            if getattr(self, "src", None) == "mt" and getattr(self, "app", None) is not None:
+            if getattr(self, "src", None) == "mt" and app is not None:
                 id_field = inline_mid if isinstance(inline_mid, dict) else {"_": "inputBotInlineMessageID", "raw": inline_mid} if isinstance(inline_mid, (str, bytes)) else None
                 if id_field is not None:
                     try:
-                        return await self.app.mt_req("messages.editInlineBotMessage", id=id_field, message="​")
+                        return await app.mt_req("messages.editInlineBotMessage", id=id_field, message="​")
                     except Exception:
                         return None
-            if getattr(self, "app", None) is not None:
-                return await self.app.bot_req("editMessageText", inline_message_id=self.inline_message_id, text="​", parse_mode="HTML")
+            if app is not None:
+                return await app.bot_req("editMessageText", inline_message_id=inline_mid, text="​", parse_mode="HTML")
             return None
+
         if hasattr(self._callback, "delete"):
             return await self._callback.delete()
         return None

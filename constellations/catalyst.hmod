@@ -1,0 +1,42 @@
+HOTARU = {
+    "id": "catalyst",
+    "version": "1.0.0",
+    "commands": ['ld', 'ul', 'rl', 'rm'],
+    "capabilities": [],
+}
+async def command_ld(ctx, invocation):
+    runtime = ctx.runtime
+    if runtime is None:
+        await ctx.respond("runtime unavailable")
+        return
+    result = await runtime._command_ld(invocation)
+    if isinstance(result, tuple):
+        text, buttons = result
+        await ctx.respond(text, buttons=buttons)
+    else:
+        await ctx.respond(result)
+async def command_ul(ctx, invocation):
+    runtime = ctx.runtime
+    if runtime is None:
+        await ctx.respond("runtime unavailable")
+        return
+    result = await runtime._command_ul(invocation)
+    await ctx.respond(result)
+async def command_rl(ctx, invocation):
+    runtime = ctx.runtime
+    if runtime is None:
+        await ctx.respond("runtime unavailable")
+        return
+    result = await runtime._command_rl(invocation)
+    await ctx.respond(result)
+async def command_rm(ctx, invocation):
+    runtime = ctx.runtime
+    if runtime is None:
+        await ctx.respond("runtime unavailable")
+        return
+    result = await runtime._command_rm(invocation)
+    if isinstance(result, tuple):
+        text, buttons = result
+        await ctx.respond(text, buttons=buttons)
+    else:
+        await ctx.respond(result)
