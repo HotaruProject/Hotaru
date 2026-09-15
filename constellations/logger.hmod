@@ -75,6 +75,8 @@ def _sink(payload):
         return
     if payload.get("component") == "logger":
         return
+    if payload.get("component") == "forum":
+        return
     level = str(payload.get("level") or "info").lower()
     # Pass events whose numeric severity >= current floor (more severe = higher number).
     if LEVELS.get(level, LEVELS["info"]) < _state.get("floor", _DEFAULT_FLOOR):
