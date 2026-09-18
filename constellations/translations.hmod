@@ -66,11 +66,10 @@ def _close_button(ctx):
         chat_id = namespace.get("card_chat_id")
         message_id = namespace.get("card_message_id")
         if isinstance(chat_id, int) and isinstance(message_id, int):
-            with trusted_scope():
-                await ctx.tg.call(
-                    "messages.deleteMessages",
-                    {"id": [message_id], "revoke": True, "peer": chat_id},
-                )
+            app = getattr(runtime, "app", None)
+            if app is not None:
+                with trusted_scope():
+                    await app.delete_msg(chat_id, message_id)
             return
         await callback.delete()
 

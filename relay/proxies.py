@@ -8,6 +8,7 @@ import time
 from typing import Any, Awaitable, Callable
 
 from .caps import MT_BLOCKED, normalize_method
+from .rpc import rpc
 from .denylist import payload_hits_blocked
 from .firewall import trusted_scope
 from goygram import ext as rx
@@ -92,8 +93,15 @@ class Gateway:
         return await self.call("messages.sendMessage", payload)
 
     async def send_file(self, path: Any, caption: str = "", **kwargs: Any) -> Any:
+        app = getattr(getattr(self._host, "runtime", None), "app", None)
+        file_name = kwargs.pop("file_name", None)
+        mime = kwargs.pop("mime_type", "application/octet-stream")
+        if app is not None:
+            up = await app.upload_file(path, file_name=file_name)
+            media = {"_": "inputMediaUploadedDocument", "file": up, "mime_type": mime}
+            return await self.call("messages.sendMedia", {"media": media, "message": caption, **kwargs})
         return await self.call("messages.sendMedia", {
-            "media": {"_": "inputMediaUploadedDocument", "file": path, "mime_type": "application/octet-stream"},
+            "media": {"_": "inputMediaUploadedDocument", "file": path, "mime_type": mime},
             "message": caption, **kwargs,
         })
 
@@ -393,7 +401,7 @@ class BotGateway:
         if mapped is not None:
             act, data = mapped
             with trusted_scope():
-                return await app.mt_req(act, **data)
+                return await rpc(app, act, **data)
         with trusted_scope():
             return await app.bot_req(method, **kwargs)
 
@@ -573,7 +581,7 @@ class ForumHelper:
     async def _bot_call(self, act: str, **kw: Any) -> Any:
         app = self._bot_app()
         with trusted_scope():
-            return await app.mt_req(act, **kw)
+            return await rpc(app, act, **kw)
 
     @staticmethod
     def _body(result: Any) -> dict[str, Any]:
@@ -1258,27 +1266,13 @@ class UiHelper:
                 await callback.answer()
             except Exception:
                 pass
-            chat_id = getattr(callback, "chat_id", None)
-            msg_id = getattr(callback, "msg_id", None)
-            if not (isinstance(chat_id, int) and isinstance(msg_id, int)):
-                return await getattr(callback, "delete", lambda: None)()
-            inline_mid = getattr(callback, "inline_message_id", None)
-            if inline_mid is not None:
-                return await getattr(callback, "delete", lambda: None)()
-            app = getattr(callback, "app", None)
-            if app is not None and getattr(app, "bot_req", None) is not None:
-                from relay.firewall import trusted_scope
-                with trusted_scope():
-                    try:
-                        await app.bot_req(
-                            "deleteMessage",
-                            chat_id=chat_id,
-                            message_id=msg_id
-                        )
-                        return None
-                    except Exception:
-                        pass
-            return await getattr(callback, "delete", lambda: None)()
+            deleter = getattr(callback, "delete", None)
+            if callable(deleter):
+                result = deleter()
+                if asyncio.iscoroutine(result):
+                    return await result
+                return result
+            return None
         return self.button(text, handler, style="danger")
 
     def back(self, text: str, handler: Callable[[Any, Any], Any], payload: Any = None) -> dict[str, str]:

@@ -15,6 +15,8 @@ from .firewall import trusted_scope
 from hotaru.plainfmt import rich_to_plain
 from hotaru.capabilities import BehaviorEnvelope
 from goygram.sugar import html_to_entities
+from .rpc import rpc
+
 
 MT_READ_ONLY = frozenset({
     "get",
@@ -250,7 +252,7 @@ class CapabilityHost:
 
         async def _history(peer_value: Any, offset_id: int, limit: int) -> list[dict[str, Any]]:
             peer = await app.mt.resolve_peer(peer_value)
-            result = await app.mt_req(
+            result = await rpc(app, 
                 "messages.getHistory",
                 peer=peer,
                 offset_id=offset_id,
@@ -294,7 +296,7 @@ class CapabilityHost:
                 username = value.lstrip("@").casefold()
                 entity = app.mt.entity_usernames.get(username)
                 if entity is None:
-                    result = await app.mt_req("contacts.resolveUsername", username=username)
+                    result = await rpc(app, "contacts.resolveUsername", username=username)
                     body = result.get("result") if isinstance(result, dict) and isinstance(result.get("result"), dict) else result
                     app.mt._ingest_entities(body if isinstance(body, dict) else {})
                     entity = app.mt.entity_usernames.get(username)
@@ -405,7 +407,7 @@ class CapabilityHost:
             limit = kwargs.get("limit", 100)
             if isinstance(limit, (int, float)) and int(limit) > 500:
                 kwargs = dict(kwargs, limit=500)
-        result = await app.mt_req(method, **kwargs)
+        result = await rpc(app, method, **kwargs)
         body = result.get("result") if isinstance(result, dict) and isinstance(result.get("result"), dict) else result
         return body
 
@@ -643,10 +645,6 @@ class CapabilityHost:
         from .sandbox import SANDBOX_BASE_ROOT
 
         op = payload.get("op")
-        client = self.runtime.kernel.client
-        if client is None:
-            raise PermissionError("telegram client unavailable")
-
         sandbox_root = os.path.join(SANDBOX_BASE_ROOT, module_id)
         
         if op == "upload":
@@ -655,9 +653,15 @@ class CapabilityHost:
             path = os.path.abspath(os.path.join(sandbox_root, file_path))
             if not path.startswith(sandbox_root) or not os.path.isfile(path):
                 raise PermissionError("invalid file path")
-            result = await client.send_media(path, message=filename, peer="me")
-            return {"id": getattr(result, "id", None)}
-            
+            app = self.runtime.app
+            if app is None:
+                raise PermissionError("userbot transport is not ready")
+            sent = await app.send_doc("me", path, caption=filename or None, file_name=filename or None)
+            sent_id = None
+            if isinstance(sent, dict):
+                sent_id = sent.get("id") or sent.get("message_id")
+            return {"id": sent_id}
+
         if op == "download":
             msg_dict = payload.get("message") or {}
             destination = payload.get("destination")
@@ -667,18 +671,14 @@ class CapabilityHost:
                     raise PermissionError("invalid destination path")
             else:
                 dest_path = sandbox_root + "/"
-                
+            app = self.runtime.app
+            if app is None:
+                raise PermissionError("userbot transport is not ready")
             chat_id = msg_dict.get("chat_id")
             msg_id = msg_dict.get("id") or msg_dict.get("message_id")
-            if not chat_id or not msg_id:
+            if chat_id is None or msg_id is None:
                 raise PermissionError("invalid message object")
-                
-            messages = await client.get_messages(chat_id, ids=[msg_id])
-            if not messages:
-                raise PermissionError("message not found")
-            msg = messages[0]
-            
-            result_path = await msg.download(dest_path)
+            result_path = await app.download_media((chat_id, msg_id), dest_path)
             if result_path and isinstance(result_path, str) and result_path.startswith(sandbox_root):
                 return os.path.relpath(result_path, sandbox_root)
             return result_path

@@ -750,92 +750,69 @@ class _MsgProxy:
         return await self.__dict__["_ctx"].respond(text, output="reply", **kwargs)
 
     async def delete(self) -> Any:
-        raw = self.__dict__["_raw"]
-        deleter = getattr(raw, "delete", None)
-        if callable(deleter):
-            result = deleter()
-            if asyncio.iscoroutine(result):
-                return await result
-            return result
+        app = getattr(getattr(self.__dict__["_ctx"], "runtime", None), "app", None)
+        if app is None or self.chat_id is None or self.id is None:
+            return None
+        return await app.delete_msg(self.chat_id, self.id)
 
     async def pin(self, both_sides: bool = False, **kwargs: Any) -> Any:
-        ctx = self.__dict__["_ctx"]
-        return await ctx.mt(
-            "messages.pinMessage",
-            peer=self.chat_id,
-            id=self.id,
-            pm_oneside=not both_sides,
-            **kwargs,
-        )
+        app = getattr(getattr(self.__dict__["_ctx"], "runtime", None), "app", None)
+        if app is None or self.chat_id is None or self.id is None:
+            return None
+        return await app.pin_msg(self.chat_id, self.id, notify=not both_sides, **kwargs)
 
     async def unpin(self) -> Any:
-        ctx = self.__dict__["_ctx"]
-        return await ctx.mt("messages.unpinMessage", peer=self.chat_id, id=self.id)
+        app = getattr(getattr(self.__dict__["_ctx"], "runtime", None), "app", None)
+        if app is None or self.chat_id is None or self.id is None:
+            return None
+        return await app.unpin_msg(self.chat_id, self.id)
 
     async def forward(self, to_chat: Any, **kwargs: Any) -> Any:
-        import secrets as _s
-        ctx = self.__dict__["_ctx"]
-        return await ctx.mt(
-            "messages.forwardMessages",
-            from_peer=self.chat_id,
-            id=[self.id],
-            to_peer=to_chat,
-            random_id=[_s.randbits(63)],
-            **kwargs,
-        )
+        app = getattr(getattr(self.__dict__["_ctx"], "runtime", None), "app", None)
+        if app is None or self.chat_id is None or self.id is None:
+            return None
+        return await app.forward_msg(self.chat_id, self.id, to=to_chat, **kwargs)
 
     async def react(self, emoji: str) -> Any:
-        ctx = self.__dict__["_ctx"]
-        return await ctx.mt(
-            "messages.sendReaction",
-            peer=self.chat_id,
-            msg_id=self.id,
-            reaction=[{"_": "reactionEmoji", "emoticon": emoji}],
-        )
+        app = getattr(getattr(self.__dict__["_ctx"], "runtime", None), "app", None)
+        if app is None or self.chat_id is None or self.id is None:
+            return None
+        return await app.send_reaction(self.chat_id, self.id, emoji)
 
     async def unreact(self) -> Any:
-        ctx = self.__dict__["_ctx"]
-        return await ctx.mt(
-            "messages.sendReaction",
-            peer=self.chat_id,
-            msg_id=self.id,
-            reaction=[],
-        )
+        app = getattr(getattr(self.__dict__["_ctx"], "runtime", None), "app", None)
+        if app is None or self.chat_id is None or self.id is None:
+            return None
+        return await app.send_reaction(self.chat_id, self.id, "")
 
     async def get_sender(self) -> Any:
-        ctx = self.__dict__["_ctx"]
+        app = getattr(getattr(self.__dict__["_ctx"], "runtime", None), "app", None)
         uid = self.user_id
-        if uid is None:
+        if app is None or uid is None:
             return None
-        resolve = getattr(ctx, "resolve", None)
-        if callable(resolve):
-            try:
-                return await resolve(uid)
-            except Exception:
-                return None
-        return await ctx.mt(
-            "users.getUsers",
-            id=[{"_": "inputUser", "user_id": uid, "access_hash": 0}],
-        )
+        return await app.get_user(uid)
 
     async def get_chat(self) -> Any:
-        ctx = self.__dict__["_ctx"]
+        app = getattr(getattr(self.__dict__["_ctx"], "runtime", None), "app", None)
         cid = self.chat_id
-        if cid is None:
+        if app is None or cid is None:
             return None
-        return await ctx.mt("messages.getChats", id=[abs(cid)])
+        return await app.get_chat(cid)
 
     async def download(self, destination: Any = None) -> Any:
-        ctx = self.__dict__["_ctx"]
-        return await ctx.download(destination=destination)
+        app = getattr(getattr(self.__dict__["_ctx"], "runtime", None), "app", None)
+        if app is None:
+            return None
+        source = self.__dict__["_raw"]
+        if destination is None:
+            destination = "/tmp"
+        return await app.download_media(source, destination)
 
     async def read(self) -> Any:
-        ctx = self.__dict__["_ctx"]
-        return await ctx.mt(
-            "messages.readHistory",
-            peer=self.chat_id,
-            max_id=self.id,
-        )
+        app = getattr(getattr(self.__dict__["_ctx"], "runtime", None), "app", None)
+        if app is None or self.chat_id is None:
+            return None
+        return await app.mark_read(self.chat_id, self.id)
 
 
 class _DBProxy:

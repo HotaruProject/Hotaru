@@ -27,6 +27,7 @@ from relay.proxies import (
     ForumHelper,
 )
 from relay.toolkit import TOOLS
+from relay.rpc import rpc
 
 log = logging.getLogger(__name__)
 
@@ -487,7 +488,7 @@ class ModuleContext:
             return False
         try:
             with trusted_scope():
-                result = await app.mt_req("users.getUsers", id=[{"_": "inputUserSelf"}])
+                result = await rpc(app, "users.getUsers", id=[{"_": "inputUserSelf"}])
             body = result.get("result", result) if isinstance(result, dict) else result
             if isinstance(body, dict):
                 users = body.get("users") or body.get("result") or []
@@ -630,6 +631,18 @@ class ModuleContext:
             return await self.respond(file, mode=mode, **kwargs)
         return await self.respond(caption, media=file, mode=mode, **kwargs)
 
+    async def upload_file(self, source: Any, **kwargs: Any) -> Any:
+        app = getattr(self.runtime, "app", None)
+        if app is None:
+            raise ResponseError("upload is unavailable")
+        return await app.upload_file(source, **kwargs)
+
+    async def download_file(self, source: Any, destination: str | Path, **kwargs: Any) -> Any:
+        app = getattr(self.runtime, "app", None)
+        if app is None:
+            raise ResponseError("download is unavailable")
+        return await app.download_media(source, str(destination), **kwargs)
+
     async def send_media(self, media: Any, caption: str | None = None, **kwargs: Any) -> Response:
         return await self.send_file(media, caption, **kwargs)
 
@@ -762,7 +775,7 @@ class ModuleContext:
         rich_message = {"_": "inputRichMessageHTML", **rich_html(html)}
         if output == "edit" and message_id is not None:
             with trusted_scope():
-                result = await app.mt_req("messages.editMessage", peer=peer, id=int(message_id), message="", rich_message=rich_message)
+                result = await rpc(app, "messages.editMessage", peer=peer, id=int(message_id), message="", rich_message=rich_message)
             return Response(True, "edit", getattr(self._source, "src", None), result)
         reply_to = kwargs.pop("reply_to", None) or message_id
         topic_id = kwargs.pop("topic_id", None) or self.topic_id
@@ -775,7 +788,7 @@ class ModuleContext:
         kwargs.pop("parse_mode", None)
         data.update(kwargs)
         with trusted_scope():
-            result = await app.mt_req("messages.sendMessage", **data)
+            result = await rpc(app, "messages.sendMessage", **data)
         return Response(True, "reply", getattr(self._source, "src", None), result)
 
     async def _context_tg_call(self, method: str, data: dict[str, Any]) -> Any:
@@ -906,21 +919,10 @@ class ModuleContext:
             await self._source.app.download_file(file_id, str(path))
             return path
         if isinstance(document.get("id"), int) and isinstance(document.get("access_hash"), int):
-            file_reference = document.get("file_reference", b"")
-            if isinstance(file_reference, str):
-                try:
-                    file_reference = bytes.fromhex(file_reference)
-                except ValueError:
-                    file_reference = file_reference.encode("utf-8")
-            location = {
-                "_": "inputDocumentFileLocation",
-                "id": document["id"],
-                "access_hash": document["access_hash"],
-                "file_reference": bytes(file_reference),
-                "thumb_size": "",
-            }
-            await self._source.app.mt.download_file(location, str(path), limit=524288)
-            return path
+            app = getattr(self.runtime, "app", None) or getattr(self._source, "app", None)
+            if app is not None:
+                await app.download_media(document, str(path))
+                return path
         raise ResponseError("attachment location is incomplete")
 
 
