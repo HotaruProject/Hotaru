@@ -24,6 +24,7 @@ from relay.inline_tl import to_tl_results
 from relay.inline_tl import answer_tl
 from relay.sandbox import ModuleSandbox
 from relay.caps import CapabilityHost, describe as describe_caps
+from relay.rpc import rpc
 from relay.firewall import install as install_firewall, trusted_scope
 from goygram.sugar import html_to_entities, extract_sent_message
 from goygram import GoyGram, Session
@@ -295,7 +296,7 @@ class Runtime:
             tl_markup = kbd_to_tl({"inline_keyboard": rebound})
             if tl_markup is not None:
                 edit_data["reply_markup"] = tl_markup
-            await bot_app.mt_req("messages.editMessage", **edit_data)
+            await rpc(bot_app, "messages.editMessage", **edit_data)
         else:
             await bot_app.bot_req("editMessageText", chat_id=chat_id, message_id=form_id, text=text, parse_mode="HTML", reply_markup={"inline_keyboard": rebound})
         if hasattr(command, "delete"):
@@ -480,6 +481,15 @@ class Runtime:
             if self.inline is not None and self.inline.bot_app is not None and chat_id is not None and isinstance(message_id, int):
                 with trusted_scope():
                     await self.inline.bot_app.bot_req("deleteMessage", chat_id=chat_id, message_id=message_id)
+        elif self.app is not None:
+            chat_id = getattr(source, "chat_id", None)
+            message_id = getattr(source, "id", None) or getattr(source, "message_id", None)
+            if chat_id is not None and isinstance(message_id, int):
+                with trusted_scope():
+                    try:
+                        await self.app.delete_msg(chat_id, message_id)
+                    except Exception:
+                        pass
         return True
 
     def purge_forms(self) -> int:
@@ -606,7 +616,7 @@ class Runtime:
         with trusted_scope():
             bot = await self.app.mt.resolve_peer("@" + self.inline.info.username)
             peer = await self.app.mt.resolve_peer(chat_id)
-        result = await self.app.mt_req(
+        result = await rpc(self.app, 
             "messages.getInlineBotResults",
             bot=bot,
             peer=peer,
@@ -624,7 +634,7 @@ class Runtime:
         results = body.get("results") if isinstance(body, dict) else None
         if not isinstance(query_id, (int, str)) or not isinstance(results, list) or not results:
             raise RuntimeError("inline bot returned no form result")
-        sent_result = await self.app.mt_req(
+        sent_result = await rpc(self.app, 
             "messages.sendInlineBotResult",
             peer=peer,
             reply_to={"_": "inputReplyToMessage", "reply_to_msg_id": message_id, **({"top_msg_id": options.get("topic_id")} if isinstance(options, dict) and isinstance(options.get("topic_id"), int) else {})},
@@ -650,9 +660,9 @@ class Runtime:
             entity = self.app.mt.entities.get(("chat", -chat_id - 1000000000000)) if self.app is not None and self.app.mt is not None else None
             access_hash = entity.get("access_hash", 0) if isinstance(entity, dict) else 0
             channel = await self.app.mt.resolve_peer({"chat_id": chat_id, "access_hash": access_hash})
-            await self.app.mt_req("channels.deleteMessages", channel=channel, id=[message_id])
+            await rpc(self.app, "channels.deleteMessages", channel=channel, id=[message_id])
             return
-        await self.app.mt_req("messages.deleteMessages", id=[message_id], revoke=True)
+        await rpc(self.app, "messages.deleteMessages", id=[message_id], revoke=True)
 
     async def _on_inline_query(self, query: Any) -> None:
         if self.security is not None:
@@ -1013,7 +1023,7 @@ class Runtime:
             return False
         try:
             with trusted_scope():
-                result = await app.mt_req("users.getUsers", id=[{"_": "inputUserSelf"}])
+                result = await rpc(app, "users.getUsers", id=[{"_": "inputUserSelf"}])
             body = result.get("result", result) if isinstance(result, dict) else result
             if isinstance(body, dict):
                 users = body.get("users") or body.get("result") or []

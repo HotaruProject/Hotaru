@@ -15,6 +15,7 @@ from goygram.rich import rich_html
 from goygram.sugar import html_to_entities
 from hotaru.plainfmt import rich_to_plain
 from goygram.types.kbd import kbd_to_tl
+from .rpc import rpc
 
 _TOOLKIT_SOURCE = Path(_toolkit.__file__).read_text(encoding="utf-8")
 
@@ -457,6 +458,12 @@ class SandboxContext:
     async def send_file(self, media, caption=None, **kwargs):
         kwargs["media"] = media
         return _respond_call({"content": caption or "", "kwargs": kwargs})
+
+    async def upload_file(self, source, **kwargs):
+        return await _cap_call("assets", {"op": "upload", "file": source, "filename": kwargs.get("file_name")})
+
+    async def download_file(self, source, destination, **kwargs):
+        return await _cap_call("assets", {"op": "download", "message": source, "destination": destination})
 
     async def cap(self, capability, payload=None):
         return _cap_call(capability, payload or {})
@@ -1310,7 +1317,7 @@ class ModuleSandbox:
                 if action == "answer":
                     with trusted_scope():
                         if getattr(callback, "src", None) == "mt":
-                            value = await callback.app.mt_req("messages.setBotCallbackAnswer", query_id=int(callback.id), message=str(data.get("text", "")), alert=bool(data.get("alert", False)), cache_time=0)
+                            value = await rpc(callback.app, "messages.setBotCallbackAnswer", query_id=int(callback.id), message=str(data.get("text", "")), alert=bool(data.get("alert", False)), cache_time=0)
                         else:
                             value = await callback.app.bot_req("answerCallbackQuery", callback_query_id=str(callback.id), text=str(data.get("text", "")), show_alert=bool(data.get("alert", False)))
                 elif action == "edit":
@@ -1323,7 +1330,7 @@ class ModuleSandbox:
                             if tl_markup is not None:
                                 params["reply_markup"] = tl_markup
                         with trusted_scope():
-                            value = await callback.app.mt_req("messages.editInlineBotMessage", **params)
+                            value = await rpc(callback.app, "messages.editInlineBotMessage", **params)
                     else:
                         params = {"inline_message_id": inline_mid, "text": str(data.get("text", "")), "parse_mode": "HTML"}
                         with trusted_scope():
@@ -1400,7 +1407,7 @@ class ModuleSandbox:
             data_entities = entities or None
             if mode == "edit" and message_id is not None:
                 with trusted_scope():
-                    return await app.mt_req("messages.editMessage", peer=chat_id, id=int(message_id), message=plain, entities=data_entities)
+                    return await rpc(app, "messages.editMessage", peer=chat_id, id=int(message_id), message=plain, entities=data_entities)
             data: dict[str, Any] = {"peer": chat_id, "message": plain, "random_id": _secrets.randbits(63)}
             if data_entities is not None:
                 data["entities"] = data_entities
@@ -1411,13 +1418,13 @@ class ModuleSandbox:
             elif message_id is not None and mode == "reply":
                 data["reply_to"] = {"_": "inputReplyToMessage", "reply_to_msg_id": int(message_id)}
             with trusted_scope():
-                return await app.mt_req("messages.sendMessage", **data)
+                return await rpc(app, "messages.sendMessage", **data)
 
         async def send_rich_html(html: str, *, mode: str) -> Any:
             rich_message = {"_": "inputRichMessageHTML", **rich_html(html)}
             if mode == "edit" and message_id is not None:
                 with trusted_scope():
-                    return await app.mt_req("messages.editMessage", peer=chat_id, id=int(message_id), message="", rich_message=rich_message)
+                    return await rpc(app, "messages.editMessage", peer=chat_id, id=int(message_id), message="", rich_message=rich_message)
             data = {"peer": chat_id, "message": "", "random_id": _secrets.randbits(63), "rich_message": rich_message}
             if message_id is not None:
                 reply_to = {"_": "inputReplyToMessage", "reply_to_msg_id": int(message_id)}
@@ -1425,7 +1432,7 @@ class ModuleSandbox:
                     reply_to["top_msg_id"] = topic_id
                 data["reply_to"] = reply_to
             with trusted_scope():
-                return await app.mt_req("messages.sendMessage", **data)
+                return await rpc(app, "messages.sendMessage", **data)
 
         if media is not None:
             raise PermissionError("sandbox respond media must go through files capability")
