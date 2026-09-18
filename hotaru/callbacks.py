@@ -14,7 +14,7 @@ from goygram import ext
 from relay.firewall import module_scope
 from goygram.sugar import html_to_entities
 from goygram.types.kbd import kbd_to_tl
-from relay.rpc import rpc
+from relay.rpc import rpc, delete_chat_msg
 
 
 class CallbackDenied(PermissionError):
@@ -99,7 +99,7 @@ class CallbackContext:
         if isinstance(chat_id, int) and isinstance(msg_id, int) and app is not None:
             from relay.firewall import trusted_scope
             with trusted_scope():
-                return await app.delete_msg(chat_id, msg_id)
+                return await delete_chat_msg(app, chat_id, msg_id)
         inline_mid = getattr(self, "inline_message_id", None)
         bot_app = getattr(self, "app", None)
         if inline_mid is not None and bot_app is not None:
