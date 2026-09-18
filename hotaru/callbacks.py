@@ -78,27 +78,37 @@ class CallbackContext:
         return await self._callback.edit(text, **kwargs)
 
     async def delete(self) -> Any:
-        app = getattr(self, "app", None)
+        try:
+            await self.answer()
+        except Exception:
+            pass
+        runtime = getattr(self._callback, "_hotaru_runtime", None)
+        user_app = getattr(runtime, "app", None) if runtime is not None else None
+        app = user_app or getattr(self, "app", None)
         chat_id = getattr(self, "chat_id", None)
         msg_id = getattr(self, "msg_id", None)
+        if not isinstance(msg_id, int):
+            msg_id = None
+        if not (isinstance(chat_id, int) and isinstance(msg_id, int)):
+            actor = getattr(self, "from_id", None)
+            stored = getattr(runtime, "_form_msgs", None) if runtime is not None else None
+            if isinstance(stored, dict) and actor in stored:
+                chat_id, msg_id = stored.pop(actor)
+            elif isinstance(stored, dict) and len(stored) == 1:
+                chat_id, msg_id = stored.pop(next(iter(stored)))
         if isinstance(chat_id, int) and isinstance(msg_id, int) and app is not None:
-            try:
+            from relay.firewall import trusted_scope
+            with trusted_scope():
                 return await app.delete_msg(chat_id, msg_id)
-            except Exception:
-                pass
         inline_mid = getattr(self, "inline_message_id", None)
-        if inline_mid is not None and app is not None:
+        bot_app = getattr(self, "app", None)
+        if inline_mid is not None and bot_app is not None:
             id_field = inline_mid if isinstance(inline_mid, dict) else {"_": "inputBotInlineMessageID", "raw": inline_mid} if isinstance(inline_mid, (str, bytes)) else None
             if id_field is not None:
-                try:
-                    return await rpc(app, "messages.editInlineBotMessage", id=id_field, message="\u200b")
-                except Exception:
-                    pass
-            try:
-                return await app.bot_req("editMessageText", inline_message_id=inline_mid, text="\u200b", parse_mode="HTML")
-            except Exception:
-                pass
-        if hasattr(self._callback, "delete"):
+                from relay.firewall import trusted_scope
+                with trusted_scope():
+                    return await rpc(bot_app, "messages.editInlineBotMessage", id=id_field, message="\u200b", reply_markup={"_": "replyInlineMarkup", "rows": []})
+        if hasattr(self._callback, "delete") and getattr(self._callback, "delete") is not self.delete:
             return await self._callback.delete()
         return None
 

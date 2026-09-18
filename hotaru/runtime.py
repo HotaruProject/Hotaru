@@ -118,6 +118,7 @@ class Runtime:
     _form_gc_task: asyncio.Task[None] | None = None
     _premium_cache: bool | None = None
     _forum_helper: Any = None
+    _form_msgs: dict[int, tuple[Any, int]] | None = None
 
     @classmethod
     def from_database(cls, path: str | Path | None = None) -> "Runtime":
@@ -219,6 +220,10 @@ class Runtime:
             verdict = self.security.check_callback(callback, transport="mt")
             if verdict is not AccessVerdict.ALLOW:
                 return None
+        try:
+            callback._hotaru_runtime = self
+        except Exception:
+            pass
         try:
             return await self.callbacks.dispatch(callback)
         except CallbackDenied:
@@ -646,7 +651,13 @@ class Runtime:
         if options.get("delete_source", True):
             await self._delete_inline_source(command, chat_id, message_id)
         sent = extract_sent_message(sent_result)
-        return sent if isinstance(sent, dict) and isinstance(sent.get("id"), int) else result
+        if isinstance(sent, dict) and isinstance(sent.get("id"), int):
+            if self._form_msgs is None:
+                self._form_msgs = {}
+            actor = int(getattr(self.kernel, "owner_id", 0) or 0)
+            self._form_msgs[actor] = (chat_id, int(sent["id"]))
+            return sent
+        return result
 
     async def _delete_inline_source(self, command: Any, chat_id: int | str, message_id: int) -> None:
         if getattr(command, "src", None) == "bot":
@@ -851,6 +862,10 @@ class Runtime:
             except Exception:
                 pass
             return None
+        try:
+            callback._hotaru_runtime = self
+        except Exception:
+            pass
         try:
             return await self.callbacks.dispatch(callback)
         except CallbackDenied as exc:
