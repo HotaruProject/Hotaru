@@ -24,7 +24,7 @@ from relay.inline_tl import to_tl_results
 from relay.inline_tl import answer_tl
 from relay.sandbox import ModuleSandbox
 from relay.caps import CapabilityHost, describe as describe_caps
-from relay.rpc import rpc
+from relay.rpc import rpc, delete_chat_msg
 from relay.firewall import install as install_firewall, trusted_scope
 from goygram.sugar import html_to_entities, extract_sent_message
 from goygram import GoyGram, Session
@@ -667,13 +667,7 @@ class Runtime:
                 if asyncio.iscoroutine(value) or isinstance(value, asyncio.Future):
                     await value
             return
-        if isinstance(chat_id, int) and chat_id <= -1000000000000:
-            entity = self.app.mt.entities.get(("chat", -chat_id - 1000000000000)) if self.app is not None and self.app.mt is not None else None
-            access_hash = entity.get("access_hash", 0) if isinstance(entity, dict) else 0
-            channel = await self.app.mt.resolve_peer({"chat_id": chat_id, "access_hash": access_hash})
-            await rpc(self.app, "channels.deleteMessages", channel=channel, id=[message_id])
-            return
-        await rpc(self.app, "messages.deleteMessages", id=[message_id], revoke=True)
+        await delete_chat_msg(self.app, chat_id, message_id)
 
     async def _on_inline_query(self, query: Any) -> None:
         if self.security is not None:
