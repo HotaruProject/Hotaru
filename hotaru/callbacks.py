@@ -248,7 +248,10 @@ class CallbackRouter:
             chat_id=self._optional(callback, "chat_id"),
             message_id=self._optional(callback, "msg_id"),
         )
-        value = self.store.consume(getattr(callback, "data", ""), binding)
+        data = getattr(callback, "data", "")
+        if isinstance(data, (bytes, bytearray)):
+            data = data.decode("utf-8", "replace")
+        value = self.store.consume(data, binding)
         if not isinstance(value, dict):
             raise CallbackDenied("callback payload is invalid")
         handler = None
