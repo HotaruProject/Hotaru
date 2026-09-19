@@ -134,6 +134,7 @@ class Runtime:
     _form_msgs: dict[int, tuple[Any, int]] | None = None
     _form_inline_ids: dict[str, Any] | None = None
     _form_chosen: dict[str, asyncio.Event] | None = None
+    _form_module_ids: dict[str, str] | None = None
 
     @classmethod
     def from_database(cls, path: str | Path | None = None) -> "Runtime":
@@ -211,6 +212,7 @@ class Runtime:
         self._input_requests = {}
         self._form_inline_ids = {}
         self._form_chosen = {}
+        self._form_module_ids = {}
         self._form_expiry = {}
         self._form_gc_task = None
         self.context_factory.inline_manager = self.inline
@@ -583,6 +585,9 @@ class Runtime:
                     options["topic_id"] = value
                     break
         nonce = secrets.token_urlsafe(12)
+        if self._form_module_ids is None:
+            self._form_module_ids = {}
+        self._form_module_ids[nonce] = str(options.get("module_id") or "")
         if self._inline_forms is None:
             self._inline_forms = {}
         inline_buttons = []
@@ -778,8 +783,7 @@ class Runtime:
             if self._input_requests is not None:
                 self._input_requests.pop(token, None)
         form_id = (self._form_inline_ids or {}).get(form_nonce) if form_nonce else None
-        if form_id is not None:
-            await ctx.delete()
+        await self._drop_transfer(source, ctx.inline_message_id)
 
     async def _edit_input_form(self, ctx: InputContext, text: str, buttons: Any, options: dict[str, Any]) -> Any:
         if buttons and isinstance(buttons[0], dict):
@@ -797,6 +801,8 @@ class Runtime:
         command = ctx.source
         if nonce is None:
             nonce = secrets.token_urlsafe(12)
+        module_id = str(options.get("module_id") or (self._form_module_ids or {}).get(nonce) or "")
+        owner = int(getattr(self.kernel, "owner_id", 0) or 0)
         for row in buttons or []:
             if isinstance(row, dict):
                 row = [row]
@@ -811,25 +817,31 @@ class Runtime:
                     self._input_requests[token] = (button["handler"], button.get("payload"), command, time.monotonic() + float(button.get("input_ttl", 300)), str(button.get("input", "")), nonce)
                     current.append({"text": button.get("text", ""), "switch_inline_query_current_chat": "hotaru-input:" + token + " "})
                     continue
-                if callable(button.get("handler")):
-                    action_id = self.callbacks.register_module_action(options.get("module_id", ""), button["handler"]) if self.callbacks is not None else ""
-                    if action_id and self.callbacks is not None:
-                        issued = self.callbacks.issue_module(options.get("module_id", ""), str(action_id), CallbackBinding(int(getattr(self.kernel, "owner_id", 0) or 0), None, 0), button.get("payload"))
-                        current.append({"text": button.get("text", ""), "callback_data": issued})
-                        continue
+                handle = button.get("callback_data")
+                if isinstance(handle, str) and self.callbacks is not None:
+                    handle = self.callbacks.store.rebind(handle, CallbackBinding(owner, None, 0))
+                    current.append({"text": button.get("text", ""), "callback_data": handle})
+                    continue
+                if callable(button.get("handler")) and module_id and self.callbacks is not None:
+                    action_id = self.callbacks.register_module_action(module_id, button["handler"])
+                    issued = self.callbacks.issue_module(module_id, str(action_id), CallbackBinding(owner, None, 0), button.get("payload"))
+                    current.append({"text": button.get("text", ""), "callback_data": issued})
+                    continue
                 if isinstance(button.get("url"), str):
                     current.append({"text": button.get("text", ""), "url": button["url"]})
-                elif isinstance(button.get("callback_data"), str):
-                    current.append({"text": button.get("text", ""), "callback_data": button["callback_data"]})
                 elif isinstance(button.get("switch_inline_query_current_chat"), str):
                     current.append({"text": button.get("text", ""), "switch_inline_query_current_chat": button["switch_inline_query_current_chat"]})
                 else:
-                    current.append({key: value for key, value in button.items() if key != "style"})
+                    current.append({key: value for key, value in button.items() if key not in {"style", "handler", "callback", "payload"}})
             layout.append(current)
         if nonce is not None:
             if self._inline_forms is None:
                 self._inline_forms = {}
             self._inline_forms[nonce] = (text, layout)
+            if module_id:
+                if self._form_module_ids is None:
+                    self._form_module_ids = {}
+                self._form_module_ids[nonce] = module_id
         plain, ents = html_to_entities(text)
         id_field = inline_id if isinstance(inline_id, dict) else {"_": "inputBotInlineMessageID", "raw": inline_id}
         data: dict[str, Any] = {"id": id_field, "message": plain}
@@ -840,6 +852,45 @@ class Runtime:
             data["reply_markup"] = markup
         with trusted_scope():
             return await bot.mt_messages_edit_inline_bot_message(**data)
+
+    async def _drop_transfer(self, source: Any, inline_id: Any) -> None:
+        bot = getattr(getattr(self, "inline", None), "bot_app", None)
+        if inline_id is not None and bot is not None:
+            id_field = inline_id if isinstance(inline_id, dict) else {"_": "inputBotInlineMessageID", "raw": inline_id}
+            try:
+                with trusted_scope():
+                    await bot.mt_messages_edit_inline_bot_message(id=id_field, message="\u200b")
+            except Exception:
+                pass
+        app = self.app
+        chat_id = getattr(source, "chat_id", None)
+        bot_id = getattr(getattr(self.inline, "info", None), "bot_id", None)
+        if app is None or not isinstance(chat_id, int) or not isinstance(bot_id, int):
+            return
+        try:
+            with trusted_scope():
+                peer = await app.mt.resolve_peer(chat_id)
+                hist = await app.mt_messages_get_history(peer=peer, offset_id=0, offset_date=0, add_offset=0, limit=8, max_id=0, min_id=0, hash=0)
+        except Exception:
+            return
+        body = hist.get("result", hist) if isinstance(hist, dict) else hist
+        for message in (body.get("messages") if isinstance(body, dict) else None) or []:
+            if not isinstance(message, dict):
+                continue
+            via = message.get("via_bot_id")
+            if isinstance(via, dict):
+                via = via.get("user_id") or via.get("id")
+            if int(via or 0) != bot_id:
+                continue
+            if str(message.get("message") or "") != "🔄":
+                continue
+            mid = message.get("id")
+            if isinstance(mid, int):
+                try:
+                    await delete_chat_msg(app, chat_id, mid)
+                except Exception:
+                    pass
+            return
 
     async def _dispatch_inline_command(self, text: str, query: Any) -> list[dict[str, Any]]:
         kernel = self.kernel
