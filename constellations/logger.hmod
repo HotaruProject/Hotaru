@@ -200,9 +200,8 @@ async def command_logs(ctx, invocation):
         with open(raw_path, "w", encoding="utf-8") as stream:
             stream.write("\n".join(_fmt(entry) for entry in entries))
         caption = ctx.t("kernel.logger.logs_caption", "Логи Hotaru: {count} записей (уровень {level})", count=len(entries), level=level)
-        from relay.files import document
         up = await ctx.upload_file(raw_path, file_name="hotaru-logs.txt")
-        media = document(up, mime="text/plain", file_name="hotaru-logs.txt")
+        media = ctx.file_media(up, mime="text/plain", file_name="hotaru-logs.txt")
         chat_id = invocation.chat_id if invocation is not None else None
         message_id = invocation.message_id if invocation is not None else None
         if not (isinstance(chat_id, int) and isinstance(message_id, int)):

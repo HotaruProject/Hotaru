@@ -465,6 +465,14 @@ class SandboxContext:
     async def download_file(self, source, destination, **kwargs):
         return await _cap_call("assets", {"op": "download", "message": source, "destination": destination})
 
+    def file_media(self, up, *, mime="application/octet-stream", file_name=None, force_file=True):
+        name = file_name or (up.get("name") if isinstance(up, dict) else None) or "file"
+        if isinstance(up, dict) and up.get("big"):
+            file = {"_": "inputFileBig", "id": up["id"], "parts": up["parts"], "name": up["name"]}
+        else:
+            file = {"_": "inputFile", "id": up["id"], "parts": up["parts"], "name": up["name"], "md5_checksum": up.get("md5", "")}
+        return {"_": "inputMediaUploadedDocument", "file": file, "mime_type": mime, "attributes": [{"_": "documentAttributeFilename", "file_name": name}], "force_file": force_file}
+
     async def cap(self, capability, payload=None):
         return _cap_call(capability, payload or {})
 
