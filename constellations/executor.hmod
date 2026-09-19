@@ -805,13 +805,11 @@ class _MsgProxy:
         return await app.get_chat(cid)
 
     async def download(self, destination: Any = None) -> Any:
-        app = getattr(getattr(self.__dict__["_ctx"], "runtime", None), "app", None)
-        if app is None:
-            return None
+        ctx = self.__dict__["_ctx"]
         source = self.__dict__["_raw"]
         if destination is None:
             destination = "/tmp"
-        return await app.download_media(source, destination)
+        return await ctx.download_file(source, destination)
 
     async def read(self) -> Any:
         app = getattr(getattr(self.__dict__["_ctx"], "runtime", None), "app", None)

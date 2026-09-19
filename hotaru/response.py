@@ -925,7 +925,7 @@ class ModuleContext:
         if isinstance(document.get("id"), int) and isinstance(document.get("access_hash"), int):
             app = getattr(self.runtime, "app", None) or getattr(self._source, "app", None)
             if app is not None:
-                await app.download_media(document, str(path))
+                await take(app, document, str(path))
                 return path
         raise ResponseError("attachment location is incomplete")
 
