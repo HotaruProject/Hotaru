@@ -626,7 +626,7 @@ class ForumHelper:
         self._ingest_user(dialogs)
         found: list[tuple[dict[str, Any], int]] = []
         for chat in self._body(dialogs).get("chats") or []:
-            if isinstance(chat, dict) and chat.get("_") == "channel" and str(chat.get("title") or "") == title and chat.get("access_hash"):
+            if isinstance(chat, dict) and chat.get("_") == "channel" and str(chat.get("title") or "") == title and chat.get("access_hash") and not chat.get("left"):
                 found.append((chat, -1000000000000 - int(chat["id"])))
         return found
 
@@ -707,11 +707,15 @@ class ForumHelper:
                 return False
         alive = False
         for chat in self._body(res).get("chats") or []:
-            if isinstance(chat, dict) and int(chat.get("id") or 0) == raw:
+            if not isinstance(chat, dict) or int(chat.get("id") or 0) != raw:
+                continue
+            if chat.get("_") == "channel" and chat.get("access_hash") and not chat.get("left"):
                 alive = True
                 break
         if not alive:
             self._emit("warm_failed", chat=chat_id, reason="missing")
+            self._warmed.discard(chat_id)
+            await self._reset_group()
             return False
         self._ingest_user(res)
         self._warmed.add(chat_id)
@@ -743,36 +747,51 @@ class ForumHelper:
         self._topic_tries.clear()
         self._group_try_ts = 0.0
 
+    def _dead(self, exc: Exception) -> bool:
+        text = str(exc).upper()
+        return "CHANNEL_PRIVATE" in text or "CHANNEL_INVALID" in text or "NO RESPONSE" in text or type(exc).__name__ == "TimeoutError"
+
     async def ensure_group(self) -> int | None:
         chat_id = await self.group()
-        if chat_id is not None and await self._warm_user_entity(chat_id):
-            return chat_id
+        if chat_id is not None:
+            if await self._warm_user_entity(chat_id):
+                return chat_id
+            await self._reset_group()
         async with self._lock:
             chat_id = await self.group()
-            if chat_id is not None and await self._warm_user_entity(chat_id):
-                return chat_id
+            if chat_id is not None:
+                if await self._warm_user_entity(chat_id):
+                    return chat_id
+                await self._reset_group()
             now = time.monotonic()
             if now - self._group_try_ts < 60.0:
                 return None
             self._group_try_ts = now
             title = str(getattr(self._runtime, "forum_title", None) or "Hotaru")
             found = await self._find_groups_by_title(title)
-            if found:
-                for chat, cid in found[1:]:
+            live = [(chat, cid) for chat, cid in found if not chat.get("left")]
+            if live:
+                for chat, cid in live[1:]:
                     await self._delete_owned_group(chat, cid)
-                await self._save_group(found[0][1])
-                self._sync_ts = 0.0
-                self._warmed.add(found[0][1])
-                await self._invite_bot(found[0][1])
-                await self._sync_channel_to_bot(found[0][1])
-                return found[0][1]
-            result = await self._user_call(
-                "channels.createChannel",
-                megagroup=True,
-                forum=True,
-                title=title,
-                about="Hotaru observatory",
-            )
+                cid = live[0][1]
+                await self._save_group(cid)
+                if await self._warm_user_entity(cid, force=True):
+                    self._sync_ts = 0.0
+                    await self._invite_bot(cid)
+                    await self._sync_channel_to_bot(cid)
+                    return cid
+                await self._reset_group()
+            try:
+                result = await self._user_call(
+                    "channels.createChannel",
+                    megagroup=True,
+                    forum=True,
+                    title=title,
+                    about="Hotaru observatory",
+                )
+            except Exception as exc:
+                self._emit("create_failed", detail=str(exc)[:160])
+                raise
             body = self._body(result)
             for chat in body.get("chats") or []:
                 if isinstance(chat, dict) and chat.get("_") == "channel" and isinstance(chat.get("id"), int):
@@ -784,7 +803,9 @@ class ForumHelper:
                     await self._invite_bot(new_id)
                     await self._sync_channel_to_bot(new_id)
                     await self._hide_general(new_id)
+                    self._emit("created", chat=new_id)
                     return new_id
+            self._emit("create_failed", detail="no channel in result")
             return None
 
     async def _bot_resolve(self, chat_id: int) -> bytes | None:
@@ -944,6 +965,8 @@ class ForumHelper:
             await self._drop_if_private(chat_id, exc)
             if await self._recover_bot_membership(chat_id, exc):
                 return await self._send_once(chat_id, topic_id, text, rich=rich, reply_to=reply_to)
+            if self._dead(exc):
+                await self._reset_group()
             raise
 
     async def _send_once(self, chat_id: int, topic_id: int, text: str, *, rich: Any = None, reply_to: int | None = None) -> Any:
