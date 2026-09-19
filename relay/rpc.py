@@ -19,7 +19,7 @@ def rpcname(method: str) -> str:
 
 
 async def rpc(app: Any, method: str, **kwargs: Any) -> Any:
-    return await getattr(app, rpcname(method))(**kwargs)
+    return await app.mt_req(method, **kwargs)
 
 
 async def delete_chat_msg(app: Any, chat_id: Any, msg_id: int, revoke: bool = True) -> Any:
