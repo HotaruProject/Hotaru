@@ -7,7 +7,7 @@ import time
 from typing import Any, Awaitable, Callable
 
 from .caps import MT_BLOCKED, normalize_method
-from .rpc import rpc
+from .rpc import rpcname
 from .denylist import payload_hits_blocked
 from .firewall import trusted_scope
 from goygram.errors import ChannelNotFoundError
@@ -406,11 +406,11 @@ class BotGateway:
         if mapped is None:
             if "." in method or method.startswith("mt_"):
                 with trusted_scope():
-                    return await rpc(app, method, **kwargs)
+                    return await getattr(app, rpcname(method))(**kwargs)
             raise RuntimeError(f"unmapped bot method {method}")
         act, data = mapped
         with trusted_scope():
-            return await rpc(app, act, **data)
+            return await getattr(app, rpcname(act))(**data)
 
     async def _send_media_mt(self, app: Any, method: str, kwargs: dict[str, Any]) -> Any:
         from relay.files import document, put
@@ -435,7 +435,7 @@ class BotGateway:
         if markup is not None:
             data["reply_markup"] = markup
         with trusted_scope():
-            return await rpc(app, "messages.sendMedia", **data)
+            return await app.mt_messages_send_media( **data)
 
     def _tl_markup(self, markup: Any) -> Any:
         if markup is None:
@@ -620,12 +620,12 @@ class ForumHelper:
         if app is None:
             raise RuntimeError("userbot transport is not ready")
         with trusted_scope():
-            return await app.mt_req(act, **kw)
+            return await getattr(app, rpcname(act))(**kw)
 
     async def _bot_call(self, act: str, **kw: Any) -> Any:
         app = self._bot_app()
         with trusted_scope():
-            return await app.mt_req(act, **kw)
+            return await getattr(app, rpcname(act))(**kw)
 
     @staticmethod
     def _body(result: Any) -> dict[str, Any]:

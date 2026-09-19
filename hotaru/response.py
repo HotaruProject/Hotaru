@@ -28,7 +28,6 @@ from relay.proxies import (
     ForumHelper,
 )
 from relay.toolkit import TOOLS
-from relay.rpc import rpc
 
 log = logging.getLogger(__name__)
 
@@ -489,7 +488,7 @@ class ModuleContext:
             return False
         try:
             with trusted_scope():
-                result = await rpc(app, "users.getUsers", id=[{"_": "inputUserSelf"}])
+                result = await app.mt_users_get_users( id=[{"_": "inputUserSelf"}])
             body = result.get("result", result) if isinstance(result, dict) else result
             if isinstance(body, dict):
                 users = body.get("users") or body.get("result") or []
@@ -779,7 +778,7 @@ class ModuleContext:
         rich_message = {"_": "inputRichMessageHTML", **rich_html(html)}
         if output == "edit" and message_id is not None:
             with trusted_scope():
-                result = await rpc(app, "messages.editMessage", peer=peer, id=int(message_id), message="", rich_message=rich_message)
+                result = await app.mt_messages_edit_message( peer=peer, id=int(message_id), message="", rich_message=rich_message)
             return Response(True, "edit", getattr(self._source, "src", None), result)
         reply_to = kwargs.pop("reply_to", None) or message_id
         topic_id = kwargs.pop("topic_id", None) or self.topic_id
@@ -792,7 +791,7 @@ class ModuleContext:
         kwargs.pop("parse_mode", None)
         data.update(kwargs)
         with trusted_scope():
-            result = await rpc(app, "messages.sendMessage", **data)
+            result = await app.mt_messages_send_message( **data)
         return Response(True, "reply", getattr(self._source, "src", None), result)
 
     async def _context_tg_call(self, method: str, data: dict[str, Any]) -> Any:

@@ -14,7 +14,7 @@ from goygram import ext
 from relay.firewall import module_scope
 from goygram.sugar import html_to_entities
 from goygram.types.kbd import kbd_to_tl
-from relay.rpc import rpc, delete_chat_msg
+from relay.rpc import delete_chat_msg
 
 
 class CallbackDenied(PermissionError):
@@ -63,11 +63,11 @@ class CallbackContext:
                 id_field = inline_mid if isinstance(inline_mid, dict) else {"_": "inputBotInlineMessageID", "raw": inline_mid} if isinstance(inline_mid, (str, bytes)) else None
                 if id_field is None:
                     return None
-                return await rpc(app, "messages.editInlineBotMessage", id=id_field, message=plain, **data)
+                return await app.mt_messages_edit_inline_bot_message( id=id_field, message=plain, **data)
             chat_id = getattr(self, "chat_id", None)
             msg_id = getattr(self, "msg_id", None)
             if isinstance(chat_id, int) and isinstance(msg_id, int):
-                return await rpc(app, "messages.editMessage", peer=chat_id, id=int(msg_id), message=plain, **data)
+                return await app.mt_messages_edit_message( peer=chat_id, id=int(msg_id), message=plain, **data)
             return None
         if inline_mid is not None and app is not None:
             data = dict(kwargs)
@@ -81,7 +81,7 @@ class CallbackContext:
             if ents:
                 data["entities"] = ents
             id_field = inline_mid if isinstance(inline_mid, dict) else {"_": "inputBotInlineMessageID", "raw": inline_mid}
-            return await rpc(app, "messages.editInlineBotMessage", id=id_field, message=plain, **data)
+            return await app.mt_messages_edit_inline_bot_message( id=id_field, message=plain, **data)
         return await self._callback.edit(text, **kwargs)
 
     async def delete(self) -> Any:
@@ -114,7 +114,7 @@ class CallbackContext:
             if id_field is not None:
                 from relay.firewall import trusted_scope
                 with trusted_scope():
-                    return await rpc(bot_app, "messages.editInlineBotMessage", id=id_field, message="\u200b", reply_markup={"_": "replyInlineMarkup", "rows": []})
+                    return await bot_app.mt_messages_edit_inline_bot_message( id=id_field, message="\u200b", reply_markup={"_": "replyInlineMarkup", "rows": []})
         if hasattr(self._callback, "delete") and getattr(self._callback, "delete") is not self.delete:
             return await self._callback.delete()
         return None

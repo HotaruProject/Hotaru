@@ -24,7 +24,7 @@ from relay.inline_tl import to_tl_results
 from relay.inline_tl import answer_tl
 from relay.sandbox import ModuleSandbox
 from relay.caps import CapabilityHost, describe as describe_caps
-from relay.rpc import rpc, delete_chat_msg
+from relay.rpc import delete_chat_msg
 from relay.firewall import install as install_firewall, trusted_scope
 from goygram.sugar import html_to_entities, extract_sent_message
 from goygram import GoyGram, Session
@@ -300,7 +300,7 @@ class Runtime:
         tl_markup = kbd_to_tl({"inline_keyboard": rebound})
         if tl_markup is not None:
             edit_data["reply_markup"] = tl_markup
-        await rpc(bot_app, "messages.editMessage", **edit_data)
+        await bot_app.mt_messages_edit_message( **edit_data)
         if hasattr(command, "delete"):
             await command.delete()
         return sent
@@ -619,8 +619,7 @@ class Runtime:
         with trusted_scope():
             bot = await self.app.mt.resolve_peer("@" + self.inline.info.username)
             peer = await self.app.mt.resolve_peer(chat_id)
-        result = await rpc(self.app, 
-            "messages.getInlineBotResults",
+        result = await self.app.mt_messages_get_inline_bot_results(
             bot=bot,
             peer=peer,
             query="hotaru-form:" + nonce,
@@ -637,8 +636,7 @@ class Runtime:
         results = body.get("results") if isinstance(body, dict) else None
         if not isinstance(query_id, (int, str)) or not isinstance(results, list) or not results:
             raise RuntimeError("inline bot returned no form result")
-        sent_result = await rpc(self.app, 
-            "messages.sendInlineBotResult",
+        sent_result = await self.app.mt_messages_send_inline_bot_result(
             peer=peer,
             reply_to={"_": "inputReplyToMessage", "reply_to_msg_id": message_id, **({"top_msg_id": options.get("topic_id")} if isinstance(options, dict) and isinstance(options.get("topic_id"), int) else {})},
             random_id=secrets.randbits(63),
@@ -1030,7 +1028,7 @@ class Runtime:
             return False
         try:
             with trusted_scope():
-                result = await rpc(app, "users.getUsers", id=[{"_": "inputUserSelf"}])
+                result = await app.mt_users_get_users( id=[{"_": "inputUserSelf"}])
             body = result.get("result", result) if isinstance(result, dict) else result
             if isinstance(body, dict):
                 users = body.get("users") or body.get("result") or []
@@ -1339,7 +1337,7 @@ class Runtime:
         if getattr(callback, "inline_message_id", None) and getattr(callback, "app", None) is not None:
             inline_mid = callback.inline_message_id
             id_field = inline_mid if isinstance(inline_mid, dict) else {"_": "inputBotInlineMessageID", "raw": inline_mid}
-            return await rpc(callback.app, "messages.editInlineBotMessage", id=id_field, message=text)
+            return await callback.app.mt_messages_edit_inline_bot_message( id=id_field, message=text)
         return await callback.edit(text)
 
     def create_backup(self) -> Path:
