@@ -506,6 +506,9 @@ class ModuleContext:
     async def answer(self, text: str | None = None, **kwargs: Any) -> Any:
         if text is not None:
             kwargs["text"] = text
+        media = kwargs.pop("media", None)
+        if media is not None:
+            return await self.send_file(media, kwargs.pop("text", None), **kwargs)
         use_rich = kwargs.pop("rich", False)
         if use_rich:
             allowed = False
@@ -625,11 +628,43 @@ class ModuleContext:
                 await result
 
     async def send_file(self, file: Any, caption: str | None = None, **kwargs: Any) -> Response:
-        output = kwargs.pop("output", "reply")
-        mode = kwargs.pop("mode", output)
-        if caption is None:
-            return await self.respond(file, mode=mode, **kwargs)
-        return await self.respond(caption, media=file, mode=mode, **kwargs)
+        app = getattr(self.runtime, "app", None) if self.runtime is not None else None
+        if app is None or getattr(app, "mt", None) is None:
+            raise ResponseError("upload is unavailable")
+        file_name = kwargs.pop("file_name", None)
+        mime = kwargs.pop("mime_type", None) or kwargs.pop("mime", None) or "application/octet-stream"
+        if isinstance(file, dict) and str(file.get("_", "")).startswith("inputMedia"):
+            media = file
+        else:
+            up = await put(app, file, file_name=file_name)
+            media = document(up, mime=mime, file_name=file_name)
+        peer = kwargs.pop("peer", None) or kwargs.pop("chat_id", None) or getattr(self._source, "chat_id", None)
+        message = caption or ""
+        data: dict[str, Any] = {"peer": peer, "media": media, "message": message, "random_id": secrets.randbits(63)}
+        if message:
+            plain, ents = html_to_entities(str(message))
+            data["message"] = plain
+            if ents:
+                data["entities"] = ents
+        reply_to = kwargs.pop("reply_to", None)
+        topic_id = kwargs.pop("topic_id", self.topic_id)
+        if reply_to is None:
+            mid = getattr(self._source, "id", None)
+            if isinstance(mid, int) and mid > 0:
+                header: dict[str, Any] = {"_": "inputReplyToMessage", "reply_to_msg_id": mid}
+                if isinstance(topic_id, int) and topic_id > 0:
+                    header["top_msg_id"] = topic_id
+                data["reply_to"] = header
+        elif isinstance(reply_to, int):
+            header = {"_": "inputReplyToMessage", "reply_to_msg_id": int(reply_to)}
+            if isinstance(topic_id, int) and topic_id > 0:
+                header["top_msg_id"] = topic_id
+            data["reply_to"] = header
+        elif reply_to:
+            data["reply_to"] = reply_to
+        with trusted_scope():
+            result = await app.mt_messages_send_media(**data)
+        return Response(True, "reply", getattr(self._source, "src", None), result)
 
     async def upload_file(self, source: Any, **kwargs: Any) -> Any:
         app = getattr(self.runtime, "app", None)
