@@ -616,14 +616,16 @@ class ForumHelper:
         return mt
 
     async def _user_call(self, act: str, **kw: Any) -> Any:
-        mt = self._user_mt()
+        app = getattr(self._runtime, "app", None)
+        if app is None:
+            raise RuntimeError("userbot transport is not ready")
         with trusted_scope():
-            return await mt.call(act, **kw)
+            return await app.mt_req(act, **kw)
 
     async def _bot_call(self, act: str, **kw: Any) -> Any:
         app = self._bot_app()
         with trusted_scope():
-            return await rpc(app, act, **kw)
+            return await app.mt_req(act, **kw)
 
     @staticmethod
     def _body(result: Any) -> dict[str, Any]:
@@ -656,16 +658,14 @@ class ForumHelper:
             state.set_setting("forum-channel-id", int(chat_id))
 
     async def _find_groups_by_title(self, title: str) -> list[tuple[dict[str, Any], int]]:
-        mt = self._user_mt()
-        with trusted_scope():
-            dialogs = await mt.call(
-                "messages.getDialogs",
-                offset_date=0,
-                offset_id=0,
-                offset_peer={"_": "inputPeerEmpty"},
-                limit=100,
-                hash=0,
-            )
+        dialogs = await self._user_call(
+            "messages.getDialogs",
+            offset_date=0,
+            offset_id=0,
+            offset_peer={"_": "inputPeerEmpty"},
+            limit=100,
+            hash=0,
+        )
         self._ingest_user(dialogs)
         found: list[tuple[dict[str, Any], int]] = []
         for chat in self._body(dialogs).get("chats") or []:
@@ -715,7 +715,7 @@ class ForumHelper:
                 await mt.resolve_peer(chat_id)
             except Exception:
                 try:
-                    dialogs = await mt.call(
+                    dialogs = await self._user_call(
                         "messages.getDialogs",
                         offset_date=0,
                         offset_id=0,
@@ -737,7 +737,7 @@ class ForumHelper:
                 self._emit("warm_failed", chat=chat_id, reason="hash")
                 return False
             try:
-                res = await mt.call(
+                res = await self._user_call(
                     "channels.getChannels",
                     id=[{"_": "inputChannel", "channel_id": raw, "access_hash": access_hash}],
                 )
@@ -874,19 +874,16 @@ class ForumHelper:
         if peer is None:
             return
         try:
-            mt = self._user_mt()
-            with trusted_scope():
-                resolved = await mt.call("contacts.resolveUsername", username=username.lstrip("@"))
+            resolved = await self._user_call("contacts.resolveUsername", username=username.lstrip("@"))
             users = self._body(resolved).get("users") or []
             bot_user = next((u for u in users if isinstance(u, dict) and int(u.get("id") or 0) == bot_id and u.get("access_hash")), None)
             if bot_user is None:
                 return
-            with trusted_scope():
-                await mt.call(
-                    "channels.inviteToChannel",
-                    channel=peer,
-                    users=[{"_": "inputUser", "user_id": bot_id, "access_hash": int(bot_user["access_hash"])}],
-                )
+            await self._user_call(
+                "channels.inviteToChannel",
+                channel=peer,
+                users=[{"_": "inputUser", "user_id": bot_id, "access_hash": int(bot_user["access_hash"])}],
+            )
         except Exception:
             return
 
