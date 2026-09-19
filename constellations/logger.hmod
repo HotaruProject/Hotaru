@@ -112,12 +112,25 @@ async def unhook(ctx):
 
 
 async def task_pump(ctx):
-    queue = _state.get("queue")
-    if queue is None:
-        return
     if ctx.state.get("enabled", True) is False:
         return
     now = time.monotonic()
+    topic_id = _state.get("topic_id")
+    if topic_id is None or now - _state.get("last_sync", 0.0) > 30:
+        try:
+            topic_id = await ctx.forum.ensure_topic(TOPIC_TITLE)
+            _state["topic_id"] = topic_id
+            _state["last_sync"] = now
+        except Exception as exc:
+            _state["topic_id"] = None
+            _state["last_sync"] = 0.0
+            _state["failed"] += 1
+            _state["last_error"] = f"{type(exc).__name__}: {exc}"[:200]
+            _emit(ctx, "topic_error", error=type(exc).__name__, detail=str(exc)[:160])
+            return
+    queue = _state.get("queue")
+    if queue is None:
+        return
     batch = []
     while not queue.empty() and len(batch) < 40:
         try:
@@ -129,17 +142,6 @@ async def task_pump(ctx):
         batch.append(payload)
     if not batch:
         return
-    topic_id = _state.get("topic_id")
-    if topic_id is None or now - _state.get("last_sync", 0.0) > 900:
-        try:
-            topic_id = await ctx.forum.ensure_topic(TOPIC_TITLE)
-            _state["topic_id"] = topic_id
-            _state["last_sync"] = now
-        except Exception as exc:
-            _state["failed"] += 1
-            _state["last_error"] = f"{type(exc).__name__}: {exc}"[:200]
-            _emit(ctx, "topic_error", error=type(exc).__name__, detail=str(exc)[:160])
-            return
     if topic_id is None:
         return
     try:
@@ -198,16 +200,9 @@ async def command_logs(ctx, invocation):
         with open(raw_path, "w", encoding="utf-8") as stream:
             stream.write("\n".join(_fmt(entry) for entry in entries))
         caption = ctx.t("kernel.logger.logs_caption", "Логи Hotaru: {count} записей (уровень {level})", count=len(entries), level=level)
-        app = getattr(ctx.runtime, "app", None)
-        mt = getattr(app, "mt", None) if app is not None else None
-        up = await mt.upload_file(raw_path, file_name="hotaru-logs.txt")
-        media = {
-            "_": "inputMediaUploadedDocument",
-            "file": {"_": "inputFile", "id": up["id"], "parts": up["parts"], "name": up["name"], "md5_checksum": up.get("md5", "")},
-            "mime_type": "text/plain",
-            "attributes": [{"_": "documentAttributeFilename", "file_name": "hotaru-logs.txt"}],
-            "force_file": True,
-        }
+        from relay.files import document
+        up = await ctx.upload_file(raw_path, file_name="hotaru-logs.txt")
+        media = document(up, mime="text/plain", file_name="hotaru-logs.txt")
         chat_id = invocation.chat_id if invocation is not None else None
         message_id = invocation.message_id if invocation is not None else None
         if not (isinstance(chat_id, int) and isinstance(message_id, int)):

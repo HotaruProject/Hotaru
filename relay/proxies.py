@@ -95,8 +95,9 @@ class Gateway:
         file_name = kwargs.pop("file_name", None)
         mime = kwargs.pop("mime_type", "application/octet-stream")
         if app is not None:
-            up = await app.upload_file(path, file_name=file_name)
-            media = {"_": "inputMediaUploadedDocument", "file": up, "mime_type": mime}
+            from relay.files import document, put
+            up = await put(app, path, file_name=file_name)
+            media = document(up, mime=mime, file_name=file_name)
             return await self.call("messages.sendMedia", {"media": media, "message": caption, **kwargs})
         return await self.call("messages.sendMedia", {
             "media": {"_": "inputMediaUploadedDocument", "file": path, "mime_type": mime},
@@ -658,9 +659,9 @@ class ForumHelper:
                 pass
 
     async def _warm_user_entity(self, chat_id: int, force: bool = False) -> bool:
-        if chat_id in self._warmed:
-            return True
         now = time.monotonic()
+        if not force and chat_id in self._warmed and now - self._warm_tries.get(chat_id, 0.0) < 30.0:
+            return True
         if not force and now - self._warm_tries.get(chat_id, 0.0) < 30.0:
             return False
         self._warm_tries[chat_id] = now
@@ -885,7 +886,11 @@ class ForumHelper:
         chat_id = await self.ensure_group()
         if chat_id is None:
             return None
-        result = await self._user_call("messages.getForumTopics", peer=chat_id, offset_date=0, offset_id=0, offset_topic=0, limit=100)
+        try:
+            result = await self._user_call("messages.getForumTopics", peer=chat_id, offset_date=0, offset_id=0, offset_topic=0, limit=100)
+        except Exception as exc:
+            await self._drop_if_private(chat_id, exc)
+            raise
         self._ingest_user(result)
         for topic in self._body(result).get("topics") or []:
             if isinstance(topic, dict) and isinstance(topic.get("id"), int) and str(topic.get("title") or "") == title:
@@ -963,13 +968,8 @@ class ForumHelper:
         return await self._user_call("messages.sendMessage", **data)
 
     def _media_document(self, up: dict[str, Any], file_name: str | None) -> dict[str, Any]:
-        return {
-            "_": "inputMediaUploadedDocument",
-            "file": {"_": "inputFile", "id": up["id"], "parts": up["parts"], "name": up["name"], "md5_checksum": up.get("md5", "")},
-            "mime_type": "text/plain",
-            "attributes": [{"_": "documentAttributeFilename", "file_name": file_name or up["name"]}],
-            "force_file": True,
-        }
+        from relay.files import document
+        return document(up, mime="text/plain", file_name=file_name)
 
     async def send_file(self, topic_id: int, path: Any, caption: str = "", *, file_name: str | None = None) -> Any:
         chat_id = await self.ensure_group()
@@ -986,12 +986,9 @@ class ForumHelper:
 
     async def _send_file_once(self, chat_id: int, topic_id: int, path: Any, caption: str, *, file_name: str | None = None) -> Any:
         use_bot = await self._bot_ready(chat_id)
-        app = self._bot_app() if use_bot else None
-        mt = self._user_mt() if app is None else None
-        if app is not None:
-            up = await app.mt.upload_file(path, file_name=file_name)
-        else:
-            up = await mt.upload_file(path, file_name=file_name)
+        from relay.files import put
+        host = self._bot_app() if use_bot else getattr(self._runtime, "app", None)
+        up = await put(host, path, file_name=file_name)
         media = self._media_document(up, file_name)
         plain, ents = html_to_entities(str(caption))
         data: dict[str, Any] = {"media": media, "message": plain, "random_id": secrets.randbits(63), "reply_to": {"_": "inputReplyToMessage", "reply_to_msg_id": int(topic_id)}}
@@ -1034,12 +1031,9 @@ class ForumHelper:
         if chat_id is None:
             raise RuntimeError("forum group is not available")
         use_bot = await self._bot_ready(chat_id)
-        app = self._bot_app() if use_bot else None
-        mt = self._user_mt() if app is None else None
-        if app is not None:
-            up = await app.mt.upload_file(path, file_name=file_name)
-        else:
-            up = await mt.upload_file(path, file_name=file_name)
+        from relay.files import put
+        host = self._bot_app() if use_bot else getattr(self._runtime, "app", None)
+        up = await put(host, path, file_name=file_name)
         media = self._media_document(up, file_name)
         plain, ents = html_to_entities(str(caption))
         data: dict[str, Any] = {"id": int(message_id), "media": media, "message": plain}

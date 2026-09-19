@@ -632,16 +632,18 @@ class ModuleContext:
         return await self.respond(caption, media=file, mode=mode, **kwargs)
 
     async def upload_file(self, source: Any, **kwargs: Any) -> Any:
+        from relay.files import put
         app = getattr(self.runtime, "app", None)
         if app is None:
             raise ResponseError("upload is unavailable")
-        return await app.upload_file(source, **kwargs)
+        return await put(app, source, file_name=kwargs.get("file_name"), **{k: v for k, v in kwargs.items() if k != "file_name"})
 
     async def download_file(self, source: Any, destination: str | Path, **kwargs: Any) -> Any:
+        from relay.files import take
         app = getattr(self.runtime, "app", None)
         if app is None:
             raise ResponseError("download is unavailable")
-        return await app.download_media(source, str(destination), **kwargs)
+        return await take(app, source, destination, **kwargs)
 
     async def send_media(self, media: Any, caption: str | None = None, **kwargs: Any) -> Response:
         return await self.send_file(media, caption, **kwargs)
