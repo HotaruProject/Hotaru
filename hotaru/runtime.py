@@ -53,6 +53,7 @@ class InputContext:
         self.query = query
         self.value = value
         self.payload = payload
+        self.form_nonce = None
         self.inline_message_id = getattr(query, "msg_id", None)
 
     async def reject(self, text: str = "Invalid value") -> Any:
@@ -68,7 +69,8 @@ class InputContext:
         return None
 
     async def edit(self, text: str, **kwargs: Any) -> Any:
-        return await self.runtime._send_form(self.source, text, kwargs.pop("buttons", None) or [], kwargs)
+        buttons = kwargs.pop("buttons", None) or []
+        return await self.runtime._edit_input_form(self, text, buttons, kwargs)
 
     async def delete(self) -> bool:
         mid = self.inline_message_id
@@ -124,12 +126,14 @@ class Runtime:
     closed: bool = False
     _inline_forms: dict[str, tuple[str, list[dict[str, str]]]] | None = None
     _forms: dict[str, tuple[Any, Any, str, Any, dict[str, Any]]] | None = None
-    _input_requests: dict[str, tuple[Any, Any, Any, float, str]] | None = None
+    _input_requests: dict[str, tuple] | None = None
     _form_expiry: dict[str, float] | None = None
     _form_gc_task: asyncio.Task[None] | None = None
     _premium_cache: bool | None = None
     _forum_helper: Any = None
     _form_msgs: dict[int, tuple[Any, int]] | None = None
+    _form_inline_ids: dict[str, Any] | None = None
+    _form_chosen: dict[str, asyncio.Event] | None = None
 
     @classmethod
     def from_database(cls, path: str | Path | None = None) -> "Runtime":
@@ -205,6 +209,8 @@ class Runtime:
         self._inline_forms = {}
         self._forms = {}
         self._input_requests = {}
+        self._form_inline_ids = {}
+        self._form_chosen = {}
         self._form_expiry = {}
         self._form_gc_task = None
         self.context_factory.inline_manager = self.inline
@@ -592,7 +598,7 @@ class Runtime:
                     token = secrets.token_urlsafe(10)
                     if self._input_requests is None:
                         self._input_requests = {}
-                    self._input_requests[token] = (button["handler"], button.get("payload"), command, time.monotonic() + float(button.get("input_ttl", 300)), str(button.get("input", "")))
+                    self._input_requests[token] = (button["handler"], button.get("payload"), command, time.monotonic() + float(button.get("input_ttl", 300)), str(button.get("input", "")), nonce)
                     current.append({"text": button.get("text", ""), "switch_inline_query_current_chat": "hotaru-input:" + token + " "})
                     continue
                 if callable(button.get("handler")) and "callback" not in button:
@@ -648,6 +654,10 @@ class Runtime:
         results = body.get("results") if isinstance(body, dict) else None
         if not isinstance(query_id, (int, str)) or not isinstance(results, list) or not results:
             raise RuntimeError("inline bot returned no form result")
+        if self._form_chosen is None:
+            self._form_chosen = {}
+        ready = self._form_chosen.setdefault(nonce, asyncio.Event())
+        ready.clear()
         sent_result = await self.app.mt_messages_send_inline_bot_result(
             peer=peer,
             reply_to={"_": "inputReplyToMessage", "reply_to_msg_id": message_id, **({"top_msg_id": options.get("topic_id")} if isinstance(options, dict) and isinstance(options.get("topic_id"), int) else {})},
@@ -656,6 +666,10 @@ class Runtime:
             id=results[0].get("id"),
             clear_draft=True,
         )
+        try:
+            await asyncio.wait_for(ready.wait(), 5.0)
+        except asyncio.TimeoutError:
+            pass
         if options.get("delete_source", True):
             await self._delete_inline_source(command, chat_id, message_id)
         sent = extract_sent_message(sent_result)
@@ -723,6 +737,15 @@ class Runtime:
 
     async def _on_chosen_input(self, chosen: Any) -> None:
         text = str(getattr(chosen, "query", "") or "").strip()
+        if text.startswith("hotaru-form:"):
+            nonce = text.split(":", 1)[1]
+            if self._form_inline_ids is None:
+                self._form_inline_ids = {}
+            self._form_inline_ids[nonce] = getattr(chosen, "msg_id", None)
+            if self._form_chosen is None:
+                self._form_chosen = {}
+            self._form_chosen.setdefault(nonce, asyncio.Event()).set()
+            return
         if not text.startswith("hotaru-input:"):
             return
         key, _, value = text.partition(" ")
@@ -730,12 +753,14 @@ class Runtime:
         request = (self._input_requests or {}).get(token)
         if request is None:
             return
-        handler, payload, source, expiry, _placeholder = request
+        handler, payload, source, expiry, _placeholder = request[:5]
+        form_nonce = request[5] if len(request) > 5 else None
         if expiry <= time.monotonic():
             if self._input_requests is not None:
                 self._input_requests.pop(token, None)
             return
         ctx = InputContext(self, source, chosen, value, payload)
+        ctx.form_nonce = form_nonce
         try:
             result = handler(ctx, value, payload)
         except TypeError:
@@ -748,11 +773,73 @@ class Runtime:
                 await result
         except Exception as exc:
             if self.observatory is not None:
-                self.observatory.emit("inline", "input_error", error=type(exc).__name__)
+                self.observatory.emit("inline", "input_error", error=type(exc).__name__, detail=str(exc)[:160])
         finally:
             if self._input_requests is not None:
                 self._input_requests.pop(token, None)
-        await ctx.delete()
+        form_id = (self._form_inline_ids or {}).get(form_nonce) if form_nonce else None
+        if form_id is not None:
+            await ctx.delete()
+
+    async def _edit_input_form(self, ctx: InputContext, text: str, buttons: Any, options: dict[str, Any]) -> Any:
+        if buttons and isinstance(buttons[0], dict):
+            buttons = [buttons]
+        nonce = ctx.form_nonce
+        inline_id = (self._form_inline_ids or {}).get(nonce) if nonce else None
+        if inline_id is None:
+            inline_id = ctx.inline_message_id
+        if inline_id is None:
+            raise RuntimeError("form inline id is missing")
+        bot = getattr(getattr(self, "inline", None), "bot_app", None)
+        if bot is None:
+            raise RuntimeError("inline bot is not ready")
+        layout = []
+        command = ctx.source
+        if nonce is None:
+            nonce = secrets.token_urlsafe(12)
+        for row in buttons or []:
+            if isinstance(row, dict):
+                row = [row]
+            current = []
+            for button in row:
+                if not isinstance(button, dict):
+                    continue
+                if callable(button.get("handler")) and isinstance(button.get("input"), str):
+                    token = secrets.token_urlsafe(10)
+                    if self._input_requests is None:
+                        self._input_requests = {}
+                    self._input_requests[token] = (button["handler"], button.get("payload"), command, time.monotonic() + float(button.get("input_ttl", 300)), str(button.get("input", "")), nonce)
+                    current.append({"text": button.get("text", ""), "switch_inline_query_current_chat": "hotaru-input:" + token + " "})
+                    continue
+                if callable(button.get("handler")):
+                    action_id = self.callbacks.register_module_action(options.get("module_id", ""), button["handler"]) if self.callbacks is not None else ""
+                    if action_id and self.callbacks is not None:
+                        issued = self.callbacks.issue_module(options.get("module_id", ""), str(action_id), CallbackBinding(int(getattr(self.kernel, "owner_id", 0) or 0), None, 0), button.get("payload"))
+                        current.append({"text": button.get("text", ""), "callback_data": issued})
+                        continue
+                if isinstance(button.get("url"), str):
+                    current.append({"text": button.get("text", ""), "url": button["url"]})
+                elif isinstance(button.get("callback_data"), str):
+                    current.append({"text": button.get("text", ""), "callback_data": button["callback_data"]})
+                elif isinstance(button.get("switch_inline_query_current_chat"), str):
+                    current.append({"text": button.get("text", ""), "switch_inline_query_current_chat": button["switch_inline_query_current_chat"]})
+                else:
+                    current.append({key: value for key, value in button.items() if key != "style"})
+            layout.append(current)
+        if nonce is not None:
+            if self._inline_forms is None:
+                self._inline_forms = {}
+            self._inline_forms[nonce] = (text, layout)
+        plain, ents = html_to_entities(text)
+        id_field = inline_id if isinstance(inline_id, dict) else {"_": "inputBotInlineMessageID", "raw": inline_id}
+        data: dict[str, Any] = {"id": id_field, "message": plain}
+        if ents:
+            data["entities"] = ents
+        markup = kbd_to_tl({"inline_keyboard": layout})
+        if markup is not None:
+            data["reply_markup"] = markup
+        with trusted_scope():
+            return await bot.mt_messages_edit_inline_bot_message(**data)
 
     async def _dispatch_inline_command(self, text: str, query: Any) -> list[dict[str, Any]]:
         kernel = self.kernel
