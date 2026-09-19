@@ -625,7 +625,7 @@ class ForumHelper:
         self._ingest_user(dialogs)
         found: list[tuple[dict[str, Any], int]] = []
         for chat in self._body(dialogs).get("chats") or []:
-            if isinstance(chat, dict) and chat.get("_") == "channel" and str(chat.get("title") or "") == title:
+            if isinstance(chat, dict) and chat.get("_") == "channel" and str(chat.get("title") or "") == title and chat.get("access_hash"):
                 found.append((chat, -1000000000000 - int(chat["id"])))
         return found
 
@@ -744,12 +744,12 @@ class ForumHelper:
 
     async def ensure_group(self) -> int | None:
         chat_id = await self.group()
-        if chat_id is not None:
-            return chat_id if await self._warm_user_entity(chat_id) else None
+        if chat_id is not None and await self._warm_user_entity(chat_id):
+            return chat_id
         async with self._lock:
             chat_id = await self.group()
-            if chat_id is not None:
-                return chat_id if await self._warm_user_entity(chat_id) else None
+            if chat_id is not None and await self._warm_user_entity(chat_id):
+                return chat_id
             now = time.monotonic()
             if now - self._group_try_ts < 60.0:
                 return None
