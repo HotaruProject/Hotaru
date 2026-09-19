@@ -3,6 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from relay.firewall import trusted_scope
+
 
 def document(up: dict[str, Any], *, mime: str = "application/octet-stream", file_name: str | None = None, force_file: bool = True) -> dict[str, Any]:
     name = file_name or up.get("name") or "file"
@@ -20,8 +22,10 @@ def document(up: dict[str, Any], *, mime: str = "application/octet-stream", file
 
 
 async def put(app: Any, source: Any, *, file_name: str | None = None, **kw: Any) -> dict[str, Any]:
-    return await app.charged_upload(source, file_name=file_name, **kw)
+    with trusted_scope():
+        return await app.charged_upload(source, file_name=file_name, **kw)
 
 
 async def take(app: Any, source: Any, destination: str | Path, **kw: Any) -> Any:
-    return await app.download_media(source, str(destination), **kw)
+    with trusted_scope():
+        return await app.download_media(source, str(destination), **kw)
