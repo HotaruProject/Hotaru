@@ -72,9 +72,16 @@ class CallbackContext:
         if inline_mid is not None and app is not None:
             data = dict(kwargs)
             kbd = data.pop("kbd", None)
+            data.pop("parse_mode", None)
             if kbd is not None:
-                data["reply_markup"] = kbd.to_dict() if hasattr(kbd, "to_dict") else kbd
-            return await app.bot_req("editMessageText", inline_message_id=self.inline_message_id, text=text, **data)
+                markup = kbd_to_tl(kbd.to_dict() if hasattr(kbd, "to_dict") else kbd)
+                if markup is not None:
+                    data["reply_markup"] = markup
+            plain, ents = html_to_entities(text)
+            if ents:
+                data["entities"] = ents
+            id_field = inline_mid if isinstance(inline_mid, dict) else {"_": "inputBotInlineMessageID", "raw": inline_mid}
+            return await rpc(app, "messages.editInlineBotMessage", id=id_field, message=plain, **data)
         return await self._callback.edit(text, **kwargs)
 
     async def delete(self) -> Any:

@@ -394,15 +394,48 @@ class BotGateway:
 
     async def call(self, method: str, **kwargs: Any) -> Any:
         app = getattr(self._manager, "bot_app", None)
-        if app is None:
+        if app is None or getattr(app, "mt", None) is None:
             raise RuntimeError("inline bot is not ready")
-        mapped = self._map_method(method, kwargs) if getattr(app, "mt", None) is not None else None
-        if mapped is not None:
-            act, data = mapped
+        if method == "deleteMessage":
+            from relay.rpc import delete_chat_msg
             with trusted_scope():
-                return await rpc(app, act, **data)
+                return await delete_chat_msg(app, kwargs.get("chat_id"), int(kwargs["message_id"]))
+        if method in {"sendPhoto", "sendDocument", "sendVideo"}:
+            return await self._send_media_mt(app, method, kwargs)
+        mapped = self._map_method(method, kwargs)
+        if mapped is None:
+            if "." in method or method.startswith("mt_"):
+                with trusted_scope():
+                    return await rpc(app, method, **kwargs)
+            raise RuntimeError(f"unmapped bot method {method}")
+        act, data = mapped
         with trusted_scope():
-            return await app.bot_req(method, **kwargs)
+            return await rpc(app, act, **data)
+
+    async def _send_media_mt(self, app: Any, method: str, kwargs: dict[str, Any]) -> Any:
+        from relay.files import document, put
+        key = "photo" if method == "sendPhoto" else "video" if method == "sendVideo" else "document"
+        source = kwargs.get(key)
+        caption = str(kwargs.get("caption", ""))
+        up = await put(app, source, file_name=kwargs.get("file_name"))
+        if method == "sendPhoto":
+            file = document(up)["file"]
+            media: dict[str, Any] = {"_": "inputMediaUploadedPhoto", "file": file}
+        else:
+            mime = "video/mp4" if method == "sendVideo" else "application/octet-stream"
+            media = document(up, mime=mime, file_name=kwargs.get("file_name"))
+        data: dict[str, Any] = {"peer": kwargs.get("chat_id"), "media": media, "message": caption, "random_id": secrets.randbits(63)}
+        if str(kwargs.get("parse_mode", "")).lower() == "html" and caption:
+            from goygram.sugar import html_to_entities
+            plain, ents = html_to_entities(caption)
+            data["message"] = plain
+            if ents:
+                data["entities"] = ents
+        markup = self._tl_markup(kwargs.get("reply_markup"))
+        if markup is not None:
+            data["reply_markup"] = markup
+        with trusted_scope():
+            return await rpc(app, "messages.sendMedia", **data)
 
     def _tl_markup(self, markup: Any) -> Any:
         if markup is None:
@@ -478,6 +511,16 @@ class BotGateway:
             if markup is not None:
                 data["reply_markup"] = markup
             return "messages.editInlineBotMessage", data
+        if method == "answerCallbackQuery":
+            qid = kwargs.get("callback_query_id", kwargs.get("query_id"))
+            return "messages.setBotCallbackAnswer", {
+                "query_id": int(qid or 0),
+                "message": str(kwargs.get("text", "")),
+                "alert": bool(kwargs.get("show_alert") or kwargs.get("alert")),
+                "cache_time": int(kwargs.get("cache_time") or 0),
+            }
+        if method == "getMe":
+            return "users.getUsers", {"id": [{"_": "inputUserSelf"}]}
         return None
 
     async def send(self, method: str, **kwargs: Any) -> Any:

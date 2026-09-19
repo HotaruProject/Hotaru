@@ -33,21 +33,13 @@ async def take(app: Any, source: Any, destination: str | Path, **kw: Any) -> Any
         if isinstance(obj, tuple) and len(obj) == 2:
             obj = await app.get_msg(obj[0], obj[1])
         media = None
-        src_kind = None
         if isinstance(obj, dict):
-            src_kind = obj.get("src")
             media = obj.get("media") if isinstance(obj.get("media"), dict) else obj
         else:
-            src_kind = getattr(obj, "src", None)
             media = getattr(obj, "media", None)
             raw = getattr(obj, "raw", None)
             if media is None and isinstance(raw, dict):
                 media = raw.get("media")
-        if src_kind == "bot" and getattr(app, "bot", None) is not None and isinstance(media, dict):
-            doc = media.get("document") if isinstance(media.get("document"), dict) else media
-            file_id = doc.get("file_id") if isinstance(doc, dict) else None
-            if file_id:
-                return await app.bot.download_file(file_id, dest)
         location = app._media_location(media) or app._media_location(obj if isinstance(obj, dict) else getattr(obj, "raw", None))
         if location is None:
             raise ValueError("no downloadable media found in source")

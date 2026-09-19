@@ -356,22 +356,53 @@ class InlineManager:
 
     async def getbot(self, token: str) -> InlineBotInfo:
         from goygram import GoyGram
+        import shutil
+        import tempfile
+        from pathlib import Path
 
-        app = GoyGram(bot_token=token, bot_timeout=10, default_transport="api")
+        cfg = self.runtime.config
+        tmp = tempfile.mkdtemp(prefix="hotaru-probe-")
+        app = GoyGram(
+            bot_token=token,
+            api_id=cfg.api_id,
+            api_hash=cfg.api_hash,
+            session_name=str(Path(tmp) / "probe"),
+            intake="mtproto",
+            default_transport="mtproto",
+        )
+        task = asyncio.create_task(app.run())
         try:
-            payload = await app.bot_req("getMe")
-            result = payload if isinstance(payload, dict) else None
-            if not isinstance(result, dict):
+            me = None
+            for _ in range(50):
+                mt = getattr(app, "mt", None)
+                session = getattr(app, "session", None)
+                if mt is not None and session is not None and getattr(session, "is_bot", False):
+                    raw = await rpc(app, "users.getUsers", id=[{"_": "inputUserSelf"}])
+                    body = raw.get("result", raw) if isinstance(raw, dict) else raw
+                    users = body if isinstance(body, list) else (body.get("users") if isinstance(body, dict) else None)
+                    me = users[0] if isinstance(users, list) and users else None
+                    break
+                await asyncio.sleep(0.1)
+            if not isinstance(me, dict):
                 raise InlineError("inline bot token validation failed")
-            botid = result.get("id")
-            username = result.get("username")
-            if not isinstance(botid, int) or botid <= 0 or not isinstance(username, str) or not username or result.get("is_bot") is not True:
+            botid = me.get("id")
+            username = me.get("username")
+            if not isinstance(botid, int) or botid <= 0 or not isinstance(username, str) or not username or me.get("bot") is not True:
                 raise InlineError("inline bot identity is incomplete")
             return InlineBotInfo(token, username.lstrip("@"), botid)
+        except InlineError:
+            raise
         except Exception:
             raise InlineError("inline bot token validation failed") from None
         finally:
-            await app.close()
+            try:
+                app.stop()
+                await app.close()
+            except Exception:
+                pass
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+            shutil.rmtree(tmp, ignore_errors=True)
 
     def _forget_bot(self) -> None:
         state = self.runtime.state
