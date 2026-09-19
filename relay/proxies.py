@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import html
-import json
 import secrets
 import time
 from typing import Any, Awaitable, Callable
@@ -11,7 +10,6 @@ from .caps import MT_BLOCKED, normalize_method
 from .rpc import rpc
 from .denylist import payload_hits_blocked
 from .firewall import trusted_scope
-from goygram import ext as rx
 from goygram.errors import ChannelNotFoundError
 from goygram.rich import rich_html
 from goygram.sugar import extract_sent_message, html_to_entities
@@ -819,11 +817,10 @@ class ForumHelper:
             if bot_user is None:
                 return
             with trusted_scope():
-                user_hex = bytes(rx.serialize_constructor("inputUser", json.dumps({"_": "inputUser", "user_id": bot_id, "access_hash": int(bot_user["access_hash"])}))).hex()
                 await mt.call(
                     "channels.inviteToChannel",
                     channel=peer,
-                    users=[user_hex],
+                    users=[{"_": "inputUser", "user_id": bot_id, "access_hash": int(bot_user["access_hash"])}],
                 )
         except Exception:
             return
@@ -965,10 +962,14 @@ class ForumHelper:
         data["peer"] = chat_id
         return await self._user_call("messages.sendMessage", **data)
 
-    def _media_document(self, up: dict[str, Any], file_name: str | None) -> tuple[str, list[str]]:
-        file_hex = bytes(rx.serialize_constructor("inputFile", json.dumps({"id": up["id"], "parts": up["parts"], "name": up["name"], "md5_checksum": up.get("md5", "")}))).hex()
-        attr_hex = [bytes(rx.serialize_constructor("documentAttributeFilename", json.dumps({"file_name": file_name or up["name"]}))).hex()]
-        return file_hex, attr_hex
+    def _media_document(self, up: dict[str, Any], file_name: str | None) -> dict[str, Any]:
+        return {
+            "_": "inputMediaUploadedDocument",
+            "file": {"_": "inputFile", "id": up["id"], "parts": up["parts"], "name": up["name"], "md5_checksum": up.get("md5", "")},
+            "mime_type": "text/plain",
+            "attributes": [{"_": "documentAttributeFilename", "file_name": file_name or up["name"]}],
+            "force_file": True,
+        }
 
     async def send_file(self, topic_id: int, path: Any, caption: str = "", *, file_name: str | None = None) -> Any:
         chat_id = await self.ensure_group()
@@ -991,8 +992,7 @@ class ForumHelper:
             up = await app.mt.upload_file(path, file_name=file_name)
         else:
             up = await mt.upload_file(path, file_name=file_name)
-        file_hex, attr_hex = self._media_document(up, file_name)
-        media = {"_": "inputMediaUploadedDocument", "file": file_hex, "mime_type": "text/plain", "attributes": attr_hex, "force_file": True}
+        media = self._media_document(up, file_name)
         plain, ents = html_to_entities(str(caption))
         data: dict[str, Any] = {"media": media, "message": plain, "random_id": secrets.randbits(63), "reply_to": {"_": "inputReplyToMessage", "reply_to_msg_id": int(topic_id)}}
         if ents:
@@ -1040,10 +1040,9 @@ class ForumHelper:
             up = await app.mt.upload_file(path, file_name=file_name)
         else:
             up = await mt.upload_file(path, file_name=file_name)
-        file_hex, attr_hex = self._media_document(up, file_name)
-        media_hex = bytes(rx.serialize_constructor("inputMediaUploadedDocument", json.dumps({"file": file_hex, "mime_type": "text/plain", "attributes": attr_hex, "force_file": True}))).hex()
+        media = self._media_document(up, file_name)
         plain, ents = html_to_entities(str(caption))
-        data: dict[str, Any] = {"id": int(message_id), "media": media_hex, "message": plain}
+        data: dict[str, Any] = {"id": int(message_id), "media": media, "message": plain}
         if ents:
             data["entities"] = ents
         if use_bot:
