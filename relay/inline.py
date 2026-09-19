@@ -263,6 +263,7 @@ class InlineManager:
         self._handlers: list[Callable[[Any], Awaitable[Any]]] = []
         self._cb_handlers: list[Callable[[Any], Awaitable[Any]]] = []
         self._pm_handlers: list[Callable[[Any], Awaitable[Any]]] = []
+        self._chosen_handlers: list[Callable[[Any], Awaitable[Any]]] = []
         self._stop = asyncio.Event()
         self.ready = asyncio.Event()
         self._create_attempts: list[float] = []
@@ -278,6 +279,10 @@ class InlineManager:
 
     def on_bot_pm(self, handler: Callable[[Any], Awaitable[Any]]) -> Callable[[Any], Awaitable[Any]]:
         self._pm_handlers.append(handler)
+        return handler
+
+    def on_chosen(self, handler: Callable[[Any], Awaitable[Any]]) -> Callable[[Any], Awaitable[Any]]:
+        self._chosen_handlers.append(handler)
         return handler
 
     async def ensure_bot(self, *, allow_create: bool = True) -> InlineBotInfo:
@@ -504,6 +509,7 @@ class InlineManager:
         self.bot_app.on_inline(self._dispatch_inline)
         self.bot_app.on_cb(self._dispatch_callback)
         self.bot_app.on_msg(self._dispatch_bot_pm)
+        self.bot_app.on_update(self._dispatch_chosen)
         self._task = asyncio.create_task(self._run(), name="hotaru:inline-bot")
 
     async def _warm_owner_peer(self) -> None:
@@ -660,6 +666,16 @@ class InlineManager:
             except Exception as exc:
                 if self.runtime.observatory is not None:
                     self.runtime.observatory.emit("inline", "callback_error", error=type(exc).__name__, detail=str(exc)[:240])
+
+    async def _dispatch_chosen(self, update: Any) -> None:
+        if getattr(update, "update_type", None) != "updateBotInlineSend":
+            return
+        for handler in tuple(self._chosen_handlers):
+            try:
+                await handler(update)
+            except Exception as exc:
+                if self.runtime.observatory is not None:
+                    self.runtime.observatory.emit("inline", "chosen_error", error=type(exc).__name__, detail=str(exc)[:240])
 
     async def _dispatch_bot_pm(self, message: Any) -> None:
         security = getattr(self.runtime, "security", None)

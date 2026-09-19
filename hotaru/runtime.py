@@ -53,23 +53,34 @@ class InputContext:
         self.query = query
         self.value = value
         self.payload = payload
-        self.inline_message_id = None
+        self.inline_message_id = getattr(query, "msg_id", None)
 
     async def reject(self, text: str = "Invalid value") -> Any:
-        return await self.query.answer(results=[], cache_time=0, is_personal=True)
+        return await self.answer(text, alert=True)
 
     async def submit(self, text: str | None = None, **kwargs: Any) -> Any:
         return await self.answer(text, **kwargs)
 
     async def answer(self, text: str | None = None, **kwargs: Any) -> Any:
-        if text:
-            return await self.query.answer(results=[], cache_time=0, is_personal=True)
+        answer = getattr(self.query, "answer", None)
+        if callable(answer):
+            return await answer(results=[], cache_time=0, is_personal=True)
         return None
 
     async def edit(self, text: str, **kwargs: Any) -> Any:
         return await self.runtime._send_form(self.source, text, kwargs.pop("buttons", None) or [], kwargs)
 
     async def delete(self) -> bool:
+        mid = self.inline_message_id
+        bot = getattr(getattr(self.runtime, "inline", None), "bot_app", None)
+        if mid is None or bot is None:
+            return True
+        id_field = mid if isinstance(mid, dict) else {"_": "inputBotInlineMessageID", "raw": mid}
+        try:
+            with trusted_scope():
+                await bot.mt_messages_edit_inline_bot_message(id=id_field, message="\u200b")
+        except Exception:
+            pass
         return True
 
     async def cancel(self) -> bool:
@@ -203,6 +214,7 @@ class Runtime:
         self.kernel.context_factory = self.context_factory
         self.inline.on_inline(self._on_inline_query)
         self.inline.on_callback(self._on_inline_callback)
+        self.inline.on_chosen(self._on_chosen_input)
         self.callbacks.register("help_page", self._help_page)
         self.callbacks.register("module_detail", self._module_detail)
         self.kernel.attach(self.app)
@@ -675,25 +687,17 @@ class Runtime:
         text = (query.query or "").strip()
         if text.startswith("hotaru-input:"):
             key, _, value = text.partition(" ")
-            request = (self._input_requests or {}).get(key.split(":", 1)[1])
-            if request is not None and value and request[3] > time.monotonic():
-                handler, payload, source, _, placeholder = request
-                if value == placeholder:
-                    await query.answer(results=[], cache_time=0, is_personal=True)
-                    return
-                try:
-                    result = handler(InputContext(self, source, query, value, payload), value, payload)
-                    if asyncio.iscoroutine(result) or isinstance(result, asyncio.Future):
-                        await result
-                except Exception as exc:
-                    if self.observatory is not None:
-                        self.observatory.emit("inline", "input_error", error=type(exc).__name__)
-                finally:
-                    if self._input_requests is not None:
-                        self._input_requests.pop(key.split(":", 1)[1], None)
-            elif request is not None and request[3] <= time.monotonic() and self._input_requests is not None:
-                self._input_requests.pop(key.split(":", 1)[1], None)
-            await query.answer(results=[], cache_time=0, is_personal=True)
+            token = key.split(":", 1)[1]
+            request = (self._input_requests or {}).get(token)
+            if request is None or request[3] <= time.monotonic():
+                if request is not None and self._input_requests is not None:
+                    self._input_requests.pop(token, None)
+                await answer_tl(query, results=[], cache_time=0, is_personal=True)
+                return
+            placeholder = str(request[4] or "")
+            shown = value.strip() or placeholder or "OK"
+            result = InlineObj.article(secrets.token_urlsafe(8), shown, "🔄", description=shown, parse_mode="HTML")
+            await answer_tl(query, results=[result], cache_time=0, is_personal=True)
             return
         if text.startswith("hotaru-form:"):
             nonce = text.split(":", 1)[1]
@@ -716,6 +720,39 @@ class Runtime:
             return
         results = await self._dispatch_inline_command(text, query)
         await answer_tl(query, results=results, cache_time=0, is_personal=True)
+
+    async def _on_chosen_input(self, chosen: Any) -> None:
+        text = str(getattr(chosen, "query", "") or "").strip()
+        if not text.startswith("hotaru-input:"):
+            return
+        key, _, value = text.partition(" ")
+        token = key.split(":", 1)[1]
+        request = (self._input_requests or {}).get(token)
+        if request is None:
+            return
+        handler, payload, source, expiry, _placeholder = request
+        if expiry <= time.monotonic():
+            if self._input_requests is not None:
+                self._input_requests.pop(token, None)
+            return
+        ctx = InputContext(self, source, chosen, value, payload)
+        try:
+            result = handler(ctx, value, payload)
+        except TypeError:
+            try:
+                result = handler(ctx, value)
+            except TypeError:
+                result = handler(ctx)
+        try:
+            if asyncio.iscoroutine(result) or isinstance(result, asyncio.Future):
+                await result
+        except Exception as exc:
+            if self.observatory is not None:
+                self.observatory.emit("inline", "input_error", error=type(exc).__name__)
+        finally:
+            if self._input_requests is not None:
+                self._input_requests.pop(token, None)
+        await ctx.delete()
 
     async def _dispatch_inline_command(self, text: str, query: Any) -> list[dict[str, Any]]:
         kernel = self.kernel
