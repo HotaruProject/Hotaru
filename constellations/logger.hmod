@@ -190,7 +190,6 @@ async def command_logs(ctx, invocation):
     except Exception as exc:
         await ctx.respond(ctx.t("kernel.logger.topic_unavailable", "Топик недоступен: {error}", error=html.escape(str(exc), quote=False)), parse_mode="HTML")
         return
-    import json
     import os
     import tempfile
     fd, raw_path = tempfile.mkstemp(prefix="hotaru-logs-", suffix=".txt")
@@ -202,15 +201,18 @@ async def command_logs(ctx, invocation):
         app = getattr(ctx.runtime, "app", None)
         mt = getattr(app, "mt", None) if app is not None else None
         up = await mt.upload_file(raw_path, file_name="hotaru-logs.txt")
-        from goygram import ext as rx
-        file_hex = bytes(rx.serialize_constructor("inputFile", json.dumps({"id": up["id"], "parts": up["parts"], "name": up["name"], "md5_checksum": up.get("md5", "")}))).hex()
-        attr_hex = [bytes(rx.serialize_constructor("documentAttributeFilename", json.dumps({"file_name": "hotaru-logs.txt"}))).hex()]
-        media_hex = bytes(rx.serialize_constructor("inputMediaUploadedDocument", json.dumps({"file": file_hex, "mime_type": "text/plain", "attributes": attr_hex, "force_file": True}))).hex()
+        media = {
+            "_": "inputMediaUploadedDocument",
+            "file": {"_": "inputFile", "id": up["id"], "parts": up["parts"], "name": up["name"], "md5_checksum": up.get("md5", "")},
+            "mime_type": "text/plain",
+            "attributes": [{"_": "documentAttributeFilename", "file_name": "hotaru-logs.txt"}],
+            "force_file": True,
+        }
         chat_id = invocation.chat_id if invocation is not None else None
         message_id = invocation.message_id if invocation is not None else None
         if not (isinstance(chat_id, int) and isinstance(message_id, int)):
             return
-        await ctx.tg.call("messages.editMessage", {"id": message_id, "message": caption, "peer": chat_id, "media": media_hex})
+        await ctx.tg.call("messages.editMessage", {"id": message_id, "message": caption, "peer": chat_id, "media": media})
         _emit(ctx, "logs_delivered", count=len(entries))
     finally:
         try:
