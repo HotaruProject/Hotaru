@@ -27,5 +27,33 @@ async def put(app: Any, source: Any, *, file_name: str | None = None, **kw: Any)
 
 
 async def take(app: Any, source: Any, destination: str | Path, **kw: Any) -> Any:
+    dest = str(destination)
     with trusted_scope():
-        return await app.download_media(source, str(destination), **kw)
+        obj: Any = source
+        if isinstance(obj, tuple) and len(obj) == 2:
+            obj = await app.get_msg(obj[0], obj[1])
+        media = None
+        src_kind = None
+        if isinstance(obj, dict):
+            src_kind = obj.get("src")
+            media = obj.get("media") if isinstance(obj.get("media"), dict) else obj
+        else:
+            src_kind = getattr(obj, "src", None)
+            media = getattr(obj, "media", None)
+            raw = getattr(obj, "raw", None)
+            if media is None and isinstance(raw, dict):
+                media = raw.get("media")
+        if src_kind == "bot" and getattr(app, "bot", None) is not None and isinstance(media, dict):
+            doc = media.get("document") if isinstance(media.get("document"), dict) else media
+            file_id = doc.get("file_id") if isinstance(doc, dict) else None
+            if file_id:
+                return await app.bot.download_file(file_id, dest)
+        location = app._media_location(media) or app._media_location(obj if isinstance(obj, dict) else getattr(obj, "raw", None))
+        if location is None:
+            raise ValueError("no downloadable media found in source")
+        size = 0
+        doc = media.get("document") if isinstance(media, dict) and isinstance(media.get("document"), dict) else media
+        if isinstance(doc, dict):
+            size = int(doc.get("size") or 0)
+        await app.charged_download(location, dest, size=size, media_source=media, **kw)
+        return dest
