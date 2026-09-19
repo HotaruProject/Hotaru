@@ -10,7 +10,6 @@ from dataclasses import dataclass
 from typing import Any, Awaitable, Callable
 
 from relay.firewall import trusted_scope
-from .rpc import rpc
 
 BOTFATHER = "@BotFather"
 BOTFATHER_ID = 93372553
@@ -39,8 +38,7 @@ class BotFatherConversation:
 
     async def __aenter__(self) -> "BotFatherConversation":
         self._peer = await self.app.mt.resolve_peer(BOTFATHER)
-        state = await rpc(self.app, 
-            "messages.getHistory",
+        state = await self.app.mt_messages_get_history(
             peer=self._peer,
             offset_id=0,
             offset_date=0,
@@ -60,8 +58,7 @@ class BotFatherConversation:
         return None
 
     async def say(self, text: str) -> int:
-        result = await rpc(self.app, 
-            "messages.sendMessage",
+        result = await self.app.mt_messages_send_message(
             peer=self._peer,
             message=text,
             random_id=secrets.randbits(63),
@@ -90,7 +87,7 @@ class BotFatherConversation:
         if not valid:
             return
         try:
-            await rpc(self.app, "messages.deleteMessages", id=valid, revoke=True)
+            await self.app.mt_messages_delete_messages( id=valid, revoke=True)
         except Exception:
             pass
 
@@ -109,8 +106,7 @@ class BotFatherConversation:
         floor = since if since is not None else self._last_id
         deadline = time.monotonic() + self.timeout
         while time.monotonic() < deadline:
-            result = await rpc(self.app, 
-                "messages.getHistory",
+            result = await self.app.mt_messages_get_history(
                 peer=self._peer,
                 offset_id=0,
                 offset_date=0,
@@ -137,8 +133,7 @@ class BotFatherConversation:
 
     async def drain(self) -> None:
         for _ in range(4):
-            result = await rpc(self.app, 
-                "messages.getHistory",
+            result = await self.app.mt_messages_get_history(
                 peer=self._peer,
                 offset_id=0,
                 offset_date=0,
@@ -183,8 +178,7 @@ class BotFatherGuard:
 
     async def _dialog(self) -> dict[str, Any] | None:
         peer = await self._resolve()
-        result = await rpc(self.app, 
-            "messages.getPeerDialogs",
+        result = await self.app.mt_messages_get_peer_dialogs(
             peers=[{"_": "inputDialogPeer", "peer": peer}],
         )
         body = result.get("result") if isinstance(result, dict) and isinstance(result.get("result"), dict) else result
@@ -215,15 +209,13 @@ class BotFatherGuard:
         }
 
     async def set_archived(self, archived: bool) -> None:
-        await rpc(self.app, 
-            "folders.editPeerFolders",
+        await self.app.mt_folders_edit_peer_folders(
             folder_peers=[await self._folder_peer(1 if archived else 0)],
         )
 
     async def set_muted(self, muted: bool) -> None:
         peer = await self._resolve()
-        await rpc(self.app, 
-            "account.updateNotifySettings",
+        await self.app.mt_account_update_notify_settings(
             peer={"_": "inputNotifyPeer", "peer": peer},
             settings={"_": "inputPeerNotifySettings", "mute_until": 2147483647 if muted else 0},
         )
@@ -326,8 +318,7 @@ class InlineManager:
             return
         with trusted_scope():
             peer = await app.mt.resolve_peer("@" + username)
-            await rpc(app, 
-                "messages.sendMessage",
+            await app.mt_messages_send_message(
                 peer=peer,
                 message="/start",
                 random_id=secrets.randbits(63),

@@ -18,10 +18,6 @@ def rpcname(method: str) -> str:
     return "mt_" + ns + "_" + "".join(bits)
 
 
-async def rpc(app: Any, method: str, **kwargs: Any) -> Any:
-    return await app.mt_req(method, **kwargs)
-
-
 async def delete_chat_msg(app: Any, chat_id: Any, msg_id: int, revoke: bool = True) -> Any:
     ids = [int(msg_id)]
     if isinstance(chat_id, int) and chat_id <= -1000000000000:
@@ -34,10 +30,8 @@ async def delete_chat_msg(app: Any, chat_id: Any, msg_id: int, revoke: bool = Tr
         access_hash = entity.get("access_hash", 0) if isinstance(entity, dict) else 0
         if not access_hash:
             raise ValueError("channel peer requires a non-zero access_hash")
-        return await rpc(
-            app,
-            "channels.deleteMessages",
+        return await app.mt_channels_delete_messages(
             channel={"_": "inputChannel", "channel_id": channel_id, "access_hash": int(access_hash)},
             id=ids,
         )
-    return await rpc(app, "messages.deleteMessages", id=ids, revoke=revoke)
+    return await app.mt_messages_delete_messages(id=ids, revoke=revoke)

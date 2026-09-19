@@ -15,7 +15,6 @@ from goygram.rich import rich_html
 from goygram.sugar import html_to_entities
 from hotaru.plainfmt import rich_to_plain
 from goygram.types.kbd import kbd_to_tl
-from .rpc import rpc
 from relay.firewall import trusted_scope
 
 _TOOLKIT_SOURCE = Path(_toolkit.__file__).read_text(encoding="utf-8")
@@ -1325,7 +1324,7 @@ class ModuleSandbox:
                 action = data.get("action")
                 if action == "answer":
                     with trusted_scope():
-                        value = await rpc(callback.app, "messages.setBotCallbackAnswer", query_id=int(callback.id), message=str(data.get("text", "")), alert=bool(data.get("alert", False)), cache_time=0)
+                        value = await callback.app.mt_messages_set_bot_callback_answer( query_id=int(callback.id), message=str(data.get("text", "")), alert=bool(data.get("alert", False)), cache_time=0)
                 elif action == "edit":
                     inline_mid = getattr(callback, "inline_message_id", None)
                     params = {"id": inline_mid if isinstance(inline_mid, dict) else {"_": "inputBotInlineMessageID", "raw": inline_mid}, "message": str(data.get("text", ""))}
@@ -1335,7 +1334,7 @@ class ModuleSandbox:
                         if tl_markup is not None:
                             params["reply_markup"] = tl_markup
                     with trusted_scope():
-                        value = await rpc(callback.app, "messages.editInlineBotMessage", **params)
+                        value = await callback.app.mt_messages_edit_inline_bot_message( **params)
                 elif action == "delete":
                     with trusted_scope():
                         value = await callback.delete()
@@ -1408,7 +1407,7 @@ class ModuleSandbox:
             data_entities = entities or None
             if mode == "edit" and message_id is not None:
                 with trusted_scope():
-                    return await rpc(app, "messages.editMessage", peer=chat_id, id=int(message_id), message=plain, entities=data_entities)
+                    return await app.mt_messages_edit_message( peer=chat_id, id=int(message_id), message=plain, entities=data_entities)
             data: dict[str, Any] = {"peer": chat_id, "message": plain, "random_id": _secrets.randbits(63)}
             if data_entities is not None:
                 data["entities"] = data_entities
@@ -1419,13 +1418,13 @@ class ModuleSandbox:
             elif message_id is not None and mode == "reply":
                 data["reply_to"] = {"_": "inputReplyToMessage", "reply_to_msg_id": int(message_id)}
             with trusted_scope():
-                return await rpc(app, "messages.sendMessage", **data)
+                return await app.mt_messages_send_message( **data)
 
         async def send_rich_html(html: str, *, mode: str) -> Any:
             rich_message = {"_": "inputRichMessageHTML", **rich_html(html)}
             if mode == "edit" and message_id is not None:
                 with trusted_scope():
-                    return await rpc(app, "messages.editMessage", peer=chat_id, id=int(message_id), message="", rich_message=rich_message)
+                    return await app.mt_messages_edit_message( peer=chat_id, id=int(message_id), message="", rich_message=rich_message)
             data = {"peer": chat_id, "message": "", "random_id": _secrets.randbits(63), "rich_message": rich_message}
             if message_id is not None:
                 reply_to = {"_": "inputReplyToMessage", "reply_to_msg_id": int(message_id)}
@@ -1433,7 +1432,7 @@ class ModuleSandbox:
                     reply_to["top_msg_id"] = topic_id
                 data["reply_to"] = reply_to
             with trusted_scope():
-                return await rpc(app, "messages.sendMessage", **data)
+                return await app.mt_messages_send_message( **data)
 
         if media is not None:
             raise PermissionError("sandbox respond media must go through files capability")

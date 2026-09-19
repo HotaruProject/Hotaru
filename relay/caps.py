@@ -15,7 +15,7 @@ from .firewall import trusted_scope
 from hotaru.plainfmt import rich_to_plain
 from hotaru.capabilities import BehaviorEnvelope
 from goygram.sugar import html_to_entities
-from .rpc import rpc
+from .rpc import rpcname
 
 
 MT_READ_ONLY = frozenset({
@@ -252,8 +252,7 @@ class CapabilityHost:
 
         async def _history(peer_value: Any, offset_id: int, limit: int) -> list[dict[str, Any]]:
             peer = await app.mt.resolve_peer(peer_value)
-            result = await rpc(app, 
-                "messages.getHistory",
+            result = await app.mt_messages_get_history(
                 peer=peer,
                 offset_id=offset_id,
                 offset_date=0,
@@ -296,7 +295,7 @@ class CapabilityHost:
                 username = value.lstrip("@").casefold()
                 entity = app.mt.entity_usernames.get(username)
                 if entity is None:
-                    result = await rpc(app, "contacts.resolveUsername", username=username)
+                    result = await app.mt_contacts_resolve_username( username=username)
                     body = result.get("result") if isinstance(result, dict) and isinstance(result.get("result"), dict) else result
                     app.mt._ingest_entities(body if isinstance(body, dict) else {})
                     entity = app.mt.entity_usernames.get(username)
@@ -407,7 +406,7 @@ class CapabilityHost:
             limit = kwargs.get("limit", 100)
             if isinstance(limit, (int, float)) and int(limit) > 500:
                 kwargs = dict(kwargs, limit=500)
-        result = await rpc(app, method, **kwargs)
+        result = await getattr(app, rpcname(method))(**kwargs)
         body = result.get("result") if isinstance(result, dict) and isinstance(result.get("result"), dict) else result
         return body
 
