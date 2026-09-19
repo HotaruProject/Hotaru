@@ -918,16 +918,11 @@ class ModuleContext:
         document = target.raw if isinstance(target.raw, dict) else None
         if document is None:
             raise ResponseError("attachment is not downloadable")
-        file_id = document.get("file_id")
-        if isinstance(file_id, str):
-            await self._source.app.download_file(file_id, str(path))
-            return path
-        if isinstance(document.get("id"), int) and isinstance(document.get("access_hash"), int):
-            app = getattr(self.runtime, "app", None) or getattr(self._source, "app", None)
-            if app is not None:
-                await take(app, document, str(path))
-                return path
-        raise ResponseError("attachment location is incomplete")
+        app = getattr(self.runtime, "app", None) or getattr(self._source, "app", None)
+        if app is None:
+            raise ResponseError("download is unavailable")
+        await take(app, document, str(path))
+        return path
 
 
 class ModuleContextFactory:

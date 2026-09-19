@@ -293,17 +293,14 @@ class Runtime:
                     current.append({"text": button.get("text", ""), "url": button["url"]})
             rebound.append(current)
         bot_app = self.inline.bot_app
-        if getattr(bot_app, "mt", None) is not None:
-            plain, ents = html_to_entities(text)
-            edit_data = {"peer": chat_id, "id": form_id, "message": plain}
-            if ents:
-                edit_data["entities"] = ents
-            tl_markup = kbd_to_tl({"inline_keyboard": rebound})
-            if tl_markup is not None:
-                edit_data["reply_markup"] = tl_markup
-            await rpc(bot_app, "messages.editMessage", **edit_data)
-        else:
-            await bot_app.bot_req("editMessageText", chat_id=chat_id, message_id=form_id, text=text, parse_mode="HTML", reply_markup={"inline_keyboard": rebound})
+        plain, ents = html_to_entities(text)
+        edit_data = {"peer": chat_id, "id": form_id, "message": plain}
+        if ents:
+            edit_data["entities"] = ents
+        tl_markup = kbd_to_tl({"inline_keyboard": rebound})
+        if tl_markup is not None:
+            edit_data["reply_markup"] = tl_markup
+        await rpc(bot_app, "messages.editMessage", **edit_data)
         if hasattr(command, "delete"):
             await command.delete()
         return sent
@@ -484,8 +481,9 @@ class Runtime:
             chat_id = getattr(source, "chat_id", None)
             message_id = getattr(source, "id", None) or getattr(source, "message_id", None)
             if self.inline is not None and self.inline.bot_app is not None and chat_id is not None and isinstance(message_id, int):
+                from relay.rpc import delete_chat_msg
                 with trusted_scope():
-                    await self.inline.bot_app.bot_req("deleteMessage", chat_id=chat_id, message_id=message_id)
+                    await delete_chat_msg(self.inline.bot_app, chat_id, message_id)
         elif self.app is not None:
             chat_id = getattr(source, "chat_id", None)
             message_id = getattr(source, "id", None) or getattr(source, "message_id", None)
@@ -1090,21 +1088,16 @@ class Runtime:
                     source = await cap_host.call("loader", "fetch", {"op": "message", "peer": message.chat_id, "id": reply_id})
         if source is None or not hasattr(source, "get"):
             raise ValueError("module file is missing")
-        if getattr(source, "src", getattr(message, "src", None)) == "bot":
-            if hasattr(source, "download"):
-                await source.download(str(destination))
-            else:
-                file_id = (source.get("document") or {}).get("file_id")
-                if not isinstance(file_id, str):
-                    raise ValueError("Bot API document file_id is missing")
-                await message.app.download_file(file_id, str(destination))
-            return
         media = source.get("document") if isinstance(source.get("document"), dict) else source.get("media")
         if media is None and isinstance(source.get("media"), dict):
             media = source["media"].get("document")
         if not isinstance(media, dict):
             raise ValueError("module file must be a document")
-        await self.app.core.download_media(media, str(destination))
+        from relay.files import take
+        app = self.app
+        if getattr(source, "src", None) == "bot":
+            app = getattr(message, "app", None) or (getattr(self.inline, "bot_app", None) if self.inline is not None else None) or self.app
+        await take(app, media, str(destination))
 
     async def load_module(self, source: str | Path, *, consent_screen: Any = None) -> tuple[Any, str]:
         if self.stager is None or self.state is None:
@@ -1344,7 +1337,9 @@ class Runtime:
         await callback.answer("Module loaded")
         text = f"loaded: {module_id} {loaded.manifest.version}"
         if getattr(callback, "inline_message_id", None) and getattr(callback, "app", None) is not None:
-            return await callback.app.bot_req("editMessageText", inline_message_id=callback.inline_message_id, text=text)
+            inline_mid = callback.inline_message_id
+            id_field = inline_mid if isinstance(inline_mid, dict) else {"_": "inputBotInlineMessageID", "raw": inline_mid}
+            return await rpc(callback.app, "messages.editInlineBotMessage", id=id_field, message=text)
         return await callback.edit(text)
 
     def create_backup(self) -> Path:

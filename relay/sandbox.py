@@ -16,6 +16,7 @@ from goygram.sugar import html_to_entities
 from hotaru.plainfmt import rich_to_plain
 from goygram.types.kbd import kbd_to_tl
 from .rpc import rpc
+from relay.firewall import trusted_scope
 
 _TOOLKIT_SOURCE = Path(_toolkit.__file__).read_text(encoding="utf-8")
 
@@ -1324,25 +1325,17 @@ class ModuleSandbox:
                 action = data.get("action")
                 if action == "answer":
                     with trusted_scope():
-                        if getattr(callback, "src", None) == "mt":
-                            value = await rpc(callback.app, "messages.setBotCallbackAnswer", query_id=int(callback.id), message=str(data.get("text", "")), alert=bool(data.get("alert", False)), cache_time=0)
-                        else:
-                            value = await callback.app.bot_req("answerCallbackQuery", callback_query_id=str(callback.id), text=str(data.get("text", "")), show_alert=bool(data.get("alert", False)))
+                        value = await rpc(callback.app, "messages.setBotCallbackAnswer", query_id=int(callback.id), message=str(data.get("text", "")), alert=bool(data.get("alert", False)), cache_time=0)
                 elif action == "edit":
                     inline_mid = getattr(callback, "inline_message_id", None)
-                    if getattr(callback, "src", None) == "mt" and inline_mid is not None:
-                        params = {"id": inline_mid if isinstance(inline_mid, dict) else {"_": "inputBotInlineMessageID", "raw": inline_mid}, "message": str(data.get("text", ""))}
-                        markup = data.get("reply_markup")
-                        if markup is not None:
-                            tl_markup = kbd_to_tl(markup)
-                            if tl_markup is not None:
-                                params["reply_markup"] = tl_markup
-                        with trusted_scope():
-                            value = await rpc(callback.app, "messages.editInlineBotMessage", **params)
-                    else:
-                        params = {"inline_message_id": inline_mid, "text": str(data.get("text", "")), "parse_mode": "HTML"}
-                        with trusted_scope():
-                            value = await callback.app.bot_req("editMessageText", **params)
+                    params = {"id": inline_mid if isinstance(inline_mid, dict) else {"_": "inputBotInlineMessageID", "raw": inline_mid}, "message": str(data.get("text", ""))}
+                    markup = data.get("reply_markup")
+                    if markup is not None:
+                        tl_markup = kbd_to_tl(markup)
+                        if tl_markup is not None:
+                            params["reply_markup"] = tl_markup
+                    with trusted_scope():
+                        value = await rpc(callback.app, "messages.editInlineBotMessage", **params)
                 elif action == "delete":
                     with trusted_scope():
                         value = await callback.delete()
