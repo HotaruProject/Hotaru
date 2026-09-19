@@ -656,11 +656,8 @@ class CapabilityHost:
             app = self.runtime.app
             if app is None:
                 raise PermissionError("userbot transport is not ready")
-            sent = await app.send_doc("me", path, caption=filename or None, file_name=filename or None)
-            sent_id = None
-            if isinstance(sent, dict):
-                sent_id = sent.get("id") or sent.get("message_id")
-            return {"id": sent_id}
+            from relay.files import put
+            return await put(app, path, file_name=filename or None)
 
         if op == "download":
             msg_dict = payload.get("message") or {}
@@ -678,7 +675,8 @@ class CapabilityHost:
             msg_id = msg_dict.get("id") or msg_dict.get("message_id")
             if chat_id is None or msg_id is None:
                 raise PermissionError("invalid message object")
-            result_path = await app.download_media((chat_id, msg_id), dest_path)
+            from relay.files import take
+            result_path = await take(app, (chat_id, msg_id), dest_path)
             if result_path and isinstance(result_path, str) and result_path.startswith(sandbox_root):
                 return os.path.relpath(result_path, sandbox_root)
             return result_path
