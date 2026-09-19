@@ -120,7 +120,9 @@ async def task_pump(ctx):
         try:
             topic_id = await ctx.forum.ensure_topic(TOPIC_TITLE)
             _state["topic_id"] = topic_id
-            _state["last_sync"] = now
+            _state["last_sync"] = now if topic_id is not None else 0.0
+            if topic_id is None:
+                return
         except Exception as exc:
             _state["topic_id"] = None
             _state["last_sync"] = 0.0
