@@ -1,6 +1,7 @@
 import asyncio
 import importlib
 import importlib.metadata
+import importlib.util
 import os
 import re
 import shlex
@@ -69,7 +70,7 @@ def normalize_version(raw: str) -> str:
     return ".".join(numbers) + suffix
 
 
-def version_tuple(value: str) -> tuple:
+def version_tuple(value: str) -> tuple[Any, ...]:
     text = normalize_version(value)
     pieces = []
     current = ""
@@ -97,9 +98,9 @@ def satisfies(installed: str, operator: str, wanted: str) -> bool:
         floor = version_tuple(wanted)
         if len(floor) < 2:
             return False
-        base = floor[:2] if len(floor) == 2 else list(floor[: len(floor) - 1])
-        base[-1] = base[-1] + 1
-        return floor <= version_tuple(installed) < tuple(base)
+        base_parts: list[Any] = list(floor[:2] if len(floor) == 2 else floor[: len(floor) - 1])
+        base_parts[-1] = int(base_parts[-1]) + 1
+        return floor <= version_tuple(installed) < tuple(base_parts)
     left = version_tuple(installed)
     right = version_tuple(wanted)
     if operator == "==":
@@ -192,8 +193,9 @@ def find_env_manager() -> tuple[str, list[str]]:
     conda = "CONDA_PREFIX" in os.environ
     uv = _tool_path("uv")
     pdm = _tool_path("pdm")
-    if conda and shutil.which("conda"):
-        return "conda", [shutil.which("conda"), "install", "-y"]
+    conda_bin = shutil.which("conda")
+    if conda and conda_bin:
+        return "conda", [conda_bin, "install", "-y"]
     if uv:
         return "uv", [uv, "pip", "install", "--python", sys.executable]
     if pdm:
@@ -245,7 +247,7 @@ async def run_install(command: list[str], timeout: float = 600.0) -> tuple[bool,
     return process.returncode == 0, output
 
 
-async def ensure(requirements: list[str], *, on_log=None, timeout: float = 600.0) -> dict[str, Any]:
+async def ensure(requirements: list[str], *, on_log: Any=None, timeout: float = 600.0) -> dict[str, Any]:
     if not requirements:
         return {"checked": 0, "installed": [], "upgraded": [], "manager": None, "resolved": {}}
     manager = find_env_manager()

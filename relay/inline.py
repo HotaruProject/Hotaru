@@ -173,7 +173,10 @@ class BotFatherGuard:
 
     async def _resolve(self) -> bytes:
         if self._peer is None:
-            self._peer = await self.app.mt.resolve_peer(BOTFATHER)
+            peer = await self.app.mt.resolve_peer(BOTFATHER)
+            if not isinstance(peer, (bytes, bytearray)):
+                raise RuntimeError("botfather peer is missing")
+            self._peer = bytes(peer)
         return self._peer
 
     async def _dialog(self) -> dict[str, Any] | None:
@@ -191,7 +194,8 @@ class BotFatherGuard:
         dialog = await self._dialog()
         if dialog is None:
             return {"archived": False, "muted": False}
-        settings = dialog.get("notify_settings") if isinstance(dialog.get("notify_settings"), dict) else {}
+        settings_raw = dialog.get("notify_settings")
+        settings = settings_raw if isinstance(settings_raw, dict) else {}
         mute_until = settings.get("mute_until") or 0
         return {
             "archived": isinstance(dialog.get("folder_id"), int) and dialog["folder_id"] != 0,

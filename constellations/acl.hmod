@@ -5,12 +5,15 @@ HOTARU = {
     "capabilities": ["mt"],
 }
 
+from typing import Any, cast
+
+
 import html as _html
 
-def _escape(value):
+def _escape(value: Any) -> Any:
     return _html.escape(str(value), quote=False)
 
-def _usage(ctx):
+def _usage(ctx: Any) -> Any:
     return ctx.t(
         "acl.usage",
         "usage:\n"
@@ -31,12 +34,12 @@ def _usage(ctx):
         "!whois <user_id> — права пользователя",
     )
 
-async def _reply_sender_id(ctx, invocation):
+async def _reply_sender_id(ctx: Any, invocation: Any) -> Any:
     reply = None
     fetch = getattr(ctx, "reply", None)
     if callable(fetch):
         try:
-            reply = await fetch()
+            reply = await cast(Any, fetch())
         except Exception:
             reply = None
     if reply is None or not hasattr(reply, "get"):
@@ -50,7 +53,7 @@ async def _reply_sender_id(ctx, invocation):
         return from_peer
     return None
 
-async def _resolve_target_user(ctx, invocation):
+async def _resolve_target_user(ctx: Any, invocation: Any) -> Any:
     args = invocation.args
     for i, token in enumerate(args):
         if token.lstrip("-").isdigit():
@@ -63,7 +66,7 @@ async def _resolve_target_user(ctx, invocation):
         return chat_id, args
     return None, args
 
-def _parse_duration(raw):
+def _parse_duration(raw: Any) -> Any:
     raw = (raw or "").strip().lower()
     if not raw or raw in {"forever", "навсегда"}:
         return 0
@@ -78,12 +81,12 @@ def _parse_duration(raw):
         return None
     return int(body) * multipliers[suffix]
 
-async def command_owls(ctx, invocation):
+async def command_owls(ctx: Any, invocation: Any) -> Any:
     owners = ctx.access_admin.owners
     rows = [f"<code>{uid}</code> · account" if uid == ctx.access_admin.owner_id else f"<code>{uid}</code>" for uid in owners]
     await ctx.respond("<b>Owners</b><br>" + "<br>".join(rows), parse_mode="HTML")
 
-async def command_owadd(ctx, invocation):
+async def command_owadd(ctx: Any, invocation: Any) -> Any:
     user_id, _rest = await _resolve_target_user(ctx, invocation)
     if user_id is None:
         await ctx.respond(_usage(ctx), parse_mode="HTML")
@@ -101,7 +104,7 @@ async def command_owadd(ctx, invocation):
         parse_mode="HTML",
     )
 
-async def command_owrm(ctx, invocation):
+async def command_owrm(ctx: Any, invocation: Any) -> Any:
     user_id, _rest = await _resolve_target_user(ctx, invocation)
     if user_id is None:
         await ctx.respond(_usage(ctx), parse_mode="HTML")
@@ -116,7 +119,7 @@ async def command_owrm(ctx, invocation):
         parse_mode="HTML",
     )
 
-async def command_sgnew(ctx, invocation):
+async def command_sgnew(ctx: Any, invocation: Any) -> Any:
     if not invocation.args or not invocation.args[0].isalnum():
         await ctx.respond(ctx.t("acl.bad_group", "Имя группы: только буквы и цифры, до 32 символов."), parse_mode="HTML")
         return
@@ -128,7 +131,7 @@ async def command_sgnew(ctx, invocation):
         return
     await ctx.respond(f"<b>Created group</b> <code>{_escape(name)}</code>", parse_mode="HTML")
 
-async def command_sgdel(ctx, invocation):
+async def command_sgdel(ctx: Any, invocation: Any) -> Any:
     if not invocation.args:
         await ctx.respond(_usage(ctx), parse_mode="HTML")
         return
@@ -138,7 +141,7 @@ async def command_sgdel(ctx, invocation):
         parse_mode="HTML",
     )
 
-async def command_sgls(ctx, invocation):
+async def command_sgls(ctx: Any, invocation: Any) -> Any:
     groups = ctx.access_admin.sgroups()
     if not groups:
         await ctx.respond(ctx.t("acl.no_groups", "Групп прав нет. Создай: !sgnew <name>"), parse_mode="HTML")
@@ -146,7 +149,7 @@ async def command_sgls(ctx, invocation):
     rows = [f"<b>{_escape(g.name)}</b> — {len(g.users)} users, {len(g.permissions)} rules" for g in groups.values()]
     await ctx.respond("<b>Security groups</b><br>" + "<br>".join(rows), parse_mode="HTML")
 
-async def command_sg(ctx, invocation):
+async def command_sg(ctx: Any, invocation: Any) -> Any:
     if not invocation.args:
         await ctx.respond(_usage(ctx), parse_mode="HTML")
         return
@@ -161,7 +164,7 @@ async def command_sg(ctx, invocation):
         parse_mode="HTML",
     )
 
-async def command_sgadd(ctx, invocation):
+async def command_sgadd(ctx: Any, invocation: Any) -> Any:
     if len(invocation.args) < 2:
         await ctx.respond(_usage(ctx), parse_mode="HTML")
         return
@@ -182,7 +185,7 @@ async def command_sgadd(ctx, invocation):
     ctx.access_admin.save_sgroups(groups)
     await ctx.respond(f"<b>Added</b> <code>{user_id}</code> to <code>{_escape(name)}</code>", parse_mode="HTML")
 
-async def command_sgrm(ctx, invocation):
+async def command_sgrm(ctx: Any, invocation: Any) -> Any:
     if len(invocation.args) < 2:
         await ctx.respond(_usage(ctx), parse_mode="HTML")
         return
@@ -203,7 +206,7 @@ async def command_sgrm(ctx, invocation):
     ctx.access_admin.save_sgroups(groups)
     await ctx.respond(f"<b>Removed</b> <code>{user_id}</code> from <code>{_escape(name)}</code>", parse_mode="HTML")
 
-async def command_rule(ctx, invocation):
+async def command_rule(ctx: Any, invocation: Any) -> Any:
     if len(invocation.args) < 3:
         await ctx.respond(_usage(ctx), parse_mode="HTML")
         return
@@ -252,7 +255,7 @@ async def command_rule(ctx, invocation):
     until = f" до {_escape(invocation.args[3])}" if duration else ""
     await ctx.respond(f"<b>Rule added:</b> {_escape(kind)} <code>{_escape(target)}</code> → {_escape(rule_type)}/{_escape(rule)}{until}", parse_mode="HTML")
 
-async def command_rulerm(ctx, invocation):
+async def command_rulerm(ctx: Any, invocation: Any) -> Any:
     if len(invocation.args) < 3:
         await ctx.respond(_usage(ctx), parse_mode="HTML")
         return
@@ -276,7 +279,7 @@ async def command_rulerm(ctx, invocation):
         parse_mode="HTML",
     )
 
-async def command_ruleclr(ctx, invocation):
+async def command_ruleclr(ctx: Any, invocation: Any) -> Any:
     if not invocation.args:
         await ctx.respond(_usage(ctx), parse_mode="HTML")
         return
@@ -293,7 +296,7 @@ async def command_ruleclr(ctx, invocation):
     removed = ctx.access_admin.remove_tsec_all(kind, target_value)
     await ctx.respond("<b>Rules cleared</b>" if removed else "nothing to clear", parse_mode="HTML")
 
-async def command_perms(ctx, invocation):
+async def command_perms(ctx: Any, invocation: Any) -> Any:
     entries = ctx.access_admin.store.items()
     if not entries:
         await ctx.respond(ctx.t("acl.empty", "Нет выданных прав. Используй !perm <user_id> <role>."), parse_mode="HTML")
@@ -307,7 +310,7 @@ async def command_perms(ctx, invocation):
         )
     await ctx.respond("<b>Permissions</b><br>" + "<br>".join(rows), parse_mode="HTML")
 
-async def command_whois(ctx, invocation):
+async def command_whois(ctx: Any, invocation: Any) -> Any:
     if not invocation.args or not invocation.args[0].lstrip("-").isdigit():
         await ctx.respond(_usage(ctx), parse_mode="HTML")
         return
@@ -325,7 +328,7 @@ async def command_whois(ctx, invocation):
         parse_mode="HTML",
     )
 
-async def command_perm(ctx, invocation):
+async def command_perm(ctx: Any, invocation: Any) -> Any:
     if len(invocation.args) < 2:
         await ctx.respond(_usage(ctx), parse_mode="HTML")
         return

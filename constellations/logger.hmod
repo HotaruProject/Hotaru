@@ -10,6 +10,9 @@ HOTARU = {
     "fade": "unhook",
 }
 
+from typing import Any
+
+
 import asyncio
 import html
 import time
@@ -33,14 +36,14 @@ LEVELS = {
 LEVEL_NAMES = ["all", "debug", "info", "warn", "error", "fatal"]
 _DEFAULT_FLOOR = LEVELS["info"]
 
-_state = {"sub": None, "queue": None, "topic_id": None, "last_sync": 0.0, "failed": 0, "last_error": ""}
+_state: dict[str, Any] = {"sub": None, "queue": None, "topic_id": None, "last_sync": 0.0, "failed": 0, "last_error": ""}
 
 
-def _obs(ctx):
+def _obs(ctx: Any) -> Any:
     return getattr(ctx.runtime, "observatory", None)
 
 
-def _emit(ctx, event, **fields):
+def _emit(ctx: Any, event: Any, **fields: Any) -> Any:
     obs = _obs(ctx)
     if obs is not None:
         try:
@@ -49,14 +52,14 @@ def _emit(ctx, event, **fields):
             pass
 
 
-def _level_floor(state):
+def _level_floor(state: Any) -> Any:
     raw = state.get("level") if state is not None else None
     if isinstance(raw, str) and raw.lower() in LEVELS:
         return LEVELS[raw.lower()]
     return _DEFAULT_FLOOR
 
 
-def _fmt(payload):
+def _fmt(payload: Any) -> Any:
     level = str(payload.get("level") or "info").upper()
     comp = str(payload.get("component") or "-")
     event = str(payload.get("event") or "-")
@@ -70,7 +73,7 @@ def _fmt(payload):
     return html.escape(" ".join(str(p) for p in parts if p), quote=False)
 
 
-def _sink(payload):
+def _sink(payload: Any) -> Any:
     if not isinstance(payload, dict):
         return
     if payload.get("component") == "logger":
@@ -90,7 +93,7 @@ def _sink(payload):
         pass
 
 
-async def hookup(ctx):
+async def hookup(ctx: Any) -> Any:
     _state["queue"] = asyncio.Queue(maxsize=500)
     _state["floor"] = _level_floor(ctx.state)
     obs = _obs(ctx)
@@ -99,7 +102,7 @@ async def hookup(ctx):
     _emit(ctx, "hooked")
 
 
-async def unhook(ctx):
+async def unhook(ctx: Any) -> Any:
     obs = _obs(ctx)
     sub = _state.get("sub")
     if obs is not None and sub is not None:
@@ -111,7 +114,7 @@ async def unhook(ctx):
     _emit(ctx, "unhooked")
 
 
-async def task_pump(ctx):
+async def task_pump(ctx: Any) -> Any:
     if ctx.state.get("enabled", True) is False:
         return
     now = time.monotonic()
@@ -157,7 +160,7 @@ async def task_pump(ctx):
         _emit(ctx, "send_error", error=type(exc).__name__, detail=str(exc)[:160])
 
 
-async def command_logs(ctx, invocation):
+async def command_logs(ctx: Any, invocation: Any) -> Any:
     raw = " ".join(invocation.args)
     args = raw.split()
     if args and args[0] in ("on", "off"):

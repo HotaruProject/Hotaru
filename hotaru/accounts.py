@@ -52,13 +52,13 @@ class AccountManager:
         self.state = state
         self.session_dir = Path(session_dir)
 
-    def _rows(self) -> list[tuple]:
+    def _rows(self) -> list[tuple[Any, ...]]:
         return self.state.connection.execute(
             "SELECT user_id, account_number, vault_name, session_dir, enabled, pid FROM accounts ORDER BY account_number"
         ).fetchall()
 
     @staticmethod
-    def _profile(row: tuple) -> AccountProfile:
+    def _profile(row: tuple[Any, ...]) -> AccountProfile:
         vault = str(row[2])
         session_name = vault[: -len(".vault")] if vault.endswith(".vault") else vault
         return AccountProfile(

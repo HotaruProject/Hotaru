@@ -11,6 +11,7 @@ import sqlite3
 import tempfile
 import zipfile
 from dataclasses import dataclass
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
@@ -39,7 +40,7 @@ class BackupService:
         output: str | Path,
         *,
         state_path: str | Path,
-        module_paths: list[str | Path],
+        module_paths: Sequence[str | Path],
         metadata: dict[str, Any] | None = None,
     ) -> Path:
         files: list[tuple[str, Path]] = []

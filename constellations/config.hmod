@@ -5,13 +5,16 @@ HOTARU = {
     "capabilities": ["mt"],
 }
 
-async def command_conf(ctx, invocation):
+from typing import Any
+
+
+async def command_conf(ctx: Any, invocation: Any) -> Any:
     await _show_config(ctx, invocation)
 
-async def command_config(ctx, invocation):
+async def command_config(ctx: Any, invocation: Any) -> Any:
     await _show_config(ctx, invocation)
 
-async def _show_config(ctx, invocation):
+async def _show_config(ctx: Any, invocation: Any) -> Any:
     runtime = ctx.runtime
 
     if len(invocation.args) == 0:
@@ -26,7 +29,7 @@ async def _show_config(ctx, invocation):
         await ctx.respond("<b>❌ Module not active or has no configuration</b>", parse_mode="HTML")
 
 
-async def _show_directory(ctx):
+async def _show_directory(ctx: Any) -> Any:
     runtime = ctx.runtime
 
     modules_with_config = []
@@ -39,7 +42,7 @@ async def _show_directory(ctx):
 
     ITEMS_PER_PAGE = 5
 
-    def build_page(page=0):
+    def build_page(page: Any=0) -> Any:
         total_pages = max(1, (len(modules_with_config) + ITEMS_PER_PAGE - 1) // ITEMS_PER_PAGE)
 
         if not modules_with_config:
@@ -57,8 +60,8 @@ async def _show_directory(ctx):
 
         buttons = []
         for mod_id in page_modules:
-            def make_mod_handler(m_id):
-                async def handler(c, p):
+            def make_mod_handler(m_id: Any) -> Any:
+                async def handler(c: Any, p: Any) -> Any:
                     form = _build_module_config_form(ctx, m_id, lambda: build_page(page))
                     if form:
                         await c.edit(**form)
@@ -70,15 +73,15 @@ async def _show_directory(ctx):
 
         nav_buttons = []
         if page > 0:
-            def make_prev(p):
-                async def handler(c, p_load):
+            def make_prev(p: Any) -> Any:
+                async def handler(c: Any, p_load: Any) -> Any:
                     await c.edit(**build_page(p - 1))
                 return handler
             nav_buttons.append(ctx.ui.button("◀️ Prev", make_prev(page)))
 
         if page < total_pages - 1:
-            def make_next(p):
-                async def handler(c, p_load):
+            def make_next(p: Any) -> Any:
+                async def handler(c: Any, p_load: Any) -> Any:
                     await c.edit(**build_page(p + 1))
                 return handler
             nav_buttons.append(ctx.ui.button("Next ▶️", make_next(page)))
@@ -92,7 +95,7 @@ async def _show_directory(ctx):
     await ctx.respond(**build_page(0))
 
 
-def _build_module_config_form(ctx, module_id, back_builder):
+def _build_module_config_form(ctx: Any, module_id: Any, back_builder: Any) -> Any:
     runtime = ctx.runtime
     active = runtime.modules.get(module_id) if runtime.modules else None
     if not active:
@@ -103,7 +106,7 @@ def _build_module_config_form(ctx, module_id, back_builder):
 
     namespace = runtime.state.namespace(module_id)
 
-    def build_form():
+    def build_form() -> Any:
         text = f"⚙️ <b>Configuration Control</b>\n"
         text += f"📦 <b>Module:</b> <code>{module_id}</code>\n\n"
 
@@ -117,8 +120,8 @@ def _build_module_config_form(ctx, module_id, back_builder):
                 text += f"   <i>{spec['description']}</i>\n"
             text += "\n"
 
-            def make_handler(k, s):
-                async def handler(c, p):
+            def make_handler(k: Any, s: Any) -> Any:
+                async def handler(c: Any, p: Any) -> Any:
                     new_val = c.value
                     if s.get("type") == "int":
                         try:
@@ -135,7 +138,7 @@ def _build_module_config_form(ctx, module_id, back_builder):
             buttons.append([ctx.ui.input(f"✏️ Edit {key}", make_handler(key, spec), placeholder=f"Enter new value for {key}")])
 
         if back_builder:
-            async def back_handler(c, p):
+            async def back_handler(c: Any, p: Any) -> Any:
                 await c.edit(**back_builder())
             buttons.append([ctx.ui.button("🔙 Back to Directory", back_handler), ctx.ui.close("❌ Close Settings")])
         else:

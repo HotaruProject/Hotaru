@@ -1001,10 +1001,10 @@ class ModuleSandbox:
         self.nproc = nproc
         self.spawn_timeout = spawn_timeout
         self.call_timeout = call_timeout
-        self._workers: dict[str, subprocess.Popen] = {}
+        self._workers: dict[str, subprocess.Popen[bytes]] = {}
         self._booted: dict[str, bool] = {}
         self._respond_sources: dict[str, Any] = {}
-        self._cb_waiters: dict[tuple[str, str], asyncio.Future] = {}
+        self._cb_waiters: dict[tuple[str, str], asyncio.Future[Any]] = {}
         self._active_callback: dict[str, Any] = {}
         self._cb_respond_pending: list[dict[str, Any]] = []
         self._python = os.path.realpath(sys.executable)
@@ -1018,7 +1018,7 @@ class ModuleSandbox:
         os.makedirs(self._sandbox_base, exist_ok=True)
         os.chmod(self._sandbox_base, 0o700)
 
-    def _make_preexec(self):
+    def _make_preexec(self) -> Any:
         python_path = self._python
         stdlib_path = self._stdlib
         stdlib_dst = self._stdlib_dst
@@ -1139,7 +1139,7 @@ class ModuleSandbox:
 
         return preexec
 
-    def _spawn(self, module_id: str, source: str, commands: list[str]) -> subprocess.Popen:
+    def _spawn(self, module_id: str, source: str, commands: list[str]) -> subprocess.Popen[bytes]:
         hello = {
             "module_id": module_id,
             "source": source,
@@ -1195,7 +1195,7 @@ class ModuleSandbox:
             return
         observatory.emit("module", "output", level=level, module=module_id, msg=text[:2048])
 
-    def _readline(self, process: subprocess.Popen) -> str | None:
+    def _readline(self, process: subprocess.Popen[bytes]) -> str | None:
         assert process.stdout is not None
         line = process.stdout.readline()
         return line.decode("utf-8", errors="replace").strip() if line else None
@@ -1515,7 +1515,7 @@ class ModuleSandbox:
                 }
             }
             loop = asyncio.get_running_loop()
-            task: asyncio.Future | None = None
+            task: asyncio.Future[Any] | None = None
 
             def _reader() -> Any:
                 assert process.stdin is not None

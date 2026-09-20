@@ -265,7 +265,7 @@ class AccessManager:
                 try:
                     rule = TsecRule(
                         target_type=str(item.get("target_type", "")),
-                        target=item.get("target"),
+                        target=str(item.get("target") or ""),
                         rule_type=str(item.get("rule_type", "")),
                         rule=str(item.get("rule", "")),
                         expires=float(item.get("expires", 0.0) or 0.0),

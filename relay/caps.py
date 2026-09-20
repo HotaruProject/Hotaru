@@ -244,6 +244,20 @@ class CapabilityHost:
                 return await self._shell_op(module_id, payload, meta)
         raise PermissionError(f"capability not implemented: {capability}")
 
+    async def _inline_op(self, module_id: str, payload: dict[str, Any], meta: Any) -> Any:
+        inline = getattr(self.runtime, "inline", None)
+        if inline is None:
+            raise PermissionError("inline is unavailable")
+        op = str(payload.get("op") or "")
+        extra: dict[str, Any] = dict(payload["kwargs"]) if isinstance(payload.get("kwargs"), dict) else {}
+        if op == "query":
+            return await inline.query(payload.get("text"), **extra)
+        if op == "send":
+            return await inline.send(payload.get("peer"), payload.get("text"), **extra)
+        if op == "form":
+            return await inline.form(payload.get("text"), payload.get("buttons"), **extra)
+        raise PermissionError(f"inline op is invalid: {op}")
+
     async def _fetch_op(self, module_id: str, payload: dict[str, Any]) -> Any:
         app = self.runtime.app
         if app is None or app.mt is None:
@@ -488,7 +502,7 @@ class CapabilityHost:
             host = self
 
             class _CheckedRedirect(urllib.request.HTTPRedirectHandler):
-                def redirect_request(self, req, fp, code, msg, headers, newurl):
+                def redirect_request(self, req: Any, fp: Any, code: Any, msg: Any, headers: Any, newurl: Any) -> Any:
                     host._check_net_target(newurl)
                     return super().redirect_request(req, fp, code, msg, headers, newurl)
 

@@ -155,7 +155,7 @@ def flag(code: str) -> str:
     return code
 
 
-def entity_url(entity: dict | Any, openmessage: bool = False) -> str:
+def entity_url(entity: dict[str, Any] | Any, openmessage: bool = False) -> str:
     if isinstance(entity, dict):
         eid = entity.get("user_id") or entity.get("id") or entity.get("channel_id")
         username = entity.get("username")
@@ -171,7 +171,7 @@ def entity_url(entity: dict | Any, openmessage: bool = False) -> str:
     return ""
 
 
-def entity_link(entity: dict | Any, label: str | None = None) -> str:
+def entity_link(entity: dict[str, Any] | Any, label: str | None = None) -> str:
     url = entity_url(entity)
     if not url:
         return escape(label or "")
@@ -205,7 +205,7 @@ def urls_extract(text: str) -> list[str]:
     return _URL_RE.findall(text)
 
 
-def chunk(items: list | tuple | str, size: int) -> list:
+def chunk(items: list[Any] | tuple[Any, ...] | str, size: int) -> list[Any]:
     if size < 1:
         raise ValueError("chunk size must be positive")
     return [items[i:i + size] for i in range(0, len(items), size)]
@@ -234,7 +234,7 @@ def iso_time() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def merge_dicts(a: dict, b: dict, *, deep: bool = True) -> dict:
+def merge_dicts(a: dict[str, Any], b: dict[str, Any], *, deep: bool = True) -> dict[str, Any]:
     for key, a_val in a.items():
         b_val = b.get(key)
         if key not in b:
@@ -256,7 +256,7 @@ def json_ok(value: Any) -> bool:
         return False
 
 
-def flatten(nested: list) -> list:
+def flatten(nested: list[Any]) -> list[Any]:
     result = []
     for item in nested:
         if isinstance(item, list):
@@ -427,7 +427,7 @@ def truncate(text: str, limit: int, suffix: str = "…") -> str:
     return cut + suffix
 
 
-def table(rows: list[list | tuple | dict], headers: list[str] | None = None) -> str:
+def table(rows: list[list[Any] | tuple[Any, ...] | dict[str, Any]], headers: list[str] | None = None) -> str:
     if not rows:
         return "<table></table>"
     normalized: list[list[Any]] = []

@@ -5,19 +5,22 @@ HOTARU = {
     "capabilities": ["mt"],
 }
 
+from typing import Any
+
+
 import asyncio
 import html as _html
 
-def _escape(value):
+def _escape(value: Any) -> Any:
     return _html.escape(str(value), quote=False)
 
-def _usage(ctx):
+def _usage(ctx: Any) -> Any:
     return ctx.t(
         "accounts.usage",
         "usage: !acc <#> <start|stop|on|off|del>\n!acca — зарегистрировать аккаунт (номер выдаётся автоматически)\n!accs — список",
     )
 
-async def command_accs(ctx, invocation):
+async def command_accs(ctx: Any, invocation: Any) -> Any:
     items = ctx.accounts.items()
     self_name = None
     session = getattr(ctx.runtime.app, "session", None) if ctx.runtime is not None else None
@@ -42,7 +45,7 @@ async def command_accs(ctx, invocation):
         )
     await ctx.respond("<b>Accounts</b><br>" + "<br>".join(rows), parse_mode="HTML")
 
-async def command_acca(ctx, invocation):
+async def command_acca(ctx: Any, invocation: Any) -> Any:
     if invocation.args:
         await ctx.respond(_usage(ctx), parse_mode="HTML")
         return
@@ -67,7 +70,7 @@ async def command_acca(ctx, invocation):
         parse_mode="HTML",
     )
 
-async def command_acc(ctx, invocation):
+async def command_acc(ctx: Any, invocation: Any) -> Any:
     if len(invocation.args) < 2 or not invocation.args[0].isdigit():
         await ctx.respond(_usage(ctx), parse_mode="HTML")
         return

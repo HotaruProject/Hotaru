@@ -5,6 +5,9 @@ HOTARU = {
     "capabilities": ["mt"]
 }
 
+from typing import Any
+
+
 NATIVE_LABELS = {
     "ru": "Русский",
     "en": "English",
@@ -16,7 +19,7 @@ NATIVE_LABELS = {
 from hotaru.callbacks import CallbackBinding
 from relay.firewall import trusted_scope
 
-def _kbd_buttons(ctx, runtime, rows):
+def _kbd_buttons(ctx: Any, runtime: Any, rows: Any) -> Any:
     owner = int(getattr(runtime.kernel, "owner_id", 0) or 0)
     result = []
     for row in rows:
@@ -34,10 +37,10 @@ def _kbd_buttons(ctx, runtime, rows):
             result.append(current)
     return result
 
-def _kbd_row(ctx, runtime, language, current):
+def _kbd_row(ctx: Any, runtime: Any, language: Any, current: Any) -> Any:
     marker = "✓ " if language == current else ""
 
-    async def select(callback, payload, selected=language):
+    async def select(callback: Any, payload: Any, selected: Any=language) -> Any:
         runtime.set_language(selected)
         form = _screen(ctx)
         markup = {"inline_keyboard": _kbd_buttons(ctx, runtime, form["buttons"])}
@@ -55,8 +58,8 @@ def _kbd_row(ctx, runtime, language, current):
 
     return ctx.ui.button(f"{marker}{NATIVE_LABELS[language]}", select, {"language": language})
 
-def _close_button(ctx):
-    async def close(callback, payload):
+def _close_button(ctx: Any) -> Any:
+    async def close(callback: Any, payload: Any) -> Any:
         try:
             await callback.answer()
         except Exception:
@@ -75,7 +78,7 @@ def _close_button(ctx):
 
     return ctx.ui.button(ctx.t("common.close", "Close"), close, style="danger")
 
-def _screen(ctx):
+def _screen(ctx: Any) -> Any:
     runtime = ctx.runtime
     current = runtime.language()
     row = []
@@ -95,7 +98,7 @@ def _screen(ctx):
         "parse_mode": "HTML"
     }
 
-async def _send_screen(ctx):
+async def _send_screen(ctx: Any) -> Any:
     form = _screen(ctx)
     await ctx.respond(form["text"], buttons=form["buttons"], inline=True, parse_mode="HTML")
     try:
@@ -127,11 +130,11 @@ async def _send_screen(ctx):
     except Exception:
         pass
 
-def _escape(value):
+def _escape(value: Any) -> Any:
     import html
     return html.escape(str(value), quote=False)
 
-async def _show(ctx):
+async def _show(ctx: Any) -> Any:
     runtime = ctx.runtime
     if runtime is None:
         await ctx.respond("Runtime unavailable")
@@ -146,7 +149,7 @@ async def _show(ctx):
         runtime.set_language("en")
     await _send_screen(ctx)
 
-async def command_lang(ctx, invocation):
+async def command_lang(ctx: Any, invocation: Any) -> Any:
     if len(invocation.args) > 1:
         await ctx.respond(ctx.t("commands.lang.usage", "Usage: {prefix}lang [language]", prefix=ctx.runtime.config.prefix))
         return
@@ -158,5 +161,5 @@ async def command_lang(ctx, invocation):
             return
     await _show(ctx)
 
-async def command_language(ctx, invocation):
+async def command_language(ctx: Any, invocation: Any) -> Any:
     await command_lang(ctx, invocation)

@@ -21,7 +21,7 @@ import traceback
 import json
 from dataclasses import fields as _dc_fields
 from dataclasses import is_dataclass
-from typing import Any
+from typing import Any, cast
 
 from goygram.sugar import extract_sent_message
 
@@ -48,7 +48,7 @@ _TG_REPLACEMENTS: list[tuple[str, str]] = [
     ("\u200d", ""),
 ]
 
-_TG_MARKDOWN_PATTERNS: list[tuple[re.Pattern, str]] = [
+_TG_MARKDOWN_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"\*([A-Za-z_][A-Za-z0-9_]*)\*"), r"__\1__"),
 ]
 
@@ -216,7 +216,7 @@ def _tools(ctx: Any) -> Any:
 
 
 class OutputUpdater:
-    def __init__(self, ctx: Any, cmd: str, is_py: bool = False):
+    def __init__(self, ctx: Any, cmd: str, is_py: bool = False) -> None:
         self.ctx = ctx
         self.cmd = cmd
         self.is_py = is_py
@@ -231,6 +231,8 @@ class OutputUpdater:
         self._lock = asyncio.Lock()
         self._pages: list[str] = []
         self._page = 0
+        self.master_fd: Any = None
+        self.process: Any = None
 
     def _strip_ansi(self, text: str) -> str:
         text = self.ansi_re.sub('', text)
@@ -252,7 +254,7 @@ class OutputUpdater:
             return f"<b>{_escape(title)}:</b>\n{block}"
         return f"<code>{_escape(title)}:</code> {esc}"
 
-    def _pages_from(self, sections: list, returncode: int | None) -> list[str]:
+    def _pages_from(self, sections: list[Any], returncode: int | None) -> list[str]:
         elapsed = (time.perf_counter() - self.start_time) * 1000
         head = f"<b>Executor</b> | <code>{elapsed:.1f}ms</code>"
         limit = 4096
@@ -295,7 +297,7 @@ class OutputUpdater:
         pages.append("\n\n".join(cur))
         return pages
 
-    def _nav(self, idx: int) -> list:
+    def _nav(self, idx: int) -> list[Any]:
         ui = getattr(self.ctx, "ui", None)
         if ui is None:
             return []
@@ -310,7 +312,7 @@ class OutputUpdater:
             [ui.button("x", self._on_del)],
         ]
 
-    def _kbd(self, buttons: list | None) -> dict | None:
+    def _kbd(self, buttons: list[Any] | None) -> dict[str, Any] | None:
         if not buttons:
             return None
         rows = []
@@ -344,7 +346,7 @@ class OutputUpdater:
             pass
         await call.delete()
 
-    async def _deliver(self, text: str, buttons: list | None, final: bool) -> None:
+    async def _deliver(self, text: str, buttons: list[Any] | None, final: bool) -> None:
         kwargs: dict[str, Any] = {"parse_mode": "HTML", "rich": False}
         if buttons:
             kwargs["buttons"] = buttons
@@ -356,7 +358,7 @@ class OutputUpdater:
             if final:
                 self.msg = await self.ctx.respond(text, output="reply", parse_mode="HTML", rich=False)
 
-    async def _send(self, sections: list | None = None, returncode: int | None = None, final: bool = False) -> None:
+    async def _send(self, sections: list[Any] | None = None, returncode: int | None = None, final: bool = False) -> None:
         async with self._lock:
             if self.closed and not final:
                 return
@@ -414,7 +416,7 @@ class OutputUpdater:
         finally:
             self._sending = False
 
-    async def finish(self, sections: list | None = None, returncode: int | None = None) -> None:
+    async def finish(self, sections: list[Any] | None = None, returncode: int | None = None) -> None:
         self.closed = True
         await self._send(sections, returncode=returncode, final=True)
 
@@ -430,7 +432,7 @@ class StreamInterceptor(io.StringIO):
         return res
 
 
-async def _send_result(ctx: Any, sections: list, elapsed_ms: float) -> None:
+async def _send_result(ctx: Any, sections: list[Any], elapsed_ms: float) -> None:
     header = f"<code>{elapsed_ms:.1f}ms</code>"
     parts = [f"<b>Executor</b> | {header}\n"]
     for entry in sections:
@@ -469,7 +471,7 @@ def _get_raw_text(invocation: Any) -> str:
     return " ".join(getattr(invocation, "args", []))
 
 
-def _msg_id(value):
+def _msg_id(value: Any) -> Any:
     if value is None:
         return None
     if isinstance(value, dict):
@@ -481,7 +483,7 @@ def _msg_id(value):
     return int(mid) if isinstance(mid, int) else None
 
 
-def _attr_or(obj, *names):
+def _attr_or(obj: Any, *names: Any) -> Any:
     if obj is None:
         return None
     if isinstance(obj, dict):
@@ -497,12 +499,12 @@ def _attr_or(obj, *names):
     return None
 
 
-async def _get_reply(ctx, invocation):
+async def _get_reply(ctx: Any, invocation: Any) -> Any:
     reply = None
     fetch = getattr(ctx, "reply", None)
     if callable(fetch):
         try:
-            reply = await fetch()
+            reply = await cast(Any, fetch())
         except Exception:
             reply = None
     if reply is None:
@@ -532,7 +534,7 @@ async def _reply_text(ctx: Any, invocation: Any) -> str | None:
     return None
 
 
-def _sent_id(result):
+def _sent_id(result: Any) -> Any:
     if result is None:
         return None
     body = getattr(result, "message", result) if hasattr(result, "delivered") else result
@@ -1026,7 +1028,7 @@ class _DBProxy:
         self.set(key, new_val)
         return new_val
 
-    def append(self, key: str, item: Any, max_len: int | None = None) -> list:
+    def append(self, key: str, item: Any, max_len: int | None = None) -> list[Any]:
         lst = self.get(key, [])
         if not isinstance(lst, list):
             lst = [lst]
@@ -1061,7 +1063,7 @@ class _DBProxy:
     def __len__(self) -> int:
         return len(self.keys())
 
-    def __iter__(self):
+    def __iter__(self) -> Any:
         return iter(self.keys())
 
     def __repr__(self) -> str:
@@ -1079,7 +1081,7 @@ def _build_py_helpers(ctx: Any, invocation: Any, reply: Any) -> dict[str, Any]:
     r_proxy = _MsgProxy(reply, ctx=ctx, invocation=invocation, is_cmd=False) if reply else None
     db_proxy = _DBProxy(state)
 
-    def _attr_or(obj, *attrs, default=None):
+    def _attr_or(obj: Any, *attrs: Any, default: Any=None) -> Any:
         for a in attrs:
             v = getattr(obj, a, None)
             if v is not None:
@@ -1091,7 +1093,7 @@ def _build_py_helpers(ctx: Any, invocation: Any, reply: Any) -> dict[str, Any]:
         return default
 
 
-    def get_text(msg=None) -> str | None:
+    def get_text(msg: Any=None) -> str | None:
         if msg is not None:
             if hasattr(msg, "html"):
                 html_text = msg.html
@@ -1111,17 +1113,17 @@ def _build_py_helpers(ctx: Any, invocation: Any, reply: Any) -> dict[str, Any]:
     def get_args_list() -> list[str]:
         return m_proxy.args_list
 
-    def get_chat_id(msg=None) -> int | None:
+    def get_chat_id(msg: Any=None) -> int | None:
         if msg is not None:
             return _attr_or(msg, "chat_id", "peer_id", "chat")
         return m_proxy.chat_id
 
-    def get_user_id(msg=None) -> int | None:
+    def get_user_id(msg: Any=None) -> int | None:
         if msg is not None:
             return _attr_or(msg, "from_id", "sender_id", "user_id")
         return m_proxy.user_id
 
-    def get_msg_id(msg=None) -> int | None:
+    def get_msg_id(msg: Any=None) -> int | None:
         if msg is not None:
             return _attr_or(msg, "id", "message_id")
         return m_proxy.id
@@ -1135,17 +1137,17 @@ def _build_py_helpers(ctx: Any, invocation: Any, reply: Any) -> dict[str, Any]:
     def is_me() -> bool:
         return m_proxy.is_me
 
-    def has_media(msg=None) -> bool:
+    def has_media(msg: Any=None) -> bool:
         if msg is not None:
             return _attr_or(msg, "media") is not None
         return m_proxy.has_media
 
-    def get_media(msg=None) -> Any:
+    def get_media(msg: Any=None) -> Any:
         if msg is not None:
             return _attr_or(msg, "media", "photo", "document", "video", "audio")
         return m_proxy.media
 
-    def get_sender_name(msg=None) -> str | None:
+    def get_sender_name(msg: Any=None) -> str | None:
         if msg is not None:
             first = _attr_or(msg, "first_name") or ""
             last = _attr_or(msg, "last_name") or ""
@@ -1153,26 +1155,26 @@ def _build_py_helpers(ctx: Any, invocation: Any, reply: Any) -> dict[str, Any]:
             return full or _attr_or(msg, "username")
         return m_proxy.full_name
 
-    def get_username(msg=None) -> str | None:
+    def get_username(msg: Any=None) -> str | None:
         if msg is not None:
             return _attr_or(msg, "username")
         return m_proxy.username
 
 
-    async def get_entity(peer) -> Any:
+    async def get_entity(peer: Any) -> Any:
         tg = getattr(ctx, "tg", None)
         if tg is None:
             raise RuntimeError("tg gateway unavailable")
         return await tg.get_entity(peer)
 
-    async def get_full_user(user_id=None) -> Any:
+    async def get_full_user(user_id: Any=None) -> Any:
         uid = user_id or get_user_id()
         return await ctx.mt(
             "users.getFullUser",
             id={"_": "inputUser", "user_id": uid, "access_hash": 0},
         )
 
-    async def get_peers_count(chat_id=None) -> int | None:
+    async def get_peers_count(chat_id: Any=None) -> int | None:
         cid = chat_id or get_chat_id()
         try:
             res = await ctx.mt(
@@ -1215,7 +1217,7 @@ def _build_py_helpers(ctx: Any, invocation: Any, reply: Any) -> dict[str, Any]:
     def hesc(text: str) -> str:
         return html.escape(str(text))
 
-    def fmt_size(size: int) -> str:
+    def fmt_size(size: float) -> str:
         for unit in ("B", "KB", "MB", "GB", "TB"):
             if abs(size) < 1024:
                 return f"{size:.1f} {unit}"
@@ -1232,13 +1234,13 @@ def _build_py_helpers(ctx: Any, invocation: Any, reply: Any) -> dict[str, Any]:
         return f"{h}h {mi}m {s}s"
 
 
-    async def respond(text: str, **kwargs) -> Any:
+    async def respond(text: str, **kwargs: Any) -> Any:
         return await ctx.respond(text, **kwargs)
 
-    async def edit_msg(text: str, **kwargs) -> Any:
+    async def edit_msg(text: str, **kwargs: Any) -> Any:
         return await ctx.respond(text, output="edit", **kwargs)
 
-    async def reply_to(text: str, **kwargs) -> Any:
+    async def reply_to(text: str, **kwargs: Any) -> Any:
         return await ctx.respond(text, output="reply", **kwargs)
 
     return {
@@ -1284,7 +1286,7 @@ def _build_py_helpers(ctx: Any, invocation: Any, reply: Any) -> dict[str, Any]:
     }
 
 
-async def command_sh(ctx, invocation):
+async def command_sh(ctx: Any, invocation: Any) -> Any:
     raw = _get_raw_text(invocation)
     skip_output = False
     if match := re.match(r"^(?:-so|--skip-output)(?:\s+|$)", raw):
@@ -1350,7 +1352,7 @@ async def command_sh(ctx, invocation):
         if resp_msg_id:
             _ACTIVE_SH[resp_msg_id] = process
 
-    async def read_pty():
+    async def read_pty() -> Any:
         while True:
             try:
                 data = os.read(master, 4096)
@@ -1398,7 +1400,7 @@ async def command_sh(ctx, invocation):
     await updater.finish(sections, returncode=process.returncode)
 
 
-async def command_py(ctx, invocation):
+async def command_py(ctx: Any, invocation: Any) -> Any:
     raw = _get_raw_text(invocation)
     skip_output = False
     if match := re.match(r"^(?:-so|--skip-output)(?:\s+|$)", raw):
@@ -1462,7 +1464,7 @@ async def command_py(ctx, invocation):
     result_val = _SENTINEL
     error_trace = None
 
-    async def _task():
+    async def _task() -> Any:
         nonlocal result_val
         exec_scope = dict(env)
         try:
@@ -1504,7 +1506,7 @@ async def command_py(ctx, invocation):
     if skip_output:
         return
 
-    sections = [("code", raw_code, True)]
+    sections: list[Any] = [("code", raw_code, True)]
     buffer_str = updater._strip_ansi(updater.buffer).strip()
     if buffer_str:
         sections.append(("output", buffer_str, True))
@@ -1518,7 +1520,7 @@ async def command_py(ctx, invocation):
 
     await updater.finish(sections)
     
-async def command_kill(ctx, invocation):
+async def command_kill(ctx: Any, invocation: Any) -> Any:
     reply = await _get_reply(ctx, invocation)
     if not reply:
         await ctx.respond("<b>Reply to a running py/sh output message to kill it.</b>", parse_mode="HTML")

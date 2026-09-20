@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from collections import defaultdict
-from collections.abc import Awaitable
+from collections.abc import Coroutine
 from typing import Any
 
 
@@ -18,7 +18,7 @@ class TaskSupervisor:
         self.max_per_module = max_per_module
         self._tasks: dict[str, set[asyncio.Task[Any]]] = defaultdict(set)
 
-    def spawn(self, module_id: str, work: Awaitable[Any], *, name: str | None = None) -> asyncio.Task[Any]:
+    def spawn(self, module_id: str, work: Coroutine[Any, Any, Any], *, name: str | None = None) -> asyncio.Task[Any]:
         tasks = self._tasks[module_id]
         if sum(len(items) for items in self._tasks.values()) >= self.max_total:
             work.close()

@@ -5,13 +5,16 @@ HOTARU = {
     "capabilities": ["mt"],
 }
 
+from typing import Any
 
-def _escape(value):
+
+
+def _escape(value: Any) -> Any:
     import html
     return html.escape(str(value), quote=False)
 
 
-def _command_line(prefix, commands):
+def _command_line(prefix: Any, commands: Any) -> Any:
     if not commands:
         return ""
     return " ( " + " | ".join(
@@ -20,7 +23,7 @@ def _command_line(prefix, commands):
     ) + " )"
 
 
-def _module_line(runtime, module_id, manifest, kernel):
+def _module_line(runtime: Any, module_id: Any, manifest: Any, kernel: Any) -> Any:
     prefix = runtime.config.prefix
     marker = "4974681956907221809" if kernel else "4974508259839836856"
     name = f'<tg-emoji emoji-id="{marker}">▪️</tg-emoji> <code>{_escape(module_id)}</code>'
@@ -30,28 +33,28 @@ def _module_line(runtime, module_id, manifest, kernel):
     return f"<p>{suffix[4:] + '<br>' if suffix else ''}{name}{commands}</p>"
 
 
-def _plain_module_line(runtime, module_id, manifest):
+def _plain_module_line(runtime: Any, module_id: Any, manifest: Any) -> Any:
     commands = _command_line(runtime.config.prefix, manifest.commands)
     description = manifest.localized(runtime.language(), manifest.description).get("description", "")
     suffix = f"<br><i>{_escape(description)}</i>" if description else ""
     return f"{suffix[4:] + '<br>' if suffix else ''}<code>{_escape(module_id)}</code>{commands}"
 
 
-def _plain_section(lines):
+def _plain_section(lines: Any) -> Any:
     if not lines:
         return ""
     return f"<blockquote>{'<br>'.join(lines)}</blockquote>"
 
 
-async def command_hlp(ctx, invocation):
+async def command_hlp(ctx: Any, invocation: Any) -> Any:
     await _show_help(ctx, invocation)
 
 
-async def command_help(ctx, invocation):
+async def command_help(ctx: Any, invocation: Any) -> Any:
     await _show_help(ctx, invocation)
 
 
-async def _show_help(ctx, invocation):
+async def _show_help(ctx: Any, invocation: Any) -> Any:
     runtime = ctx.runtime
     if runtime is None:
         await ctx.respond("<b>Runtime unavailable</b>", parse_mode="HTML")
