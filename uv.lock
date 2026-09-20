@@ -305,6 +305,7 @@ source = { editable = "." }
 dependencies = [
     { name = "basedpyright" },
     { name = "goygram" },
+    { name = "rich" },
 ]
 
 [package.dev-dependencies]
@@ -316,6 +317,7 @@ dev = [
 requires-dist = [
     { name = "basedpyright", specifier = ">=1.40.1" },
     { name = "goygram", specifier = ">=0.8.0" },
+    { name = "rich", specifier = ">=13.7" },
 ]
 
 [package.metadata.requires-dev]

@@ -4,7 +4,6 @@ import json
 import logging
 import os
 import secrets
-import shutil
 import sys
 import tempfile
 import time
@@ -173,12 +172,14 @@ class Runtime:
         previous_disable = logging.root.manager.disable
         logging.disable(logging.INFO)
         try:
+            from goygram.security import _read_vault
+            session_data = _read_vault(vault, Path(session_name).name) or {} if vault.exists() else {}
             self.app = GoyGram(
                 bot_token=self.config.bot_token if self.config.api_id is None else None,
                 api_id=self.config.api_id,
                 api_hash=self.config.api_hash,
                 session_name=session_name,
-                session=Session(name=session_name, path=vault),
+                session=Session(name=session_name, path=vault, data=session_data),
                 default_transport="mtproto" if self.config.api_id is not None else "api",
             )
         finally:
@@ -1907,20 +1908,10 @@ class Runtime:
         self.app.core.session_name = session.name
         dest_db = account_state_path(root, userid)
         if self.state.path.resolve() != dest_db.resolve():
-            self.state.connection.commit()
-            src_db = self.state.path
-            self.state.close()
-            if not dest_db.exists():
-                shutil.copy2(src_db, dest_db)
-            dest_db.chmod(0o600)
-            self.state = StateStore(dest_db)
+            self.state.relocate(dest_db)
             self.state.set_setting("session-name", name)
             self.state.set_setting("active-account", userid)
             self.config = replace(self.config, session_name=name, state_path=dest_db)
-            from .accounts import AccountManager
-            self.account_manager = AccountManager(self.state, self.config.session_dir)
-            if self.context_factory is not None:
-                self.context_factory._state = self.state
         else:
             self.config = replace(self.config, session_name=name)
         if self.app.mt.cursor_path is not None:
@@ -1997,9 +1988,13 @@ class Runtime:
             from relay.proxies import ForumHelper
             helper = self._forum_helper or ForumHelper(self)
             self._forum_helper = helper
-            chat = await helper.ensure_group()
-            if chat is None:
-                raise RuntimeError("Hotaru Userbot group was not created")
+            try:
+                chat = await asyncio.wait_for(helper.ensure_group(), timeout=30.0)
+                if chat is None:
+                    raise RuntimeError("Hotaru Userbot group was not created")
+            except asyncio.TimeoutError:
+                if self.observatory is not None:
+                    self.observatory.emit("forum", "ensure_group_timeout")
 
     async def run(self) -> None:
         if self.app is None:

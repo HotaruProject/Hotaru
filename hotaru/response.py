@@ -530,11 +530,8 @@ class ModuleContext:
         cached = getattr(runtime, "_premium_cache", None) if runtime is not None else None
         return bool(cached)
 
-    def _via_bot(self, buttons: Any, kind: str | None) -> bool:
-        place = kind or "inline"
-        if place == "inline":
-            return True
-        if not self.is_premium:
+    async def _via_bot(self, buttons: Any, kind: str | None) -> bool:
+        if not await self.premium():
             return True
         return needs_callback(buttons)
 
@@ -569,7 +566,7 @@ class ModuleContext:
                 use_rich = False
         if kwargs.get("text") is not None:
             kwargs.setdefault("parse_mode", "HTML")
-        if kwargs.get("buttons") and self._via_bot(kwargs["buttons"], kind or ("page" if use_rich else "inline")):
+        if kwargs.get("buttons") and await self._via_bot(kwargs["buttons"], kind or ("page" if use_rich else "inline")):
             return await self._bot_form(kwargs.get("text", ""), kwargs["buttons"] if (kind or "inline") == "inline" or needs_form(kwargs["buttons"]) else None, kwargs)
         if kwargs.get("buttons") and kind in {"page", "text"}:
             kwargs["text"] = str(kwargs.get("text") or "") + buttons_html(kwargs.pop("buttons"), kind=kind)
@@ -642,7 +639,7 @@ class ModuleContext:
                 raise ResponseError("buttons_as must be inline, page, or text")
             place = kind or ("page" if kwargs.get("rich") else "inline")
             kwargs["output"] = mode
-            if self._via_bot(buttons, place):
+            if await self._via_bot(buttons, place):
                 text = kwargs.pop("text", "")
                 if place in {"page", "text"}:
                     text = str(text or "") + buttons_html(buttons, kind=place)
@@ -850,7 +847,7 @@ class ModuleContext:
             raise ResponseError("rich_fallback must be plain or bot")
         if buttons is not None:
             buttons = self._normalize_buttons(buttons)
-            if self._via_bot(buttons, kind):
+            if await self._via_bot(buttons, kind):
                 if kind in {"page", "text"}:
                     html = str(html) + buttons_html(buttons, kind=kind)
                     buttons = buttons if needs_form(buttons) else None

@@ -349,8 +349,12 @@ class InlineManager:
         if info is None:
             raise InlineError("no inline bot available: nothing stored, nothing found, creation disabled")
         self._persist(info)
-        await self._tune_bot(info)
         if recovered:
+            try:
+                await asyncio.wait_for(self._tune_bot(info), timeout=10.0)
+            except Exception:
+                if self.runtime.observatory is not None:
+                    self.runtime.observatory.emit("inline", "tune_failed", username=info.username)
             try:
                 async with BotFatherGuard(self.runtime.app), BotFatherConversation(self.runtime.app) as conv:
                     await self._configure(conv, info.username)
@@ -590,10 +594,19 @@ class InlineManager:
             vault = bot_vault_path(self.runtime.config.session_dir, uid)
             vault.parent.mkdir(parents=True, exist_ok=True)
             name = str(vault.with_suffix(""))
-            bot_session = Session(name=name, path=vault)
+            from goygram.security import _read_vault
+            bot_session_data = _read_vault(vault, vault.with_suffix("").name) or {} if vault.exists() else {}
+            bot_session = Session(name=name, path=vault, data=bot_session_data)
         else:
             name = str(self.runtime.config.session_dir / "hotaru-inline")
             bot_session = Session(name=name)
+
+        main = getattr(self.runtime, "app", None)
+        if main and getattr(main, "mt", None):
+            bot_user = main.mt.entities.get(("user", self.info.bot_id))
+            if bot_user and bot_user.get("dc_id"):
+                bot_session.data["dc"] = bot_user["dc_id"]
+
         self.bot_app = GoyGram(
             bot_token=self.info.token,
             api_id=self.runtime.config.api_id,
@@ -618,7 +631,7 @@ class InlineManager:
         if app is None or info is None:
             raise InlineError("inline bot client is missing")
         last: Exception | None = None
-        for attempt in range(4):
+        for attempt in range(6):
             try:
                 result = await bootstrap_session(
                     app.core,
@@ -630,8 +643,20 @@ class InlineManager:
                 )
             except Exception as exc:
                 last = exc
-                await asyncio.sleep(1.5 * (attempt + 1))
+                msg = str(exc).lower()
+                if "no response" in msg or "timeout" in msg:
+                    mt = getattr(app, "mt", None)
+                    if mt is not None:
+                        try:
+                            await mt.reconnect()
+                        except Exception:
+                            pass
+                await asyncio.sleep(2.0 * (attempt + 1))
                 continue
+
+            if isinstance(result, dict) and result.get("source") == "vault":
+                return
+
             key = getattr(app.session, "auth_key", None)
             mt_key = getattr(getattr(app, "mt", None), "auth_key", None)
             if key is None and isinstance(mt_key, (bytes, bytearray)) and mt_key:
@@ -640,7 +665,7 @@ class InlineManager:
             if result and key is not None:
                 return
             last = InlineError("inline bot authorization did not complete")
-            await asyncio.sleep(1.5 * (attempt + 1))
+            await asyncio.sleep(2.0 * (attempt + 1))
         raise InlineError(f"inline bot authorization failed: {last}")
 
     async def _warm_owner_peer(self) -> None:
