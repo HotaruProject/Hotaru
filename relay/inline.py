@@ -7,7 +7,7 @@ import secrets
 import string
 import time
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable
+from typing import Any, Awaitable, Callable, cast
 
 from goygram import GoyGram, Session
 from relay.firewall import trusted_scope
@@ -375,7 +375,7 @@ class InlineManager:
                 try:
                     fn = getattr(app, method, None)
                     if callable(fn):
-                        await fn(**payload)
+                        await cast(Any, fn)(**payload)
                 except Exception:
                     continue
         except Exception:
