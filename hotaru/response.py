@@ -378,7 +378,7 @@ class ModuleContext:
     inline_manager: Any = None
     form_sender: Any = None
     runtime: Any = None
-    is_premium: bool | None = None
+    _premium: bool | None = None
 
     @property
     def message(self) -> ModuleMessage:
@@ -481,8 +481,8 @@ class ModuleContext:
         return await self.cap("net", {"url": url, "data": data, "timeout": timeout})
 
     async def premium(self) -> bool:
-        if self.is_premium is not None:
-            return self.is_premium
+        if self._premium is not None:
+            return self._premium
         app = getattr(self.runtime, "app", None) if self.runtime is not None else None
         if app is None or getattr(app, "mt", None) is None:
             return False
@@ -497,11 +497,14 @@ class ModuleContext:
             first = users[0] if isinstance(users, list) and users else None
             if not isinstance(first, dict):
                 first = body if isinstance(body, dict) else {}
-            self.is_premium = bool(first.get("premium"))
+            self._premium = bool(first.get("premium"))
         except Exception:
             log.error("premium check failed", exc_info=True)
             return False
-        return self.is_premium
+        return self._premium
+
+    async def is_premium(self) -> bool:
+        return await self.premium()
 
     async def answer(self, text: str | None = None, **kwargs: Any) -> Any:
         if text is not None:

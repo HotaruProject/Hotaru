@@ -1,6 +1,6 @@
 HOTARU = {
     "id": "executor",
-    "version": "3.3.2",
+    "version": "3.3.3",
     "commands": ["sh", "py", "kill"],
     "capabilities": ["mt", "files", "net", "state"],
 }
@@ -239,58 +239,43 @@ class OutputUpdater:
                 res.append('')
         return '\n'.join(res)
 
+    def _fmt_entry(self, title: str, content: Any, is_code: bool, lang: str | None = None) -> str:
+        esc = _escape(_censor(str(content), self.ctx))
+        if is_code:
+            block = f'<pre><code class="language-{_escape(lang)}">{esc}</code></pre>' if lang else f"<pre>{esc}</pre>"
+            return f"<b>{_escape(title)}:</b>\n{block}"
+        return f"<code>{_escape(title)}:</code> {esc}"
+
     def _pages_from(self, sections: list, returncode: int | None) -> list[str]:
         elapsed = (time.perf_counter() - self.start_time) * 1000
-        head = f"<b>Executor</b> | <code>{elapsed:.1f}ms</code>"
-        cmd_block = ""
-        body = ""
-        extra: list[str] = []
+        parts = [f"<b>Executor</b> | <code>{elapsed:.1f}ms</code>"]
         for entry in sections:
             title, content, is_code = entry[0], entry[1], entry[2]
-            if not content:
+            lang = entry[3] if len(entry) > 3 else None
+            if content is None or content == "":
                 continue
-            content = _censor(str(content), self.ctx)
-            if title in ("code", "command"):
-                clip = content if len(content) <= 400 else content[:400] + "..."
-                cmd_block = f"<b>{_escape(title)}:</b>\n<pre>{_escape(clip)}</pre>"
-            elif title == "result" or not is_code:
-                extra.append(f"<code>{_escape(title)}:</code> {_escape(content)}")
-            else:
-                if body:
-                    body += f"\n\n[{title}]\n"
-                body += content
+            parts.append(self._fmt_entry(title, content, is_code, lang))
         if returncode is not None:
-            extra.append(f"<code>result:</code> Exit code: {returncode}")
-        size = 2800
-        chunks = [body[i:i + size] for i in range(0, len(body), size)] if body else [""]
-        pages = []
-        n = len(chunks)
-        for i, chunk in enumerate(chunks):
-            parts = [head]
-            if cmd_block:
-                parts.append(cmd_block)
-            if chunk:
-                label = "output" if n == 1 else f"output {i + 1}/{n}"
-                parts.append(f"<b>{label}:</b>\n<pre>{_escape(chunk)}</pre>")
-            if i == n - 1:
-                parts.extend(extra)
-            elif n > 1:
-                parts.append(f"<code>{i + 1}/{n}</code>")
-            pages.append("\n\n".join(parts))
-        return pages or [head]
+            parts.append(self._fmt_entry("result", f"Exit code: {returncode}", False))
+        full = "\n\n".join(parts)
+        limit = 4096
+        if len(full) <= limit:
+            return [full]
+        return [full[i:i + limit] for i in range(0, len(full), limit)]
 
     def _nav(self, idx: int) -> list:
         ui = getattr(self.ctx, "ui", None)
         if ui is None:
             return []
         n = max(len(self._pages), 1)
-        return [
-            [
+        rows = []
+        if n > 1:
+            rows.append([
                 ui.button("<", self._on_page, (idx - 1) % n),
                 ui.button(">", self._on_page, (idx + 1) % n),
-            ],
-            [ui.button("x", self._on_del)],
-        ]
+            ])
+        rows.append([ui.button("x", self._on_del)])
+        return rows
 
     def _kbd(self, buttons: list | None) -> dict | None:
         if not buttons:
@@ -369,13 +354,10 @@ class OutputUpdater:
                 parts = [f"<b>Executor</b> | <code>{elapsed:.1f}ms</code>"]
                 for entry in sections:
                     title, content, is_code = entry[0], entry[1], entry[2]
-                    if not content:
+                    lang = entry[3] if len(entry) > 3 else None
+                    if content is None or content == "":
                         continue
-                    esc = _escape(_censor(str(content), self.ctx))
-                    if is_code:
-                        parts.append(f"<b>{_escape(title)}:</b>\n<pre>{esc}</pre>")
-                    else:
-                        parts.append(f"<code>{_escape(title)}:</code> {esc}")
+                    parts.append(self._fmt_entry(title, content, is_code, lang))
                 text = "\n\n".join(parts)
                 buttons = None
             await self._deliver(text, buttons, final)
@@ -1437,7 +1419,7 @@ async def command_py(ctx, invocation):
     if not skip_output:
         await updater.update("", force=True, wait=True)
 
-    result_val = None
+    result_val = _SENTINEL
     error_trace = None
 
     async def _task():
@@ -1486,11 +1468,11 @@ async def command_py(ctx, invocation):
     buffer_str = updater._strip_ansi(updater.buffer).strip()
     if buffer_str:
         sections.append(("output", buffer_str, True))
-    if result_val is not None:
+    if result_val is not _SENTINEL:
         rendered = str(result_val) if isinstance(result_val, str) else repr(result_val)
         sections.append(("return", rendered if rendered else "''", True, "python"))
     if error_trace:
-        sections.append(("traceback", error_trace, True))
+        sections.append(("traceback", error_trace, True, "python"))
     if len(sections) == 1:
         sections.append(("result", "Done ✓", False))
 
