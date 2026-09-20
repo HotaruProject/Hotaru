@@ -1,6 +1,6 @@
 HOTARU = {
     "id": "executor",
-    "version": "3.3.10",
+    "version": "3.3.11",
     "commands": ["sh", "py", "kill"],
     "capabilities": ["mt", "files", "net", "state"],
 }
@@ -153,7 +153,7 @@ async def _auto_await(value: Any) -> Any:
 
 
 def _escape(value: str) -> str:
-    return html.escape(str(value), quote=True)
+    return str(value).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
 def _clean_code(text: str) -> str:
@@ -242,7 +242,8 @@ class OutputUpdater:
     def _fmt_entry(self, title: str, content: Any, is_code: bool, lang: str | None = None) -> str:
         esc = _escape(_censor(str(content), self.ctx))
         if is_code:
-            return f"<b>{_escape(title)}:</b>\n<pre>{esc}</pre>"
+            lang = lang or ("python" if self.is_py else "shell")
+            return f"<b>{_escape(title)}:</b>\n<pre><code class=\"language-{_escape(lang)}\">{esc}</code></pre>"
         return f"<code>{_escape(title)}:</code> {esc}"
 
     def _pages_from(self, sections: list, returncode: int | None) -> list[str]:
