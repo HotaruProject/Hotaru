@@ -594,6 +594,7 @@ class ForumHelper:
     def __init__(self, runtime: Any) -> None:
         self._runtime = runtime
         self._lock = asyncio.Lock()
+        self._rpc_lock = asyncio.Lock()
         self._group_try_ts = 0.0
         self._sync_ts = 0.0
         self._topic_tries: dict[str, float] = {}
@@ -601,10 +602,15 @@ class ForumHelper:
         self._warm_tries: dict[int, float] = {}
         self._invite_ts = 0.0
         self._apply_task: asyncio.Task[None] | None = None
+        self._apply_chat: int | None = None
 
     def _apply_background(self, chat_id: int) -> None:
-        if self._apply_task is None or self._apply_task.done():
-            self._apply_task = asyncio.create_task(self._apply_group(chat_id), name="hotaru:forum-apply")
+        if self._apply_task is not None and not self._apply_task.done():
+            if self._apply_chat == chat_id:
+                return
+            self._apply_task.cancel()
+        self._apply_chat = chat_id
+        self._apply_task = asyncio.create_task(self._apply_group(chat_id), name="hotaru:forum-apply")
 
     def _bot_app(self) -> Any:
         manager = getattr(self._runtime, "inline", None)
@@ -624,8 +630,9 @@ class ForumHelper:
         app = getattr(self._runtime, "app", None)
         if app is None:
             raise RuntimeError("userbot transport is not ready")
-        with trusted_scope():
-            return await getattr(app, rpcname(act))(**kw)
+        async with self._rpc_lock:
+            with trusted_scope():
+                return await getattr(app, rpcname(act))(**kw)
 
     async def _bot_call(self, act: str, **kw: Any) -> Any:
         app = self._bot_app()
@@ -783,11 +790,25 @@ class ForumHelper:
         await self._sync_channel_to_bot(chat_id)
         return await self._bot_resolve(chat_id) is not None
 
+    def _dead_groups(self) -> set[int]:
+        state = getattr(self._runtime, "state", None)
+        if state is None:
+            return set()
+        value = state.get_setting("forum-dead-channel-ids")
+        result = {int(item) for item in value if isinstance(item, int)} if isinstance(value, list) else set()
+        legacy = state.get_setting("forum-dead-channel-id")
+        if isinstance(legacy, int):
+            result.add(legacy)
+        return result
+
     async def _reset_group(self, dead: int | None = None) -> None:
         state = getattr(self._runtime, "state", None)
         if state is not None:
             state.set_setting("forum-channel-id", 0)
             if dead is not None:
+                dead_groups = self._dead_groups()
+                dead_groups.add(int(dead))
+                state.set_setting("forum-dead-channel-ids", sorted(dead_groups)[-32:])
                 state.set_setting("forum-dead-channel-id", int(dead))
         self._warmed.clear()
         self._topic_tries.clear()
@@ -804,7 +825,7 @@ class ForumHelper:
         async with self._lock:
             chat_id = await self.group()
             if chat_id is not None:
-                if await self._warm_user_entity(chat_id):
+                if chat_id not in self._dead_groups() and await self._warm_user_entity(chat_id):
                     self._apply_background(chat_id)
                     return chat_id
                 await self._reset_group()
@@ -814,9 +835,8 @@ class ForumHelper:
             self._group_try_ts = now
             title = str(getattr(self._runtime, "forum_title", None) or "Hotaru Userbot")
             found = await self._find_groups_by_title(title)
-            state = getattr(self._runtime, "state", None)
-            dead = state.get_setting("forum-dead-channel-id") if state is not None else None
-            live = [(chat, cid) for chat, cid in found if not chat.get("left") and cid != dead]
+            dead = self._dead_groups()
+            live = [(chat, cid) for chat, cid in found if not chat.get("left") and cid not in dead]
             if live:
                 for chat, cid in live[1:]:
                     await self._delete_owned_group(chat, cid)
@@ -858,6 +878,18 @@ class ForumHelper:
         await self._hide_general(chat_id)
         await self._sync_channel_to_bot(chat_id)
 
+    async def _user_bot(self, bot_id: int, username: str) -> dict[str, Any] | None:
+        entity = self._user_mt().entities.get(("user", bot_id))
+        if isinstance(entity, dict) and entity.get("access_hash"):
+            return {"_": "inputUser", "user_id": bot_id, "access_hash": int(entity["access_hash"])}
+        state = getattr(self._runtime, "state", None)
+        owner = getattr(getattr(self._runtime, "config", None), "owner_id", None)
+        ref_chat = state.get_setting("inline-reference-chat") if state is not None else None
+        ref_message = state.get_setting("inline-reference-message") if state is not None else None
+        if isinstance(owner, int) and ref_chat == owner and isinstance(ref_message, int):
+            return {"_": "inputUserFromMessage", "peer": {"_": "inputPeerSelf"}, "msg_id": ref_message, "user_id": bot_id}
+        return None
+
     async def _promote_bot(self, chat_id: int) -> None:
         manager = getattr(self._runtime, "inline", None)
         info = getattr(manager, "info", None)
@@ -865,19 +897,17 @@ class ForumHelper:
         username = getattr(info, "username", None)
         if not isinstance(bot_id, int) or not isinstance(username, str) or not username:
             return
-        peer = await self._user_peer(chat_id)
-        if peer is None:
+        channel = self._user_channel(chat_id)
+        if channel is None:
             return
         try:
-            resolved = await self._user_call("contacts.resolveUsername", username=username.lstrip("@"))
-            users = self._body(resolved).get("users") or []
-            bot_user = next((u for u in users if isinstance(u, dict) and int(u.get("id") or 0) == bot_id and u.get("access_hash")), None)
+            bot_user = await self._user_bot(bot_id, username)
             if bot_user is None:
                 return
             await self._user_call(
                 "channels.editAdmin",
-                channel=peer,
-                user_id={"_": "inputUser", "user_id": bot_id, "access_hash": int(bot_user["access_hash"])},
+                channel=channel,
+                user_id=bot_user,
                 admin_rights={
                     "_": "chatAdminRights",
                     "change_info": True,
@@ -894,7 +924,8 @@ class ForumHelper:
                 },
                 rank="Hotaru",
             )
-        except Exception:
+        except Exception as exc:
+            self._emit("promote_failed", chat=chat_id, error=type(exc).__name__, detail=str(exc)[:160])
             return
 
     async def _bot_resolve(self, chat_id: int) -> bytes | None:
@@ -911,26 +942,29 @@ class ForumHelper:
         bot_id = getattr(info, "bot_id", None)
         username = getattr(info, "username", None)
         if not isinstance(bot_id, int) or not isinstance(username, str) or not username:
+            self._emit("invite_skipped", chat=chat_id, reason="identity")
             return
         now = time.monotonic()
         if now - self._invite_ts < 60.0:
             return
         self._invite_ts = now
-        peer = await self._user_peer(chat_id)
-        if peer is None:
+        channel = self._user_channel(chat_id)
+        if channel is None:
+            self._emit("invite_skipped", chat=chat_id, reason="peer")
             return
         try:
-            resolved = await self._user_call("contacts.resolveUsername", username=username.lstrip("@"))
-            users = self._body(resolved).get("users") or []
-            bot_user = next((u for u in users if isinstance(u, dict) and int(u.get("id") or 0) == bot_id and u.get("access_hash")), None)
+            bot_user = await self._user_bot(bot_id, username)
             if bot_user is None:
+                self._emit("invite_skipped", chat=chat_id, reason="bot_user")
                 return
             await self._user_call(
                 "channels.inviteToChannel",
-                channel=peer,
-                users=[{"_": "inputUser", "user_id": bot_id, "access_hash": int(bot_user["access_hash"])}],
+                channel=channel,
+                users=[bot_user],
             )
-        except Exception:
+            self._emit("invited", chat=chat_id, bot=bot_id)
+        except Exception as exc:
+            self._emit("invite_failed", chat=chat_id, error=type(exc).__name__, detail=str(exc)[:160])
             return
 
     def _state_key_bot_hash(self, raw_channel_id: int) -> str:
@@ -971,8 +1005,8 @@ class ForumHelper:
                 self._ingest_bot(res)
                 if await self._bot_resolve(chat_id) is not None:
                     return
-            except Exception:
-                pass
+            except Exception as exc:
+                self._emit("bot_sync_stored_failed", chat=chat_id, error=type(exc).__name__, detail=str(exc)[:160])
 
         try:
             res = await self._bot_call(
@@ -986,7 +1020,8 @@ class ForumHelper:
                     if isinstance(ah, int) and ah:
                         self._save_bot_hash(chat_id, ah)
                     break
-        except Exception:
+        except Exception as exc:
+            self._emit("bot_sync_failed", chat=chat_id, error=type(exc).__name__, detail=str(exc)[:160])
             return
 
     async def ensure_topic(self, title: str) -> int | None:
@@ -1032,6 +1067,14 @@ class ForumHelper:
                 return await mt.resolve_peer(chat_id)
             except Exception:
                 return None
+
+    def _user_channel(self, chat_id: int) -> dict[str, Any] | None:
+        raw = -chat_id - 1000000000000
+        entity = self._user_mt().entities.get(("chat", raw))
+        access_hash = entity.get("access_hash") if isinstance(entity, dict) else None
+        if not isinstance(access_hash, int) or not access_hash:
+            return None
+        return {"_": "inputChannel", "channel_id": raw, "access_hash": access_hash}
 
     async def _bot_ready(self, chat_id: int) -> bool:
         peer = await self._bot_resolve(chat_id)

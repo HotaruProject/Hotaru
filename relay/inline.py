@@ -395,6 +395,7 @@ class InlineManager:
         app = self.runtime.app
         if app is None or app.mt is None:
             return False
+        peer = None
         try:
             with trusted_scope():
                 peer = await app.mt.resolve_peer("@" + username)
@@ -404,6 +405,16 @@ class InlineManager:
                     random_id=secrets.randbits(63),
                 )
         except Exception as exc:
+            if "YOU_BLOCKED_USER" in str(exc).upper() and peer is not None:
+                try:
+                    with trusted_scope():
+                        await app.mt_contacts_unblock(id=peer)
+                        await app.mt_messages_send_message(peer=peer, message="/start", random_id=secrets.randbits(63))
+                    if self.runtime.observatory is not None:
+                        self.runtime.observatory.emit("inline", "chat_unblocked", username=username)
+                    return True
+                except Exception as retry_exc:
+                    exc = retry_exc
             if self.runtime.observatory is not None:
                 self.runtime.observatory.emit("inline", "start_chat_skipped", error=type(exc).__name__, detail=str(exc)[:160])
             return False
