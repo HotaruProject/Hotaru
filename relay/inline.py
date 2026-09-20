@@ -271,8 +271,10 @@ class InlineManager:
         self._chosen_handlers: list[Callable[[Any], Awaitable[Any]]] = []
         self._stop = asyncio.Event()
         self.ready = asyncio.Event()
+        self._session_failure = asyncio.Event()
         self._create_attempts: list[float] = []
         self._provision_lock = asyncio.Lock()
+        self._reauth_lock = asyncio.Lock()
 
     def on_inline(self, handler: Callable[[Any], Awaitable[Any]]) -> Callable[[Any], Awaitable[Any]]:
         self._handlers.append(handler)
@@ -599,6 +601,7 @@ class InlineManager:
             raise InlineError("inline polling requires a token separate from the primary bot")
         self._stop.clear()
         self.ready.clear()
+        self._session_failure.clear()
         from hotaru.accounts import bot_vault_path
         uid = None
         session = getattr(self.runtime.app, "session", None)
@@ -746,6 +749,8 @@ class InlineManager:
             try:
                 ready_task = asyncio.create_task(self._await_ready(app), name="hotaru:inline-ready")
                 await app.run()
+                if self._session_failure.is_set():
+                    await self._restart_bot_session(app)
                 return
             except asyncio.CancelledError:
                 raise
@@ -783,6 +788,17 @@ class InlineManager:
             session = getattr(app, "session", None)
             mt = getattr(app, "mt", None)
             if mt is not None and session is not None and session.is_bot:
+                try:
+                    await app.mt_users_get_users(id=[{"_": "inputUserSelf"}])
+                except Exception as exc:
+                    if self._is_session_auth_failure(exc):
+                        self._session_failure.set()
+                        if self.runtime.observatory is not None:
+                            self.runtime.observatory.emit("inline", "session_invalid", error=type(exc).__name__)
+                        app.stop()
+                        return
+                    await asyncio.sleep(0.5)
+                    continue
                 self.ready.set()
                 if self.runtime.observatory is not None:
                     self.runtime.observatory.emit("inline", "ready_set")
@@ -796,19 +812,22 @@ class InlineManager:
         return any(value in text for value in ("AUTH_KEY_UNREGISTERED", "AUTH_KEY_INVALID", "AUTH_KEY_PERM_EMPTY", "AUTH_KEY_DUPLICATED", "SESSION_REVOKED", "SESSION_EXPIRED"))
 
     async def _restart_bot_session(self, app: Any) -> None:
-        self.ready.clear()
-        try:
-            app.stop()
-            await app.close()
-        except Exception:
-            pass
-        session = getattr(app, "session", None)
-        path = getattr(session, "path", None)
-        if path is not None:
-            path.unlink(missing_ok=True)
-        self.bot_app = None
-        self._task = None
-        await self.start()
+        async with self._reauth_lock:
+            if self.bot_app is not app:
+                return
+            self.ready.clear()
+            try:
+                app.stop()
+                await app.close()
+            except Exception:
+                pass
+            session = getattr(app, "session", None)
+            path = getattr(session, "path", None)
+            if path is not None:
+                path.unlink(missing_ok=True)
+            self.bot_app = None
+            self._task = None
+            await self.start()
 
     @staticmethod
     def _is_auth_failure(exc: Exception) -> bool:
