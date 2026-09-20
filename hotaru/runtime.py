@@ -715,6 +715,9 @@ class Runtime:
                 self._form_msgs = {}
             actor = int(getattr(self.kernel, "owner_id", 0) or 0)
             self._form_msgs[actor] = (chat_id, int(sent["id"]))
+            if self.state is not None and isinstance(chat_id, int):
+                self.state.set_setting("inline-reference-chat", chat_id)
+                self.state.set_setting("inline-reference-message", int(sent["id"]))
             return sent
         return result
 
@@ -2006,21 +2009,11 @@ class Runtime:
                 self.observatory.emit("forum", "ensure_group_error", error=type(exc).__name__, detail=str(exc)[:160])
 
     async def _forum_after_transport(self) -> None:
-        mt = getattr(self.app, "mt", None)
-        seen = False
-        deadline = time.monotonic() + 35.0
-        await asyncio.sleep(0)
-        while mt is not None and time.monotonic() < deadline:
-            pending = bool(getattr(mt, "pending", None))
-            seen = seen or pending
-            reader = getattr(mt, "_reader_task", None)
-            if reader is not None and not reader.done() and not pending and (seen or deadline - time.monotonic() < 34.0):
-                break
-            await asyncio.sleep(0.05)
+        await asyncio.sleep(2.0)
         if self._forum_ready is not None:
             self._forum_ready.set()
         if self.observatory is not None:
-            self.observatory.emit("forum", "transport_ready", pending=len(getattr(mt, "pending", {})) if mt is not None else 0)
+            self.observatory.emit("forum", "transport_ready")
         await self._ensure_forum()
 
     async def run(self) -> None:
