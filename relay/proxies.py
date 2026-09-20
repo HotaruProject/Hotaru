@@ -798,19 +798,21 @@ class ForumHelper:
         chat_id = await self.group()
         if chat_id is not None:
             if await self._warm_user_entity(chat_id):
+                await self._apply_group(chat_id)
                 return chat_id
             await self._reset_group()
         async with self._lock:
             chat_id = await self.group()
             if chat_id is not None:
                 if await self._warm_user_entity(chat_id):
+                    await self._apply_group(chat_id)
                     return chat_id
                 await self._reset_group()
             now = time.monotonic()
             if now - self._group_try_ts < 60.0:
                 return None
             self._group_try_ts = now
-            title = str(getattr(self._runtime, "forum_title", None) or "Hotaru")
+            title = str(getattr(self._runtime, "forum_title", None) or "Hotaru Userbot")
             found = await self._find_groups_by_title(title)
             live = [(chat, cid) for chat, cid in found if not chat.get("left")]
             if live:
@@ -819,9 +821,7 @@ class ForumHelper:
                 cid = live[0][1]
                 await self._save_group(cid)
                 if await self._warm_user_entity(cid, force=True):
-                    self._sync_ts = 0.0
-                    await self._invite_bot(cid)
-                    await self._sync_channel_to_bot(cid)
+                    await self._apply_group(cid)
                     return cid
                 await self._reset_group()
             try:
@@ -841,15 +841,59 @@ class ForumHelper:
                     self._ingest_user(result)
                     new_id = -1000000000000 - int(chat["id"])
                     await self._save_group(new_id)
-                    self._sync_ts = 0.0
                     self._warmed.add(new_id)
-                    await self._invite_bot(new_id)
-                    await self._sync_channel_to_bot(new_id)
-                    await self._hide_general(new_id)
+                    await self._apply_group(new_id)
                     self._emit("created", chat=new_id)
                     return new_id
             self._emit("create_failed", detail="no channel in result")
             return None
+
+    async def _apply_group(self, chat_id: int) -> None:
+        self._sync_ts = 0.0
+        self._invite_ts = 0.0
+        await self._invite_bot(chat_id)
+        await self._promote_bot(chat_id)
+        await self._hide_general(chat_id)
+        await self._sync_channel_to_bot(chat_id)
+
+    async def _promote_bot(self, chat_id: int) -> None:
+        manager = getattr(self._runtime, "inline", None)
+        info = getattr(manager, "info", None)
+        bot_id = getattr(info, "bot_id", None)
+        username = getattr(info, "username", None)
+        if not isinstance(bot_id, int) or not isinstance(username, str) or not username:
+            return
+        peer = await self._user_peer(chat_id)
+        if peer is None:
+            return
+        try:
+            resolved = await self._user_call("contacts.resolveUsername", username=username.lstrip("@"))
+            users = self._body(resolved).get("users") or []
+            bot_user = next((u for u in users if isinstance(u, dict) and int(u.get("id") or 0) == bot_id and u.get("access_hash")), None)
+            if bot_user is None:
+                return
+            await self._user_call(
+                "channels.editAdmin",
+                channel=peer,
+                user_id={"_": "inputUser", "user_id": bot_id, "access_hash": int(bot_user["access_hash"])},
+                admin_rights={
+                    "_": "chatAdminRights",
+                    "change_info": True,
+                    "post_messages": True,
+                    "edit_messages": True,
+                    "delete_messages": True,
+                    "ban_users": True,
+                    "invite_users": True,
+                    "pin_messages": True,
+                    "manage_topics": True,
+                    "anonymous": False,
+                    "manage_call": False,
+                    "other": True,
+                },
+                rank="Hotaru",
+            )
+        except Exception:
+            return
 
     async def _bot_resolve(self, chat_id: int) -> bytes | None:
         app = self._bot_app()

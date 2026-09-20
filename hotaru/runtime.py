@@ -134,6 +134,7 @@ class Runtime:
     _form_gc_task: asyncio.Task[None] | None = None
     _premium_cache: bool | None = None
     _forum_helper: Any = None
+    forum_title: str = "Hotaru Userbot"
     _form_msgs: dict[int, tuple[Any, int]] | None = None
     _form_inline_ids: dict[str, Any] | None = None
     _form_chosen: dict[str, asyncio.Event] | None = None
@@ -1932,6 +1933,22 @@ class Runtime:
         if self.observatory is not None:
             self.observatory.emit("accounts", "primary_registered", user_id=user_id)
 
+    async def _kernel_setup(self) -> None:
+        if self.inline is None:
+            raise RuntimeError("inline bot is required")
+        await self.inline.start()
+        await self.refresh_forms()
+        if self.inline.info is None:
+            raise RuntimeError("inline bot did not start")
+        if self.observatory is not None:
+            self.observatory.emit("inline", "started", username=self.inline.info.username)
+        from relay.proxies import ForumHelper
+        helper = self._forum_helper or ForumHelper(self)
+        self._forum_helper = helper
+        chat = await helper.ensure_group()
+        if chat is None:
+            raise RuntimeError("Hotaru Userbot group was not created")
+
     async def run(self) -> None:
         if self.app is None:
             self.build()
@@ -1941,9 +1958,13 @@ class Runtime:
         except BaseException:
             await self.close()
             raise
+        try:
+            await self._kernel_setup()
+        except BaseException:
+            await self.close()
+            raise
         if self.state is not None and self.kernel is not None:
             self.kernel.suspended = self.state.get_setting("suspended") == "1"
-                                                                                                 
         if self.modules is not None and self.constellations_dir.is_dir():
             if hasattr(self.modules, "begin_boot"):
                 self.modules.begin_boot()
@@ -1963,15 +1984,6 @@ class Runtime:
         await self.restore_forms()
         if self._form_gc_task is None or self._form_gc_task.done():
             self._form_gc_task = asyncio.create_task(self._form_gc_loop(), name="hotaru:form-gc")
-        if self.inline is not None:
-            try:
-                await self.inline.start()
-                await self.refresh_forms()
-                if self.observatory is not None and self.inline.info is not None:
-                    self.observatory.emit("inline", "started", username=self.inline.info.username)
-            except Exception as exc:
-                if self.observatory is not None:
-                    self.observatory.emit("inline", "start_failed", error=type(exc).__name__)
         if self.modules is not None and hasattr(self.modules, "end_boot"):
             await self.modules.end_boot()
         if self.supervisor is not None:
