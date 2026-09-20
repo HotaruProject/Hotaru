@@ -290,37 +290,102 @@ class InlineManager:
         self._chosen_handlers.append(handler)
         return handler
 
+    def _owner_id(self) -> int | None:
+        session = getattr(self.runtime.app, "session", None)
+        uid = getattr(session, "self_id", None)
+        if isinstance(uid, int) and uid > 0:
+            return uid
+        kernel = getattr(self.runtime, "kernel", None)
+        oid = getattr(kernel, "owner_id", None)
+        if isinstance(oid, int) and oid > 0:
+            return oid
+        cfg = getattr(self.runtime.config, "owner_id", None)
+        return cfg if isinstance(cfg, int) and cfg > 0 else None
+
+    def _persist(self, info: InlineBotInfo) -> None:
+        state = self.runtime.state
+        if state is None:
+            self.info = info
+            return
+        state.set_setting("inline-bot-token", info.token)
+        state.set_setting("inline-bot-username", info.username)
+        state.set_setting("inline-bot-id", info.bot_id)
+        owner = self._owner_id()
+        if owner is not None:
+            state.set_setting("owner-id", owner)
+        self.info = info
+
     async def ensure_bot(self, *, allow_create: bool = True) -> InlineBotInfo:
         state = self.runtime.state
         if state is None:
             raise InlineError("state store is not ready")
+        owner = self._owner_id()
+        if owner is not None:
+            state.set_setting("owner-id", owner)
         token = state.get_setting("inline-bot-token")
-        bot_id = state.get_setting("inline-bot-id")
-        if not token and self.runtime.config.api_id is not None:
-            token = self.runtime.config.bot_token
-            bot_id = None
-        if token:
-            info = await self.getbot(str(token))
-            if bot_id is not None and info.bot_id != int(bot_id):
-                raise InlineError("inline bot identity does not match the stored configuration")
-            state.set_setting("inline-bot-token", info.token)
-            state.set_setting("inline-bot-username", info.username)
-            state.set_setting("inline-bot-id", info.bot_id)
-            self.info = info
-            return info
+        stored_id = state.get_setting("inline-bot-id")
         info = None
-        if state.get_setting("inline-bot-token") is None and allow_create:
+        recovered = False
+        if token:
+            try:
+                info = await self.getbot(str(token))
+                if stored_id is not None and info.bot_id != int(stored_id):
+                    info = None
+                    recovered = True
+            except InlineError:
+                info = None
+                recovered = True
+                state.set_setting("inline-bot-token", None)
+        if info is None:
+            found = await self._find_existing_bot()
+            if found is not None:
+                info = found
+                recovered = True
+        if info is None and allow_create:
             self._create_gate()
             async with self._provision_lock:
                 info = await self._create_bot()
+            recovered = True
         if info is None:
             raise InlineError("no inline bot available: nothing stored, nothing found, creation disabled")
+        self._persist(info)
+        await self._tune_bot(info)
+        if recovered:
+            try:
+                async with BotFatherGuard(self.runtime.app), BotFatherConversation(self.runtime.app) as conv:
+                    await self._configure(conv, info.username)
+            except Exception:
+                if self.runtime.observatory is not None:
+                    self.runtime.observatory.emit("inline", "configure_failed", username=info.username)
         await self._start_bot_chat(info.username)
-        state.set_setting("inline-bot-token", info.token)
-        state.set_setting("inline-bot-username", info.username)
-        state.set_setting("inline-bot-id", info.bot_id)
-        self.info = info
         return info
+
+    async def _tune_bot(self, info: InlineBotInfo) -> None:
+        from goygram import GoyGram
+
+        app = GoyGram(bot_token=info.token)
+        try:
+            await app.get_me()
+            for method, payload in (
+                ("deleteWebhook", {"drop_pending_updates": True}),
+                ("setMyName", {"name": self.bot_name[:64]}),
+                ("setMyShortDescription", {"short_description": "Hotaru"}),
+                ("setMyDescription", {"description": "Hotaru userbot"}),
+            ):
+                try:
+                    fn = getattr(app, method, None)
+                    if callable(fn):
+                        await fn(**payload)
+                except Exception:
+                    continue
+        except Exception:
+            if self.runtime.observatory is not None:
+                self.runtime.observatory.emit("inline", "tune_failed", username=info.username)
+        finally:
+            try:
+                await app.close()
+            except Exception:
+                pass
 
     async def _start_bot_chat(self, username: str) -> None:
         app = self.runtime.app
@@ -385,13 +450,14 @@ class InlineManager:
         state = self.runtime.state
         if state is None:
             return
-        for key in ("inline-bot-token", "inline-bot-username", "inline-bot-id"):
-            state.set_setting(key, None)
+        state.set_setting("inline-bot-token", None)
         self.info = None
 
     async def _find_existing_bot(self) -> InlineBotInfo | None:
         state = self.runtime.state
-        wanted = state.get_setting("inline-bot-username") if state else None
+        wanted = None
+        if state is not None:
+            wanted = state.get_setting("inline-bot-username") or state.get_setting("inline-bot-username-wanted")
         candidates: list[tuple[str, str]] = []
         try:
             async with BotFatherGuard(self.runtime.app), BotFatherConversation(self.runtime.app) as conv:

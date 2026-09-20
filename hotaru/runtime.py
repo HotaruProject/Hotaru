@@ -1963,6 +1963,8 @@ class Runtime:
             self.kernel.owner_id = session.self_id
             if self.security is not None:
                 self.security.set_owner(session.self_id)
+            if self.state is not None:
+                self.state.set_setting("owner-id", session.self_id)
         if self.account_manager is not None and session.self_id is not None and self.state is not None:
             try:
                 self.account_manager.sync_vaults()

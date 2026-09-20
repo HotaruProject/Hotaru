@@ -26,8 +26,17 @@ def bot_vault_path(root: Path, user_id: int) -> Path:
     return account_home(root, user_id) / f"bot-{user_id}.vault"
 
 
+def account_db_path(root: Path, user_id: int) -> Path:
+    home = account_home(root, user_id)
+    dest = home / f"hotaru-{user_id}.sqlite3"
+    legacy = home / f"state-{user_id}.sqlite3"
+    if not dest.exists() and legacy.exists():
+        legacy.replace(dest)
+    return dest
+
+
 def account_state_path(root: Path, user_id: int) -> Path:
-    return account_home(root, user_id) / f"state-{user_id}.sqlite3"
+    return account_db_path(root, user_id)
 
 
 def parse_user_id(session_name: str) -> int | None:
