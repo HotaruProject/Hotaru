@@ -533,8 +533,7 @@ class ModuleContext:
     def _via_bot(self, buttons: Any, kind: str | None) -> bool:
         place = kind or "inline"
         if place == "inline":
-            inline = getattr(self.runtime, "inline", None) if self.runtime is not None else None
-            return inline is not None and getattr(inline, "bot_app", None) is not None
+            return True
         if not self.is_premium:
             return True
         return needs_callback(buttons)
@@ -542,7 +541,7 @@ class ModuleContext:
     async def _bot_form(self, text: Any, buttons: Any, kwargs: dict[str, Any]) -> Any:
         if self.form_sender is None:
             raise ResponseError("bot form transport is not available")
-        return await self.form_sender(self._source, text, buttons, kwargs)
+        return await self.form_sender(self._source, text, buttons or [], kwargs)
 
     async def _deliver(self, text: str | None = None, **kwargs: Any) -> Any:
         if text is not None:
