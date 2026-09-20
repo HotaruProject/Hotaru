@@ -680,6 +680,93 @@ def _rich_block(block: Any) -> str:
     return text
 
 
+def _ent_get(e: Any, name: str, default: Any = None) -> Any:
+    if isinstance(e, dict):
+        return e.get(name, default)
+    return getattr(e, name, default)
+
+
+def _ent_tags(e: Any, kind: str) -> tuple[str, str] | None:
+    kl = kind.rsplit(".", 1)[-1].lower()
+    if "bold" in kl:
+        return "<b>", "</b>"
+    if "italic" in kl:
+        return "<i>", "</i>"
+    if "underline" in kl:
+        return "<u>", "</u>"
+    if "strike" in kl:
+        return "<s>", "</s>"
+    if "pre" in kl:
+        lang = _ent_get(e, "language") or ""
+        cls = f' class="language-{_html_mod.escape(str(lang))}"' if lang else ""
+        return f"<pre{cls}>", "</pre>"
+    if kl.endswith("code"):
+        return "<code>", "</code>"
+    if "spoiler" in kl:
+        return "<tg-spoiler>", "</tg-spoiler>"
+    if "blockquote" in kl:
+        return "<blockquote>", "</blockquote>"
+    if "texturl" in kl or kl.endswith("url"):
+        url = _html_mod.escape(str(_ent_get(e, "url") or ""), quote=True)
+        return f'<a href="{url}">', "</a>"
+    if "mentionname" in kl:
+        uid = _ent_get(e, "user_id") or 0
+        return f'<a href="tg://user?id={uid}">', "</a>"
+    if "customemoji" in kl:
+        did = _ent_get(e, "document_id") or _ent_get(e, "emoji_id") or 0
+        return f'<tg-emoji emoji-id="{did}">', "</tg-emoji>"
+    return None
+
+
+def entities_to_html(text: str, entities: Any = None) -> str:
+    text = "" if text is None else str(text)
+    if not entities:
+        return _html_mod.escape(text)
+    u2p: list[int] = []
+    for i, ch in enumerate(text):
+        u2p.append(i)
+        if ord(ch) > 0xFFFF:
+            u2p.append(i)
+    nu = len(u2p)
+    u2p.append(len(text))
+
+    def py(u: int) -> int:
+        if u <= 0:
+            return 0
+        if u >= nu:
+            return len(text)
+        return u2p[u]
+
+    items: list[tuple[int, int, str, str]] = []
+    for e in entities:
+        kind = str(_ent_get(e, "_") or "")
+        off = _ent_get(e, "offset")
+        ln = _ent_get(e, "length")
+        if off is None or ln is None:
+            continue
+        tags = _ent_tags(e, kind)
+        if not tags:
+            continue
+        a, b = py(int(off)), py(int(off) + int(ln))
+        if b > a:
+            items.append((a, b, tags[0], tags[1]))
+    if not items:
+        return _html_mod.escape(text)
+    opens: dict[int, list[str]] = {}
+    closes: dict[int, list[str]] = {}
+    for a, b, o, c in sorted(items, key=lambda x: x[1] - x[0], reverse=True):
+        opens.setdefault(a, []).append(o)
+    for a, b, o, c in sorted(items, key=lambda x: x[1] - x[0]):
+        closes.setdefault(b, []).append(c)
+    out: list[str] = []
+    for i in range(len(text) + 1):
+        out.extend(closes.get(i, ()))
+        out.extend(opens.get(i, ()))
+        if i < len(text):
+            out.append(_html_mod.escape(text[i]))
+    return "".join(out)
+
+
 def rich_to_html(message: Any) -> str:
     if not isinstance(message, dict):
         return ""
@@ -748,6 +835,7 @@ TOOLKIT_FUNCS = {
     "badge": badge,
     "countdown": countdown,
     "rich_to_html": rich_to_html,
+    "entities_to_html": entities_to_html,
 }
 
 TOOLS = SimpleNamespace(**TOOLKIT_FUNCS)
