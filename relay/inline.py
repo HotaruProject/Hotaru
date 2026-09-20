@@ -621,6 +621,12 @@ class InlineManager:
             name = str(self.runtime.config.session_dir / "hotaru-inline")
             bot_session = Session(name=name)
 
+        user = bot_session.data.get("user")
+        if not isinstance(user, dict):
+            user = {}
+        user.update({"id": self.info.bot_id, "bot": True, "username": self.info.username})
+        bot_session.data.update({"user": user, "self_id": self.info.bot_id, "is_bot": True})
+
         if self.runtime.observatory is not None:
             path = getattr(bot_session, "path", None)
             self.runtime.observatory.emit(
