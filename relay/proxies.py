@@ -1280,7 +1280,7 @@ class UiHelper:
         handle = self._router.issue_module(
             self._module_id,
             action_id,
-            CallbackBinding(self._owner_id or 0, self._chat_id or 0, self._message_id),
+            CallbackBinding(self._owner_id or 0, None, 0),
             payload,
         )
         result = {"text": text, "callback_data": handle, "_action_id": action_id, "_payload": payload}
