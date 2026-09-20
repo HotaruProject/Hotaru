@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .state import StateStore
-from .accounts import account_state_path
+from .accounts import account_db_path
 
 
 DEFAULT_STATE_PATH = Path(__file__).resolve().parent.parent / "sanctuary/state.sqlite3"
@@ -29,10 +29,10 @@ def discover_state(path: str | Path = DEFAULT_STATE_PATH) -> Path:
     else:
         root = root.resolve()
     if isinstance(active, int) and active > 0:
-        candidate = account_state_path(root, active)
+        candidate = account_db_path(root, active)
         if candidate.is_file():
             return candidate
-    found = sorted(root.glob("account-*/state-*.sqlite3"))
+    found = sorted(root.glob("account-*/hotaru-*.sqlite3")) or sorted(root.glob("account-*/state-*.sqlite3"))
     if found:
         return found[0]
     return bootstrap
