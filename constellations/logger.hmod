@@ -200,7 +200,7 @@ async def command_logs(ctx: Any, invocation: Any) -> Any:
         with open(raw_path, "w", encoding="utf-8") as stream:
             stream.write("\n".join(_fmt(entry) for entry in entries))
         caption = ctx.t("kernel.logger.logs_caption", "Логи Hotaru: {count} записей (уровень {level})", count=len(entries), level=level)
-        await ctx.send_file(raw_path, caption, file_name="hotaru-logs.txt", mime_type="text/plain")
+        await ctx.respond_file(raw_path, caption, file_name="hotaru-logs.txt", mime_type="text/plain")
         _emit(ctx, "logs_delivered", count=len(entries))
     finally:
         try:
