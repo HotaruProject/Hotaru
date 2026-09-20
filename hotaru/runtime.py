@@ -41,7 +41,7 @@ from .modules import ModuleStager
 from .activation import ModuleManager
 from .observatory import Observatory, hook_stdio as observatory_hook_stdio, install as observatory_install
 from .registry import Handler
-from .response import FormHandle, ModuleContextFactory, ResponseService
+from .response import FormHandle, ModuleContextFactory, ResponseService, reply_message_id
 from .security import SecurityGate
 from .state import StateStore
 from .supervisor import ConnectionSupervisor, Health
@@ -306,7 +306,11 @@ class Runtime:
             raise RuntimeError("form target chat is missing")
         if getattr(command, "src", None) != "bot":
             return await self._insert_inline_form(command, text, buttons, options)
-        reply_to = getattr(command, "id", None) or getattr(command, "message_id", None)
+        reply_to = options.get("reply_to")
+        if not isinstance(reply_to, int):
+            reply_to = reply_message_id(command)
+        if not isinstance(reply_to, int):
+            reply_to = getattr(command, "id", None) or getattr(command, "message_id", None)
         topic_id = options.get("topic_id")
         if not isinstance(topic_id, int) and hasattr(command, "get"):
             for key in ("message_thread_id", "topic_id", "topic"):
@@ -616,6 +620,9 @@ class Runtime:
                     options["topic_id"] = value
                     break
         nonce = secrets.token_urlsafe(12)
+        reply_to = options.get("reply_to")
+        if not isinstance(reply_to, int):
+            reply_to = reply_message_id(command) or message_id
         if self._form_module_ids is None:
             self._form_module_ids = {}
         self._form_module_ids[nonce] = str(options.get("module_id") or "")
@@ -699,7 +706,7 @@ class Runtime:
         ready.clear()
         sent_result = await self.app.mt_messages_send_inline_bot_result(
             peer=peer,
-            reply_to={"_": "inputReplyToMessage", "reply_to_msg_id": message_id, **({"top_msg_id": options.get("topic_id")} if isinstance(options, dict) and isinstance(options.get("topic_id"), int) else {})},
+            reply_to={"_": "inputReplyToMessage", "reply_to_msg_id": reply_to, **({"top_msg_id": options.get("topic_id")} if isinstance(options, dict) and isinstance(options.get("topic_id"), int) else {})},
             random_id=secrets.randbits(63),
             query_id=query_id,
             id=results[0].get("id"),

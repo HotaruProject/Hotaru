@@ -39,6 +39,30 @@ log = logging.getLogger(__name__)
 OutputMode = Literal["edit", "reply", "auto"]
 
 
+def reply_message_id(message: Any) -> int | None:
+    for name in ("reply_to_message", "reply_msg", "reply"):
+        candidate = getattr(message, name, None)
+        value = getattr(candidate, "id", None)
+        if isinstance(value, int):
+            return value
+        if isinstance(candidate, dict) and isinstance(candidate.get("id"), int):
+            return int(candidate["id"])
+    for source in (message, getattr(message, "raw", None)):
+        getter = getattr(source, "get", None)
+        if not callable(getter):
+            continue
+        header = getter("reply_to")
+        if isinstance(header, dict):
+            value = header.get("reply_to_msg_id") or header.get("reply_to_id")
+            if isinstance(value, int):
+                return value
+        for name in ("reply_to_msg_id", "reply_to_message_id"):
+            value = getter(name)
+            if isinstance(value, int):
+                return value
+    return None
+
+
 class ResponseError(RuntimeError):
     pass
 
@@ -540,6 +564,10 @@ class ModuleContext:
     async def _bot_form(self, text: Any, buttons: Any, kwargs: dict[str, Any]) -> Any:
         if self.form_sender is None:
             raise ResponseError("bot form transport is not available")
+        if not isinstance(kwargs.get("reply_to"), int):
+            target = reply_message_id(self._source)
+            if target is not None:
+                kwargs["reply_to"] = target
         return await self.form_sender(self._delivery_source, text, buttons or [], kwargs)
 
     async def _deliver(self, text: str | None = None, **kwargs: Any) -> Any:
