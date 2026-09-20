@@ -2,9 +2,40 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .state import StateStore
+from .accounts import account_state_path
 
 
 DEFAULT_STATE_PATH = Path(__file__).resolve().parent.parent / "sanctuary/state.sqlite3"
+
+
+def discover_state(path: str | Path = DEFAULT_STATE_PATH) -> Path:
+    bootstrap = Path(path)
+    session_dir = Path(".")
+    active = None
+    if bootstrap.exists() and bootstrap.stat().st_size > 0:
+        state = StateStore(bootstrap)
+        try:
+            raw = state.get_setting("session-dir")
+            if raw:
+                session_dir = Path(str(raw)).expanduser()
+            active = state.get_setting("active-account")
+        except Exception:
+            pass
+        finally:
+            state.close()
+    root = session_dir.expanduser()
+    if not root.is_absolute():
+        root = (Path.cwd() / root).resolve()
+    else:
+        root = root.resolve()
+    if isinstance(active, int) and active > 0:
+        candidate = account_state_path(root, active)
+        if candidate.is_file():
+            return candidate
+    found = sorted(root.glob("account-*/state-*.sqlite3"))
+    if found:
+        return found[0]
+    return bootstrap
 
 
 @dataclass(frozen=True, slots=True)
@@ -22,6 +53,7 @@ class RuntimeConfig:
 
     @classmethod
     def from_database(cls, path: str | Path = DEFAULT_STATE_PATH) -> "RuntimeConfig":
+        path = discover_state(path)
         state = StateStore(path)
         try:
             required = ("api-id", "api-hash", "prefix", "session-name", "session-dir", "backup-keep")

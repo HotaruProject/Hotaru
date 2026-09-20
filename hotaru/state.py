@@ -127,7 +127,7 @@ class StateStore:
     def register_account(self, user_id: int, account_number: int, session_dir: str | Path, session_name: str | None = None) -> Any:
         from .accounts import AccountProfile
 
-        session_name = session_name or f"hotaru-{user_id}"
+        session_name = session_name or f"user-{user_id}"
         profile = AccountProfile(user_id, account_number, session_name, Path(session_dir))
         profile.validate()
         with self.connection:

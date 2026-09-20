@@ -11,7 +11,30 @@ from typing import Any
 from .state import StateStore
 
 
-VAULT_RE = re.compile(r"hotaru-(\d+)\.vault")
+VAULT_RE = re.compile(r"(?:user|hotaru)-(\d+)\.vault")
+
+
+def account_home(root: Path, user_id: int) -> Path:
+    return Path(root) / f"account-{user_id}"
+
+
+def user_vault_path(root: Path, user_id: int) -> Path:
+    return account_home(root, user_id) / f"user-{user_id}.vault"
+
+
+def bot_vault_path(root: Path, user_id: int) -> Path:
+    return account_home(root, user_id) / f"bot-{user_id}.vault"
+
+
+def account_state_path(root: Path, user_id: int) -> Path:
+    return account_home(root, user_id) / f"state-{user_id}.sqlite3"
+
+
+def parse_user_id(session_name: str) -> int | None:
+    match = re.fullmatch(r"(?:user|hotaru)-(\d+)", Path(session_name).name)
+    if match is None:
+        return None
+    return int(match.group(1))
 
 
 def vault_name(session_name: str) -> str:
@@ -32,7 +55,8 @@ class AccountProfile:
 
     @property
     def session_base(self) -> str:
-        return str(self.session_dir / self.session_name)
+        uid = parse_user_id(self.session_name) or self.user_id
+        return str(user_vault_path(self.session_dir, uid).with_suffix(""))
 
     def validate(self) -> None:
         if self.user_id <= 0 or self.account_number <= 0:
@@ -50,7 +74,7 @@ class AccountError(RuntimeError):
 class AccountManager:
     def __init__(self, state: StateStore, session_dir: str | Path) -> None:
         self.state = state
-        self.session_dir = Path(session_dir)
+        self.session_dir = Path(session_dir).expanduser().resolve()
 
     def _rows(self) -> list[tuple[Any, ...]]:
         return self.state.connection.execute(
@@ -95,7 +119,13 @@ class AccountManager:
         if account_number <= 0:
             raise AccountError("account number must be positive")
         if session_name is None:
-            session_name = f"hotaru-{user_id}"
+            session_name = f"user-{user_id}"
+        home = account_home(self.session_dir, user_id)
+        home.mkdir(parents=True, exist_ok=True)
+        try:
+            home.chmod(0o700)
+        except OSError:
+            pass
         profile = AccountProfile(
             user_id=user_id,
             account_number=account_number,
@@ -139,13 +169,31 @@ class AccountManager:
         discovered: list[AccountProfile] = []
         if not self.session_dir.is_dir():
             return discovered
-        known = {profile.session_name for profile in self.items()}
         for path in sorted(self.session_dir.glob("hotaru-*.vault")):
+            if path.name == "hotaru-inline.vault":
+                continue
+            match = VAULT_RE.fullmatch(path.name)
+            if match is None:
+                continue
+            user_id = int(match.group(1))
+            dest = user_vault_path(self.session_dir, user_id)
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                dest.parent.chmod(0o700)
+            except OSError:
+                pass
+            if dest.resolve() != path.resolve():
+                if not dest.exists():
+                    path.replace(dest)
+                elif dest.exists() and dest != path:
+                    path.unlink(missing_ok=True)
+        known = {profile.session_name for profile in self.items()}
+        for path in sorted(self.session_dir.glob("account-*/user-*.vault")):
             match = VAULT_RE.fullmatch(path.name)
             if match is None:
                 continue
             session_name = path.name[: -len(".vault")]
-            if session_name in known or session_name == "hotaru-inline":
+            if session_name in known:
                 continue
             user_id = int(match.group(1))
             profile = self.register(user_id, self.next_free_number(), session_name)
@@ -193,7 +241,8 @@ class AccountManager:
         profile = self.profile(account_number)
         if profile is None:
             return None
-        return profile.session_dir / profile.vault_name
+        uid = parse_user_id(profile.session_name) or profile.user_id
+        return user_vault_path(profile.session_dir, uid)
 
     def vault_ready(self, account_number: int) -> bool:
         path = self.vault_path(account_number)

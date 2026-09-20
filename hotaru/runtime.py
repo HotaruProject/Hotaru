@@ -4,6 +4,7 @@ import json
 import logging
 import os
 import secrets
+import shutil
 import sys
 import tempfile
 import time
@@ -152,9 +153,21 @@ class Runtime:
             return self.app
         self.config.session_dir.mkdir(parents=True, exist_ok=True)
         session_dir = self.config.session_dir.expanduser().resolve()
-        vault = session_dir / f"{self.config.session_name}.vault"
-        session_name = str(session_dir / self.config.session_name)
-        install_firewall(session_dir, vault, session_dir / f"{self.config.session_name}.session")
+        from .accounts import parse_user_id, user_vault_path, account_home
+        uid = parse_user_id(self.config.session_name)
+        if uid is not None:
+            home = account_home(session_dir, uid)
+            home.mkdir(parents=True, exist_ok=True)
+            try:
+                home.chmod(0o700)
+            except OSError:
+                pass
+            vault = user_vault_path(session_dir, uid)
+            session_name = str(vault.with_suffix(""))
+        else:
+            vault = session_dir / f"{self.config.session_name}.vault"
+            session_name = str(session_dir / self.config.session_name)
+        install_firewall(session_dir, vault, vault.with_suffix(".session"))
         previous_disable = logging.root.manager.disable
         logging.disable(logging.INFO)
         try:
@@ -1857,33 +1870,60 @@ class Runtime:
         return tuple(restored)
 
     def namesession(self) -> None:
+        from .accounts import account_home, account_state_path, user_vault_path
         session = self.app.session
         userid = session.self_id
         if userid is None or userid <= 0:
             raise RuntimeError("the authorized session has no valid Telegram user ID")
         if self.state is None or session.path is None:
             raise RuntimeError("session storage is not ready")
-        name = f"hotaru-{userid}"
+        root = self.config.session_dir.expanduser().resolve()
+        home = account_home(root, userid)
+        home.mkdir(parents=True, exist_ok=True)
+        try:
+            home.chmod(0o700)
+        except OSError:
+            pass
+        name = f"user-{userid}"
         source = session.path
-        target = self.config.session_dir / f"{name}.vault"
-        linked = source != target
+        target = user_vault_path(root, userid)
+        linked = source.resolve() != target.resolve()
         if linked:
-            os.link(source, target, follow_symlinks=False)
+            if target.exists():
+                source.unlink()
+                linked = False
+            else:
+                os.replace(source, target)
+                linked = False
         try:
             self.state.set_setting("session-name", name)
+            self.state.set_setting("active-account", userid)
         except Exception:
-            if linked:
-                target.unlink()
             raise
-        session.name = str(self.config.session_dir / name)
+        session.name = str(target.with_suffix(""))
         session.path = target
         self.app.core.session_name = session.name
-        self.config = replace(self.config, session_name=name)
+        dest_db = account_state_path(root, userid)
+        if self.state.path.resolve() != dest_db.resolve():
+            self.state.connection.commit()
+            src_db = self.state.path
+            self.state.close()
+            if not dest_db.exists():
+                shutil.copy2(src_db, dest_db)
+            dest_db.chmod(0o600)
+            self.state = StateStore(dest_db)
+            self.state.set_setting("session-name", name)
+            self.state.set_setting("active-account", userid)
+            self.config = replace(self.config, session_name=name, state_path=dest_db)
+            from .accounts import AccountManager
+            self.account_manager = AccountManager(self.state, self.config.session_dir)
+            if self.context_factory is not None:
+                self.context_factory.state = self.state
+        else:
+            self.config = replace(self.config, session_name=name)
         if self.app.mt.cursor_path is not None:
             digest = hashlib.sha256(session.name.encode()).hexdigest()[:24]
             self.app.mt.cursor_path = self.app.mt.cursor_path.with_name(f"{digest}.json")
-        if linked:
-            source.unlink()
 
     async def authorize(self) -> None:
         if self.app is None or self.app.mt is None:
@@ -1912,9 +1952,13 @@ class Runtime:
             raise RuntimeError("GoyGram user authorization did not complete")
         if session.is_bot:
             raise RuntimeError("the primary MTProto session must belong to a user, not a bot")
-        if (fresh and result.get("source") in {"interactive", "qr", "hotaru"}) or self.config.session_name.startswith("hotaru-pending-"):
-            with trusted_scope():
-                self.namesession()
+        if (fresh and result.get("source") in {"interactive", "qr", "hotaru"}) or self.config.session_name.startswith("hotaru-pending-") or (
+            session.self_id is not None and session.path is not None
+        ):
+            from .accounts import user_vault_path
+            if session.self_id and (self.config.session_name.startswith("hotaru-pending-") or session.path.resolve() != user_vault_path(self.config.session_dir, session.self_id).resolve()):
+                with trusted_scope():
+                    self.namesession()
         if self.kernel is not None and self.kernel.owner_id is None and session.self_id is not None:
             self.kernel.owner_id = session.self_id
             if self.security is not None:

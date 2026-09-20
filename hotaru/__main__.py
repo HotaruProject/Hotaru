@@ -58,11 +58,15 @@ def ensure_kernel_dependencies() -> None:
 def _apply_account_session(config: Any, session_base: Any) -> Any:
     from dataclasses import replace
     from pathlib import Path
-    session_dir = Path(session_base).resolve().parent
-    session_name = Path(session_base).name
-    if not session_name or Path(session_name).name != session_name:
+    from .accounts import account_state_path, parse_user_id
+    base = Path(session_base).resolve()
+    session_name = base.name
+    uid = parse_user_id(session_name)
+    if uid is None:
         raise SystemExit("account session name is invalid")
-    return replace(config, session_name=session_name, session_dir=session_dir)
+    root = base.parent.parent
+    state = account_state_path(root, uid)
+    return replace(config, session_name=session_name, session_dir=root, state_path=state)
 
 
 def _ensure_types() -> None:

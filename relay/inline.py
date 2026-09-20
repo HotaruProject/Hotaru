@@ -513,13 +513,27 @@ class InlineManager:
             raise InlineError("inline polling requires a token separate from the primary bot")
         self._stop.clear()
         self.ready.clear()
-        name = str(self.runtime.config.session_dir / "hotaru-inline")
+        from hotaru.accounts import bot_vault_path
+        uid = None
+        session = getattr(self.runtime.app, "session", None)
+        if session is not None:
+            uid = getattr(session, "self_id", None)
+        if not isinstance(uid, int) or uid <= 0:
+            uid = getattr(getattr(self.runtime, "kernel", None), "owner_id", None)
+        if isinstance(uid, int) and uid > 0:
+            vault = bot_vault_path(self.runtime.config.session_dir, uid)
+            vault.parent.mkdir(parents=True, exist_ok=True)
+            name = str(vault.with_suffix(""))
+            bot_session = Session(name=name, path=vault)
+        else:
+            name = str(self.runtime.config.session_dir / "hotaru-inline")
+            bot_session = Session(name=name)
         self.bot_app = GoyGram(
             bot_token=self.info.token,
             api_id=self.runtime.config.api_id,
             api_hash=self.runtime.config.api_hash,
             session_name=name,
-            session=Session(name=name),
+            session=bot_session,
             intake="mtproto",
             default_transport="mtproto",
         )
