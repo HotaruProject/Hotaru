@@ -47,24 +47,27 @@ class Lexicon:
     def get(self, locale: str, key: str, default: Any = None, **params: Any) -> str:
         if not isinstance(key, str) or not key:
             raise TranslationError("translation key must be a non-empty string")
-        languages = [self._validate_language(locale)]
-        if self.default_language not in languages:
-            languages.append(self.default_language)
+        languages: list[str] = []
+        if isinstance(locale, str) and locale.casefold() in SUPPORTED_LANGUAGES:
+            languages.append(locale.casefold())
+        for extra in (self.default_language, "ru", "en"):
+            if extra not in languages:
+                languages.append(extra)
         value = None
         for candidate in languages:
             try:
-                value = self._lookup(self.load(candidate), key)
+                found = self._lookup(self.load(candidate), key)
             except TranslationError:
                 continue
-            if isinstance(value, str):
+            if isinstance(found, str):
+                value = found
                 break
-            value = None
         if value is None:
             value = default if isinstance(default, str) else key
         try:
             return value.format(**params)
-        except (KeyError, IndexError, ValueError) as exc:
-            raise TranslationError(f"translation parameters are invalid: {key}") from exc
+        except (KeyError, IndexError, ValueError):
+            return default if isinstance(default, str) else value
 
     def bundle(self, language: str) -> dict[str, Any]:
         base = self.load(self.default_language)

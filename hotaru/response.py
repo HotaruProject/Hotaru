@@ -28,7 +28,8 @@ from relay.proxies import (
     UiHelper,
     ForumHelper,
 )
-from relay.toolkit import TOOLS
+from relay.toolkit import TOOLS, buttons_html, needs_form, needs_callback
+from .tl import Button, TL, as_tl
 
 log = logging.getLogger(__name__)
 
@@ -423,7 +424,20 @@ class ModuleContext:
         return self.runtime.translator()
 
     def t(self, key: str, default: str | None = None, **params: Any) -> str:
-        return self.i18n.t(key, default, **params)
+        try:
+            value = self.i18n.t(key, default, **params)
+        except Exception:
+            value = default if isinstance(default, str) else key
+            try:
+                return value.format(**params)
+            except (KeyError, IndexError, ValueError):
+                return value
+        if value == key and default is not None:
+            try:
+                return default.format(**params)
+            except (KeyError, IndexError, ValueError):
+                return default
+        return value
 
     def _is_kernel_module(self) -> bool:
         runtime = self.runtime
@@ -515,31 +529,50 @@ class ModuleContext:
         cached = getattr(runtime, "_premium_cache", None) if runtime is not None else None
         return bool(cached)
 
-    async def answer(self, text: str | None = None, **kwargs: Any) -> Any:
+    def _via_bot(self, buttons: Any, kind: str | None) -> bool:
+        place = kind or "inline"
+        if place == "inline":
+            return True
+        if not self.is_premium:
+            return True
+        return needs_callback(buttons)
+
+    async def _bot_form(self, text: Any, buttons: Any, kwargs: dict[str, Any]) -> Any:
+        if self.form_sender is None:
+            raise ResponseError("bot form transport is not available")
+        return await self.form_sender(self._source, text, buttons, kwargs)
+
+    async def _deliver(self, text: str | None = None, **kwargs: Any) -> Any:
         if text is not None:
             kwargs["text"] = text
         media = kwargs.pop("media", None)
         if media is not None:
             return await self.send_file(media, kwargs.pop("text", None), **kwargs)
         use_rich = kwargs.pop("rich", False)
+        fb = kwargs.pop("rich_fallback", "plain")
+        if fb not in {"plain", "bot"}:
+            raise ResponseError("rich_fallback must be plain or bot")
+        if kwargs.get("buttons"):
+            kwargs["buttons"] = self._normalize_buttons(kwargs["buttons"])
+        kind = kwargs.pop("buttons_as", None)
+        if kind is not None and kind not in {"inline", "page", "text"}:
+            raise ResponseError("buttons_as must be inline, page, or text")
         if use_rich:
-            allowed = False
-            if self.runtime is not None:
-                try:
-                    allowed = await self.runtime.is_premium()
-                except Exception:
-                    allowed = False
+            allowed = self.is_premium
             if not allowed:
+                if fb == "bot":
+                    return await self._bot_form(kwargs.get("text", ""), kwargs.get("buttons"), kwargs)
                 value = kwargs.pop("text", "")
                 if value:
                     kwargs["text"] = rich_to_plain(value)
                 use_rich = False
         if kwargs.get("text") is not None:
             kwargs.setdefault("parse_mode", "HTML")
-        if kwargs.get("buttons"):
-            kwargs["buttons"] = self._normalize_buttons(kwargs["buttons"])
-        if kwargs.get("buttons") and self.form_sender is not None:
-            return await self.form_sender(self._source, kwargs.get("text", ""), kwargs["buttons"], kwargs)
+        if kwargs.get("buttons") and self._via_bot(kwargs["buttons"], kind or ("page" if use_rich else "inline")):
+            return await self._bot_form(kwargs.get("text", ""), kwargs["buttons"] if (kind or "inline") == "inline" or needs_form(kwargs["buttons"]) else None, kwargs)
+        if kwargs.get("buttons") and kind in {"page", "text"}:
+            kwargs["text"] = str(kwargs.get("text") or "") + buttons_html(kwargs.pop("buttons"), kind=kind)
+            use_rich = True
         if kwargs.get("text") is not None and use_rich and self.cap_host is not None:
             value = kwargs.pop("text")
             limit = int(kwargs.pop("split_limit", 4096))
@@ -596,18 +629,35 @@ class ModuleContext:
             form = kwargs.pop("form")
             result = await self.form(form.get("text", ""), form.get("buttons"), output=mode, **kwargs)
         elif buttons is not None:
-            result = await self.form(kwargs.pop("text", ""), buttons, output=mode, **kwargs)
+            buttons = self._normalize_buttons(buttons)
+            kind = kwargs.pop("buttons_as", None)
+            if kind is not None and kind not in {"inline", "page", "text"}:
+                raise ResponseError("buttons_as must be inline, page, or text")
+            place = kind or ("page" if kwargs.get("rich") else "inline")
+            kwargs["output"] = mode
+            if self._via_bot(buttons, place):
+                text = kwargs.pop("text", "")
+                if place in {"page", "text"}:
+                    text = str(text or "") + buttons_html(buttons, kind=place)
+                    form_buttons = buttons if needs_form(buttons) else None
+                else:
+                    form_buttons = buttons
+                result = await self.form(text, form_buttons, output=mode, **kwargs)
+            else:
+                kwargs["text"] = str(kwargs.get("text") or "") + buttons_html(buttons, kind=place)
+                kwargs["rich"] = True
+                result = await self._deliver(**kwargs)
         else:
             kwargs["output"] = mode
             if kwargs.get("rich_message") is not None:
-                result = await self.answer(rich_message=kwargs.pop("rich_message"), **kwargs)
+                result = await self._deliver(rich_message=kwargs.pop("rich_message"), **kwargs)
             else:
-                result = await self.answer(**kwargs)
+                result = await self._deliver(**kwargs)
         if delete_source:
             await self._delete_source()
         return result
 
-    async def smart_answer(self, content: Any = None, **kwargs: Any) -> Any:
+    async def smart_respond(self, content: Any = None, **kwargs: Any) -> Any:
         return await self.respond(content, **kwargs)
 
     @property
@@ -645,7 +695,7 @@ class ModuleContext:
             raise ResponseError("upload is unavailable")
         file_name = kwargs.pop("file_name", None)
         mime = kwargs.pop("mime_type", None) or kwargs.pop("mime", None) or "application/octet-stream"
-        if isinstance(file, dict) and str(file.get("_", "")).startswith("inputMedia"):
+        if isinstance(file, dict) and str(as_tl(file).get("_", "")).startswith("inputMedia"):
             media = file
         else:
             up = await put(app, file, file_name=file_name)
@@ -710,7 +760,7 @@ class ModuleContext:
         kwargs["buttons"] = buttons
         kwargs["text"] = text
         kwargs.setdefault("module_id", self.module_id)
-        result = await self.answer(**kwargs)
+        result = await self._deliver(**kwargs)
         handle = FormHandle(self.runtime, self._source, result)
         if self.runtime is not None:
             self.runtime.register_form(handle, self._source, text, buttons, kwargs)
@@ -759,21 +809,21 @@ class ModuleContext:
 
     async def reply_html(self, text: str, **kwargs: Any) -> Response:
         kwargs.setdefault("output", "reply")
-        return await self.answer(text=text, **kwargs)
+        return await self._deliver(text=text, **kwargs)
 
     async def edit_html(self, text: str, **kwargs: Any) -> Response:
         kwargs.setdefault("output", "edit")
-        return await self.answer(text=text, **kwargs)
+        return await self._deliver(text=text, **kwargs)
 
-    async def answer_file(self, media: Any, **kwargs: Any) -> Response:
+    async def respond_file(self, media: Any, **kwargs: Any) -> Response:
         kwargs.setdefault("output", "reply")
-        return await self.answer(media=media, **kwargs)
+        return await self._deliver(media=media, **kwargs)
 
-    async def answer_media(self, media: Any, **kwargs: Any) -> Response:
+    async def respond_media(self, media: Any, **kwargs: Any) -> Response:
         kwargs.setdefault("output", "reply")
-        return await self.answer(media=media, **kwargs)
+        return await self._deliver(media=media, **kwargs)
 
-    async def answer_rich(self, rich_message: Any, **kwargs: Any) -> Response:
+    async def respond_rich(self, rich_message: Any, **kwargs: Any) -> Response:
         if isinstance(rich_message, str):
             return await self.send_rich(rich_message, **kwargs)
         if not isinstance(rich_message, dict):
@@ -785,18 +835,31 @@ class ModuleContext:
 
     async def send_rich(self, html: str, **kwargs: Any) -> Response:
         buttons = kwargs.pop("buttons", None)
-        if buttons is not None and self.form_sender is not None:
-            result = await self.form_sender(self._source, html, buttons, kwargs)
-            return result if isinstance(result, Response) else Response(True, "reply", getattr(self._source, "src", None), result)
-        allowed = False
-        if self.runtime is not None:
-            try:
-                allowed = await self.runtime.is_premium()
-            except Exception:
-                allowed = False
-        if not allowed:
+        kind = kwargs.pop("buttons_as", "page")
+        fb = kwargs.pop("rich_fallback", "plain")
+        if kind not in {"inline", "page", "text"}:
+            raise ResponseError("buttons_as must be inline, page, or text")
+        if fb not in {"plain", "bot"}:
+            raise ResponseError("rich_fallback must be plain or bot")
+        if buttons is not None:
+            buttons = self._normalize_buttons(buttons)
+            if self._via_bot(buttons, kind):
+                if kind in {"page", "text"}:
+                    html = str(html) + buttons_html(buttons, kind=kind)
+                    buttons = buttons if needs_form(buttons) else None
+                result = await self._bot_form(html, buttons, kwargs)
+                return result if isinstance(result, Response) else Response(True, "reply", getattr(self._source, "src", None), result)
+            if kind == "inline":
+                from goygram.types.kbd import kbd_to_tl
+                kwargs["reply_markup"] = kbd_to_tl({"inline_keyboard": buttons})
+            else:
+                html = str(html) + buttons_html(buttons, kind=kind)
+        if not self.is_premium:
+            if fb == "bot":
+                result = await self._bot_form(html, None, kwargs)
+                return result if isinstance(result, Response) else Response(True, "reply", getattr(self._source, "src", None), result)
             kwargs.pop("parse_mode", None)
-            return await self.answer(text=rich_to_plain(html), **kwargs)
+            return await self._deliver(text=rich_to_plain(html), **kwargs)
         peer = getattr(self._source, "chat_id", None)
         if peer is None:
             raise ResponseError("rich message target is missing")
@@ -849,10 +912,10 @@ class ModuleContext:
 
     async def send(self, text: str, **kwargs: Any) -> Response:
         kwargs.setdefault("output", "reply")
-        return await self.answer(text=text, **kwargs)
+        return await self._deliver(text=text, **kwargs)
 
     async def edit(self, text: str, **kwargs: Any) -> Response:
-        return await self.answer(text=text, output="edit", **kwargs)
+        return await self._deliver(text=text, output="edit", **kwargs)
 
     @property
     def reply_message(self) -> Any | None:
