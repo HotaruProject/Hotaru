@@ -1,6 +1,6 @@
 HOTARU = {
     "id": "executor",
-    "version": "3.3.7",
+    "version": "3.3.8",
     "commands": ["sh", "py", "kill"],
     "capabilities": ["mt", "files", "net", "state"],
 }
@@ -249,40 +249,44 @@ class OutputUpdater:
     def _pages_from(self, sections: list, returncode: int | None) -> list[str]:
         elapsed = (time.perf_counter() - self.start_time) * 1000
         head = f"<b>Executor</b> | <code>{elapsed:.1f}ms</code>"
-        lead: list[str] = []
-        body: list[str] = []
-        tail: list[str] = []
-        for entry in sections:
+        limit = 4096
+        room = max(64, limit - len(head) - 2)
+        blocks: list[str] = []
+        entries = list(sections)
+        if returncode is not None:
+            entries.append(("result", f"Exit code: {returncode}", False))
+        for entry in entries:
             title, content, is_code = entry[0], entry[1], entry[2]
             lang = entry[3] if len(entry) > 3 else None
             if content is None or content == "":
                 continue
-            block = self._fmt_entry(title, content, is_code, lang)
-            if title in ("code", "command"):
-                lead.append(block)
-            elif title in ("return", "traceback", "result"):
-                tail.append(block)
-            else:
-                body.append(block)
-        if returncode is not None:
-            tail.append(self._fmt_entry("result", f"Exit code: {returncode}", False))
-        prefix = "\n\n".join([head, *lead])
-        suffix = "\n\n".join(tail)
-        mid = "\n\n".join(body)
-        limit = 4096
-        extra = (2 if prefix and mid else 0) + (2 if suffix and (prefix or mid) else 0)
-        if len(prefix) + len(mid) + len(suffix) + extra <= limit:
-            parts = [p for p in (prefix, mid, suffix) if p]
-            return ["\n\n".join(parts)]
-        budget = limit - len(prefix) - len(suffix) - extra
-        if budget < 64:
-            full = "\n\n".join(p for p in (prefix, mid, suffix) if p)
-            return [full[i:i + limit] for i in range(0, len(full), limit)] or [full]
-        chunks = [mid[i:i + budget] for i in range(0, max(len(mid), 1), budget)] or [""]
-        pages = []
-        for chunk in chunks:
-            parts = [p for p in (prefix, chunk, suffix) if p]
-            pages.append("\n\n".join(parts))
+            text = str(content)
+            html = self._fmt_entry(title, text, is_code, lang)
+            if len(html) <= room:
+                blocks.append(html)
+                continue
+            i = 0
+            n = len(text)
+            while i < n:
+                take = min(n - i, room)
+                h = self._fmt_entry(title, text[i:i + take], is_code, lang)
+                while len(h) > room and take > 1:
+                    take = max(1, take * room // len(h))
+                    h = self._fmt_entry(title, text[i:i + take], is_code, lang)
+                blocks.append(h)
+                i += take
+        pages: list[str] = []
+        cur = [head]
+        size = len(head)
+        for block in blocks:
+            add = 2 + len(block)
+            if cur != [head] and size + add > limit:
+                pages.append("\n\n".join(cur))
+                cur = [head]
+                size = len(head)
+            cur.append(block)
+            size += add
+        pages.append("\n\n".join(cur))
         return pages
 
     def _nav(self, idx: int) -> list:
