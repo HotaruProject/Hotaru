@@ -1,6 +1,6 @@
 HOTARU = {
     "id": "executor",
-    "version": "3.3.1",
+    "version": "3.3.2",
     "commands": ["sh", "py", "kill"],
     "capabilities": ["mt", "files", "net", "state"],
 }
@@ -284,11 +284,13 @@ class OutputUpdater:
         if ui is None:
             return []
         n = max(len(self._pages), 1)
-        return [[
-            ui.button("<", self._on_page, (idx - 1) % n),
-            ui.button(">", self._on_page, (idx + 1) % n),
-            ui.button("x", self._on_del),
-        ]]
+        return [
+            [
+                ui.button("<", self._on_page, (idx - 1) % n),
+                ui.button(">", self._on_page, (idx + 1) % n),
+            ],
+            [ui.button("x", self._on_del)],
+        ]
 
     def _kbd(self, buttons: list | None) -> dict | None:
         if not buttons:
