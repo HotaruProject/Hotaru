@@ -9,6 +9,7 @@ import time
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable
 
+from goygram import GoyGram, Session
 from relay.firewall import trusted_scope
 
 BOTFATHER = "@BotFather"
@@ -493,7 +494,7 @@ class InlineManager:
         if self._task is not None and not self._task.done():
             return
         if self.info is None:
-            await self.ensure_bot()
+            await self.ensure_bot(allow_create=False)
         assert self.info is not None
         from goygram import GoyGram
 
@@ -502,11 +503,13 @@ class InlineManager:
             raise InlineError("inline polling requires a token separate from the primary bot")
         self._stop.clear()
         self.ready.clear()
+        name = str(self.runtime.config.session_dir / "hotaru-inline")
         self.bot_app = GoyGram(
             bot_token=self.info.token,
             api_id=self.runtime.config.api_id,
             api_hash=self.runtime.config.api_hash,
-            session_name=str(self.runtime.config.session_dir / "hotaru-inline"),
+            session_name=name,
+            session=Session(name=name),
             intake="mtproto",
             default_transport="mtproto",
         )

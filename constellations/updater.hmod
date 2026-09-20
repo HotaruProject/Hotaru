@@ -148,7 +148,7 @@ def _pending_from_callback(ctx: Any, callback: Any) -> Any:
         inline_id = _serialize_inline(msg_id)
         if inline_id is None:
             return
-        surface = {"own": True, "inline_id": inline_id}
+        surface = {"own": False, "inline_id": inline_id}
         if isinstance(chat_id, int):
             surface["chat_id"] = chat_id
         _add_surface(ctx, surface)
@@ -198,6 +198,9 @@ async def _edit_own(ctx: Any, text: Any, surface: Any) -> Any:
         return True
     except Exception as exc:
         _emit(ctx, "edit_own_error", error=type(exc).__name__, detail=str(exc)[:120])
+        err = str(exc)
+        if "INLINE_BOT_REQUIRED" in err or "MESSAGE_AUTHOR_REQUIRED" in err:
+            return False
     try:
         await ctx.tg.edit_rich(message_id, text, peer=surface.get("chat_id"))
         return True
@@ -222,16 +225,16 @@ def _surfaces(pending: Any) -> Any:
 async def _edit_surface(ctx: Any, text: Any, surface: Any) -> Any:
     if not isinstance(surface, dict):
         return None
-    if isinstance(surface.get("inline_id"), dict) and await _edit_inline(ctx, text, surface):
-        return "inline"
+    if isinstance(surface.get("inline_id"), dict):
+        if await _edit_inline(ctx, text, surface):
+            return "inline"
+        return None
     chat_id = surface.get("chat_id")
     message_id = surface.get("message_id")
-    if not bool(surface.get("own")) and isinstance(chat_id, int) and isinstance(message_id, int):
-        if await _bot_edit(ctx, chat_id, message_id, text):
-            return "bot"
+    if bool(surface.get("own")):
+        if await _edit_own(ctx, text, surface):
+            return "own"
         return None
-    if await _edit_own(ctx, text, surface):
-        return "own"
     if isinstance(chat_id, int) and isinstance(message_id, int) and await _bot_edit(ctx, chat_id, message_id, text):
         return "bot"
     return None
@@ -264,6 +267,8 @@ async def _bot_edit(ctx: Any, chat_id: Any, message_id: Any, text: Any) -> Any:
         return True
     except Exception as exc:
         _emit(ctx, "bot_edit_error", variant="rich", error=type(exc).__name__, detail=str(exc)[:140])
+        if "access_hash" in str(exc) or "INLINE_BOT_REQUIRED" in str(exc):
+            return False
     try:
         await ctx.bot.call("editMessageText", chat_id=int(chat_id), message_id=int(message_id), text=text, parse_mode="HTML")
         return True
@@ -308,7 +313,7 @@ async def _finalize_restart(ctx: Any, pending: Any) -> Any:
     html = f"<b>{text}</b>"
     surfaces = _surfaces(pending)
     done = {}
-    for attempt in range(30):
+    for attempt in range(5):
         try:
             for index, surface in enumerate(surfaces):
                 if index in done:
@@ -321,7 +326,18 @@ async def _finalize_restart(ctx: Any, pending: Any) -> Any:
                 return
         except Exception as exc:
             _emit(ctx, "afterglow_error", attempt=attempt, error=type(exc).__name__)
-        await asyncio.sleep(2)
+        await asyncio.sleep(1)
+    for surface in surfaces:
+        chat_id = surface.get("chat_id") if isinstance(surface, dict) else None
+        if not isinstance(chat_id, int):
+            continue
+        try:
+            await ctx.tg.call(
+                "messages.sendMessage",
+                {"peer": chat_id, "message": text, "random_id": int.from_bytes(os.urandom(8), "big") >> 1},
+            )
+        except Exception as exc:
+            _emit(ctx, "afterglow_send_error", error=type(exc).__name__, detail=str(exc)[:120])
     _emit(ctx, "afterglow_gave_up", done=len(done), total=len(surfaces))
 
 def _emit(ctx: Any, event: Any, **fields: Any) -> Any:
@@ -475,12 +491,12 @@ async def command_upd(ctx: Any, invocation: Any) -> Any:
             message_id = body.get("id") if isinstance(body.get("id"), int) else body.get("message_id")
             chat_id = getattr(ctx.message, "chat_id", None)
             if isinstance(chat_id, int) and isinstance(message_id, int):
-                surface = {"chat_id": chat_id, "message_id": message_id, "own": True}
+                surface = {"chat_id": chat_id, "message_id": message_id, "own": False}
     if surface is None:
         chat_id = getattr(ctx.message, "chat_id", None)
         message_id = getattr(ctx.message, "id", None)
         if isinstance(chat_id, int) and isinstance(message_id, int):
-            surface = {"chat_id": chat_id, "message_id": message_id, "own": True}
+            surface = {"chat_id": chat_id, "message_id": message_id, "own": False}
     if surface is not None:
         peer_hex = None
         try:
