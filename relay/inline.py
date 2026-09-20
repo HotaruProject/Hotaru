@@ -363,7 +363,7 @@ class InlineManager:
     async def _tune_bot(self, info: InlineBotInfo) -> None:
         from goygram import GoyGram
 
-        app = GoyGram(bot_token=info.token)
+        app = GoyGram(bot_token=info.token, default_transport="api")
         try:
             await app.get_me()
             for method, payload in (
@@ -423,7 +423,7 @@ class InlineManager:
     async def getbot(self, token: str) -> InlineBotInfo:
         from goygram import GoyGram
 
-        app = GoyGram(bot_token=token)
+        app = GoyGram(bot_token=token, default_transport="api")
         try:
             me = await app.get_me()
             if not isinstance(me, dict):
@@ -607,7 +607,41 @@ class InlineManager:
         self.bot_app.on_cb(self._dispatch_callback)
         self.bot_app.on_msg(self._dispatch_bot_pm)
         self.bot_app.on_update(self._dispatch_chosen)
+        await self._auth_bot()
         self._task = asyncio.create_task(self._run(), name="hotaru:inline-bot")
+
+    async def _auth_bot(self) -> None:
+        from goygram.security import bootstrap_session
+
+        app = self.bot_app
+        info = self.info
+        if app is None or info is None:
+            raise InlineError("inline bot client is missing")
+        last: Exception | None = None
+        for attempt in range(4):
+            try:
+                result = await bootstrap_session(
+                    app.core,
+                    api_id=self.runtime.config.api_id,
+                    api_hash=self.runtime.config.api_hash,
+                    session_name=app.core.session_name,
+                    bot_token=info.token,
+                    session=app.session,
+                )
+            except Exception as exc:
+                last = exc
+                await asyncio.sleep(1.5 * (attempt + 1))
+                continue
+            key = getattr(app.session, "auth_key", None)
+            mt_key = getattr(getattr(app, "mt", None), "auth_key", None)
+            if key is None and isinstance(mt_key, (bytes, bytearray)) and mt_key:
+                app.session.data["auth_key"] = bytes(mt_key).hex()
+                key = app.session.auth_key
+            if result and key is not None:
+                return
+            last = InlineError("inline bot authorization did not complete")
+            await asyncio.sleep(1.5 * (attempt + 1))
+        raise InlineError(f"inline bot authorization failed: {last}")
 
     async def _warm_owner_peer(self) -> None:
         app = self.bot_app
