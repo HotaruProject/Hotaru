@@ -17,22 +17,6 @@ from goygram.types.kbd import kbd_to_tl
 from relay.rpc import delete_chat_msg
 
 
-def _inline_id(mid: Any) -> Any:
-    if isinstance(mid, dict) and isinstance(mid.get("_"), str) and "InlineMessageID" in str(mid.get("_")):
-        return mid
-    if isinstance(mid, dict):
-        dc = mid.get("dc_id", mid.get("dcId"))
-        i = mid.get("id")
-        ah = mid.get("access_hash", mid.get("accessHash"))
-        own = mid.get("owner_id", mid.get("ownerId"))
-        if dc is None or i is None or ah is None:
-            return None
-        if own is not None:
-            return {"_": "inputBotInlineMessageID64", "dc_id": int(dc), "id": int(i), "access_hash": int(ah), "owner_id": int(own)}
-        return {"_": "inputBotInlineMessageID", "dc_id": int(dc), "id": int(i), "access_hash": int(ah)}
-    return None
-
-
 class CallbackDenied(PermissionError):
     pass
 
@@ -63,15 +47,6 @@ class CallbackContext:
 
     async def edit(self, text: str, **kwargs: Any) -> Any:
         inline_mid = getattr(self, "inline_message_id", None)
-        if inline_mid is None:
-            runtime = getattr(self._callback, "_hotaru_runtime", None)
-            store = getattr(runtime, "_form_inline_latest", None) or {}
-            actor = getattr(self, "from_id", None)
-            try:
-                inline_mid = store.get(int(actor))
-            except (TypeError, ValueError):
-                inline_mid = None
-        id_field = _inline_id(inline_mid)
         app = getattr(self, "app", None)
         if getattr(self, "src", None) == "mt" and app is not None:
             data = dict(kwargs)
@@ -84,14 +59,17 @@ class CallbackContext:
             plain, ents = html_to_entities(text)
             if ents:
                 data["entities"] = ents
-            if id_field is not None:
-                return await app.mt_messages_edit_inline_bot_message(id=id_field, message=plain, **data)
+            if inline_mid is not None:
+                id_field = inline_mid if isinstance(inline_mid, dict) else {"_": "inputBotInlineMessageID", "raw": inline_mid} if isinstance(inline_mid, (str, bytes)) else None
+                if id_field is None:
+                    return None
+                return await app.mt_messages_edit_inline_bot_message( id=id_field, message=plain, **data)
             chat_id = getattr(self, "chat_id", None)
             msg_id = getattr(self, "msg_id", None)
             if isinstance(chat_id, int) and isinstance(msg_id, int):
-                return await app.mt_messages_edit_message(peer=chat_id, id=int(msg_id), message=plain, **data)
+                return await app.mt_messages_edit_message( peer=chat_id, id=int(msg_id), message=plain, **data)
             return None
-        if id_field is not None and app is not None:
+        if inline_mid is not None and app is not None:
             data = dict(kwargs)
             kbd = data.pop("kbd", None)
             data.pop("parse_mode", None)
@@ -102,7 +80,8 @@ class CallbackContext:
             plain, ents = html_to_entities(text)
             if ents:
                 data["entities"] = ents
-            return await app.mt_messages_edit_inline_bot_message(id=id_field, message=plain, **data)
+            id_field = inline_mid if isinstance(inline_mid, dict) else {"_": "inputBotInlineMessageID", "raw": inline_mid}
+            return await app.mt_messages_edit_inline_bot_message( id=id_field, message=plain, **data)
         return await self._callback.edit(text, **kwargs)
 
     async def delete(self) -> Any:

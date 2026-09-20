@@ -133,7 +133,6 @@ class Runtime:
     _forum_helper: Any = None
     _form_msgs: dict[int, tuple[Any, int]] | None = None
     _form_inline_ids: dict[str, Any] | None = None
-    _form_inline_latest: dict[int, Any] | None = None
     _form_chosen: dict[str, asyncio.Event] | None = None
     _form_module_ids: dict[str, str] | None = None
 
@@ -212,7 +211,6 @@ class Runtime:
         self._forms = {}
         self._input_requests = {}
         self._form_inline_ids = {}
-        self._form_inline_latest = {}
         self._form_chosen = {}
         self._form_module_ids = {}
         self._form_expiry = {}
@@ -749,11 +747,6 @@ class Runtime:
             if self._form_inline_ids is None:
                 self._form_inline_ids = {}
             self._form_inline_ids[nonce] = getattr(chosen, "msg_id", None)
-            owner = int(getattr(self.kernel, "owner_id", 0) or 0)
-            if self._form_inline_latest is None:
-                self._form_inline_latest = {}
-            if owner:
-                self._form_inline_latest[owner] = self._form_inline_ids[nonce]
             if self._form_chosen is None:
                 self._form_chosen = {}
             self._form_chosen.setdefault(nonce, asyncio.Event()).set()
