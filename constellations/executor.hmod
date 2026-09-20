@@ -1,6 +1,6 @@
 HOTARU = {
     "id": "executor",
-    "version": "3.3.0",
+    "version": "3.3.1",
     "commands": ["sh", "py", "kill"],
     "capabilities": ["mt", "files", "net", "state"],
 }
@@ -279,33 +279,50 @@ class OutputUpdater:
             pages.append("\n\n".join(parts))
         return pages or [head]
 
-    def _nav(self, idx: int) -> list | None:
+    def _nav(self, idx: int) -> list:
         ui = getattr(self.ctx, "ui", None)
-        if ui is None or len(self._pages) < 2:
+        if ui is None:
+            return []
+        n = max(len(self._pages), 1)
+        return [[
+            ui.button("<", self._on_page, (idx - 1) % n),
+            ui.button(">", self._on_page, (idx + 1) % n),
+            ui.button("x", self._on_del),
+        ]]
+
+    def _kbd(self, buttons: list | None) -> dict | None:
+        if not buttons:
             return None
-        row = []
-        if idx > 0:
-            row.append(ui.button("<", self._on_page, idx - 1))
-        if idx < len(self._pages) - 1:
-            row.append(ui.button(">", self._on_page, idx + 1))
-        return [row] if row else None
+        rows = []
+        for row in buttons:
+            clean = []
+            for b in row:
+                item = {"text": str(b.get("text", ""))}
+                if b.get("callback_data") is not None:
+                    item["callback_data"] = b["callback_data"]
+                elif b.get("url"):
+                    item["url"] = b["url"]
+                clean.append(item)
+            rows.append(clean)
+        return {"inline_keyboard": rows}
 
     async def _on_page(self, call: Any, payload: Any) -> None:
-        idx = int(payload) if payload is not None else 0
-        idx = max(0, min(idx, len(self._pages) - 1))
+        n = max(len(self._pages), 1)
+        idx = int(payload) % n if payload is not None else 0
         self._page = idx
-        text = self._pages[idx]
-        buttons = self._nav(idx)
-        handle = self.msg
-        edit = getattr(handle, "edit", None)
-        if callable(edit):
-            await edit(text, buttons=buttons)
-        else:
-            await call.edit(text)
+        text = self._pages[idx] if self._pages else ""
+        await call.edit(text, kbd=self._kbd(self._nav(idx)))
         try:
             await call.answer()
         except Exception:
             pass
+
+    async def _on_del(self, call: Any, payload: Any) -> None:
+        try:
+            await call.answer()
+        except Exception:
+            pass
+        await call.delete()
 
     async def _deliver(self, text: str, buttons: list | None, final: bool) -> None:
         kwargs: dict[str, Any] = {"parse_mode": "HTML", "rich": False}
