@@ -309,10 +309,12 @@ class InlineManager:
             self.info = info
             return info
         info = None
-        if state.get_setting("inline-bot-token") is None and allow_create:
-            self._create_gate()
-            async with self._provision_lock:
-                info = await self._create_bot()
+        if state.get_setting("inline-bot-token") is None:
+            info = await self._find_existing_bot()
+            if info is None and allow_create:
+                self._create_gate()
+                async with self._provision_lock:
+                    info = await self._create_bot()
         if info is None:
             raise InlineError("no inline bot available: nothing stored, nothing found, creation disabled")
         await self._start_bot_chat(info.username)
@@ -450,9 +452,21 @@ class InlineManager:
             return InlineBotInfo(token, username, bot_id)
 
     async def _pick_username(self, conv: BotFatherConversation) -> tuple[str, str]:
+        wanted: list[str] = []
+        raw = self.runtime.state.get_setting("inline-bot-username-wanted") if self.runtime.state is not None else None
+        if isinstance(raw, str) and raw.strip():
+            name = raw.strip().lstrip("@")
+            if not name.lower().endswith("bot"):
+                name += "_bot"
+            wanted.append(name)
         for _ in range(8):
             suffix = "".join(random.choices(string.ascii_lowercase + string.digits, k=6))
-            username = f"hotaru_{suffix}_bot"
+            wanted.append(f"hotaru_{suffix}_bot")
+        seen: set[str] = set()
+        for username in wanted:
+            if username in seen:
+                continue
+            seen.add(username)
             response = await conv.ask(username)
             text = response.get("message", "")
             lowered = text.lower()
@@ -494,7 +508,7 @@ class InlineManager:
         if self._task is not None and not self._task.done():
             return
         if self.info is None:
-            await self.ensure_bot(allow_create=False)
+            await self.ensure_bot(allow_create=True)
         assert self.info is not None
         from goygram import GoyGram
 

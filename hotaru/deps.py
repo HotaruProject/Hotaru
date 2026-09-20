@@ -190,22 +190,14 @@ def find_env_manager() -> tuple[str, list[str]]:
     prefix = getattr(sys, "prefix", "")
     base = getattr(sys, "base_prefix", "")
     virtual = prefix != base
-    conda = "CONDA_PREFIX" in os.environ
+    if not virtual:
+        raise DependencyError("refusing to install into system Python")
     uv = _tool_path("uv")
-    pdm = _tool_path("pdm")
-    conda_bin = shutil.which("conda")
-    if conda and conda_bin:
-        return "conda", [conda_bin, "install", "-y"]
     if uv:
         return "uv", [uv, "pip", "install", "--python", sys.executable]
-    if pdm:
-        return "pdm", [pdm, "add"]
     if importlib.util.find_spec("pip") is not None:
-        command = [sys.executable, "-m", "pip", "install"]
-        if not virtual and _is_externally_managed():
-            command.append("--break-system-packages")
-        return "pip", command
-    raise DependencyError("no supported package manager found: uv, pdm, pip or conda")
+        return "pip", [sys.executable, "-m", "pip", "install"]
+    raise DependencyError("no supported package manager found: uv or pip")
 
 
 def _is_externally_managed() -> bool:

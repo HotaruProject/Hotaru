@@ -4,6 +4,7 @@ import json
 import logging
 import os
 import secrets
+import sys
 import tempfile
 import time
 import traceback
@@ -1887,14 +1888,21 @@ class Runtime:
         if self.app is None or self.app.mt is None:
             return
         with trusted_scope():
-            fresh = self.app.session.path is not None and not self.app.session.path.exists()
-            result = await bootstrap_session(
-                self.app.core,
-                api_id=self.config.api_id,
-                api_hash=self.config.api_hash,
-                session_name=self.app.core.session_name,
-                session=self.app.session,
-            )
+            vault = self.app.session.path
+            missing = vault is None or not vault.exists() or vault.stat().st_size == 0
+            if missing and sys.stdin.isatty() and sys.stdout.isatty():
+                from .login import sign_in
+                fresh = True
+                result = await sign_in(self)
+            else:
+                fresh = vault is not None and not vault.exists()
+                result = await bootstrap_session(
+                    self.app.core,
+                    api_id=self.config.api_id,
+                    api_hash=self.config.api_hash,
+                    session_name=self.app.core.session_name,
+                    session=self.app.session,
+                )
         session = self.app.session
         mt_key = getattr(self.app.mt, "auth_key", None)
         if session.auth_key is None and isinstance(mt_key, (bytes, bytearray)) and mt_key:
@@ -1903,7 +1911,7 @@ class Runtime:
             raise RuntimeError("GoyGram user authorization did not complete")
         if session.is_bot:
             raise RuntimeError("the primary MTProto session must belong to a user, not a bot")
-        if (fresh and result.get("source") in {"interactive", "qr"}) or self.config.session_name.startswith("hotaru-pending-"):
+        if (fresh and result.get("source") in {"interactive", "qr", "hotaru"}) or self.config.session_name.startswith("hotaru-pending-"):
             with trusted_scope():
                 self.namesession()
         if self.kernel is not None and self.kernel.owner_id is None and session.self_id is not None:

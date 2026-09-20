@@ -1,7 +1,5 @@
 from dataclasses import dataclass
-from getpass import getpass
 from pathlib import Path
-import secrets
 
 from .state import StateStore
 
@@ -28,29 +26,8 @@ class RuntimeConfig:
         try:
             required = ("api-id", "api-hash", "prefix", "session-name", "session-dir", "backup-keep")
             if any(state.get_setting(key) is None for key in required):
-                if not __import__("sys").stdin.isatty():
-                    raise ValueError("runtime settings are missing; run from an interactive TTY")
-                print("Hotaru first-run database setup")
-                api_id = int(input("Telegram API ID: ").strip())
-                api_hash = getpass("Telegram API hash: ")
-                owner_raw = input("Owner Telegram ID: ").strip()
-                owner_id = int(owner_raw) if owner_raw else None
-                prefix = input("Command prefix [!]: ").strip() or "!"
-                session_name = f"hotaru-pending-{secrets.token_hex(8)}"
-                session_dir = input("Session directory [.]: ").strip() or "."
-                backup_keep = int(input("Backups to keep [7]: ").strip() or "7")
-                values = {
-                    "api-id": api_id,
-                    "api-hash": api_hash,
-                    "bot-token": None,
-                    "owner-id": owner_id,
-                    "prefix": prefix,
-                    "session-name": session_name,
-                    "session-dir": session_dir,
-                    "backup-keep": backup_keep,
-                }
-                for key, value in values.items():
-                    state.set_setting(key, value)
+                from .login import collect_settings
+                collect_settings(state)
             values = {key: state.get_setting(key) for key in ("api-id", "api-hash", "bot-token", "owner-id", "prefix", "session-name", "session-dir", "backup-keep", "command-timeout", "inline-enabled")}
             return cls(
                 api_id=values["api-id"],
