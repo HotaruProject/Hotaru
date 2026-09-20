@@ -1,6 +1,6 @@
 HOTARU = {
     "id": "executor",
-    "version": "3.3.8",
+    "version": "3.3.9",
     "commands": ["sh", "py", "kill"],
     "capabilities": ["mt", "files", "net", "state"],
 }
@@ -156,6 +156,10 @@ def _escape(value: str) -> str:
     return html.escape(str(value), quote=False)
 
 
+def _u16(s: str) -> int:
+    return len(s.encode("utf-16-le")) // 2
+
+
 def _clean_code(text: str) -> str:
     text = text.strip()
     if text.startswith("```") and text.endswith("```"):
@@ -250,7 +254,7 @@ class OutputUpdater:
         elapsed = (time.perf_counter() - self.start_time) * 1000
         head = f"<b>Executor</b> | <code>{elapsed:.1f}ms</code>"
         limit = 4096
-        room = max(64, limit - len(head) - 2)
+        room = max(64, limit - _u16(head) - 2)
         blocks: list[str] = []
         entries = list(sections)
         if returncode is not None:
@@ -262,7 +266,7 @@ class OutputUpdater:
                 continue
             text = str(content)
             html = self._fmt_entry(title, text, is_code, lang)
-            if len(html) <= room:
+            if _u16(html) <= room:
                 blocks.append(html)
                 continue
             i = 0
@@ -270,20 +274,20 @@ class OutputUpdater:
             while i < n:
                 take = min(n - i, room)
                 h = self._fmt_entry(title, text[i:i + take], is_code, lang)
-                while len(h) > room and take > 1:
-                    take = max(1, take * room // len(h))
+                while _u16(h) > room and take > 1:
+                    take = max(1, take * room // _u16(h))
                     h = self._fmt_entry(title, text[i:i + take], is_code, lang)
                 blocks.append(h)
                 i += take
         pages: list[str] = []
         cur = [head]
-        size = len(head)
+        size = _u16(head)
         for block in blocks:
-            add = 2 + len(block)
+            add = 2 + _u16(block)
             if cur != [head] and size + add > limit:
                 pages.append("\n\n".join(cur))
                 cur = [head]
-                size = len(head)
+                size = _u16(head)
             cur.append(block)
             size += add
         pages.append("\n\n".join(cur))
