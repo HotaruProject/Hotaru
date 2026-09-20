@@ -149,8 +149,10 @@ class Runtime:
         if self.app is not None:
             return self.app
         self.config.session_dir.mkdir(parents=True, exist_ok=True)
-        install_firewall(self.config.session_dir, self.config.session_dir / f"{self.config.session_name}.vault", self.config.session_dir / f"{self.config.session_name}.session")
-        session_name = str(self.config.session_dir / self.config.session_name)
+        session_dir = self.config.session_dir.expanduser().resolve()
+        vault = session_dir / f"{self.config.session_name}.vault"
+        session_name = str(session_dir / self.config.session_name)
+        install_firewall(session_dir, vault, session_dir / f"{self.config.session_name}.session")
         previous_disable = logging.root.manager.disable
         logging.disable(logging.INFO)
         try:
@@ -159,7 +161,7 @@ class Runtime:
                 api_id=self.config.api_id,
                 api_hash=self.config.api_hash,
                 session_name=session_name,
-                session=Session(name=session_name),
+                session=Session(name=session_name, path=vault),
                 default_transport="mtproto" if self.config.api_id is not None else "api",
             )
         finally:
@@ -736,11 +738,9 @@ class Runtime:
                 return
             form_text, buttons = form
             result = InlineObj.article("hotaru-form", "Hotaru form", form_text)
-            if await self.is_premium():
-                result["input_message_content"] = {"rich_message": {"_": "inputRichMessageHTML", **rich_html(form_text)}}
-            else:
-                result["input_message_content"] = {"message_text": form_text, "parse_mode": "HTML"}
-            result["reply_markup"] = {"inline_keyboard": buttons}
+            result["input_message_content"] = {"rich_message": {"_": "inputRichMessageHTML", **rich_html(form_text)}}
+            if buttons:
+                result["reply_markup"] = {"inline_keyboard": buttons}
             await answer_tl(query, results=[result], cache_time=0, is_personal=True)
             if self.observatory is not None:
                 self.observatory.emit("inline", "form_answered", buttons=len(buttons))
@@ -1896,6 +1896,9 @@ class Runtime:
                 session=self.app.session,
             )
         session = self.app.session
+        mt_key = getattr(self.app.mt, "auth_key", None)
+        if session.auth_key is None and isinstance(mt_key, (bytes, bytearray)) and mt_key:
+            session.data["auth_key"] = bytes(mt_key).hex()
         if not result or session.auth_key is None:
             raise RuntimeError("GoyGram user authorization did not complete")
         if session.is_bot:
