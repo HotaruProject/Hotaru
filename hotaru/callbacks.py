@@ -74,6 +74,7 @@ class CallbackContext:
         }
         if getattr(self, "src", None) == "mt" and app is not None:
             data = dict(kwargs)
+            use_rich = bool(data.pop("rich", False))
             raw_kbd = data.pop("reply_markup", data.pop("kbd", None))
             if raw_kbd is not None:
                 markup = kbd_to_tl(raw_kbd)
@@ -99,11 +100,12 @@ class CallbackContext:
                 _cb_log(log)
                 if id_field is None:
                     return None
-                data.pop("entities", None)
-                data["rich_message"] = {"_": "inputRichMessageHTML", **rich_html(text)}
+                if use_rich:
+                    data.pop("entities", None)
+                    data["rich_message"] = {"_": "inputRichMessageHTML", **rich_html(text)}
                 from relay.firewall import trusted_scope
                 with trusted_scope():
-                    return await app.mt_messages_edit_inline_bot_message(id=id_field, message="", **data)
+                    return await app.mt_messages_edit_inline_bot_message(id=id_field, message="" if use_rich else plain, **data)
             log["branch"] = "editMessage"
             _cb_log(log)
             if isinstance(chat_id, int) and isinstance(msg_id, int):
@@ -111,6 +113,7 @@ class CallbackContext:
             return None
         if inline_mid is not None and app is not None:
             data = dict(kwargs)
+            use_rich = bool(data.pop("rich", False))
             kbd = data.pop("kbd", None)
             data.pop("parse_mode", None)
             if kbd is not None:
@@ -124,9 +127,10 @@ class CallbackContext:
             log["branch"] = "editInlineBotMessage-bot"
             log["id_field"] = id_field
             _cb_log(log)
-            data.pop("entities", None)
-            data["rich_message"] = {"_": "inputRichMessageHTML", **rich_html(text)}
-            return await app.mt_messages_edit_inline_bot_message(id=id_field, message="", **data)
+            if use_rich:
+                data.pop("entities", None)
+                data["rich_message"] = {"_": "inputRichMessageHTML", **rich_html(text)}
+            return await app.mt_messages_edit_inline_bot_message(id=id_field, message="" if use_rich else plain, **data)
         log["branch"] = "fallback"
         _cb_log(log)
         return await self._callback.edit(text, **kwargs)
