@@ -32,7 +32,7 @@ def discover_state(path: str | Path = DEFAULT_STATE_PATH) -> Path:
         candidate = account_db_path(root, active)
         if candidate.is_file():
             return candidate
-    found = sorted(root.glob("account-*/hotaru-*.sqlite3")) or sorted(root.glob("account-*/state-*.sqlite3"))
+    found = sorted(root.glob("sanctuary/account-*/hotaru-*.sqlite3")) or sorted(root.glob("sanctuary/account-*/state-*.sqlite3")) or sorted(root.glob("account-*/hotaru-*.sqlite3")) or sorted(root.glob("account-*/state-*.sqlite3"))
     if found:
         return found[0]
     return bootstrap

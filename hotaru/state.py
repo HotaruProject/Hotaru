@@ -165,5 +165,24 @@ class StateStore:
             result = self.connection.execute("DELETE FROM module_state WHERE module_id = ?", (module_id,))
         return result.rowcount > 0
 
+    def relocate(self, path: str | Path) -> None:
+        dest = Path(path)
+        if self.path.resolve() == dest.resolve():
+            return
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.parent.chmod(0o700)
+        target = sqlite3.connect(dest)
+        try:
+            self.connection.commit()
+            self.connection.backup(target)
+        finally:
+            target.close()
+        self.connection.close()
+        self.path = dest
+        self.connection = sqlite3.connect(dest)
+        self.connection.execute("PRAGMA foreign_keys = ON")
+        self.connection.execute("PRAGMA journal_mode = WAL")
+        dest.chmod(0o600)
+
     def close(self) -> None:
         self.connection.close()

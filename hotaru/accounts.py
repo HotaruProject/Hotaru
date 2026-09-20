@@ -15,7 +15,13 @@ VAULT_RE = re.compile(r"(?:user|hotaru)-(\d+)\.vault")
 
 
 def account_home(root: Path, user_id: int) -> Path:
-    return Path(root) / f"account-{user_id}"
+    sanctuary = Path(root) / "sanctuary"
+    old_home = Path(root) / f"account-{user_id}"
+    new_home = sanctuary / f"account-{user_id}"
+    if old_home.exists() and old_home.is_dir() and not new_home.exists():
+        sanctuary.mkdir(parents=True, exist_ok=True)
+        old_home.rename(new_home)
+    return new_home
 
 
 def user_vault_path(root: Path, user_id: int) -> Path:
@@ -197,7 +203,7 @@ class AccountManager:
                 elif dest.exists() and dest != path:
                     path.unlink(missing_ok=True)
         known = {profile.session_name for profile in self.items()}
-        for path in sorted(self.session_dir.glob("account-*/user-*.vault")):
+        for path in sorted(self.session_dir.glob("sanctuary/account-*/user-*.vault")):
             match = VAULT_RE.fullmatch(path.name)
             if match is None:
                 continue
