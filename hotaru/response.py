@@ -380,6 +380,9 @@ class ModuleContext:
     runtime: Any = None
     _premium: bool | None = None
 
+    def __repr__(self) -> str:
+        return f"ModuleContext({self.module_id!r})"
+
     @property
     def message(self) -> ModuleMessage:
         return ModuleMessage(self._source, self.responses)
@@ -503,8 +506,13 @@ class ModuleContext:
             return False
         return self._premium
 
-    async def is_premium(self) -> bool:
-        return await self.premium()
+    @property
+    def is_premium(self) -> bool:
+        if self._premium is not None:
+            return self._premium
+        runtime = self.runtime
+        cached = getattr(runtime, "_premium_cache", None) if runtime is not None else None
+        return bool(cached)
 
     async def answer(self, text: str | None = None, **kwargs: Any) -> Any:
         if text is not None:
@@ -975,4 +983,5 @@ class ModuleContextFactory:
         self.runtime: Any = runtime
 
     def create(self, module_id: str, message: Any) -> ModuleContext:
-        return ModuleContext(module_id, message, self._state.namespace(module_id), self._responses, self.cap_host, self.callback_router, self.inline_manager, self.form_sender, self.runtime, None)
+        cached = getattr(self.runtime, "_premium_cache", None) if self.runtime is not None else None
+        return ModuleContext(module_id, message, self._state.namespace(module_id), self._responses, self.cap_host, self.callback_router, self.inline_manager, self.form_sender, self.runtime, cached)
