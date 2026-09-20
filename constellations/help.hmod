@@ -108,11 +108,15 @@ async def _show_help(ctx: Any, invocation: Any) -> Any:
             if command_description:
                 line += f" — {_escape(command_description)}"
             command_lines.append(line)
-        text += f"<details><summary>{_escape(ctx.t('kernel.help_ui.commands'))}</summary><p>{'<br>'.join(command_lines) or 'none'}</p></details>"
-        text += f"<details><summary>{_escape(ctx.t('kernel.help_ui.capabilities'))}</summary><p>{capabilities}</p></details>"
+        cmd_title = _escape(ctx.t("kernel.help_ui.commands", "Commands"))
+        cap_title = _escape(ctx.t("kernel.help_ui.capabilities", "Capabilities"))
         if premium:
+            text += f"<details><summary>{cmd_title}</summary><p>{'<br>'.join(command_lines) or 'none'}</p></details>"
+            text += f"<details><summary>{cap_title}</summary><p>{capabilities}</p></details>"
             await ctx.respond(text, parse_mode="HTML", rich=True)
         else:
+            text += f"<br><b>{cmd_title}</b><br>{'<br>'.join(command_lines) or 'none'}"
+            text += f"<br><b>{cap_title}</b><br>{capabilities}"
             await ctx.respond(text, rich=False, parse_mode="HTML")
         return
 
@@ -139,7 +143,7 @@ async def _show_help(ctx: Any, invocation: Any) -> Any:
             else:
                 user_modules.append(
                     f'<p><tg-emoji emoji-id="5404553572727660202">❌</tg-emoji> '
-                    f'<code>{_escape(module_id)}</code> <i>({_escape(ctx.t("kernel.help_ui.untrusted"))})</i></p>'
+                    f'<code>{_escape(module_id)}</code> <i>({_escape(ctx.t("kernel.help_ui.untrusted", "not loaded"))})</i></p>'
                 )
     else:
         for name in sorted(runtime.kernel.registry.names(), key=str.casefold):
@@ -149,20 +153,29 @@ async def _show_help(ctx: Any, invocation: Any) -> Any:
             )
 
     total = len(kernel_modules) + len(user_modules)
-    text = f"<b>{_escape(ctx.t('kernel.help_ui.module_count', count=total))}</b>"
+    title = _escape(ctx.t("kernel.help_ui.module_count", "Hotaru Help · {count} modules", count=total))
+    kernel_title = _escape(ctx.t("kernel.help_ui.kernel_modules", "Kernel Modules"))
+    user_title = _escape(ctx.t("kernel.help_ui.user_modules", "User Modules"))
+    text = f"<b>{title}</b>"
 
     if kernel_modules:
-        text += (
-            f"<details><summary>{_escape(ctx.t('kernel.help_ui.kernel_modules'))} ({len(kernel_modules)})</summary>"
-            + "".join(kernel_modules)
-            + "</details>"
-        )
+        if premium:
+            text += (
+                f"<details><summary>{kernel_title} ({len(kernel_modules)})</summary>"
+                + "".join(kernel_modules)
+                + "</details>"
+            )
+        else:
+            text += f"<br><b>{kernel_title} ({len(kernel_modules)})</b>" + "".join(kernel_modules)
     if user_modules:
-        text += (
-            f"<details><summary>{_escape(ctx.t('kernel.help_ui.user_modules'))} ({len(user_modules)})</summary>"
-            + "".join(user_modules)
-            + "</details>"
-        )
+        if premium:
+            text += (
+                f"<details><summary>{user_title} ({len(user_modules)})</summary>"
+                + "".join(user_modules)
+                + "</details>"
+            )
+        else:
+            text += f"<br><b>{user_title} ({len(user_modules)})</b>" + "".join(user_modules)
 
     if premium:
         await ctx.respond(text=text, parse_mode="HTML", rich=True)

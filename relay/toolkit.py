@@ -1,4 +1,5 @@
 from __future__ import annotations
+from hotaru.tl import as_tl
 
 import hashlib
 import html as _html_mod
@@ -16,7 +17,7 @@ from urllib.parse import urlparse
 _BOOT_TS = time.perf_counter()
 
 _TAG_RE = re.compile(r"</?([a-zA-Z][a-zA-Z0-9\-]*)(?:\s[^<>]*)?>")
-_TG_TAGS = frozenset({"b", "strong", "i", "em", "u", "ins", "s", "strike", "del", "code", "pre", "a", "blockquote", "tg-spoiler", "tg-emoji", "br"})
+_TG_TAGS = frozenset({"b", "strong", "i", "em", "u", "ins", "s", "strike", "del", "code", "pre", "a", "blockquote", "tg-spoiler", "tg-emoji", "tg-button", "tg-button-row", "tg-time", "tg-math", "br", "p", "details", "summary", "h1", "h2", "h3", "ul", "ol", "li"})
 _URL_RE = re.compile(r"https?://[^\s<>\"']+")
 _EMOJI_RE = re.compile(
     "["
@@ -776,6 +777,68 @@ def rich_to_html(message: Any) -> str:
     return "".join(_rich_block(block) for block in rich.get("blocks") or [])
 
 
+def btn_html(button: dict[str, Any]) -> str:
+    text = escape(button.get("text") or "")
+    attrs: list[str] = []
+    if isinstance(button.get("url"), str):
+        attrs.append(f'url="{escape_attr(button["url"])}"')
+    elif isinstance(button.get("copy_text"), str):
+        attrs.append(f'copy="{escape_attr(button["copy_text"])}"')
+    elif isinstance(button.get("callback_data"), str):
+        attrs.append(f'data="{escape_attr(button["callback_data"])}"')
+    if button.get("style"):
+        attrs.append(f'style="{escape_attr(button["style"])}"')
+    if button.get("icon_custom_emoji_id"):
+        attrs.append(f'icon="{escape_attr(button["icon_custom_emoji_id"])}"')
+    extra = (" " + " ".join(attrs)) if attrs else ""
+    return f"<tg-button{extra}>{text}</tg-button>"
+
+
+def buttons_html(buttons: Any, kind: str = "page") -> str:
+    if not buttons:
+        return ""
+    rows = buttons if isinstance(buttons[0], list) else [buttons]
+    if kind == "text":
+        parts: list[str] = []
+        for row in rows:
+            for btn in row:
+                if isinstance(btn, dict):
+                    parts.append(btn_html(btn))
+        return "".join(parts)
+    parts = []
+    for row in rows:
+        inner = "".join(btn_html(btn) for btn in row if isinstance(btn, dict))
+        if inner:
+            parts.append(f"<tg-button-row>{inner}</tg-button-row>")
+    return "".join(parts)
+
+
+def needs_form(buttons: Any) -> bool:
+    rows = buttons if isinstance(buttons, list) and buttons and isinstance(buttons[0], list) else [buttons or []]
+    for row in rows:
+        if not isinstance(row, list):
+            continue
+        for btn in row:
+            if isinstance(btn, dict) and isinstance(btn.get("input"), str):
+                return True
+    return False
+
+
+def needs_callback(buttons: Any) -> bool:
+    rows = buttons if isinstance(buttons, list) and buttons and isinstance(buttons[0], list) else [buttons or []]
+    for row in rows:
+        if not isinstance(row, list):
+            continue
+        for btn in row:
+            if not isinstance(btn, dict):
+                continue
+            if isinstance(btn.get("input"), str):
+                return True
+            if btn.get("callback_data") or btn.get("data") or btn.get("callback") or callable(btn.get("handler")):
+                return True
+    return False
+
+
 TOOLKIT_FUNCS = {
     "args_parse": args_parse,
     "args_raw": args_raw,
@@ -836,6 +899,10 @@ TOOLKIT_FUNCS = {
     "countdown": countdown,
     "rich_to_html": rich_to_html,
     "entities_to_html": entities_to_html,
+    "btn_html": btn_html,
+    "buttons_html": buttons_html,
+    "needs_form": needs_form,
+    "needs_callback": needs_callback,
 }
 
 TOOLS = SimpleNamespace(**TOOLKIT_FUNCS)
