@@ -732,6 +732,11 @@ class ModuleContext:
         )
 
     @property
+    def response_message_id(self) -> int | None:
+        value = getattr(self._delivery_source, "id", None)
+        return int(value) if isinstance(value, int) else None
+
+    @property
     def topic_id(self) -> int | None:
         for name in ("topic_id", "message_thread_id", "top_msg_id"):
             value = getattr(self._source, name, None)
