@@ -62,9 +62,26 @@ class CallbackContext:
         return await self._callback.answer(text, alert=alert, **kwargs)
 
     async def edit(self, text: str, **kwargs: Any) -> Any:
+        runtime = getattr(self._callback, "_hotaru_runtime", None)
+        user_app = getattr(runtime, "app", None) if runtime is not None else None
+        bot_app = getattr(self, "app", None)
+        chat_id = getattr(self, "chat_id", None)
+        msg_id = getattr(self, "msg_id", None)
+        data = dict(kwargs)
+        raw_kbd = data.pop("reply_markup", data.pop("kbd", None))
+        data.pop("parse_mode", None)
+        plain, ents = html_to_entities(text)
+        extra: dict[str, Any] = {}
+        if ents:
+            extra["entities"] = ents
+        if raw_kbd is not None:
+            extra["kbd"] = raw_kbd
+        from relay.firewall import trusted_scope
+        if isinstance(chat_id, int) and isinstance(msg_id, int) and user_app is not None:
+            with trusted_scope():
+                return await user_app.edit_msg(chat_id, int(msg_id), plain, **extra)
         inline_mid = getattr(self, "inline_message_id", None)
         if inline_mid is None:
-            runtime = getattr(self._callback, "_hotaru_runtime", None)
             store = getattr(runtime, "_form_inline_latest", None) or {}
             actor = getattr(self, "from_id", None)
             try:
@@ -72,37 +89,16 @@ class CallbackContext:
             except (TypeError, ValueError):
                 inline_mid = None
         id_field = _inline_id(inline_mid)
-        app = getattr(self, "app", None)
-        if getattr(self, "src", None) == "mt" and app is not None:
-            data = dict(kwargs)
-            raw_kbd = data.pop("reply_markup", data.pop("kbd", None))
-            if raw_kbd is not None:
-                markup = kbd_to_tl(raw_kbd)
-                if markup is not None:
-                    data["reply_markup"] = markup
-            data.pop("parse_mode", None)
-            plain, ents = html_to_entities(text)
-            if ents:
-                data["entities"] = ents
-            if id_field is not None:
-                return await app.mt_messages_edit_inline_bot_message(id=id_field, message=plain, **data)
-            chat_id = getattr(self, "chat_id", None)
-            msg_id = getattr(self, "msg_id", None)
-            if isinstance(chat_id, int) and isinstance(msg_id, int):
-                return await app.mt_messages_edit_message(peer=chat_id, id=int(msg_id), message=plain, **data)
-            return None
+        app = bot_app or user_app
         if id_field is not None and app is not None:
-            data = dict(kwargs)
-            kbd = data.pop("kbd", None)
-            data.pop("parse_mode", None)
-            if kbd is not None:
-                markup = kbd_to_tl(kbd.to_dict() if hasattr(kbd, "to_dict") else kbd)
-                if markup is not None:
-                    data["reply_markup"] = markup
-            plain, ents = html_to_entities(text)
+            markup = kbd_to_tl(raw_kbd) if raw_kbd is not None else None
+            payload = dict(data)
+            if markup is not None:
+                payload["reply_markup"] = markup
             if ents:
-                data["entities"] = ents
-            return await app.mt_messages_edit_inline_bot_message(id=id_field, message=plain, **data)
+                payload["entities"] = ents
+            with trusted_scope():
+                return await app.mt_messages_edit_inline_bot_message(id=id_field, message=plain, **payload)
         return await self._callback.edit(text, **kwargs)
 
     async def delete(self) -> Any:
