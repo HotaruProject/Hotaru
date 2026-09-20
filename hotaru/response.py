@@ -568,6 +568,13 @@ class ModuleContext:
             target = reply_message_id(self._source)
             if target is not None:
                 kwargs["reply_to"] = target
+        if not isinstance(kwargs.get("callback_actor"), int):
+            actor = getattr(self._source, "from_id", None)
+            if not isinstance(actor, int):
+                getter = getattr(self._source, "get", None)
+                actor = getter("from_id") if callable(getter) else None
+            if isinstance(actor, int):
+                kwargs["callback_actor"] = actor
         return await self.form_sender(self._delivery_source, text, buttons or [], kwargs)
 
     async def _deliver(self, text: str | None = None, **kwargs: Any) -> Any:

@@ -296,6 +296,13 @@ class Runtime:
         if owner is None:
             raise RuntimeError("form owner is missing")
         options = dict(options or {})
+        actor = getattr(command, "from_id", None)
+        if not isinstance(actor, int):
+            getter = getattr(command, "get", None)
+            actor = getter("from_id") if callable(getter) else None
+        if not isinstance(actor, int):
+            actor = int(owner)
+        options.setdefault("callback_actor", actor)
         options.setdefault("delete_source", True)
         if isinstance(options.get("module_id"), str) and options["module_id"]:
             module_id = options["module_id"]
@@ -340,7 +347,7 @@ class Runtime:
                     continue
                 handle = button.get("callback_data")
                 if isinstance(handle, str) and self.callbacks is not None:
-                    current.append({"text": button.get("text", ""), "callback_data": self.callbacks.store.rebind(handle, CallbackBinding(owner, chat_id, form_id))})
+                    current.append({"text": button.get("text", ""), "callback_data": self.callbacks.store.rebind(handle, CallbackBinding(actor, chat_id, form_id))})
                 elif isinstance(button.get("url"), str):
                     current.append({"text": button.get("text", ""), "url": button["url"]})
             rebound.append(current)
@@ -427,7 +434,10 @@ class Runtime:
                             continue
                         button["_action_id"] = action_id
                         button["_payload"] = item.get("payload")
-                        button["callback_data"] = self.callbacks.issue_module(module_id, action_id, CallbackBinding(int(self.kernel.owner_id or 0), None, 0), item.get("payload"))
+                        actor = options.get("callback_actor")
+                        if not isinstance(actor, int):
+                            actor = int(self.kernel.owner_id or 0)
+                        button["callback_data"] = self.callbacks.issue_module(module_id, action_id, CallbackBinding(actor, None, 0), item.get("payload"))
 
                 if not module_id or self.modules is None:
                     raise ValueError("restored form owner is unavailable")
@@ -655,13 +665,18 @@ class Runtime:
                         action_records.append({"row": row_index, "column": column_index, "action_id": button["_action_id"], "payload": button.get("_payload")})
                     if self.callbacks is None or self.kernel is None:
                         continue
-                    owner = self.kernel.owner_id
-                    current.append({"text": button.get("text", ""), "callback_data": self.callbacks.store.rebind(handle, CallbackBinding(owner if owner is not None else 0, None, 0))})
+                    actor = options.get("callback_actor")
+                    if not isinstance(actor, int):
+                        actor = int(self.kernel.owner_id or 0)
+                    current.append({"text": button.get("text", ""), "callback_data": self.callbacks.store.rebind(handle, CallbackBinding(actor, None, 0))})
                 elif button.get("_action_id") and self.callbacks is not None:
                     payload = button.get("_payload")
                     if not any(item.get("action_id") == button["_action_id"] for item in action_records):
                         action_records.append({"row": row_index, "column": column_index, "action_id": button["_action_id"], "payload": payload})
-                    issued = self.callbacks.issue_module(options.get("module_id", ""), str(button["_action_id"]), CallbackBinding(int(getattr(self.kernel, "owner_id", 0) or 0), None, 0), payload)
+                    actor = options.get("callback_actor")
+                    if not isinstance(actor, int):
+                        actor = int(getattr(self.kernel, "owner_id", 0) or 0)
+                    issued = self.callbacks.issue_module(options.get("module_id", ""), str(button["_action_id"]), CallbackBinding(actor, None, 0), payload)
                     current.append({"text": button.get("text", ""), "callback_data": issued})
                 elif isinstance(button.get("url"), str):
                     current.append({"text": button.get("text", ""), "url": button["url"]})
@@ -845,7 +860,9 @@ class Runtime:
         if nonce is None:
             nonce = secrets.token_urlsafe(12)
         module_id = str(options.get("module_id") or (self._form_module_ids or {}).get(nonce) or "")
-        owner = int(getattr(self.kernel, "owner_id", 0) or 0)
+        actor = options.get("callback_actor")
+        if not isinstance(actor, int):
+            actor = int(getattr(command, "from_id", 0) or getattr(self.kernel, "owner_id", 0) or 0)
         for row in buttons or []:
             if isinstance(row, dict):
                 row = [row]
@@ -862,12 +879,12 @@ class Runtime:
                     continue
                 handle = button.get("callback_data")
                 if isinstance(handle, str) and self.callbacks is not None:
-                    handle = self.callbacks.store.rebind(handle, CallbackBinding(owner, None, 0))
+                    handle = self.callbacks.store.rebind(handle, CallbackBinding(actor, None, 0))
                     current.append({"text": button.get("text", ""), "callback_data": handle})
                     continue
                 if callable(button.get("handler")) and module_id and self.callbacks is not None:
                     action_id = self.callbacks.register_module_action(module_id, button["handler"])
-                    issued = self.callbacks.issue_module(module_id, str(action_id), CallbackBinding(owner, None, 0), button.get("payload"))
+                    issued = self.callbacks.issue_module(module_id, str(action_id), CallbackBinding(actor, None, 0), button.get("payload"))
                     current.append({"text": button.get("text", ""), "callback_data": issued})
                     continue
                 if isinstance(button.get("url"), str):
