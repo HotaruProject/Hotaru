@@ -1,6 +1,6 @@
 HOTARU = {
     "id": "executor",
-    "version": "3.3.10",
+    "version": "3.3.9",
     "commands": ["sh", "py", "kill"],
     "capabilities": ["mt", "files", "net", "state"],
 }
@@ -153,7 +153,7 @@ async def _auto_await(value: Any) -> Any:
 
 
 def _escape(value: str) -> str:
-    return html.escape(str(value), quote=True)
+    return html.escape(str(value), quote=False)
 
 
 def _clean_code(text: str) -> str:
@@ -1451,7 +1451,7 @@ async def command_py(ctx, invocation):
         nonlocal result_val
         exec_scope = dict(env)
         try:
-            bytecode = compile(wrapped_code, "executor", "exec")
+            bytecode = compile(wrapped_code, "<executor>", "exec")
         except SyntaxError as exc:
             raise SyntaxError(f"SyntaxError: {exc.msg} (line {exc.lineno})") from None
         exec(bytecode, exec_scope)
