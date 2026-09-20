@@ -164,12 +164,11 @@ class Runtime:
                 pass
             vault = user_vault_path(session_dir, uid)
             session_name = str(vault.with_suffix(""))
+            guarded = [vault, vault.with_suffix(".session"), home]
         else:
             vault = session_dir / f"{self.config.session_name}.vault"
             session_name = str(session_dir / self.config.session_name)
-        guarded = [vault, vault.with_suffix(".session")]
-        if uid is not None:
-            guarded.append(home)
+            guarded = [vault, vault.with_suffix(".session")]
         install_firewall(*guarded)
         previous_disable = logging.root.manager.disable
         logging.disable(logging.INFO)
