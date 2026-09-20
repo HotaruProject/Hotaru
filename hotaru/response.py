@@ -195,7 +195,13 @@ class ResponseService:
             payload["reply_to"] = reply_to
         if topic_id is not None:
             payload["topic_id"] = topic_id
-        if text is not None and str(payload.get("parse_mode", "")).lower() == "html":
+        if text is not None and "<" in str(text) and getattr(message, "src", "mt") != "bot":
+            payload.pop("parse_mode", None)
+            plain, entities = html_to_entities(str(text))
+            if entities:
+                payload["entities"] = entities
+            text = plain
+        elif text is not None and str(payload.get("parse_mode", "")).lower() == "html":
             if getattr(message, "src", "mt") == "bot":
                 payload["parse_mode"] = "HTML"
             else:
