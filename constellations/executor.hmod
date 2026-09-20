@@ -1,6 +1,6 @@
 HOTARU = {
     "id": "executor",
-    "version": "3.3.9",
+    "version": "3.3.10",
     "commands": ["sh", "py", "kill"],
     "capabilities": ["mt", "files", "net", "state"],
 }
@@ -19,6 +19,8 @@ import textwrap
 import time
 import traceback
 import json
+from dataclasses import fields as _dc_fields
+from dataclasses import is_dataclass
 from typing import Any
 
 from goygram.sugar import extract_sent_message
@@ -547,6 +549,70 @@ def _sent_id(result):
 
 
 _SENTINEL = object()
+_SKIP = {"raw", "bytes", "access_hash", "file_reference", "phone", "api_hash", "token", "stripped_thumb"}
+
+
+def _clean_dict(d: Any) -> Any:
+    if not isinstance(d, dict):
+        return d
+    cleaned = {}
+    for k, v in d.items():
+        if k in _SKIP:
+            continue
+        if isinstance(v, dict):
+            cleaned[k] = _clean_dict(v)
+        elif isinstance(v, list):
+            cleaned[k] = [_clean_dict(i) if isinstance(i, dict) else i for i in v]
+        else:
+            cleaned[k] = v
+    return cleaned
+
+
+def _format_val(v: Any, indent: int = 0, key: str = "") -> str:
+    if is_dataclass(v) and not isinstance(v, type):
+        type_name = type(v).__name__
+        items = [(f.name, getattr(v, f.name)) for f in _dc_fields(v)]
+        items = [(k, val) for k, val in items if val is not None]
+        if not items:
+            return f"{type_name}()"
+        lines = [f"{type_name}("]
+        for k, val in items:
+            lines.append(" " * (indent + 4) + f"{k}={_format_val(val, indent + 4, k)},")
+        lines.append(" " * indent + ")")
+        return "\n".join(lines)
+    if isinstance(v, dict):
+        v = _clean_dict(v)
+        if not v:
+            return "{}"
+        type_name = v.get("_", "dict")
+        items = [(k, val) for k, val in v.items() if k != "_"]
+        if not items:
+            return f"{type_name}()"
+        lines = [f"{type_name}("]
+        for k, val in items:
+            lines.append(" " * (indent + 4) + f"{k}={_format_val(val, indent + 4, k)},")
+        lines.append(" " * indent + ")")
+        return "\n".join(lines)
+    if isinstance(v, list):
+        if not v:
+            return "[]"
+        lines = ["["]
+        for val in v:
+            lines.append(" " * (indent + 4) + f"{_format_val(val, indent + 4)},")
+        lines.append(" " * indent + "]")
+        return "\n".join(lines)
+    if isinstance(v, str):
+        return repr(v)
+    if isinstance(v, int) and (key == "date" or key.endswith("_date")) and 0 < v < 4000000000:
+        try:
+            return f"{v} ({time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(v))})"
+        except (OverflowError, OSError, ValueError):
+            return repr(v)
+    return repr(v)
+
+
+def _dump(v: Any) -> str:
+    return _format_val(v)
 
 
 class _MsgProxy:
@@ -774,76 +840,20 @@ class _MsgProxy:
         raw = self.__dict__.get("_raw")
         if raw is None:
             return "MsgProxy(empty)"
-
-        def _clean_dict(d: dict) -> dict:
-            cleaned = {}
-            for k, v in d.items():
-                if k in ("raw", "bytes", "access_hash", "file_reference"):
-                    continue
-                if isinstance(v, dict):
-                    cleaned[k] = _clean_dict(v)
-                elif isinstance(v, list):
-                    cleaned[k] = [_clean_dict(i) if isinstance(i, dict) else i for i in v]
-                else:
-                    cleaned[k] = v
-            return cleaned
-
-        import datetime
-        import time
-
-        def _format_val(v: Any, indent: int, key: str = "") -> str:
-            if isinstance(v, dict):
-                if not v:
-                    return "{}"
-                type_name = v.get("_", "dict")
-                items = [(k, val) for k, val in v.items() if k != "_"]
-                if not items:
-                    return f"{type_name}()"
-                lines = [f"{type_name}("]
-                for k, val in items:
-                    lines.append(" " * (indent + 4) + f"{k}={_format_val(val, indent + 4, k)},")
-                lines.append(" " * indent + ")")
-                return "\n".join(lines)
-            elif isinstance(v, list):
-                if not v:
-                    return "[]"
-                lines = ["["]
-                for val in v:
-                    lines.append(" " * (indent + 4) + f"{_format_val(val, indent + 4)},")
-                lines.append(" " * indent + "]")
-                return "\n".join(lines)
-            elif isinstance(v, datetime.datetime):
-                return repr(v)
-            elif isinstance(v, str):
-                return repr(v)
-            elif isinstance(v, int) and (key == "date" or key.endswith("_date")) and 0 < v < 4000000000:
-                try:
-                    return f"{v} ({time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(v))})"
-                except (OverflowError, OSError, ValueError):
-                    return repr(v)
-            else:
-                return repr(v)
-
         data = {}
         if hasattr(raw, "items"):
             data = dict(raw)
         elif hasattr(raw, "__dict__"):
-            data = vars(raw)
-            data = {k: v for k, v in data.items() if not k.startswith("_")}
-            
+            data = {k: v for k, v in vars(raw).items() if not k.startswith("_")}
         data = _clean_dict(data)
-        
         if "id" not in data and self.id is not None:
             data["id"] = self.id
-        
         rich_html = self._rich_html()
         if rich_html:
             data["html"] = rich_html
-            
         plain = self.plain_text
         if plain and "text" not in data and "message" not in data:
             data["text"] = plain
-
         lines = ["Message("]
         for k, v in data.items():
             if v is not None and v != {} and v != []:
@@ -1499,7 +1509,7 @@ async def command_py(ctx, invocation):
     if buffer_str:
         sections.append(("output", buffer_str, True))
     if result_val is not _SENTINEL:
-        rendered = str(result_val) if isinstance(result_val, str) else repr(result_val)
+        rendered = result_val if isinstance(result_val, str) else _dump(result_val)
         sections.append(("return", rendered if rendered else "''", True, "python"))
     if error_trace:
         sections.append(("traceback", error_trace, True, "python"))
