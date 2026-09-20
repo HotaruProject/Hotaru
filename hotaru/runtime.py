@@ -6,6 +6,7 @@ import os
 import secrets
 import tempfile
 import time
+import traceback
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
@@ -1039,7 +1040,7 @@ class Runtime:
             except Exception:
                 pass
             if self.observatory is not None:
-                self.observatory.emit("inline", "callback_error", error=type(exc).__name__, detail=str(exc)[:240])
+                self.observatory.emit("inline", "callback_error", error=type(exc).__name__, detail=str(exc)[:240], tb=traceback.format_exc()[-4000:])
             return None
         except Exception as exc:
             try:
@@ -1047,7 +1048,20 @@ class Runtime:
             except Exception:
                 pass
             if self.observatory is not None:
-                self.observatory.emit("inline", "callback_error", error=type(exc).__name__, detail=str(exc)[:240])
+                self.observatory.emit(
+                    "inline",
+                    "callback_error",
+                    error=type(exc).__name__,
+                    detail=str(exc)[:240],
+                    tb=traceback.format_exc()[-4000:],
+                    src=str(getattr(callback, "src", None)),
+                    chat_id=getattr(callback, "chat_id", None),
+                    msg_id=str(getattr(callback, "msg_id", None))[:200],
+                    msg_id_type=type(getattr(callback, "msg_id", None)).__name__,
+                    inline_id=str(getattr(callback, "inline_message_id", None))[:200],
+                    update_type=str(getattr(callback, "update_type", None)),
+                    from_id=getattr(callback, "from_id", None),
+                )
             return None
 
     def _command_ver(self, invocation: Any) -> str:
