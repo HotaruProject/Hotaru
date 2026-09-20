@@ -309,12 +309,10 @@ class InlineManager:
             self.info = info
             return info
         info = None
-        if state.get_setting("inline-bot-token") is None:
-            info = await self._find_existing_bot()
-            if info is None and allow_create:
-                self._create_gate()
-                async with self._provision_lock:
-                    info = await self._create_bot()
+        if state.get_setting("inline-bot-token") is None and allow_create:
+            self._create_gate()
+            async with self._provision_lock:
+                info = await self._create_bot()
         if info is None:
             raise InlineError("no inline bot available: nothing stored, nothing found, creation disabled")
         await self._start_bot_chat(info.username)
@@ -409,8 +407,6 @@ class InlineManager:
                         if not USERNAME_RE.match(candidate):
                             continue
                         if wanted and candidate.casefold() == str(wanted).casefold():
-                            candidates.insert(0, (text, candidate))
-                        elif candidate.lower().startswith("hotaru") or not wanted:
                             candidates.append((text, candidate))
                 for button_text, candidate in candidates:
                     token = await self._fetch_token(conv, button_text)
