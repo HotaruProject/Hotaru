@@ -167,7 +167,10 @@ class Runtime:
         else:
             vault = session_dir / f"{self.config.session_name}.vault"
             session_name = str(session_dir / self.config.session_name)
-        install_firewall(session_dir, vault, vault.with_suffix(".session"))
+        guarded = [vault, vault.with_suffix(".session")]
+        if uid is not None:
+            guarded.append(home)
+        install_firewall(*guarded)
         previous_disable = logging.root.manager.disable
         logging.disable(logging.INFO)
         try:
@@ -1924,6 +1927,8 @@ class Runtime:
         if self.app.mt.cursor_path is not None:
             digest = hashlib.sha256(session.name.encode()).hexdigest()[:24]
             self.app.mt.cursor_path = self.app.mt.cursor_path.with_name(f"{digest}.json")
+        from .accounts import bot_vault_path
+        install_firewall(home, target, bot_vault_path(root, userid))
 
     async def authorize(self) -> None:
         if self.app is None or self.app.mt is None:
@@ -1967,8 +1972,9 @@ class Runtime:
                 self.state.set_setting("owner-id", session.self_id)
         if self.account_manager is not None and session.self_id is not None and self.state is not None:
             try:
-                self.account_manager.sync_vaults()
-                self._ensure_primary_account(session.self_id)
+                with trusted_scope():
+                    self.account_manager.sync_vaults()
+                    self._ensure_primary_account(session.self_id)
             except Exception as exc:
                 if self.observatory is not None:
                     self.observatory.emit("accounts", "primary_register_error", error=type(exc).__name__)
@@ -1982,18 +1988,19 @@ class Runtime:
     async def _kernel_setup(self) -> None:
         if self.inline is None:
             raise RuntimeError("inline bot is required")
-        await self.inline.start()
-        await self.refresh_forms()
-        if self.inline.info is None:
-            raise RuntimeError("inline bot did not start")
-        if self.observatory is not None:
-            self.observatory.emit("inline", "started", username=self.inline.info.username)
-        from relay.proxies import ForumHelper
-        helper = self._forum_helper or ForumHelper(self)
-        self._forum_helper = helper
-        chat = await helper.ensure_group()
-        if chat is None:
-            raise RuntimeError("Hotaru Userbot group was not created")
+        with trusted_scope():
+            await self.inline.start()
+            await self.refresh_forms()
+            if self.inline.info is None:
+                raise RuntimeError("inline bot did not start")
+            if self.observatory is not None:
+                self.observatory.emit("inline", "started", username=self.inline.info.username)
+            from relay.proxies import ForumHelper
+            helper = self._forum_helper or ForumHelper(self)
+            self._forum_helper = helper
+            chat = await helper.ensure_group()
+            if chat is None:
+                raise RuntimeError("Hotaru Userbot group was not created")
 
     async def run(self) -> None:
         if self.app is None:
