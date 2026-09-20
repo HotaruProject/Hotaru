@@ -10,6 +10,7 @@ from typing import Any, Callable, Literal, cast
 from collections.abc import Awaitable
 
 from goygram.errors import FloodWaitError, MessageNotModifiedError
+from relay.inline import InlineError
 
 from .state import StateNamespace
 from .plainfmt import rich_to_plain
@@ -532,7 +533,8 @@ class ModuleContext:
     def _via_bot(self, buttons: Any, kind: str | None) -> bool:
         place = kind or "inline"
         if place == "inline":
-            return True
+            inline = getattr(self.runtime, "inline", None) if self.runtime is not None else None
+            return inline is not None and getattr(inline, "bot_app", None) is not None
         if not self.is_premium:
             return True
         return needs_callback(buttons)
@@ -616,7 +618,13 @@ class ModuleContext:
         buttons = kwargs.pop("buttons", None)
         if kwargs.pop("inline", False):
             self.runtime.purge_forms() if self.runtime is not None else None
-            result = await self.inline_form(kwargs.pop("text", ""), buttons, **kwargs)
+            try:
+                result = await self.inline_form(kwargs.pop("text", ""), buttons, **kwargs)
+            except (InlineError, RuntimeError, ResponseError):
+                kwargs["buttons"] = buttons
+                kwargs["buttons_as"] = "inline"
+                kwargs["output"] = mode
+                result = await self._deliver(**kwargs)
         elif kwargs.pop("bot", False):
             chat_id = kwargs.pop("chat_id", getattr(self._source, "chat_id", None))
             if kwargs.get("rich_message") is not None:

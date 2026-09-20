@@ -167,6 +167,17 @@ class Kernel:
             return None
         except asyncio.CancelledError:
             return None
+        except Exception as exc:
+            if self.response_service is not None:
+                try:
+                    return await self.response_service.answer(
+                        message,
+                        text=f"{type(exc).__name__}: {exc}",
+                        output="edit",
+                    )
+                except Exception:
+                    return None
+            return None
         if spec.kernel and self.response_service is not None:
             if isinstance(result, tuple) and len(result) == 2:
                 if self.form_sender is not None and result[1]:

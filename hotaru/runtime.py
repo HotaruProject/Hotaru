@@ -256,7 +256,7 @@ class Runtime:
             raise RuntimeError("inline bot form transport is unavailable")
         if self.inline.info is None:
             with trusted_scope():
-                await self.inline.ensure_bot()
+                await self.inline.ensure_bot(allow_create=False)
         if self.inline.bot_app is None:
             with trusted_scope():
                 await self.inline.start()
