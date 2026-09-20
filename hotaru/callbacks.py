@@ -67,6 +67,15 @@ class CallbackContext:
                 return await app.mt_messages_edit_inline_bot_message(id=id_field, message=message, **data)
         except EntityBoundsInvalidError:
             fallback = dict(data)
+            entities = fallback.get("entities")
+            pre = [entity for entity in entities if isinstance(entity, dict) and entity.get("_") == "messageEntityPre"] if isinstance(entities, list) else []
+            if pre:
+                fallback["entities"] = pre
+                try:
+                    with trusted_scope():
+                        return await app.mt_messages_edit_inline_bot_message(id=id_field, message=message, **fallback)
+                except EntityBoundsInvalidError:
+                    pass
             fallback.pop("entities", None)
             with trusted_scope():
                 return await app.mt_messages_edit_inline_bot_message(id=id_field, message=message, **fallback)
