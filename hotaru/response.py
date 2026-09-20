@@ -17,7 +17,8 @@ from .plainfmt import rich_to_plain
 from relay.firewall import trusted_scope
 from relay.files import document, put, take
 from goygram.rich import rich_html
-from goygram.sugar import html_to_entities, split_html_text
+from goygram.sugar import extract_sent_message, html_to_entities, split_html_text
+from goygram.types.obj import Obj
 from relay.proxies import (
     Gateway,
     RichGateway,
@@ -382,6 +383,7 @@ class ModuleContext:
     form_sender: Any = None
     runtime: Any = None
     _premium: bool | None = None
+    _response_source: Any = None
 
     def __repr__(self) -> str:
         return f"ModuleContext({self.module_id!r})"
@@ -576,14 +578,21 @@ class ModuleContext:
             limit = int(kwargs.pop("split_limit", 4096))
             file_limit = int(kwargs.pop("file_limit", 200000))
             if len(value) > file_limit:
-                return await self.responses.fallback_file(self._source, value, filename=kwargs.pop("filename", "response.html"), **kwargs)
+                result = await self.responses.fallback_file(self._delivery_source, value, filename=kwargs.pop("filename", "response.html"), **kwargs)
+                self._remember_response(result)
+                return result
             if len(value) > limit:
                 if kwargs.pop("preserve_html", True):
-                    return await self.responses.split_html(self._source, value, limit=limit, **kwargs)
-                return await self.responses.split(self._source, value, limit=limit, **kwargs)
+                    result = await self.responses.split_html(self._delivery_source, value, limit=limit, **kwargs)
+                else:
+                    result = await self.responses.split(self._delivery_source, value, limit=limit, **kwargs)
+                self._remember_response(result)
+                return result
             return await self.send_rich(value, **kwargs)
         parse_mode = kwargs.pop("parse_mode", None)
-        return await self.responses.answer(self._source, parse_mode=parse_mode, **kwargs)
+        result = await self.responses.answer(self._delivery_source, parse_mode=parse_mode, **kwargs)
+        self._remember_response(result)
+        return result
 
     async def respond(self, content: Any = None, **kwargs: Any) -> Any:
         mode = kwargs.pop("mode", kwargs.pop("output", "auto"))
@@ -591,7 +600,7 @@ class ModuleContext:
         if kwargs.pop("force_reply", False):
             mode = "reply"
         if mode == "auto":
-            mode = "edit" if self._outgoing else "reply"
+            mode = "edit" if self._response_source is not None or self._outgoing else "reply"
         if mode not in {"edit", "reply"}:
             raise ResponseError("response mode must be edit, reply, or auto")
         if delete_source == "auto":
@@ -673,6 +682,28 @@ class ModuleContext:
         return bool(value)
 
     @property
+    def _delivery_source(self) -> Any:
+        return self._response_source or self._source
+
+    def _remember_response(self, result: Any) -> None:
+        if isinstance(result, list):
+            result = next((item for item in result if isinstance(item, Response) and item.action == "reply"), None)
+        if not isinstance(result, Response) or not result.delivered or result.action != "reply":
+            return
+        sent = extract_sent_message(result.message)
+        message_id = sent.get("id") if isinstance(sent, dict) else None
+        chat_id = getattr(self._source, "chat_id", None)
+        app = getattr(self.runtime, "app", None) if self.runtime is not None else None
+        if not isinstance(message_id, int) or chat_id is None or app is None:
+            return
+        self_id = getattr(getattr(app, "session", None), "self_id", None)
+        self._response_source = Obj(
+            getattr(self._source, "src", "mt"),
+            {"kind": "msg", "msg_id": message_id, "chat_id": chat_id, "from_id": self_id, "is_me": True},
+            app,
+        )
+
+    @property
     def topic_id(self) -> int | None:
         for name in ("topic_id", "message_thread_id", "top_msg_id"):
             value = getattr(self._source, name, None)
@@ -730,7 +761,9 @@ class ModuleContext:
             data["reply_to"] = reply_to
         with trusted_scope():
             result = await app.mt_messages_send_media(**data)
-        return Response(True, "reply", getattr(self._source, "src", None), result)
+        response = Response(True, "reply", getattr(self._source, "src", None), result)
+        self._remember_response(response)
+        return response
 
     async def upload_file(self, source: Any, **kwargs: Any) -> Any:
         app = getattr(self.runtime, "app", None)
@@ -864,13 +897,16 @@ class ModuleContext:
                 return result if isinstance(result, Response) else Response(True, "reply", getattr(self._source, "src", None), result)
             kwargs.pop("parse_mode", None)
             return await self._deliver(text=rich_to_plain(html), **kwargs)
-        peer = getattr(self._source, "chat_id", None)
+        source = self._delivery_source
+        peer = getattr(source, "chat_id", None)
         if peer is None:
             raise ResponseError("rich message target is missing")
         output = kwargs.pop("output", "reply")
-        message_id = getattr(self._source, "id", None)
+        message_id = getattr(source, "id", None)
         if self.runtime is not None and getattr(self.runtime, "app", None) is not None:
-            return await self._trusted_send_rich(html, peer, output=output, message_id=message_id, **kwargs)
+            response = await self._trusted_send_rich(html, peer, output=output, message_id=message_id, **kwargs)
+            self._remember_response(response)
+            return response
         data = {"peer": peer, "message": "", "random_id": secrets.randbits(63), "rich_message": {"_": "inputRichMessageHTML", **rich_html(html)}}
         kwargs.pop("parse_mode", None)
         if output == "edit" and message_id is not None:
@@ -884,7 +920,9 @@ class ModuleContext:
             data["reply_to"] = {"_": "inputReplyToMessage", "reply_to_msg_id": int(reply_to), **( {"top_msg_id": int(topic_id)} if topic_id is not None else {})}
         data.update(kwargs)
         result = await self._context_tg_call("messages.sendMessage", data)
-        return Response(True, "reply", getattr(self._source, "src", None), result)
+        response = Response(True, "reply", getattr(self._source, "src", None), result)
+        self._remember_response(response)
+        return response
 
     async def _trusted_send_rich(self, html: str, peer: Any, *, output: str = "reply", message_id: int | None = None, **kwargs: Any) -> Response:
         import secrets as _secrets
