@@ -65,7 +65,7 @@ def _fmt(payload: Any) -> Any:
     event = str(payload.get("event") or "-")
     stamp = time.strftime("%H:%M:%S", time.localtime(payload.get("ts") or 0))
     parts = [f"[{stamp}]", level, comp, event]
-    for key in ("module", "error", "detail", "msg", "name", "path", "username", "target"):
+    for key in sorted(set(payload) - {"ts", "level", "component", "event"}):
         value = payload.get(key)
         if value is None:
             continue
@@ -188,7 +188,15 @@ async def command_logs(ctx: Any, invocation: Any) -> Any:
         await ctx.respond(ctx.t("kernel.logger.no_observatory", "Обсерватория недоступна"), parse_mode="HTML")
         return
     level = args[0].lower() if args and args[0].lower() in LEVELS else "debug"
-    entries = obs.tail(lines=60, level=level)
+    rest = args[1:] if args and args[0].lower() in LEVELS else args
+    count = int(rest[0]) if rest and rest[0].isdigit() else 60
+    count = max(1, min(count, 1000))
+    if rest and rest[0].isdigit():
+        rest = rest[1:]
+    component = rest[0].lower() if rest else None
+    entries = obs.tail(lines=count, level=level)
+    if component is not None:
+        entries = [entry for entry in entries if str(entry.get("component") or "").lower() == component]
     if not entries:
         await ctx.respond(ctx.t("kernel.logger.no_entries", "Нет записей этого уровня"), parse_mode="HTML")
         return
