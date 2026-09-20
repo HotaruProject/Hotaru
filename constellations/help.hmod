@@ -60,8 +60,6 @@ async def _show_help(ctx: Any, invocation: Any) -> Any:
         await ctx.respond("<b>Runtime unavailable</b>", parse_mode="HTML")
         return
 
-    premium = await ctx.premium()
-
     if invocation.args:
         if len(invocation.args) != 1:
             await ctx.respond(
@@ -110,14 +108,9 @@ async def _show_help(ctx: Any, invocation: Any) -> Any:
             command_lines.append(line)
         cmd_title = _escape(ctx.t("kernel.help_ui.commands", "Commands"))
         cap_title = _escape(ctx.t("kernel.help_ui.capabilities", "Capabilities"))
-        if premium:
-            text += f"<details><summary>{cmd_title}</summary><p>{'<br>'.join(command_lines) or 'none'}</p></details>"
-            text += f"<details><summary>{cap_title}</summary><p>{capabilities}</p></details>"
-            await ctx.respond(text, parse_mode="HTML", rich=True)
-        else:
-            text += f"<br><b>{cmd_title}</b><br>{'<br>'.join(command_lines) or 'none'}"
-            text += f"<br><b>{cap_title}</b><br>{capabilities}"
-            await ctx.respond(text, rich=False, parse_mode="HTML")
+        text += f"<details><summary>{cmd_title}</summary><p>{'<br>'.join(command_lines) or 'none'}</p></details>"
+        text += f"<details><summary>{cap_title}</summary><p>{capabilities}</p></details>"
+        await ctx.respond(text, parse_mode="HTML", rich=True, rich_fallback="bot")
         return
 
     kernel_modules = []
@@ -159,25 +152,16 @@ async def _show_help(ctx: Any, invocation: Any) -> Any:
     text = f"<b>{title}</b>"
 
     if kernel_modules:
-        if premium:
-            text += (
-                f"<details><summary>{kernel_title} ({len(kernel_modules)})</summary>"
-                + "".join(kernel_modules)
-                + "</details>"
-            )
-        else:
-            text += f"<br><b>{kernel_title} ({len(kernel_modules)})</b>" + "".join(kernel_modules)
+        text += (
+            f"<details><summary>{kernel_title} ({len(kernel_modules)})</summary>"
+            + "".join(kernel_modules)
+            + "</details>"
+        )
     if user_modules:
-        if premium:
-            text += (
-                f"<details><summary>{user_title} ({len(user_modules)})</summary>"
-                + "".join(user_modules)
-                + "</details>"
-            )
-        else:
-            text += f"<br><b>{user_title} ({len(user_modules)})</b>" + "".join(user_modules)
+        text += (
+            f"<details><summary>{user_title} ({len(user_modules)})</summary>"
+            + "".join(user_modules)
+            + "</details>"
+        )
 
-    if premium:
-        await ctx.respond(text=text, parse_mode="HTML", rich=True)
-    else:
-        await ctx.respond(text=text, parse_mode="HTML", rich=False)
+    await ctx.respond(text=text, parse_mode="HTML", rich=True, rich_fallback="bot")
