@@ -600,6 +600,11 @@ class ForumHelper:
         self._warmed: set[int] = set()
         self._warm_tries: dict[int, float] = {}
         self._invite_ts = 0.0
+        self._apply_task: asyncio.Task[None] | None = None
+
+    def _apply_background(self, chat_id: int) -> None:
+        if self._apply_task is None or self._apply_task.done():
+            self._apply_task = asyncio.create_task(self._apply_group(chat_id), name="hotaru:forum-apply")
 
     def _bot_app(self) -> Any:
         manager = getattr(self._runtime, "inline", None)
@@ -711,9 +716,8 @@ class ForumHelper:
         mt = self._user_mt()
         raw = -chat_id - 1000000000000
         with trusted_scope():
-            try:
-                await mt.resolve_peer(chat_id)
-            except Exception:
+            entity = mt.entities.get(("chat", raw))
+            if not isinstance(entity, dict) or not int(entity.get("access_hash") or 0):
                 try:
                     dialogs = await self._user_call(
                         "messages.getDialogs",
@@ -724,11 +728,10 @@ class ForumHelper:
                         hash=0,
                     )
                     self._ingest_user(dialogs)
-                    await mt.resolve_peer(chat_id)
+                    entity = mt.entities.get(("chat", raw))
                 except Exception as exc:
                     self._emit("warm_failed", chat=chat_id, reason="resolve", detail=str(exc)[:160])
                     return False
-            entity = mt.entities.get(("chat", raw))
             if not isinstance(entity, dict):
                 self._emit("warm_failed", chat=chat_id, reason="entity")
                 return False
@@ -746,7 +749,7 @@ class ForumHelper:
                 self._emit("warm_failed", chat=chat_id, reason="getchannels", detail=str(exc)[:160])
                 if "CHANNEL_PRIVATE" in text or "CHANNEL_INVALID" in text:
                     self._warmed.discard(chat_id)
-                    await self._reset_group()
+                    await self._reset_group(chat_id)
                 return False
         alive = False
         for chat in self._body(res).get("chats") or []:
@@ -769,9 +772,7 @@ class ForumHelper:
         if "CHANNEL_PRIVATE" not in text and "CHANNEL_INVALID" not in text:
             return
         self._warmed.discard(chat_id)
-        if await self._warm_user_entity(chat_id, force=True):
-            return
-        await self._reset_group()
+        await self._reset_group(chat_id)
 
     async def _recover_bot_membership(self, chat_id: int, exc: Exception) -> bool:
         text = str(exc).upper()
@@ -782,10 +783,12 @@ class ForumHelper:
         await self._sync_channel_to_bot(chat_id)
         return await self._bot_resolve(chat_id) is not None
 
-    async def _reset_group(self) -> None:
+    async def _reset_group(self, dead: int | None = None) -> None:
         state = getattr(self._runtime, "state", None)
         if state is not None:
             state.set_setting("forum-channel-id", 0)
+            if dead is not None:
+                state.set_setting("forum-dead-channel-id", int(dead))
         self._warmed.clear()
         self._topic_tries.clear()
         self._group_try_ts = 0.0
@@ -795,17 +798,14 @@ class ForumHelper:
         return "CHANNEL_PRIVATE" in text or "CHANNEL_INVALID" in text or "NO RESPONSE" in text or type(exc).__name__ == "TimeoutError"
 
     async def ensure_group(self) -> int | None:
-        chat_id = await self.group()
-        if chat_id is not None:
-            if await self._warm_user_entity(chat_id):
-                await self._apply_group(chat_id)
-                return chat_id
-            await self._reset_group()
+        ready = getattr(self._runtime, "_forum_ready", None)
+        if ready is not None:
+            await ready.wait()
         async with self._lock:
             chat_id = await self.group()
             if chat_id is not None:
                 if await self._warm_user_entity(chat_id):
-                    await self._apply_group(chat_id)
+                    self._apply_background(chat_id)
                     return chat_id
                 await self._reset_group()
             now = time.monotonic()
@@ -814,14 +814,16 @@ class ForumHelper:
             self._group_try_ts = now
             title = str(getattr(self._runtime, "forum_title", None) or "Hotaru Userbot")
             found = await self._find_groups_by_title(title)
-            live = [(chat, cid) for chat, cid in found if not chat.get("left")]
+            state = getattr(self._runtime, "state", None)
+            dead = state.get_setting("forum-dead-channel-id") if state is not None else None
+            live = [(chat, cid) for chat, cid in found if not chat.get("left") and cid != dead]
             if live:
                 for chat, cid in live[1:]:
                     await self._delete_owned_group(chat, cid)
                 cid = live[0][1]
                 await self._save_group(cid)
                 if await self._warm_user_entity(cid, force=True):
-                    await self._apply_group(cid)
+                    self._apply_background(cid)
                     return cid
                 await self._reset_group()
             try:
@@ -842,7 +844,7 @@ class ForumHelper:
                     new_id = -1000000000000 - int(chat["id"])
                     await self._save_group(new_id)
                     self._warmed.add(new_id)
-                    await self._apply_group(new_id)
+                    self._apply_background(new_id)
                     self._emit("created", chat=new_id)
                     return new_id
             self._emit("create_failed", detail="no channel in result")
