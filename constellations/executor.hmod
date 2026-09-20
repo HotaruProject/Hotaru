@@ -1,6 +1,6 @@
 HOTARU = {
     "id": "executor",
-    "version": "3.3.3",
+    "version": "3.3.4",
     "commands": ["sh", "py", "kill"],
     "capabilities": ["mt", "files", "net", "state"],
 }
@@ -268,14 +268,15 @@ class OutputUpdater:
         if ui is None:
             return []
         n = max(len(self._pages), 1)
-        rows = []
-        if n > 1:
-            rows.append([
+        if n <= 1:
+            return []
+        return [
+            [
                 ui.button("<", self._on_page, (idx - 1) % n),
                 ui.button(">", self._on_page, (idx + 1) % n),
-            ])
-        rows.append([ui.button("x", self._on_del)])
-        return rows
+            ],
+            [ui.button("x", self._on_del)],
+        ]
 
     def _kbd(self, buttons: list | None) -> dict | None:
         if not buttons:
@@ -315,21 +316,13 @@ class OutputUpdater:
         kwargs: dict[str, Any] = {"parse_mode": "HTML", "rich": False}
         if buttons:
             kwargs["buttons"] = buttons
-        if not self.msg:
-            self.msg = await self.ctx.respond(text, **kwargs)
-            return
+        if self.msg:
+            kwargs["output"] = "edit"
         try:
-            edit = getattr(self.msg, "edit", None)
-            if callable(edit):
-                if buttons is not None:
-                    await edit(text, buttons=buttons)
-                else:
-                    await edit(text)
-                return
-            await self.ctx.respond(text, output="edit", **kwargs)
+            self.msg = await self.ctx.respond(text, **kwargs)
         except Exception:
             if final:
-                self.msg = await self.ctx.respond(text, output="reply", **kwargs)
+                self.msg = await self.ctx.respond(text, output="reply", parse_mode="HTML", rich=False)
 
     async def _send(self, sections: list | None = None, returncode: int | None = None, final: bool = False) -> None:
         async with self._lock:
