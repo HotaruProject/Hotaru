@@ -391,24 +391,29 @@ class InlineManager:
             except Exception:
                 pass
 
-    async def _start_bot_chat(self, username: str) -> None:
+    async def _start_bot_chat(self, username: str) -> bool:
         app = self.runtime.app
         if app is None or app.mt is None:
-            return
-        with trusted_scope():
-            peer = await app.mt.resolve_peer("@" + username)
-            await app.mt_messages_send_message(
-                peer=peer,
-                message="/start",
-                random_id=secrets.randbits(63),
-            )
+            return False
+        try:
+            with trusted_scope():
+                peer = await app.mt.resolve_peer("@" + username)
+                await app.mt_messages_send_message(
+                    peer=peer,
+                    message="/start",
+                    random_id=secrets.randbits(63),
+                )
+        except Exception as exc:
+            if self.runtime.observatory is not None:
+                self.runtime.observatory.emit("inline", "start_chat_skipped", error=type(exc).__name__, detail=str(exc)[:160])
+            return False
+        return True
 
     async def reopen_owner_chat(self, chat_id: int | str | None) -> bool:
         if not isinstance(chat_id, int) or self.info is None:
             return False
         try:
-            await self._start_bot_chat(self.info.username)
-            return True
+            return await self._start_bot_chat(self.info.username)
         except Exception:
             return False
 
