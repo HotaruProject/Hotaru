@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from goygram.errors import EntityBoundsInvalidError
 from goygram import ext
 from relay.firewall import module_scope
 from goygram.rich import rich_html
@@ -56,6 +57,19 @@ class CallbackContext:
         kwargs.pop("show_alert", None)
         alert = kwargs.pop("alert", False)
         return await self._callback.answer(text, alert=alert, **kwargs)
+
+    @staticmethod
+    async def _edit_inline(app: Any, id_field: dict[str, Any], message: str, data: dict[str, Any]) -> Any:
+        from relay.firewall import trusted_scope
+
+        try:
+            with trusted_scope():
+                return await app.mt_messages_edit_inline_bot_message(id=id_field, message=message, **data)
+        except EntityBoundsInvalidError:
+            fallback = dict(data)
+            fallback.pop("entities", None)
+            with trusted_scope():
+                return await app.mt_messages_edit_inline_bot_message(id=id_field, message=message, **fallback)
 
     async def edit(self, text: str, **kwargs: Any) -> Any:
         inline_mid = getattr(self, "inline_message_id", None)
@@ -103,9 +117,7 @@ class CallbackContext:
                 if use_rich:
                     data.pop("entities", None)
                     data["rich_message"] = {"_": "inputRichMessageHTML", **rich_html(text)}
-                from relay.firewall import trusted_scope
-                with trusted_scope():
-                    return await app.mt_messages_edit_inline_bot_message(id=id_field, message="" if use_rich else plain, **data)
+                return await self._edit_inline(app, id_field, "" if use_rich else plain, data)
             log["branch"] = "editMessage"
             _cb_log(log)
             if isinstance(chat_id, int) and isinstance(msg_id, int):
@@ -130,7 +142,7 @@ class CallbackContext:
             if use_rich:
                 data.pop("entities", None)
                 data["rich_message"] = {"_": "inputRichMessageHTML", **rich_html(text)}
-            return await app.mt_messages_edit_inline_bot_message(id=id_field, message="" if use_rich else plain, **data)
+            return await self._edit_inline(app, id_field, "" if use_rich else plain, data)
         log["branch"] = "fallback"
         _cb_log(log)
         return await self._callback.edit(text, **kwargs)
