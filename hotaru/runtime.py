@@ -132,6 +132,9 @@ class Runtime:
     _input_requests: dict[str, tuple[Any, ...]] | None = None
     _form_expiry: dict[str, float] | None = None
     _form_gc_task: asyncio.Task[None] | None = None
+    _forum_setup_task: asyncio.Task[None] | None = None
+    _forum_ready: asyncio.Event | None = None
+    _app_task: asyncio.Task[None] | None = None
     _premium_cache: bool | None = None
     _forum_helper: Any = None
     forum_title: str = "Hotaru Userbot"
@@ -237,6 +240,7 @@ class Runtime:
         self._form_module_ids = {}
         self._form_expiry = {}
         self._form_gc_task = None
+        self._forum_ready = asyncio.Event()
         self.context_factory.inline_manager = self.inline
         self.context_factory.form_sender = self._send_form
         self.sandbox = ModuleSandbox(self)
@@ -1985,16 +1989,39 @@ class Runtime:
                 raise RuntimeError("inline bot did not start")
             if self.observatory is not None:
                 self.observatory.emit("inline", "started", username=self.inline.info.username)
-            from relay.proxies import ForumHelper
-            helper = self._forum_helper or ForumHelper(self)
-            self._forum_helper = helper
-            try:
-                chat = await asyncio.wait_for(helper.ensure_group(), timeout=30.0)
-                if chat is None:
-                    raise RuntimeError("Hotaru Userbot group was not created")
-            except asyncio.TimeoutError:
-                if self.observatory is not None:
-                    self.observatory.emit("forum", "ensure_group_timeout")
+
+    async def _ensure_forum(self) -> None:
+        from relay.proxies import ForumHelper
+
+        helper = self._forum_helper or ForumHelper(self)
+        self._forum_helper = helper
+        if self.observatory is not None:
+            self.observatory.emit("forum", "ensure_group_begin")
+        try:
+            chat = await helper.ensure_group()
+            if self.observatory is not None:
+                self.observatory.emit("forum", "ensure_group_done", chat=chat)
+        except Exception as exc:
+            if self.observatory is not None:
+                self.observatory.emit("forum", "ensure_group_error", error=type(exc).__name__, detail=str(exc)[:160])
+
+    async def _forum_after_transport(self) -> None:
+        mt = getattr(self.app, "mt", None)
+        seen = False
+        deadline = time.monotonic() + 35.0
+        await asyncio.sleep(0)
+        while mt is not None and time.monotonic() < deadline:
+            pending = bool(getattr(mt, "pending", None))
+            seen = seen or pending
+            reader = getattr(mt, "_reader_task", None)
+            if reader is not None and not reader.done() and not pending and (seen or deadline - time.monotonic() < 34.0):
+                break
+            await asyncio.sleep(0.05)
+        if self._forum_ready is not None:
+            self._forum_ready.set()
+        if self.observatory is not None:
+            self.observatory.emit("forum", "transport_ready", pending=len(getattr(mt, "pending", {})) if mt is not None else 0)
+        await self._ensure_forum()
 
     async def run(self) -> None:
         if self.app is None:
@@ -2013,9 +2040,13 @@ class Runtime:
         if self.state is not None and self.kernel is not None:
             self.kernel.suspended = self.state.get_setting("suspended") == "1"
         if self.modules is not None and self.constellations_dir.is_dir():
+            hmod_paths = sorted(self.constellations_dir.glob("*.hmod"))
+            from .typesafe import check_hmods
+
+            check_hmods(hmod_paths)
             if hasattr(self.modules, "begin_boot"):
                 self.modules.begin_boot()
-            for hmod_path in sorted(self.constellations_dir.glob("*.hmod")):
+            for hmod_path in hmod_paths:
                 try:
                     candidate = self.modules.loader.load(hmod_path)
                 except Exception:
@@ -2035,8 +2066,10 @@ class Runtime:
             await self.modules.end_boot()
         if self.supervisor is not None:
             self.supervisor.mark_ready(mt=self.app.mt is not None, bot=self.app.bot is not None)
+        self._app_task = asyncio.create_task(self.app.run(), name="hotaru:app")
+        self._forum_setup_task = asyncio.create_task(self._forum_after_transport(), name="hotaru:forum-setup")
         try:
-            await self.app.run()
+            await self._app_task
         finally:
             if self.supervisor is not None:
                 self.supervisor.mark_stopped()
@@ -2052,6 +2085,9 @@ class Runtime:
         if self._form_gc_task is not None and not self._form_gc_task.done():
             self._form_gc_task.cancel()
             await asyncio.gather(self._form_gc_task, return_exceptions=True)
+        if self._forum_setup_task is not None and not self._forum_setup_task.done():
+            self._forum_setup_task.cancel()
+            await asyncio.gather(self._forum_setup_task, return_exceptions=True)
         if self.inline is not None:
             await self.inline.stop()
         if self._forms is not None:
