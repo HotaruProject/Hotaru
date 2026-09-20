@@ -127,7 +127,7 @@ class Runtime:
     cap_host: CapabilityHost | None = None
     lexicon: Lexicon | None = None
     closed: bool = False
-    _inline_forms: dict[str, tuple[str, list[dict[str, str]]]] | None = None
+    _inline_forms: dict[str, tuple[str, list[dict[str, str]], bool]] | None = None
     _forms: dict[str, tuple[Any, Any, str, Any, dict[str, Any]]] | None = None
     _input_requests: dict[str, tuple[Any, ...]] | None = None
     _form_expiry: dict[str, float] | None = None
@@ -446,7 +446,7 @@ class Runtime:
                 if str(row[0]).startswith("inline:"):
                     if self._inline_forms is None:
                         self._inline_forms = {}
-                    self._inline_forms[str(row[0]).split(":", 1)[1]] = (row_text, row_buttons)
+                    self._inline_forms[str(row[0]).split(":", 1)[1]] = (row_text, row_buttons, bool(options.get("rich", False)))
                 if row[9] is not None:
                     self._form_expiry[row[0]] = time.monotonic() + max(0.0, row[9] - time.time())
                 restored += 1
@@ -508,7 +508,7 @@ class Runtime:
         self._forms[handle.key] = (handle, source, next_text, next_buttons, options)
         self._persist_form(handle.key, source, next_text, next_buttons, options)
         if str(handle.key).startswith("inline:") and self._inline_forms is not None:
-            self._inline_forms[str(handle.key).split(":", 1)[1]] = (next_text, next_buttons)
+            self._inline_forms[str(handle.key).split(":", 1)[1]] = (next_text, next_buttons, bool(options.get("rich", False)))
         return value
 
     async def delete_form(self, handle: Any) -> bool:
@@ -661,7 +661,7 @@ class Runtime:
                 else:
                     current.append({key: value for key, value in button.items() if key != "style"})
             inline_buttons.append(current)
-        self._inline_forms[nonce] = (text, inline_buttons)
+        self._inline_forms[nonce] = (text, inline_buttons, bool(options.get("rich", False)))
         options["module_id"] = options.get("module_id", "")
         options["form_id"] = nonce
         options["actions"] = action_records or self._form_actions(buttons)
@@ -763,9 +763,10 @@ class Runtime:
             if form is None:
                 await query.answer(results=[], cache_time=0, is_personal=True)
                 return
-            form_text, buttons = form
-            result = InlineObj.article("hotaru-form", "Hotaru form", form_text)
-            result["input_message_content"] = {"rich_message": {"_": "inputRichMessageHTML", **rich_html(form_text)}}
+            form_text, buttons, rich = form
+            result = InlineObj.article("hotaru-form", "Hotaru form", form_text, parse_mode="HTML")
+            if rich:
+                result["input_message_content"] = {"rich_message": {"_": "inputRichMessageHTML", **rich_html(form_text)}}
             if buttons:
                 result["reply_markup"] = {"inline_keyboard": buttons}
             await answer_tl(query, results=[result], cache_time=0, is_personal=True)
@@ -872,16 +873,19 @@ class Runtime:
         if nonce is not None:
             if self._inline_forms is None:
                 self._inline_forms = {}
-            self._inline_forms[nonce] = (text, layout)
+            self._inline_forms[nonce] = (text, layout, bool(options.get("rich", False)))
             if module_id:
                 if self._form_module_ids is None:
                     self._form_module_ids = {}
                 self._form_module_ids[nonce] = module_id
-        plain, ents = html_to_entities(text)
         id_field = inline_id if isinstance(inline_id, dict) else {"_": "inputBotInlineMessageID", "raw": inline_id}
-        data: dict[str, Any] = {"id": id_field, "message": plain}
-        if ents:
-            data["entities"] = ents
+        if options.get("rich"):
+            data: dict[str, Any] = {"id": id_field, "message": "", "rich_message": {"_": "inputRichMessageHTML", **rich_html(text)}}
+        else:
+            plain, ents = html_to_entities(text)
+            data = {"id": id_field, "message": plain}
+            if ents:
+                data["entities"] = ents
         markup = kbd_to_tl({"inline_keyboard": layout})
         if markup is not None:
             data["reply_markup"] = markup
@@ -1047,8 +1051,11 @@ class Runtime:
         if form is None:
             await query.answer(results=[], cache_time=0, is_personal=True)
             return
-        body, buttons = form
-        await answer_tl(query, results=[InlineObj.article("hotaru-form", "Hotaru form", body, kbd={"inline_keyboard": [buttons]})], cache_time=0, is_personal=True)
+        body, buttons, rich = form
+        result = InlineObj.article("hotaru-form", "Hotaru form", body, parse_mode="HTML", kbd={"inline_keyboard": [buttons]})
+        if rich:
+            result["input_message_content"] = {"rich_message": {"_": "inputRichMessageHTML", **rich_html(body)}}
+        await answer_tl(query, results=[result], cache_time=0, is_personal=True)
 
     async def _on_inline_callback(self, callback: Any) -> Any:
         if self.security is None or self.callbacks is None:
