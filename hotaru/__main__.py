@@ -6,6 +6,11 @@ import sys
 
 
 def ensure_kernel_dependencies() -> None:
+    from .boot import in_venv, maybe_reexec
+    if not in_venv():
+        maybe_reexec()
+        if not in_venv():
+            raise SystemExit("run python -m hotaru from the repo so .venv can be created")
     spec = importlib.util.spec_from_file_location("hotaru_deps_bootstrap", __file__.replace("__main__.py", "deps.py"))
     if spec is None or spec.loader is None:
         return

@@ -1,3 +1,7 @@
+from .boot import maybe_reexec
+
+maybe_reexec()
+
 from .commands import CommandInvocation, CommandParser
 from .accounts import AccountProfile, vault_name
 from relay.inline import BotFatherConversation, InlineBotInfo, InlineError, InlineManager
