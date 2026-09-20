@@ -4,6 +4,7 @@ import asyncio
 import base64
 import hashlib
 import inspect
+import json
 import secrets
 import time
 from dataclasses import dataclass
@@ -15,6 +16,16 @@ from relay.firewall import module_scope
 from goygram.sugar import html_to_entities
 from goygram.types.kbd import kbd_to_tl
 from relay.rpc import delete_chat_msg
+
+
+def _cb_log(data: dict[str, Any]) -> None:
+    try:
+        path = Path("/root/HotaruUB/observatory/runtime/callback_fail.jsonl")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(data, ensure_ascii=False, default=str) + "\n")
+    except Exception:
+        pass
 
 
 class CallbackDenied(PermissionError):
@@ -48,6 +59,18 @@ class CallbackContext:
     async def edit(self, text: str, **kwargs: Any) -> Any:
         inline_mid = getattr(self, "inline_message_id", None)
         app = getattr(self, "app", None)
+        chat_id = getattr(self, "chat_id", None)
+        msg_id = getattr(self, "msg_id", None)
+        log = {
+            "src": getattr(self, "src", None),
+            "chat_id": chat_id,
+            "msg_id": msg_id,
+            "msg_id_type": type(msg_id).__name__,
+            "inline_mid_type": type(inline_mid).__name__,
+            "inline_mid": inline_mid if not isinstance(inline_mid, (bytes, bytearray)) else "bytes",
+            "text_len": len(text or ""),
+            "update_type": getattr(self, "update_type", None),
+        }
         if getattr(self, "src", None) == "mt" and app is not None:
             data = dict(kwargs)
             raw_kbd = data.pop("reply_markup", data.pop("kbd", None))
@@ -59,15 +82,27 @@ class CallbackContext:
             plain, ents = html_to_entities(text)
             if ents:
                 data["entities"] = ents
+            log["plain_len"] = len(plain or "")
+            log["ents"] = len(ents)
+            runtime = getattr(self._callback, "_hotaru_runtime", None)
+            bot_app = getattr(getattr(runtime, "inline", None), "bot_app", None) if runtime is not None else None
+            app = bot_app or app
+            log["bot"] = bool(getattr(app, "bot_token", None))
             if inline_mid is not None:
                 id_field = inline_mid if isinstance(inline_mid, dict) else {"_": "inputBotInlineMessageID", "raw": inline_mid} if isinstance(inline_mid, (str, bytes)) else None
+                log["branch"] = "editInlineBotMessage"
+                log["id_field"] = id_field
+                log["dc"] = id_field.get("dc_id") if isinstance(id_field, dict) else None
+                _cb_log(log)
                 if id_field is None:
                     return None
-                return await app.mt_messages_edit_inline_bot_message( id=id_field, message=plain, **data)
-            chat_id = getattr(self, "chat_id", None)
-            msg_id = getattr(self, "msg_id", None)
+                from relay.firewall import trusted_scope
+                with trusted_scope():
+                    return await app.mt_messages_edit_inline_bot_message(id=id_field, message=plain, **data)
+            log["branch"] = "editMessage"
+            _cb_log(log)
             if isinstance(chat_id, int) and isinstance(msg_id, int):
-                return await app.mt_messages_edit_message( peer=chat_id, id=int(msg_id), message=plain, **data)
+                return await app.mt_messages_edit_message(peer=chat_id, id=int(msg_id), message=plain, **data)
             return None
         if inline_mid is not None and app is not None:
             data = dict(kwargs)
@@ -81,7 +116,12 @@ class CallbackContext:
             if ents:
                 data["entities"] = ents
             id_field = inline_mid if isinstance(inline_mid, dict) else {"_": "inputBotInlineMessageID", "raw": inline_mid}
-            return await app.mt_messages_edit_inline_bot_message( id=id_field, message=plain, **data)
+            log["branch"] = "editInlineBotMessage-bot"
+            log["id_field"] = id_field
+            _cb_log(log)
+            return await app.mt_messages_edit_inline_bot_message(id=id_field, message=plain, **data)
+        log["branch"] = "fallback"
+        _cb_log(log)
         return await self._callback.edit(text, **kwargs)
 
     async def delete(self) -> Any:
