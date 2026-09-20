@@ -1918,7 +1918,7 @@ class Runtime:
             from .accounts import AccountManager
             self.account_manager = AccountManager(self.state, self.config.session_dir)
             if self.context_factory is not None:
-                self.context_factory.state = self.state
+                self.context_factory._state = self.state
         else:
             self.config = replace(self.config, session_name=name)
         if self.app.mt.cursor_path is not None:
