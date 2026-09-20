@@ -1,6 +1,6 @@
 HOTARU = {
     "id": "executor",
-    "version": "3.3.5",
+    "version": "3.3.6",
     "commands": ["sh", "py", "kill"],
     "capabilities": ["mt", "files", "net", "state"],
 }
@@ -583,6 +583,13 @@ class _MsgProxy:
         if rich:
             return rich
         plain = self._g("text", "raw_text", "message", "caption") or ""
+        if not isinstance(plain, str):
+            plain = str(plain) if plain else ""
+        ents = self._g("entities") or []
+        tools = _tools(self.__dict__["_ctx"])
+        conv = getattr(tools, "entities_to_html", None) if tools is not None else None
+        if conv is not None:
+            return conv(plain, ents)
         return html.escape(plain) if plain else ""
 
     @property
