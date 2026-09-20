@@ -750,6 +750,11 @@ class InlineManager:
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
+                if self._is_session_auth_failure(exc):
+                    if self.runtime.observatory is not None:
+                        self.runtime.observatory.emit("inline", "session_reauth", error=type(exc).__name__)
+                    await self._restart_bot_session(app)
+                    return
                 if self._is_auth_failure(exc):
                     if self.runtime.observatory is not None:
                         self.runtime.observatory.emit("inline", "token_revoked_midflight")
@@ -784,6 +789,26 @@ class InlineManager:
                 asyncio.create_task(self._warm_owner_peer())
                 return
             await asyncio.sleep(0.2)
+
+    @staticmethod
+    def _is_session_auth_failure(exc: Exception) -> bool:
+        text = str(exc).upper()
+        return any(value in text for value in ("AUTH_KEY_UNREGISTERED", "AUTH_KEY_INVALID", "AUTH_KEY_PERM_EMPTY", "AUTH_KEY_DUPLICATED", "SESSION_REVOKED", "SESSION_EXPIRED"))
+
+    async def _restart_bot_session(self, app: Any) -> None:
+        self.ready.clear()
+        try:
+            app.stop()
+            await app.close()
+        except Exception:
+            pass
+        session = getattr(app, "session", None)
+        path = getattr(session, "path", None)
+        if path is not None:
+            path.unlink(missing_ok=True)
+        self.bot_app = None
+        self._task = None
+        await self.start()
 
     @staticmethod
     def _is_auth_failure(exc: Exception) -> bool:
