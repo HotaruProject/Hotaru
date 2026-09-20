@@ -192,11 +192,6 @@ async def command_logs(ctx: Any, invocation: Any) -> Any:
     if not entries:
         await ctx.respond(ctx.t("kernel.logger.no_entries", "Нет записей этого уровня"), parse_mode="HTML")
         return
-    try:
-        await ctx.forum.ensure_topic(TOPIC_TITLE)
-    except Exception as exc:
-        await ctx.respond(ctx.t("kernel.logger.topic_unavailable", "Топик недоступен: {error}", error=html.escape(str(exc), quote=False)), parse_mode="HTML")
-        return
     import os
     import tempfile
     fd, raw_path = tempfile.mkstemp(prefix="hotaru-logs-", suffix=".txt")
@@ -205,13 +200,7 @@ async def command_logs(ctx: Any, invocation: Any) -> Any:
         with open(raw_path, "w", encoding="utf-8") as stream:
             stream.write("\n".join(_fmt(entry) for entry in entries))
         caption = ctx.t("kernel.logger.logs_caption", "Логи Hotaru: {count} записей (уровень {level})", count=len(entries), level=level)
-        up = await ctx.upload_file(raw_path, file_name="hotaru-logs.txt")
-        media = ctx.file_media(up, mime="text/plain", file_name="hotaru-logs.txt")
-        chat_id = invocation.chat_id if invocation is not None else None
-        message_id = invocation.message_id if invocation is not None else None
-        if not (isinstance(chat_id, int) and isinstance(message_id, int)):
-            return
-        await ctx.tg.call("messages.editMessage", {"id": message_id, "message": caption, "peer": chat_id, "media": media})
+        await ctx.send_file(raw_path, caption, file_name="hotaru-logs.txt", mime_type="text/plain")
         _emit(ctx, "logs_delivered", count=len(entries))
     finally:
         try:
