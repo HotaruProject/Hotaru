@@ -761,6 +761,7 @@ class ModuleContext:
         app = getattr(self.runtime, "app", None) if self.runtime is not None else None
         if app is None or getattr(app, "mt", None) is None:
             raise ResponseError("upload is unavailable")
+        output = kwargs.pop("output", "reply")
         file_name = kwargs.pop("file_name", None)
         mime = kwargs.pop("mime_type", None) or kwargs.pop("mime", None) or "application/octet-stream"
         if isinstance(file, dict) and str(as_tl(file).get("_", "")).startswith("inputMedia"):
@@ -776,6 +777,18 @@ class ModuleContext:
             data["message"] = plain
             if ents:
                 data["entities"] = ents
+        source_id = getattr(self._source, "id", None)
+        if output in {"edit", "auto"} and self._outgoing and isinstance(source_id, int):
+            edit_data = {key: value for key, value in data.items() if key != "random_id"}
+            edit_data["id"] = source_id
+            try:
+                with trusted_scope():
+                    result = await app.mt_messages_edit_message(**edit_data)
+            except Exception as exc:
+                if "MESSAGE_AUTHOR_REQUIRED" not in str(exc).upper() and "MESSAGE_EDIT_FORBIDDEN" not in str(exc).upper():
+                    raise
+            else:
+                return Response(True, "edit", getattr(self._source, "src", None), result)
         reply_to = kwargs.pop("reply_to", None)
         topic_id = kwargs.pop("topic_id", self.topic_id)
         if reply_to is None:
@@ -885,9 +898,9 @@ class ModuleContext:
         kwargs.setdefault("output", "edit")
         return await self._deliver(text=text, **kwargs)
 
-    async def respond_file(self, media: Any, **kwargs: Any) -> Response:
-        kwargs.setdefault("output", "reply")
-        return await self._deliver(media=media, **kwargs)
+    async def respond_file(self, media: Any, caption: str | None = None, **kwargs: Any) -> Response:
+        kwargs.setdefault("output", "auto")
+        return await self.send_file(media, caption, **kwargs)
 
     async def respond_media(self, media: Any, **kwargs: Any) -> Response:
         kwargs.setdefault("output", "reply")
