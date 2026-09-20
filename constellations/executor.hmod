@@ -240,12 +240,10 @@ class OutputUpdater:
         return '\n'.join(res)
 
     def _fmt_entry(self, title: str, content: Any, is_code: bool, lang: str | None = None) -> str:
-        if is_code and not lang:
-            lang = "python" if self.is_py else "shell"
         esc = _escape(_censor(str(content), self.ctx))
         if is_code:
-            cls = f' class="language-{_escape(lang)}"' if lang else ""
-            return f"<b>{_escape(title)}:</b>\n<pre{cls}>{esc}</pre>"
+            block = f'<pre><code class="language-{_escape(lang)}">{esc}</code></pre>' if lang else f"<pre>{esc}</pre>"
+            return f"<b>{_escape(title)}:</b>\n{block}"
         return f"<code>{_escape(title)}:</code> {esc}"
 
     def _pages_from(self, sections: list, returncode: int | None) -> list[str]:
@@ -1353,9 +1351,9 @@ async def command_sh(ctx, invocation):
         return
 
     buffer_str = updater._strip_ansi(updater.buffer).strip()
-    sections = [("command", cmd, True, "shell")]
+    sections = [("command", cmd, True)]
     if buffer_str:
-        sections.append(("output", buffer_str, True, "shell"))
+        sections.append(("output", buffer_str, True))
     
     await updater.finish(sections, returncode=process.returncode)
 
@@ -1466,10 +1464,10 @@ async def command_py(ctx, invocation):
     if skip_output:
         return
 
-    sections = [("code", raw_code, True, "python")]
+    sections = [("code", raw_code, True)]
     buffer_str = updater._strip_ansi(updater.buffer).strip()
     if buffer_str:
-        sections.append(("output", buffer_str, True, "python"))
+        sections.append(("output", buffer_str, True))
     if result_val is not _SENTINEL:
         rendered = str(result_val) if isinstance(result_val, str) else repr(result_val)
         sections.append(("return", rendered if rendered else "''", True, "python"))
