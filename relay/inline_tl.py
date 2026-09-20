@@ -77,7 +77,7 @@ def _send_message(result: dict[str, Any], content: dict[str, Any], kind: str) ->
             media["reply_markup"] = markup
         return media
     text = str(content.get("message_text", content.get("text", "")))
-    text_payload = {"_": "inputBotInlineMessageText", "message": text}
+    text_payload: dict[str, Any] = {"_": "inputBotInlineMessageText", "message": text}
     if content.get("disable_web_page_preview") or content.get("no_webpage"):
         text_payload["no_webpage"] = True
     if str(content.get("parse_mode", "")).lower() == "html" or str(result.get("parse_mode", "")).lower() == "html":

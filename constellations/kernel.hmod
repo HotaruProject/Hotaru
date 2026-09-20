@@ -5,11 +5,14 @@ HOTARU = {
     "capabilities": ["mt"],
 }
 
-async def command_ver(ctx, invocation):
+from typing import Any
+
+
+async def command_ver(ctx: Any, invocation: Any) -> Any:
     from hotaru import __version__
     await ctx.respond(f"Hotaru {__version__}")
 
-async def command_st(ctx, invocation):
+async def command_st(ctx: Any, invocation: Any) -> Any:
     runtime = ctx.runtime
     if runtime is None:
         await ctx.respond("runtime unavailable")
@@ -29,7 +32,7 @@ async def command_st(ctx, invocation):
         lines.append(f"inline: @{runtime.inline.info.username} ({'running' if running else 'stopped'})")
     await ctx.respond("\n".join(lines))
 
-async def command_ls(ctx, invocation):
+async def command_ls(ctx: Any, invocation: Any) -> Any:
     runtime = ctx.runtime
     if runtime is None or runtime.modules is None:
         await ctx.respond("modules: unavailable")
@@ -40,7 +43,7 @@ async def command_ls(ctx, invocation):
         return
     await ctx.respond("modules:\n" + "\n".join(sorted(item.loaded.manifest.module_id for item in items)))
 
-async def command_mi(ctx, invocation):
+async def command_mi(ctx: Any, invocation: Any) -> Any:
     runtime = ctx.runtime
     if runtime is None:
         await ctx.respond("runtime unavailable")
@@ -50,7 +53,7 @@ async def command_mi(ctx, invocation):
         return
     await ctx.respond(runtime._module_detail_text(invocation.args[0].casefold()))
 
-async def command_bk(ctx, invocation):
+async def command_bk(ctx: Any, invocation: Any) -> Any:
     runtime = ctx.runtime
     if runtime is None:
         await ctx.respond("runtime unavailable")
@@ -62,7 +65,7 @@ async def command_bk(ctx, invocation):
     else:
         await ctx.respond(result)
 
-async def command_bot(ctx, invocation):
+async def command_bot(ctx: Any, invocation: Any) -> Any:
     runtime = ctx.runtime
     if runtime is None:
         await ctx.respond("runtime unavailable")
@@ -70,7 +73,7 @@ async def command_bot(ctx, invocation):
     result = await runtime._command_bot(invocation)
     await ctx.respond(result)
 
-async def command_lg(ctx, invocation):
+async def command_lg(ctx: Any, invocation: Any) -> Any:
     runtime = ctx.runtime
     if runtime is None or runtime.observatory is None:
         await ctx.respond("observatory unavailable")

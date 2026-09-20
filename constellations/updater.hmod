@@ -9,6 +9,9 @@ HOTARU = {
     "rise": "afterglow",
 }
 
+from typing import Any
+
+
 import asyncio
 import os
 import subprocess
@@ -18,14 +21,14 @@ import time
 REPO_URL = "https://github.com/HotaruProject/Hotaru"
 
 
-def _escape(value):
+def _escape(value: Any) -> Any:
     import html as _html
     return _html.escape(str(value), quote=False)
 
-def _repo_dir(runtime):
+def _repo_dir(runtime: Any) -> Any:
     return os.path.dirname(os.path.dirname(os.path.abspath(__file__))) if runtime is None else str(getattr(runtime, "root", "") or os.getcwd())
 
-def _git(runtime, *args):
+def _git(runtime: Any, *args: Any) -> Any:
     repo = _repo_dir(runtime)
     result = subprocess.run(
         ["git", "-C", repo] + list(args),
@@ -37,13 +40,13 @@ def _git(runtime, *args):
         raise RuntimeError(result.stderr.strip() or result.stdout.strip() or "git failed")
     return result.stdout
 
-def _fetch_origin(runtime):
+def _fetch_origin(runtime: Any) -> Any:
     _git(runtime, "fetch", "origin", "main")
 
-def _current_commit(runtime):
+def _current_commit(runtime: Any) -> Any:
     return _git(runtime, "rev-parse", "HEAD").strip()
 
-def _latest_commit(runtime):
+def _latest_commit(runtime: Any) -> Any:
     origin_main = _git(runtime, "rev-parse", "origin/main").strip()
     try:
         _git(runtime, "cat-file", "-e", origin_main + "^{commit}")
@@ -51,14 +54,14 @@ def _latest_commit(runtime):
         return _current_commit(runtime)
     return origin_main
 
-def _changelog(runtime):
+def _changelog(runtime: Any) -> Any:
     current = _current_commit(runtime)
     latest = _latest_commit(runtime)
     if current == latest:
         return []
     return _git(runtime, "log", "--pretty=format:%s", f"{current}..{latest}").splitlines()
 
-def _pull(runtime):
+def _pull(runtime: Any) -> Any:
     before = _current_commit(runtime)
     _git(runtime, "reset", "--hard", "origin/main")
     _git(runtime, "clean", "-fd")
@@ -71,7 +74,7 @@ def _pull(runtime):
         pass
     return before, after, deps
 
-def _sync_deps(runtime):
+def _sync_deps(runtime: Any) -> Any:
     root = _repo_dir(runtime)
     try:
         subprocess.run(
@@ -83,19 +86,19 @@ def _sync_deps(runtime):
     except Exception:
         pass
 
-def _serialize_inline(mid):
+def _serialize_inline(mid: Any) -> Any:
     if not isinstance(mid, dict):
         return None
     name = mid.get("_")
     if not isinstance(name, str) or "InlineMessageID" not in name:
         name = "inputBotInlineMessageID"
-    out = {"_": name}
+    out: dict[str, Any] = {"_": name}
     for key in ("dc_id", "id", "access_hash", "owner_id"):
         if isinstance(mid.get(key), int):
             out[key] = int(mid[key])
     return out if isinstance(out.get("id"), int) else None
 
-def _restore_inline(stored):
+def _restore_inline(stored: Any) -> Any:
     if not isinstance(stored, dict) or not isinstance(stored.get("id"), int):
         return None
     name = stored.get("_") if isinstance(stored.get("_"), str) else None
@@ -105,7 +108,7 @@ def _restore_inline(stored):
             mid[key] = int(stored[key])
     return mid
 
-def _add_surface(ctx, surface):
+def _add_surface(ctx: Any, surface: Any) -> Any:
     pending = ctx.state.get("update_pending")
     if not isinstance(pending, dict):
         pending = {}
@@ -138,7 +141,7 @@ def _add_surface(ctx, surface):
         pending.pop(key, None)
     ctx.state.set("update_pending", pending)
 
-def _pending_from_callback(ctx, callback):
+def _pending_from_callback(ctx: Any, callback: Any) -> Any:
     chat_id = getattr(callback, "chat_id", None)
     msg_id = getattr(callback, "msg_id", None)
     if isinstance(msg_id, dict):
@@ -152,7 +155,7 @@ def _pending_from_callback(ctx, callback):
     elif isinstance(msg_id, int) and isinstance(chat_id, int):
         _add_surface(ctx, {"chat_id": chat_id, "message_id": msg_id, "own": False})
 
-def _t(ctx, key, fallback, **params):
+def _t(ctx: Any, key: Any, fallback: Any, **params: Any) -> Any:
     try:
         value = ctx.t("kernel.updater." + key, fallback, **params)
     except Exception:
@@ -164,10 +167,10 @@ def _t(ctx, key, fallback, **params):
             value = fallback
     return value
 
-def _rich(text):
+def _rich(text: Any) -> Any:
     return {"_": "inputRichMessageHTML", "html": text}
 
-async def _edit_inline(ctx, text, surface):
+async def _edit_inline(ctx: Any, text: Any, surface: Any) -> Any:
     mid = _restore_inline(surface.get("inline_id")) if isinstance(surface, dict) else None
     if mid is None:
         return False
@@ -183,7 +186,7 @@ async def _edit_inline(ctx, text, surface):
         _emit(ctx, "edit_inline_error", error=type(exc).__name__, detail=str(exc)[:120])
     return False
 
-async def _edit_own(ctx, text, surface):
+async def _edit_own(ctx: Any, text: Any, surface: Any) -> Any:
     if not isinstance(surface, dict):
         return False
     peer_hex = surface.get("peer") if isinstance(surface.get("peer"), str) else None
@@ -202,7 +205,7 @@ async def _edit_own(ctx, text, surface):
         _emit(ctx, "edit_own_error", error=type(exc).__name__, detail=str(exc)[:120])
     return False
 
-def _surfaces(pending):
+def _surfaces(pending: Any) -> Any:
     if not isinstance(pending, dict):
         return []
     out = []
@@ -216,7 +219,7 @@ def _surfaces(pending):
             out = [legacy]
     return out
 
-async def _edit_surface(ctx, text, surface):
+async def _edit_surface(ctx: Any, text: Any, surface: Any) -> Any:
     if not isinstance(surface, dict):
         return None
     if isinstance(surface.get("inline_id"), dict) and await _edit_inline(ctx, text, surface):
@@ -233,7 +236,7 @@ async def _edit_surface(ctx, text, surface):
         return "bot"
     return None
 
-def _drop_surface(ctx, callback):
+def _drop_surface(ctx: Any, callback: Any) -> Any:
     pending = ctx.state.get("update_pending")
     if not isinstance(pending, dict):
         return
@@ -255,7 +258,7 @@ def _drop_surface(ctx, callback):
     pending["surfaces"] = keep
     ctx.state.set("update_pending", pending)
 
-async def _bot_edit(ctx, chat_id, message_id, text):
+async def _bot_edit(ctx: Any, chat_id: Any, message_id: Any, text: Any) -> Any:
     try:
         await ctx.bot.call("editMessageText", chat_id=int(chat_id), message_id=int(message_id), rich_message=_rich(text))
         return True
@@ -268,7 +271,7 @@ async def _bot_edit(ctx, chat_id, message_id, text):
         _emit(ctx, "bot_edit_error", variant="plain", error=type(exc).__name__, detail=str(exc)[:140])
     return False
 
-async def _status(ctx, text):
+async def _status(ctx: Any, text: Any) -> Any:
     try:
         pending = ctx.state.get("update_pending")
         for surface in _surfaces(pending):
@@ -281,7 +284,7 @@ async def _status(ctx, text):
     except Exception:
         pass
 
-async def afterglow(ctx):
+async def afterglow(ctx: Any) -> Any:
     pending = ctx.state.get("update_pending")
     if not isinstance(pending, dict):
         return
@@ -291,7 +294,7 @@ async def afterglow(ctx):
     ctx.state.delete("update_pending")
     asyncio.get_event_loop().create_task(_finalize_restart(ctx, pending))
 
-async def _finalize_restart(ctx, pending):
+async def _finalize_restart(ctx: Any, pending: Any) -> Any:
     try:
         runtime = ctx.runtime
         inline = getattr(runtime, "inline", None)
@@ -321,7 +324,7 @@ async def _finalize_restart(ctx, pending):
         await asyncio.sleep(2)
     _emit(ctx, "afterglow_gave_up", done=len(done), total=len(surfaces))
 
-def _emit(ctx, event, **fields):
+def _emit(ctx: Any, event: Any, **fields: Any) -> Any:
     observatory = getattr(ctx.runtime, "observatory", None)
     if observatory is not None:
         try:
@@ -329,14 +332,14 @@ def _emit(ctx, event, **fields):
         except Exception:
             pass
 
-def _notify_text(current, latest, changelog):
+def _notify_text(current: Any, latest: Any, changelog: Any) -> Any:
     link = f'<a href="{REPO_URL}/compare/{current[:12]}...{latest[:12]}">{latest[:6]}</a>'
     lines = [f"<b>Hotaru update available</b> → <code>{link}</code>"]
     for entry in (changelog or [])[:10]:
         lines.append(f"• {_escape(entry)}")
     return "<br>".join(lines)
 
-async def command_updlog(ctx, invocation):
+async def command_updlog(ctx: Any, invocation: Any) -> Any:
     runtime = ctx.runtime
     if runtime is None:
         await ctx.respond(f"<b>{_t(ctx, 'unavailable', 'Runtime unavailable')}</b>", parse_mode="HTML")
@@ -354,16 +357,16 @@ async def command_updlog(ctx, invocation):
         return
     await ctx.respond(_notify_text(current, latest, changelog), parse_mode="HTML")
 
-async def command_updoff(ctx, invocation):
+async def command_updoff(ctx: Any, invocation: Any) -> Any:
     ctx.state.set("notify", False)
     await ctx.respond(f"<b>{_t(ctx, 'notify_off', 'Update notifications disabled')}</b>", parse_mode="HTML")
 
-async def command_updon(ctx, invocation):
+async def command_updon(ctx: Any, invocation: Any) -> Any:
     ctx.state.set("notify", True)
     await ctx.respond(f"<b>{_t(ctx, 'notify_on', 'Update notifications enabled')}</b>", parse_mode="HTML")
 
-async def _run_update(ctx):
-    async def say(text):
+async def _run_update(ctx: Any) -> Any:
+    async def say(text: Any) -> Any:
         await _status(ctx, text)
     await say(f"<b>{_t(ctx, 'downloading', 'Downloading update…')}</b>")
     try:
@@ -386,7 +389,7 @@ async def _run_update(ctx):
     await asyncio.sleep(1)
     await _restart_service(ctx)
 
-async def _restart_service(ctx):
+async def _restart_service(ctx: Any) -> Any:
     runtime = ctx.runtime
     try:
         if runtime.app:
@@ -413,7 +416,7 @@ async def _restart_service(ctx):
             return
     os.execv(sys.executable, [sys.executable, "-m", "hotaru"])
 
-async def command_upd(ctx, invocation):
+async def command_upd(ctx: Any, invocation: Any) -> Any:
     runtime = ctx.runtime
     if runtime is None:
         await ctx.respond(f"<b>{_t(ctx, 'unavailable', 'Runtime unavailable')}</b>", parse_mode="HTML")
@@ -438,12 +441,12 @@ async def command_upd(ctx, invocation):
         await _run_update(ctx)
         return
 
-    async def update_handler(callback, payload):
+    async def update_handler(callback: Any, payload: Any) -> Any:
         await callback.answer(_t(ctx, "updating", "Updating…"))
         _pending_from_callback(ctx, callback)
         await _run_update(ctx)
 
-    async def ignore_handler(callback, payload):
+    async def ignore_handler(callback: Any, payload: Any) -> Any:
         ctx.state.set("notified_commit", latest)
         await callback.answer(_t(ctx, "ignored_toast", "Ignored"))
         try:
@@ -464,7 +467,7 @@ async def command_upd(ctx, invocation):
         inline=True,
         parse_mode="HTML",
     )
-    surface = None
+    surface: dict[str, Any] | None = None
     sent = getattr(message, "value", None) if message is not None and not isinstance(message, dict) else message
     if isinstance(sent, dict):
         body = sent.get("result", sent)
@@ -490,7 +493,7 @@ async def command_upd(ctx, invocation):
         surface["peer"] = peer_hex
         _add_surface(ctx, surface)
 
-async def task_poller(ctx):
+async def task_poller(ctx: Any) -> Any:
     runtime = ctx.runtime
     if runtime is None:
         return
@@ -518,12 +521,12 @@ async def task_poller(ctx):
         _emit(ctx, "poller_no_owner")
         return
 
-    async def update_handler(callback, payload):
+    async def update_handler(callback: Any, payload: Any) -> Any:
         await callback.answer(_t(ctx, "updating", "Updating…"))
         _pending_from_callback(ctx, callback)
         await _run_update(ctx)
 
-    async def ignore_handler(callback, payload):
+    async def ignore_handler(callback: Any, payload: Any) -> Any:
         ctx.state.set("notified_commit", latest)
         await callback.answer(_t(ctx, "ignored_toast", "Ignored"))
         try:

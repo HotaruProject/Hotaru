@@ -7,6 +7,9 @@ HOTARU = {
     "fade": "sundown",
 }
 
+from typing import Any
+
+
 import asyncio
 import os
 import subprocess
@@ -14,13 +17,13 @@ import sys
 import time
 
 
-def _text_running(ctx):
+def _text_running(ctx: Any) -> Any:
     return f"<b>{ctx.t('kernel.power.running', 'Юзербот работает')}</b>"
 
-def _text_stopped(ctx):
+def _text_stopped(ctx: Any) -> Any:
     return f"<b>{ctx.t('kernel.power.stopped', 'Юзербот приостановлен')}</b>"
 
-async def command_stop(ctx, invocation):
+async def command_stop(ctx: Any, invocation: Any) -> Any:
     runtime = ctx.runtime
     if runtime.kernel.suspended:
         await ctx.respond(ctx.t("kernel.power.already_stopped", "Юзербот уже остановлен (приостановлен)."))
@@ -30,7 +33,7 @@ async def command_stop(ctx, invocation):
         runtime.state.set_setting("suspended", "1")
     await ctx.respond(_text_stopped(ctx), parse_mode="HTML")
 
-async def command_start(ctx, invocation):
+async def command_start(ctx: Any, invocation: Any) -> Any:
     runtime = ctx.runtime
     if not runtime.kernel.suspended:
         await ctx.respond(ctx.t("kernel.power.already_running", "Юзербот уже запущен."))
@@ -40,7 +43,7 @@ async def command_start(ctx, invocation):
         runtime.state.set_setting("suspended", "0")
     await ctx.respond(_text_running(ctx), parse_mode="HTML")
 
-async def command_restart(ctx, invocation):
+async def command_restart(ctx: Any, invocation: Any) -> Any:
     chat_id = getattr(ctx.message, "chat_id", None)
     message_id = getattr(ctx.message, "id", None)
     peer_hex = None
@@ -82,7 +85,7 @@ async def command_restart(ctx, invocation):
 
     os.execv(sys.executable, [sys.executable, "-m", "hotaru"])
 
-async def sunrise(ctx):
+async def sunrise(ctx: Any) -> Any:
     pending = ctx.state.get("restart_pending")
     if not isinstance(pending, dict):
         return
@@ -109,5 +112,5 @@ async def sunrise(ctx):
         except Exception:
             pass
 
-async def sundown(ctx):
+async def sundown(ctx: Any) -> Any:
     return None

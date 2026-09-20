@@ -290,14 +290,17 @@ class CallbackRouter:
         return self.store.issue(binding, {"module": module_id, "action_id": action_id, "payload": payload})
 
     async def dispatch(self, callback: Any) -> object:
+        mid = self._optional(callback, "msg_id")
         binding = CallbackBinding(
             actor=self._required(callback, "from_id"),
             chat_id=self._optional(callback, "chat_id"),
-            message_id=self._optional(callback, "msg_id"),
+            message_id=mid if isinstance(mid, int) else None,
         )
         data = getattr(callback, "data", "")
         if isinstance(data, (bytes, bytearray)):
             data = data.decode("utf-8", "replace")
+        if not isinstance(data, str):
+            raise CallbackDenied("callback payload is invalid")
         value = self.store.consume(data, binding)
         if not isinstance(value, dict):
             raise CallbackDenied("callback payload is invalid")
@@ -306,7 +309,8 @@ class CallbackRouter:
             handlers = self._module_handlers.get(value["module"], {})
             handler = handlers.get(str(value.get("action_id")))
         else:
-            handler = self._handlers.get(value.get("action")) if isinstance(value.get("action"), str) else None
+            action = value.get("action")
+            handler = self._handlers.get(action) if isinstance(action, str) else None
         if handler is None:
             raise CallbackDenied("callback action is unavailable")
         with module_scope(str(value.get("module") or "")):

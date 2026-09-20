@@ -11,7 +11,8 @@ from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
+from collections.abc import Awaitable
 
 from .capabilities import CapabilityBroker
 from .backup import BackupService
@@ -66,7 +67,7 @@ class InputContext:
     async def answer(self, text: str | None = None, **kwargs: Any) -> Any:
         answer = getattr(self.query, "answer", None)
         if callable(answer):
-            return await answer(results=[], cache_time=0, is_personal=True)
+            return await cast(Awaitable[Any], answer(results=[], cache_time=0, is_personal=True))
         return None
 
     async def edit(self, text: str, **kwargs: Any) -> Any:
@@ -127,7 +128,7 @@ class Runtime:
     closed: bool = False
     _inline_forms: dict[str, tuple[str, list[dict[str, str]]]] | None = None
     _forms: dict[str, tuple[Any, Any, str, Any, dict[str, Any]]] | None = None
-    _input_requests: dict[str, tuple] | None = None
+    _input_requests: dict[str, tuple[Any, ...]] | None = None
     _form_expiry: dict[str, float] | None = None
     _form_gc_task: asyncio.Task[None] | None = None
     _premium_cache: bool | None = None
@@ -315,7 +316,7 @@ class Runtime:
             rebound.append(current)
         bot_app = self.inline.bot_app
         plain, ents = html_to_entities(text)
-        edit_data = {"peer": chat_id, "id": form_id, "message": plain}
+        edit_data: dict[str, Any] = {"peer": chat_id, "id": form_id, "message": plain}
         if ents:
             edit_data["entities"] = ents
         tl_markup = kbd_to_tl({"inline_keyboard": rebound})
@@ -338,11 +339,12 @@ class Runtime:
         record["actions"] = saved_actions if isinstance(saved_actions, list) else self._form_actions(buttons)
         self._forms[key] = (handle, source, text, buttons, record)
         ttl = options.get("ttl")
-        deadline = time.time() + float(ttl) if isinstance(ttl, (int, float)) and float(ttl) > 0 else None
+        ttl_value = float(ttl) if isinstance(ttl, (int, float)) else 0.0
+        deadline = time.time() + ttl_value if ttl_value > 0 else None
         if deadline is not None:
             if self._form_expiry is None:
                 self._form_expiry = {}
-            self._form_expiry[key] = time.monotonic() + float(ttl)
+            self._form_expiry[key] = time.monotonic() + ttl_value
             if self._form_gc_task is None or self._form_gc_task.done():
                 self._form_gc_task = asyncio.create_task(self._form_gc_loop(), name="hotaru:form-gc")
 
@@ -475,6 +477,8 @@ class Runtime:
         options.update(kwargs)
         options["delete_source"] = False
         value = await self._send_form(source, next_text, next_buttons, options)
+        if self._forms is None:
+            raise RuntimeError("form is not registered")
         self._forms[handle.key] = (handle, source, next_text, next_buttons, options)
         self._persist_form(handle.key, source, next_text, next_buttons, options)
         if str(handle.key).startswith("inline:") and self._inline_forms is not None:
@@ -616,7 +620,10 @@ class Runtime:
                 if isinstance(handle, str):
                     if button.get("_action_id") and not any(item.get("action_id") == button["_action_id"] for item in action_records):
                         action_records.append({"row": row_index, "column": column_index, "action_id": button["_action_id"], "payload": button.get("_payload")})
-                    current.append({"text": button.get("text", ""), "callback_data": self.callbacks.store.rebind(handle, CallbackBinding(self.kernel.owner_id, None, 0))})
+                    if self.callbacks is None or self.kernel is None:
+                        continue
+                    owner = self.kernel.owner_id
+                    current.append({"text": button.get("text", ""), "callback_data": self.callbacks.store.rebind(handle, CallbackBinding(owner if owner is not None else 0, None, 0))})
                 elif button.get("_action_id") and self.callbacks is not None:
                     payload = button.get("_payload")
                     if not any(item.get("action_id") == button["_action_id"] for item in action_records):
@@ -676,7 +683,7 @@ class Runtime:
             await asyncio.wait_for(ready.wait(), 5.0)
         except asyncio.TimeoutError:
             pass
-        if options.get("delete_source", True):
+        if options.get("delete_source", True) and chat_id is not None:
             await self._delete_inline_source(command, chat_id, message_id)
         sent = extract_sent_message(sent_result)
         if isinstance(sent, dict) and isinstance(sent.get("id"), int):
@@ -1016,7 +1023,7 @@ class Runtime:
         body, buttons = form
         await answer_tl(query, results=[InlineObj.article("hotaru-form", "Hotaru form", body, kbd={"inline_keyboard": [buttons]})], cache_time=0, is_personal=True)
 
-    async def _on_inline_callback(self, callback: Any) -> None:
+    async def _on_inline_callback(self, callback: Any) -> Any:
         if self.security is None or self.callbacks is None:
             return None
         from .security import AccessVerdict
@@ -1210,8 +1217,9 @@ class Runtime:
         return value.casefold() if isinstance(value, str) and value.casefold() in SUPPORTED_LANGUAGES else "ru"
 
     async def is_premium(self) -> bool:
-        if getattr(self, "_premium_cache", None) is not None:
-            return self._premium_cache
+        cached = self._premium_cache
+        if cached is not None:
+            return cached
         app = self.app
         if app is None or getattr(app, "mt", None) is None:
             return False
@@ -1437,7 +1445,9 @@ class Runtime:
                 self.observatory.emit("modules", "rollback_restored", module=module_id, version=active.loaded.manifest.version)
             return f"reload failed: {type(exc).__name__}; previous version restored"
         if self.observatory is not None:
-            self.observatory.emit("modules", "update_applied", module=module_id, version=self.modules.get(module_id).loaded.manifest.version)
+            current = self.modules.get(module_id)
+            version = current.loaded.manifest.version if current is not None else ""
+            self.observatory.emit("modules", "update_applied", module=module_id, version=version)
         return f"reloaded: {module_id}"
 
 
@@ -1554,12 +1564,16 @@ class Runtime:
             names = sorted(path.name for path in directory.glob("*.hbk") if path.is_file())
             return "backups: none" if not names else "backups:\n" + "\n".join(names)
         if action == "test" and len(invocation.args) == 2:
+            if self.backups is None:
+                return "backup unavailable"
             try:
                 plan = self.backups.plan(invocation.args[1])
             except Exception as exc:
                 return f"backup invalid: {type(exc).__name__}"
             return f"backup valid: {len(plan.files)} files"
         if action == "restore" and len(invocation.args) == 2 and self.callbacks is not None and self.kernel is not None and self.kernel.owner_id is not None:
+            if self.backups is None:
+                return "backup unavailable"
             try:
                 self.backups.plan(invocation.args[1])
             except Exception as exc:
@@ -1686,7 +1700,7 @@ class Runtime:
         except (OSError, ValueError):
             return False
 
-    async def activate_module(self, path: str, *, health: Any = None) -> Any:
+    async def activate_module(self, path: str | Path, *, health: Any = None) -> Any:
         if self.modules is None or self.kernel is None:
             raise RuntimeError("build the runtime before activating modules")
         is_kernel = self._is_kernel_path(path)
@@ -1727,7 +1741,8 @@ class Runtime:
         return await self.backups.restore(plan, activate, rollback=rollback, timeout=timeout)
 
     async def restore_filesystem(self, plan: Any, modules_path: str | Path) -> None:
-        if self.backups is None or self.state is None or self.modules is None:
+        backups = self.backups
+        if backups is None or self.state is None or self.modules is None:
             raise RuntimeError("runtime services are not ready")
         if self.modules.items():
             raise RuntimeError("unload modules before filesystem restore")
@@ -1735,9 +1750,9 @@ class Runtime:
         self.state = None
         state.close()
         try:
-            await self.backups.restore(
+            await backups.restore(
                 plan,
-                lambda staged: self.backups.activate_staged(
+                lambda staged: backups.activate_staged(
                     staged,
                     state_path=self.config.state_path,
                     modules_path=modules_path,
@@ -1745,7 +1760,8 @@ class Runtime:
             )
         finally:
             self.state = StateStore(self.config.state_path)
-            self.context_factory = ModuleContextFactory(self.state, self.responses, self)
+            responses = self.responses if self.responses is not None else ResponseService()
+            self.context_factory = ModuleContextFactory(self.state, responses, self)
             self.context_factory.cap_host = self.cap_host
             self.context_factory.callback_router = self.callbacks
             self.context_factory.inline_manager = self.inline

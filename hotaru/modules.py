@@ -26,10 +26,10 @@ class ModuleManifest:
     commands: tuple[str, ...]
     capabilities: tuple[str, ...]
     watchers: tuple[str, ...] = ()
-    tasks: dict[str, dict[str, Any]] = None
-    aliases: dict[str, str] = None
-    config_schema: dict[str, Any] = None
-    lexicon: dict[str, dict[str, Any]] = None
+    tasks: dict[str, dict[str, Any]] | None = None
+    aliases: dict[str, str] | None = None
+    config_schema: dict[str, Any] | None = None
+    lexicon: dict[str, dict[str, Any]] | None = None
     requires: tuple[str, ...] = ()
     after: tuple[str, ...] = ()
     inline_commands: tuple[str, ...] = ()
@@ -40,7 +40,7 @@ class ModuleManifest:
     def description(self) -> str:
         return self.localized("en").get("description", "")
 
-    def __post_init__(self):
+    def __post_init__(self) -> Any:
         if self.tasks is None:
             object.__setattr__(self, "tasks", {})
         if self.aliases is None:
@@ -71,18 +71,18 @@ class ModuleManifest:
         return {key: value for key, value in details.items() if isinstance(key, str) and isinstance(value, str)}
 
 
-_KERNEL_LEXICON: Any = None
+_kernel_lexicon_cache: Any = None
 
 
 def _kernel_lexicon() -> Any:
-    global _KERNEL_LEXICON
-    if _KERNEL_LEXICON is None:
+    global _kernel_lexicon_cache
+    if _kernel_lexicon_cache is None:
         from .i18n import Lexicon
 
         root = Path(__file__).resolve().parent
         bundled = root / "lexicon"
-        _KERNEL_LEXICON = Lexicon(bundled if bundled.is_dir() else root.parent / "lexicon")
-    return _KERNEL_LEXICON
+        _kernel_lexicon_cache = Lexicon(bundled if bundled.is_dir() else root.parent / "lexicon")
+    return _kernel_lexicon_cache
 
 
 def _kernel_lexicon_lookup(module_id: str, language: str) -> dict[str, Any]:
@@ -141,6 +141,12 @@ class HmodLoader:
             compile(tree, str(candidate), "exec")
         except (SyntaxError, ValueError, TypeError) as exc:
             raise ModuleValidationError("module failed validation") from exc
+        from .typesafe import TypeCheckError, check_hmod
+
+        try:
+            check_hmod(source, candidate)
+        except TypeCheckError as exc:
+            raise ModuleValidationError(f"module failed pyright strict: {exc}") from exc
         digest = hashlib.sha256(source.encode("utf-8")).hexdigest()
         return LoadedModule(candidate, digest, source, manifest)
 
@@ -166,6 +172,8 @@ class HmodLoader:
                 raise ModuleValidationError("first statement must assign HOTARU")
             value = statement.value
         try:
+            if value is None:
+                raise ModuleValidationError("HOTARU must be a literal mapping")
             raw = ast.literal_eval(value)
         except (ValueError, TypeError) as exc:
             raise ModuleValidationError("HOTARU must be a literal mapping") from exc

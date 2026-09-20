@@ -6,7 +6,8 @@ import secrets
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Literal
+from typing import Any, Callable, Literal, cast
+from collections.abc import Awaitable
 
 from goygram.errors import FloodWaitError, MessageNotModifiedError
 
@@ -141,8 +142,8 @@ class FormHandle:
     def __bool__(self) -> bool:
         return bool(self._value)
 
-    def __await__(self):
-        async def resolve():
+    def __await__(self) -> Any:
+        async def resolve() -> Any:
             return self
         return resolve().__await__()
 
@@ -636,7 +637,7 @@ class ModuleContext:
         if callable(deleter):
             result = deleter()
             if hasattr(result, "__await__"):
-                await result
+                await cast(Awaitable[Any], result)
 
     async def send_file(self, file: Any, caption: str | None = None, **kwargs: Any) -> Response:
         app = getattr(self.runtime, "app", None) if self.runtime is not None else None

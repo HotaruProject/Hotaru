@@ -1,0 +1,23 @@
+{
+  "include": ["hotaru", "relay"],
+  "exclude": [".venv", ".venv2", "dist", "observatory", "sanctuary"],
+  "typeCheckingMode": "strict",
+  "pythonVersion": "3.11",
+  "pythonPlatform": "Linux",
+  "venvPath": ".",
+  "venv": ".venv",
+  "reportUnknownMemberType": "none",
+  "reportUnknownVariableType": "none",
+  "reportUnknownArgumentType": "none",
+  "reportUnknownLambdaType": "none",
+  "reportUnknownParameterType": "error",
+  "reportMissingParameterType": "error",
+  "reportMissingTypeArgument": "error",
+  "reportUnnecessaryIsInstance": "none",
+  "reportUnnecessaryComparison": "none",
+  "reportPrivateUsage": "none",
+  "reportDeprecated": "none",
+  "reportUnusedImport": "none",
+  "reportUnusedVariable": "none",
+  "reportUnusedFunction": "none"
+}

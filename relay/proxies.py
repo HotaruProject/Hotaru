@@ -112,7 +112,7 @@ class Gateway:
         return await self.call("messages.sendMessage", payload)
 
     async def react(self, chat: int | str, message_id: int, emoji: str = "👍", **kwargs: Any) -> Any:
-        reaction = [{"_": "reactionEmoji", "emoticon": emoji}]
+        reaction: list[dict[str, Any]] = [{"_": "reactionEmoji", "emoticon": emoji}]
         if kwargs.get("big"):
             reaction[0] = {"_": "reactionEmoji", "emoticon": emoji, "flags": 1}
         return await self.call("messages.sendReaction", {

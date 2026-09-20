@@ -17,8 +17,8 @@ LEVELS = ("debug", "info", "warn", "error", "crit")
 _aliases = {"warning": "warn", "critical": "crit", "fatal": "crit", "exception": "error"}
 _numeric = {"debug": 10, "info": 20, "warn": 30, "error": 40, "crit": 50}
 
-_sink: contextvars.ContextVar = contextvars.ContextVar("hotaru_observatory_sink", default=None)
-_module: contextvars.ContextVar = contextvars.ContextVar("hotaru_observatory_module", default="")
+_sink: contextvars.ContextVar[Any] = contextvars.ContextVar("hotaru_observatory_sink", default=None)
+_module: contextvars.ContextVar[str] = contextvars.ContextVar("hotaru_observatory_module", default="")
 
 _secret_keys = (
     "token", "password", "passwd", "secret", "api_hash", "api-key", "apikey",
@@ -116,7 +116,7 @@ class Observatory:
         self.max_bytes = max_bytes
         self.level = norm_level(level)
         self._failed = 0.0
-        self._subscribers: list = []
+        self._subscribers: list[Any] = []
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.path.parent.chmod(0o700)
         self.path.touch(exist_ok=True)
@@ -147,10 +147,7 @@ class Observatory:
         tag = _module.get()
         if tag:
             return tag
-        try:
-            return current_module()
-        except Exception:
-            return ""
+        return ""
 
     def _redact(self, key: str, value: Any) -> Any:
         if is_secret_key(key):
@@ -359,10 +356,6 @@ class _Writer(io.TextIOBase):
 
     def fileno(self) -> int:
         return self.original.fileno()
-
-    @property
-    def encoding(self) -> Any:
-        return getattr(self.original, "encoding", "utf-8")
 
     def writable(self) -> bool:
         return True

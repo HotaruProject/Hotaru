@@ -4,7 +4,10 @@ HOTARU = {
     "commands": ['ld', 'ul', 'rl', 'rm'],
     "capabilities": [],
 }
-async def command_ld(ctx, invocation):
+
+from typing import Any
+
+async def command_ld(ctx: Any, invocation: Any) -> Any:
     runtime = ctx.runtime
     if runtime is None:
         await ctx.respond("runtime unavailable")
@@ -15,21 +18,21 @@ async def command_ld(ctx, invocation):
         await ctx.respond(text, buttons=buttons)
     else:
         await ctx.respond(result)
-async def command_ul(ctx, invocation):
+async def command_ul(ctx: Any, invocation: Any) -> Any:
     runtime = ctx.runtime
     if runtime is None:
         await ctx.respond("runtime unavailable")
         return
     result = await runtime._command_ul(invocation)
     await ctx.respond(result)
-async def command_rl(ctx, invocation):
+async def command_rl(ctx: Any, invocation: Any) -> Any:
     runtime = ctx.runtime
     if runtime is None:
         await ctx.respond("runtime unavailable")
         return
     result = await runtime._command_rl(invocation)
     await ctx.respond(result)
-async def command_rm(ctx, invocation):
+async def command_rm(ctx: Any, invocation: Any) -> Any:
     runtime = ctx.runtime
     if runtime is None:
         await ctx.respond("runtime unavailable")

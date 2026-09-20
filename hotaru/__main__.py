@@ -1,3 +1,4 @@
+from typing import Any
 import argparse
 import asyncio
 import importlib.util
@@ -16,7 +17,7 @@ def ensure_kernel_dependencies() -> None:
     from pathlib import Path
     import tomllib
     try:
-        project = tomllib.loads(Path(__file__).replace("__main__.py", "../pyproject.toml").resolve().read_text(encoding="utf-8"))
+        project = tomllib.loads((Path(__file__).resolve().parent.parent / "pyproject.toml").read_text(encoding="utf-8"))
         requirements = list(project.get("project", {}).get("dependencies", []))
     except Exception:
         requirements = ["goygram>=0.7.78"]
@@ -49,7 +50,7 @@ def ensure_kernel_dependencies() -> None:
                 del sys.modules[entry]
 
 
-def _apply_account_session(config, session_base):
+def _apply_account_session(config: Any, session_base: Any) -> Any:
     from dataclasses import replace
     from pathlib import Path
     session_dir = Path(session_base).resolve().parent
@@ -57,6 +58,16 @@ def _apply_account_session(config, session_base):
     if not session_name or Path(session_name).name != session_name:
         raise SystemExit("account session name is invalid")
     return replace(config, session_name=session_name, session_dir=session_dir)
+
+
+def _ensure_types() -> None:
+    from .typesafe import TypeCheckError, check_kernel
+
+    try:
+        check_kernel()
+    except TypeCheckError as exc:
+        print(exc, file=sys.stderr)
+        raise SystemExit("pyright strict failed")
 
 
 def main() -> None:
@@ -71,9 +82,11 @@ def main() -> None:
             from .runtime import Runtime
             config = RuntimeConfig.from_database()
             config = _apply_account_session(config, _os.environ["HOTARU_ACCOUNT_SESSION"])
+            _ensure_types()
             asyncio.run(Runtime(config).run())
             return
     ensure_kernel_dependencies()
+    _ensure_types()
     from .config import RuntimeConfig
     from .runtime import Runtime
     config = RuntimeConfig.from_database()
