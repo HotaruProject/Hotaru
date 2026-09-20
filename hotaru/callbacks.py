@@ -13,6 +13,7 @@ from typing import Any
 
 from goygram import ext
 from relay.firewall import module_scope
+from goygram.rich import rich_html
 from goygram.sugar import html_to_entities
 from goygram.types.kbd import kbd_to_tl
 from relay.rpc import delete_chat_msg
@@ -20,7 +21,7 @@ from relay.rpc import delete_chat_msg
 
 def _cb_log(data: dict[str, Any]) -> None:
     try:
-        path = Path("/root/HotaruUB/observatory/runtime/callback_fail.jsonl")
+        path = Path("observatory/runtime/callback_fail.jsonl")
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("a", encoding="utf-8") as fh:
             fh.write(json.dumps(data, ensure_ascii=False, default=str) + "\n")
@@ -83,7 +84,9 @@ class CallbackContext:
             if ents:
                 data["entities"] = ents
             log["plain_len"] = len(plain or "")
+            log["plain_u16"] = len((plain or "").encode("utf-16-le")) // 2
             log["ents"] = len(ents)
+            log["entities"] = ents
             runtime = getattr(self._callback, "_hotaru_runtime", None)
             bot_app = getattr(getattr(runtime, "inline", None), "bot_app", None) if runtime is not None else None
             app = bot_app or app
@@ -96,9 +99,11 @@ class CallbackContext:
                 _cb_log(log)
                 if id_field is None:
                     return None
+                data.pop("entities", None)
+                data["rich_message"] = {"_": "inputRichMessageHTML", **rich_html(text)}
                 from relay.firewall import trusted_scope
                 with trusted_scope():
-                    return await app.mt_messages_edit_inline_bot_message(id=id_field, message=plain, **data)
+                    return await app.mt_messages_edit_inline_bot_message(id=id_field, message="", **data)
             log["branch"] = "editMessage"
             _cb_log(log)
             if isinstance(chat_id, int) and isinstance(msg_id, int):
@@ -119,7 +124,9 @@ class CallbackContext:
             log["branch"] = "editInlineBotMessage-bot"
             log["id_field"] = id_field
             _cb_log(log)
-            return await app.mt_messages_edit_inline_bot_message(id=id_field, message=plain, **data)
+            data.pop("entities", None)
+            data["rich_message"] = {"_": "inputRichMessageHTML", **rich_html(text)}
+            return await app.mt_messages_edit_inline_bot_message(id=id_field, message="", **data)
         log["branch"] = "fallback"
         _cb_log(log)
         return await self._callback.edit(text, **kwargs)
