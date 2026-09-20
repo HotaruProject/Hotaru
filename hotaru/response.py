@@ -184,9 +184,7 @@ class ResponseService:
             if hasattr(result, "__await__"):
                 result = await result
             return Response(True, "edit" if output == "edit" else "reply", getattr(message, "src", None), result)
-        payload: dict[str, Any] = {}
-        if buttons is not None:
-            payload["kbd"] = buttons
+        payload = {"kbd": buttons}
         if parse_mode is not None:
             payload["parse_mode"] = parse_mode
         if media is not None:
