@@ -250,7 +250,7 @@ class OutputUpdater:
     def _fmt_entry(self, title: str, content: Any, is_code: bool, lang: str | None = None) -> str:
         esc = _escape(_censor(str(content), self.ctx))
         if is_code:
-            block = f'<pre><code class="language-{_escape(lang)}">{esc}</code></pre>' if lang else f"<pre>{esc}</pre>"
+            block = f'<pre class="language-{_escape(lang)}">{esc}</pre>' if lang else f"<pre>{esc}</pre>"
             return f"<b>{_escape(title)}:</b>\n{block}"
         return f"<code>{_escape(title)}:</code> {esc}"
 

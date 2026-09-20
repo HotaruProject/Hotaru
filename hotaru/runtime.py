@@ -260,6 +260,8 @@ class Runtime:
     async def _on_callback(self, callback: Any) -> object | None:
         if self.callbacks is None:
             return None
+        if not isinstance(getattr(callback, "msg_id", None), int):
+            return None
         if self.security is not None:
             from .security import AccessVerdict
 

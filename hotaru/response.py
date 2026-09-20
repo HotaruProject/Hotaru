@@ -540,7 +540,7 @@ class ModuleContext:
     async def _bot_form(self, text: Any, buttons: Any, kwargs: dict[str, Any]) -> Any:
         if self.form_sender is None:
             raise ResponseError("bot form transport is not available")
-        return await self.form_sender(self._source, text, buttons or [], kwargs)
+        return await self.form_sender(self._delivery_source, text, buttons or [], kwargs)
 
     async def _deliver(self, text: str | None = None, **kwargs: Any) -> Any:
         if text is not None:
@@ -647,7 +647,6 @@ class ModuleContext:
             if kind is not None and kind not in {"inline", "page", "text"}:
                 raise ResponseError("buttons_as must be inline, page, or text")
             place = kind or ("page" if kwargs.get("rich") else "inline")
-            kwargs["output"] = mode
             if await self._via_bot(buttons, place):
                 text = kwargs.pop("text", "")
                 if place in {"page", "text"}:
@@ -657,6 +656,7 @@ class ModuleContext:
                     form_buttons = buttons
                 result = await self.form(text, form_buttons, output=mode, **kwargs)
             else:
+                kwargs["output"] = mode
                 kwargs["text"] = str(kwargs.get("text") or "") + buttons_html(buttons, kind=place)
                 kwargs["rich"] = True
                 result = await self._deliver(**kwargs)
