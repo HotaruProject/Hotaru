@@ -265,6 +265,7 @@ class InlineManager:
         self.bot_app: Any = None
         self.info: InlineBotInfo | None = None
         self._task: asyncio.Task[None] | None = None
+        self._reauth_task: asyncio.Task[None] | None = None
         self._handlers: list[Callable[[Any], Awaitable[Any]]] = []
         self._cb_handlers: list[Callable[[Any], Awaitable[Any]]] = []
         self._pm_handlers: list[Callable[[Any], Awaitable[Any]]] = []
@@ -796,6 +797,8 @@ class InlineManager:
                         if self.runtime.observatory is not None:
                             self.runtime.observatory.emit("inline", "session_invalid", error=type(exc).__name__)
                         app.stop()
+                        if self._reauth_task is None or self._reauth_task.done():
+                            self._reauth_task = asyncio.create_task(self._restart_bot_session(app), name="hotaru:inline-reauth")
                         return
                     await asyncio.sleep(0.5)
                     continue
@@ -825,6 +828,13 @@ class InlineManager:
             path = getattr(session, "path", None)
             if path is not None:
                 path.unlink(missing_ok=True)
+            info = self.info
+            if info is not None:
+                try:
+                    self.info = await self.getbot(info.token)
+                except InlineError:
+                    self._forget_bot()
+                    await self.ensure_bot(allow_create=True)
             self.bot_app = None
             self._task = None
             await self.start()
