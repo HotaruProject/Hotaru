@@ -12,7 +12,8 @@ from typing import Any
 
 from . import toolkit as _toolkit
 from goygram.rich import rich_html
-from goygram.sugar import html_to_entities
+from goygram.sugar import extract_sent_message, html_to_entities
+from goygram.types.obj import Obj
 from hotaru.plainfmt import rich_to_plain
 from goygram.types.kbd import kbd_to_tl
 from relay.firewall import trusted_scope
@@ -1004,6 +1005,7 @@ class ModuleSandbox:
         self._workers: dict[str, subprocess.Popen[bytes]] = {}
         self._booted: dict[str, bool] = {}
         self._respond_sources: dict[str, Any] = {}
+        self._respond_targets: dict[str, int] = {}
         self._cb_waiters: dict[tuple[str, str], asyncio.Future[Any]] = {}
         self._active_callback: dict[str, Any] = {}
         self._cb_respond_pending: list[dict[str, Any]] = []
@@ -1211,11 +1213,13 @@ class ModuleSandbox:
     async def call(self, module_id: str, command: str, args: list[str], payload: dict[str, Any], source: Any = None, target: str | None = None) -> Any:
         if source is not None:
             self._respond_sources[module_id] = source
+            self._respond_targets.pop(module_id, None)
         try:
             result = await self.roundtrip(module_id, {"command": command, "args": args, "payload": payload, "target": target})
         finally:
             if source is not None:
                 self._respond_sources.pop(module_id, None)
+                self._respond_targets.pop(module_id, None)
         if not isinstance(result, dict) or not result.get("ok"):
             raise SandboxError(f"sandbox call failed: {result.get('error') if isinstance(result, dict) else 'malformed'}")
         return result.get("result")
@@ -1391,8 +1395,10 @@ class ModuleSandbox:
         kwargs.pop("file_limit", None)
         kwargs.pop("filename", None)
         kwargs.pop("preserve_html", None)
-        message_id = getattr(source, "id", None)
-        is_out = bool(getattr(source, "is_me", False) or getattr(source, "out", False))
+        source_message_id = getattr(source, "id", None)
+        response_message_id = self._respond_targets.get(module_id)
+        message_id = response_message_id if output != "reply" and response_message_id is not None else source_message_id
+        is_out = response_message_id is not None or bool(getattr(source, "is_me", False) or getattr(source, "out", False))
         if output == "auto":
             output = "edit" if is_out else "reply"
         topic_id = None
@@ -1401,6 +1407,16 @@ class ModuleSandbox:
             if isinstance(value, int) and value > 0:
                 topic_id = value
                 break
+
+        def remember(result: Any) -> Any:
+            value = result
+            if isinstance(result, list):
+                value = next((item.message for item in result if getattr(item, "action", None) == "reply"), None)
+            sent = extract_sent_message(value)
+            sent_id = sent.get("id") if isinstance(sent, dict) else None
+            if isinstance(sent_id, int):
+                self._respond_targets[module_id] = sent_id
+            return result
 
         async def send_plain(value: str, *, mode: str) -> Any:
             plain, entities = html_to_entities(value)
@@ -1440,7 +1456,8 @@ class ModuleSandbox:
             if not isinstance(text, str):
                 raise PermissionError("rich respond requires string content")
             try:
-                return await send_rich_html(text, mode=output)
+                result = await send_rich_html(text, mode=output)
+                return remember(result) if output == "reply" else result
             except Exception as exc:
                 marker = str(exc).lower()
                 if "length" in marker or "too long" in marker or "MESSAGE_TOO_LONG" in str(exc):
@@ -1458,13 +1475,21 @@ class ModuleSandbox:
                     for index, part in enumerate(parts):
                         mode = "edit" if index == 0 and output == "edit" else "reply"
                         last = await send_rich_html(part, mode=mode)
-                    return last
+                    return remember(last)
                 raise
         if isinstance(text, str):
             limit = 4096
             if len(text) > limit:
-                return await self.runtime.responses.smart_split(source, text)
-            return await send_plain(text, mode=output)
+                target = source
+                if response_message_id is not None:
+                    target = Obj(
+                        getattr(source, "src", "mt"),
+                        {"kind": "msg", "msg_id": response_message_id, "chat_id": chat_id, "is_me": True},
+                        app,
+                    )
+                return remember(await self.runtime.responses.smart_split(target, text))
+            result = await send_plain(text, mode=output)
+            return remember(result) if output == "reply" else result
         raise PermissionError("sandbox respond requires text content")
 
     def _sandbox_buttons(self, module_id: str, buttons: Any, chat_id: Any) -> Any:
