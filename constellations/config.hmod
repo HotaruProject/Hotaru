@@ -26,7 +26,7 @@ async def _show_config(ctx: Any, invocation: Any) -> Any:
     if form:
         await ctx.respond(**form)
     else:
-        await ctx.respond("<b>❌ Module not active or has no configuration</b>", parse_mode="HTML")
+        await ctx.respond("<b>❌ Module not found or has no configuration</b>", parse_mode="HTML")
 
 
 async def _show_directory(ctx: Any) -> Any:
