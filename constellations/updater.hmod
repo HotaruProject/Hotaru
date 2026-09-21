@@ -1,6 +1,6 @@
 HOTARU = {
     "id": "updater",
-    "version": "1.5.3",
+    "version": "1.5.4",
     "commands": ["upd", "updlog", "updoff", "updon"],
     "capabilities": ["net", "mt"],
     "tasks": {
@@ -313,10 +313,15 @@ async def _finalize_restart(ctx: Any, pending: dict[str, Any]) -> None:
         except Exception as exc:
             _emit(ctx, "afterglow_error", attempt=attempt, error=type(exc).__name__)
         await asyncio.sleep(1)
-    for surface in surfaces:
-        chat_id = surface.get("chat_id")
-        if not isinstance(chat_id, int):
+    completed_chats = {surfaces[index].get("chat_id") for index in done}
+    fallback_chats: set[int] = set()
+    for index, surface in enumerate(surfaces):
+        if index in done:
             continue
+        chat_id = surface.get("chat_id")
+        if not isinstance(chat_id, int) or chat_id in completed_chats or chat_id in fallback_chats:
+            continue
+        fallback_chats.add(chat_id)
         try:
             await ctx.tg.call(
                 "messages.sendMessage",
@@ -479,11 +484,6 @@ async def command_upd(ctx: Any, invocation: Any) -> Any:
             chat_id = getattr(ctx.message, "chat_id", None)
             if isinstance(chat_id, int) and isinstance(message_id, int):
                 surface = {"chat_id": chat_id, "message_id": message_id, "own": False}
-    if surface is None:
-        chat_id = getattr(ctx.message, "chat_id", None)
-        message_id = getattr(ctx.message, "id", None)
-        if isinstance(chat_id, int) and isinstance(message_id, int):
-            surface = {"chat_id": chat_id, "message_id": message_id, "own": False}
     if surface is not None:
         peer_hex = None
         try:
