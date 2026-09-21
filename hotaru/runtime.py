@@ -1408,7 +1408,7 @@ class Runtime:
             self.observatory.emit("modules", "loaded", module=module_id, version=loaded.manifest.version)
         return loaded, "loaded"
 
-    async def _command_ld(self, invocation: Any) -> str | tuple[str, list[dict[str, str]]]:
+    async def _command_ld(self, invocation: Any) -> str | tuple[str, list[Any]]:
         if len(invocation.args) > 1:
             return "usage: .ld <raw-url> | reply to a .hmod file | .hmod caption"
         temporary: Path | None = None
@@ -1434,6 +1434,8 @@ class Runtime:
         module_id = loaded.manifest.module_id
         if action in {"loaded", "updated"}:
             return f"{action}: {module_id} {loaded.manifest.version}"
+        if action != "confirm":
+            return action
         screen = await self._render_caps_screen(
             module_id,
             loaded.manifest,
@@ -1553,7 +1555,7 @@ class Runtime:
         if self.state is not None:
             self.state.namespace(module_id).set("caps-consent", fingerprint)
 
-    async def _render_caps_screen(self, module_id: str, manifest: Any, source: str, chat_id: int | str | None, message_id: int) -> tuple[str, list[dict[str, str]]] | str:
+    async def _render_caps_screen(self, module_id: str, manifest: Any, source: str, chat_id: int | str | None, message_id: int) -> tuple[str, list[list[dict[str, str]]]] | str:
         if self.callbacks is None or self.kernel is None or self.kernel.owner_id is None or chat_id is None:
             lines = [f"module {module_id} v{manifest.version} requests capabilities:"]
             lines.append(describe_caps(manifest.capabilities) or "none")
@@ -1571,8 +1573,10 @@ class Runtime:
         return (
             text,
             [
-                {"text": "Confirm", "callback_data": confirm_handle},
-                {"text": "Cancel", "callback_data": cancel_handle},
+                [
+                    {"text": "Confirm", "callback_data": confirm_handle},
+                    {"text": "Cancel", "callback_data": cancel_handle},
+                ],
             ],
         )
 

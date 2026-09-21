@@ -27,6 +27,7 @@ SANDBOX_GID = 65534
 
 WORKER_SOURCE = r'''
 import asyncio
+import __future__
 import contextlib
 import io
 import json
@@ -768,7 +769,10 @@ def main():
             code = compile(cfg["source"], cfg.get("module_id", "sandbox"), "exec", flags=__future__.annotations.compiler_flag, dont_inherit=True)
             exec(code, ns, ns)
     except BaseException as exc:
-        sys.stdout.write(json.dumps({"ok": False, "error": type(exc).__name__}) + "\n")
+        trace = exc.__traceback__
+        while trace is not None and trace.tb_next is not None:
+            trace = trace.tb_next
+        sys.stdout.write(json.dumps({"ok": False, "error": type(exc).__name__, "detail": str(exc)[:400], "line": trace.tb_lineno if trace is not None else 0}) + "\n")
         sys.stdout.flush()
         sys.exit(1)
     sys.stdout.write(json.dumps({"ok": True, "commands": list(cfg.get("commands", []))}) + "\n")
@@ -1190,7 +1194,10 @@ class ModuleSandbox:
                 stderr_tail = stderr.decode("utf-8", errors="replace")[-800:]
             except Exception:
                 pass
-            raise SandboxError(f"sandbox worker failed to boot: {payload.get('error', 'no output')} {stderr_tail}".strip())
+            detail = str(payload.get("detail") or "")
+            line = int(payload.get("line") or 0)
+            location = f" line {line}" if line else ""
+            raise SandboxError(f"sandbox worker failed to boot: {payload.get('error', 'no output')}{location}: {detail} {stderr_tail}".strip())
         self._workers[module_id] = process
         self._booted[module_id] = True
         return process
