@@ -596,6 +596,7 @@ class ModuleContext:
             allowed = self.is_premium
             if not allowed:
                 if fb == "bot":
+                    kwargs["rich"] = True
                     return await self._bot_form(kwargs.get("text", ""), kwargs.get("buttons"), kwargs)
                 value = kwargs.pop("text", "")
                 if value:
@@ -630,6 +631,22 @@ class ModuleContext:
         return result
 
     async def respond(self, content: Any = None, **kwargs: Any) -> Any:
+        callback = kwargs.pop("callback", None)
+        if callback is not None:
+            text = content if isinstance(content, str) else kwargs.pop("text", "")
+            buttons = kwargs.pop("buttons", None)
+            kwargs.pop("mode", kwargs.pop("output", None))
+            kwargs.pop("delete_source", None)
+            kwargs.pop("force_reply", None)
+            kwargs.pop("inline", None)
+            kwargs.pop("rich_fallback", None)
+            if buttons is not None:
+                kwargs["kbd"] = {"inline_keyboard": self._normalize_buttons(buttons)}
+            try:
+                await callback.answer()
+            except Exception:
+                pass
+            return await callback.edit(str(text or ""), **kwargs)
         mode = kwargs.pop("mode", kwargs.pop("output", "auto"))
         delete_source = kwargs.pop("delete_source", False)
         if kwargs.pop("force_reply", False):
