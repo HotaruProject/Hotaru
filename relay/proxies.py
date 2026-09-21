@@ -622,8 +622,11 @@ class ForumHelper:
         self._invite_ts = 0.0
         self._apply_task: asyncio.Task[None] | None = None
         self._apply_chat: int | None = None
+        self._applied: set[int] = set()
 
     def _apply_background(self, chat_id: int) -> None:
+        if chat_id in self._applied:
+            return
         if self._apply_task is not None and not self._apply_task.done():
             if self._apply_chat == chat_id:
                 return
@@ -721,6 +724,14 @@ class ForumHelper:
         peer = await self._user_peer(chat_id)
         if peer is None:
             return
+        try:
+            result = await self._user_call("messages.getForumTopics", peer=peer, offset_date=0, offset_id=0, offset_topic=0, limit=1)
+            for item in _items(self._body(result).get("topics")):
+                topic = _data(item)
+                if topic is not None and topic.get("id") == 1 and topic.get("hidden") is True:
+                    return
+        except Exception:
+            pass
         try:
             await self._user_call("messages.editForumTopic", peer=peer, topic_id=1, hidden=True)
         except Exception:
@@ -835,6 +846,7 @@ class ForumHelper:
                 state.set_setting("forum-dead-channel-ids", sorted(dead_groups)[-32:])
                 state.set_setting("forum-dead-channel-id", int(dead))
         self._warmed.clear()
+        self._applied.clear()
         self._topic_tries.clear()
         self._group_try_ts = 0.0
 
@@ -902,6 +914,7 @@ class ForumHelper:
         await self._promote_bot(chat_id)
         await self._hide_general(chat_id)
         await self._sync_channel_to_bot(chat_id)
+        self._applied.add(chat_id)
 
     async def _user_bot(self, bot_id: int, username: str) -> dict[str, Any] | None:
         entity = self._user_mt().entities.get(("user", bot_id))
