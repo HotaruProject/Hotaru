@@ -4,16 +4,23 @@ import asyncio
 import html
 import secrets
 import time
-from typing import Any, Awaitable, Callable
+from typing import Any, Awaitable, Callable, cast
 
 from .caps import MT_BLOCKED, normalize_method
 from .rpc import rpcname
 from .denylist import payload_hits_blocked
 from .firewall import trusted_scope
-from goygram.errors import ChannelNotFoundError
 from goygram.rich import rich_html
 from goygram.sugar import extract_sent_message, html_to_entities
 from goygram.types.kbd import kbd_to_tl
+
+
+def _data(value: object) -> dict[str, Any] | None:
+    return cast('dict[str, Any]', value) if isinstance(value, dict) else None
+
+
+def _items(value: object) -> list[Any]:
+    return cast('list[Any]', value) if isinstance(value, list) else []
 
 
 class AssetsHelper:
@@ -61,7 +68,7 @@ class Gateway:
         self._module_id = module_id
 
     def _check(self, method: str) -> None:
-        if not isinstance(method, str) or not method.strip():
+        if not method.strip():
             raise PermissionError("mt method name is required")
         lowered = method.strip().lower()
         canonical = normalize_method(lowered).lower()
@@ -247,7 +254,7 @@ class RichGateway:
         return await self.send(self._blocks_html(blocks), peer=target, **kwargs)
 
     def _blocks_html(self, blocks: list[dict[str, Any]]) -> str:
-        result = []
+        result: list[str] = []
         for block in blocks:
             kind = block.get("type")
             if kind == "section_heading":
@@ -260,22 +267,23 @@ class RichGateway:
                 result.append("<hr>")
             elif kind == "list":
                 tag = "ol" if block.get("ordered") else "ul"
-                items = "".join(f"<li>{item.get('text', '') if isinstance(item, dict) else item}</li>" for item in block.get("items", []))
+                items = "".join(f"<li>{data.get('text', '') if (data := _data(item)) is not None else item}</li>" for item in _items(block.get("items")))
                 result.append(f"<{tag}>{items}</{tag}>")
             elif kind in {"block_quotation", "expandable_block_quotation"}:
                 attr = " expandable" if kind.startswith("expandable") else ""
                 result.append(f"<blockquote{attr}>{block.get('text', '')}</blockquote>")
             elif kind == "details":
                 attr = " open" if block.get("is_open") else ""
-                result.append(f"<details{attr}><summary>{block.get('summary', '')}</summary>{self._blocks_html(block.get('blocks', []))}</details>")
+                nested = [data for item in _items(block.get("blocks")) if (data := _data(item)) is not None]
+                result.append(f"<details{attr}><summary>{block.get('summary', '')}</summary>{self._blocks_html(nested)}</details>")
             elif kind == "table":
-                rows = []
-                for row in block.get("cells", []):
-                    cells = "".join(f"<td>{cell.get('text', '') if isinstance(cell, dict) else cell}</td>" for cell in row)
+                rows: list[str] = []
+                for row in _items(block.get("cells")):
+                    cells = "".join(f"<td>{data.get('text', '') if (data := _data(cell)) is not None else cell}</td>" for cell in _items(row))
                     rows.append(f"<tr>{cells}</tr>")
                 result.append(f"<table>{''.join(rows)}</table>")
             elif kind == "map":
-                loc = block.get("location", {})
+                loc = _data(block.get("location")) or {}
                 result.append(f"<tg-map latitude=\"{block.get('latitude', loc.get('latitude'))}\" longitude=\"{block.get('longitude', loc.get('longitude'))}\" zoom=\"{block.get('zoom', 15)}\">{block.get('caption') or ''}</tg-map>")
             elif kind == "photo":
                 result.append(f"<img src=\"{html.escape(str(block.get('photo', '')), quote=True)}\">{block.get('caption') or ''}")
@@ -382,14 +390,16 @@ class BotGateway:
 
     @staticmethod
     def extract_sent(result: Any) -> dict[str, Any] | None:
-        body = result.get("result", result) if isinstance(result, dict) else result
+        result_data = _data(result)
+        body = result_data.get("result", result) if result_data is not None else result
         sent = extract_sent_message(body)
         if sent is not None and isinstance(sent.get("id"), int):
             return sent
-        if isinstance(result, dict) and isinstance(result.get("message_id"), int):
-            return result
-        if isinstance(body, dict) and isinstance(body.get("message_id"), int):
-            return {"id": body["message_id"], "message_id": body["message_id"]}
+        if result_data is not None and isinstance(result_data.get("message_id"), int):
+            return result_data
+        body_data = _data(body)
+        if body_data is not None and isinstance(body_data.get("message_id"), int):
+            return {"id": body_data["message_id"], "message_id": body_data["message_id"]}
         return None
 
     async def call(self, method: str, **kwargs: Any) -> Any:
@@ -441,10 +451,19 @@ class BotGateway:
         if markup is None:
             return None
         if isinstance(markup, list):
-            markup = {"inline_keyboard": [row if isinstance(row, (list, tuple)) else [row] for row in markup]}
-        if isinstance(markup, dict) and markup.get("_") in {"replyInlineMarkup", "replyKeyboardMarkup"}:
-            return markup
-        tl_markup = kbd_to_tl(markup) if isinstance(markup, dict) else None
+            rows: list[list[Any]] = []
+            for row in cast('list[Any]', markup):
+                if isinstance(row, list):
+                    rows.append(cast('list[Any]', row))
+                elif isinstance(row, tuple):
+                    rows.append(list(cast('tuple[Any, ...]', row)))
+                else:
+                    rows.append([row])
+            markup = {"inline_keyboard": rows}
+        markup_data = _data(markup)
+        if markup_data is not None and markup_data.get("_") in {"replyInlineMarkup", "replyKeyboardMarkup"}:
+            return markup_data
+        tl_markup = kbd_to_tl(markup_data) if markup_data is not None else None
         return tl_markup if isinstance(tl_markup, dict) else None
 
     def _map_method(self, method: str, kwargs: dict[str, Any]) -> tuple[str, dict[str, Any]] | None:
@@ -641,8 +660,9 @@ class ForumHelper:
 
     @staticmethod
     def _body(result: Any) -> dict[str, Any]:
-        body = result.get("result", result) if isinstance(result, dict) else result
-        return body if isinstance(body, dict) else {}
+        result_data = _data(result)
+        body = result_data.get("result", result) if result_data is not None else result
+        return _data(body) or {}
 
     def _ingest_user(self, result: Any) -> None:
         mt = self._user_mt()
@@ -680,8 +700,9 @@ class ForumHelper:
         )
         self._ingest_user(dialogs)
         found: list[tuple[dict[str, Any], int]] = []
-        for chat in self._body(dialogs).get("chats") or []:
-            if isinstance(chat, dict) and chat.get("_") == "channel" and str(chat.get("title") or "") == title and chat.get("access_hash") and not chat.get("left"):
+        for item in _items(self._body(dialogs).get("chats")):
+            chat = _data(item)
+            if chat is not None and chat.get("_") == "channel" and str(chat.get("title") or "") == title and chat.get("access_hash") and not chat.get("left"):
                 found.append((chat, -1000000000000 - int(chat["id"])))
         return found
 
@@ -724,7 +745,8 @@ class ForumHelper:
         raw = -chat_id - 1000000000000
         with trusted_scope():
             entity = mt.entities.get(("chat", raw))
-            if not isinstance(entity, dict) or not int(entity.get("access_hash") or 0):
+            entity_data = _data(entity)
+            if entity_data is None or not int(entity_data.get("access_hash") or 0):
                 try:
                     dialogs = await self._user_call(
                         "messages.getDialogs",
@@ -736,13 +758,14 @@ class ForumHelper:
                     )
                     self._ingest_user(dialogs)
                     entity = mt.entities.get(("chat", raw))
+                    entity_data = _data(entity)
                 except Exception as exc:
                     self._emit("warm_failed", chat=chat_id, reason="resolve", detail=str(exc)[:160])
                     return False
-            if not isinstance(entity, dict):
+            if entity_data is None:
                 self._emit("warm_failed", chat=chat_id, reason="entity")
                 return False
-            access_hash = int(entity.get("access_hash") or 0)
+            access_hash = int(entity_data.get("access_hash") or 0)
             if not access_hash:
                 self._emit("warm_failed", chat=chat_id, reason="hash")
                 return False
@@ -759,8 +782,9 @@ class ForumHelper:
                     await self._reset_group(chat_id)
                 return False
         alive = False
-        for chat in self._body(res).get("chats") or []:
-            if not isinstance(chat, dict) or int(chat.get("id") or 0) != raw:
+        for item in _items(self._body(res).get("chats")):
+            chat = _data(item)
+            if chat is None or int(chat.get("id") or 0) != raw:
                 continue
             if chat.get("_") == "channel" and chat.get("access_hash") and not chat.get("left"):
                 alive = True
@@ -795,7 +819,7 @@ class ForumHelper:
         if state is None:
             return set()
         value = state.get_setting("forum-dead-channel-ids")
-        result = {int(item) for item in value if isinstance(item, int)} if isinstance(value, list) else set()
+        result: set[int] = {int(item) for item in _items(value) if isinstance(item, int)}
         legacy = state.get_setting("forum-dead-channel-id")
         if isinstance(legacy, int):
             result.add(legacy)
@@ -858,8 +882,9 @@ class ForumHelper:
                 self._emit("create_failed", detail=str(exc)[:160])
                 raise
             body = self._body(result)
-            for chat in body.get("chats") or []:
-                if isinstance(chat, dict) and chat.get("_") == "channel" and isinstance(chat.get("id"), int):
+            for item in _items(body.get("chats")):
+                chat = _data(item)
+                if chat is not None and chat.get("_") == "channel" and isinstance(chat.get("id"), int):
                     self._ingest_user(result)
                     new_id = -1000000000000 - int(chat["id"])
                     await self._save_group(new_id)
@@ -880,8 +905,9 @@ class ForumHelper:
 
     async def _user_bot(self, bot_id: int, username: str) -> dict[str, Any] | None:
         entity = self._user_mt().entities.get(("user", bot_id))
-        if isinstance(entity, dict) and entity.get("access_hash"):
-            return {"_": "inputUser", "user_id": bot_id, "access_hash": int(entity["access_hash"])}
+        entity_data = _data(entity)
+        if entity_data is not None and entity_data.get("access_hash"):
+            return {"_": "inputUser", "user_id": bot_id, "access_hash": int(entity_data["access_hash"])}
         state = getattr(self._runtime, "state", None)
         owner = getattr(getattr(self._runtime, "config", None), "owner_id", None)
         ref_chat = state.get_setting("inline-reference-chat") if state is not None else None
@@ -1014,8 +1040,9 @@ class ForumHelper:
                 id=[{"_": "inputChannel", "channel_id": raw, "access_hash": 0}],
             )
             self._ingest_bot(res)
-            for chat in self._body(res).get("chats") or []:
-                if isinstance(chat, dict) and int(chat.get("id") or 0) == raw:
+            for item in _items(self._body(res).get("chats")):
+                chat = _data(item)
+                if chat is not None and int(chat.get("id") or 0) == raw:
                     ah = chat.get("access_hash")
                     if isinstance(ah, int) and ah:
                         self._save_bot_hash(chat_id, ah)
@@ -1034,8 +1061,9 @@ class ForumHelper:
             await self._drop_if_private(chat_id, exc)
             raise
         self._ingest_user(result)
-        for topic in self._body(result).get("topics") or []:
-            if isinstance(topic, dict) and isinstance(topic.get("id"), int) and str(topic.get("title") or "") == title:
+        for item in _items(self._body(result).get("topics")):
+            topic = _data(item)
+            if topic is not None and isinstance(topic.get("id"), int) and str(topic.get("title") or "") == title:
                 return int(topic["id"])
         now = time.monotonic()
         last = self._topic_tries.get(title, 0.0)
@@ -1045,18 +1073,20 @@ class ForumHelper:
         created = await self._user_call("messages.createForumTopic", peer=chat_id, title=title, random_id=secrets.randbits(63))
         body = self._body(created)
         self._ingest_user(created)
-        for upd in body.get("updates") or []:
-            msg = upd.get("message") if isinstance(upd, dict) else None
-            if not isinstance(msg, dict):
+        for item in _items(body.get("updates")):
+            update = _data(item)
+            msg = _data(update.get("message")) if update is not None else None
+            if msg is None:
                 continue
-            action = msg.get("action")
-            if isinstance(action, dict) and action.get("_") == "messageActionTopicCreate" and isinstance(msg.get("id"), int):
+            action = _data(msg.get("action"))
+            if action is not None and action.get("_") == "messageActionTopicCreate" and isinstance(msg.get("id"), int):
                 return int(msg["id"])
         self._topic_tries.pop(title, None)
         recheck = await self._user_call("messages.getForumTopics", peer=chat_id, offset_date=0, offset_id=0, offset_topic=0, limit=100)
         self._ingest_user(recheck)
-        for topic in self._body(recheck).get("topics") or []:
-            if isinstance(topic, dict) and isinstance(topic.get("id"), int) and str(topic.get("title") or "") == title:
+        for item in _items(self._body(recheck).get("topics")):
+            topic = _data(item)
+            if topic is not None and isinstance(topic.get("id"), int) and str(topic.get("title") or "") == title:
                 return int(topic["id"])
         return None
 
@@ -1071,7 +1101,8 @@ class ForumHelper:
     def _user_channel(self, chat_id: int) -> dict[str, Any] | None:
         raw = -chat_id - 1000000000000
         entity = self._user_mt().entities.get(("chat", raw))
-        access_hash = entity.get("access_hash") if isinstance(entity, dict) else None
+        entity_data = _data(entity)
+        access_hash = entity_data.get("access_hash") if entity_data is not None else None
         if not isinstance(access_hash, int) or not access_hash:
             return None
         return {"_": "inputChannel", "channel_id": raw, "access_hash": access_hash}
@@ -1203,10 +1234,11 @@ class ForumHelper:
             raise RuntimeError("forum group is not available")
         peer = await self._bot_resolve(chat_id) or await self._user_peer(chat_id)
         result = await self._bot_call("messages.getHistory", peer=peer, offset_id=int(message_id) + 1, offset_date=0, add_offset=0, limit=3, max_id=0, min_id=0, hash=0)
-        for message in self._body(result).get("messages") or []:
-            if isinstance(message, dict) and message.get("id") == int(message_id):
-                reply = message.get("reply_to") or {}
-                if isinstance(reply, dict):
+        for item in _items(self._body(result).get("messages")):
+            message = _data(item)
+            if message is not None and message.get("id") == int(message_id):
+                reply = _data(message.get("reply_to"))
+                if reply is not None:
                     top = reply.get("reply_to_top_id")
                     if isinstance(top, int):
                         return top
@@ -1430,7 +1462,14 @@ class UiHelper:
         return self.button(text, handler, payload, style="danger")
 
     def form(self, text: str, *rows: Any) -> dict[str, Any]:
-        normalized = [list(row) if isinstance(row, (list, tuple)) else [row] for row in rows]
+        normalized: list[list[Any]] = []
+        for row in rows:
+            if isinstance(row, list):
+                normalized.append(cast('list[Any]', row))
+            elif isinstance(row, tuple):
+                normalized.append(list(cast('tuple[Any, ...]', row)))
+            else:
+                normalized.append([row])
         return {"text": text, "buttons": normalized}
 
     def screen(self, text: str, *rows: Any) -> dict[str, Any]:
@@ -1482,7 +1521,3 @@ class ModulesHelper:
 
     async def reload(self, module_id: str) -> Any:
         return await self._host.cap("modules", {"op": "reload", "module_id": module_id})
-
-
-async def _noop(callback: Any, payload: Any) -> None:
-    return None

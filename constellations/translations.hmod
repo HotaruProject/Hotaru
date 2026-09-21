@@ -5,7 +5,7 @@ HOTARU = {
     "capabilities": []
 }
 
-from typing import Any
+from typing import Any, List, Mapping, Optional, cast
 
 
 NATIVE_LABELS = {
@@ -27,7 +27,7 @@ def _screen(ctx: Any) -> Any:
     current = runtime.language()
 
     async def select(callback: Any, payload: Any) -> Any:
-        selected = payload.get("language") if isinstance(payload, dict) else None
+        selected = cast(Optional[str], cast(Mapping[str, object], payload).get("language")) if isinstance(payload, dict) else None
         runtime.set_language(selected)
         screen = _screen(ctx)
         await ctx.respond(
@@ -37,7 +37,7 @@ def _screen(ctx: Any) -> Any:
             parse_mode="HTML",
         )
 
-    buttons = []
+    buttons: List[Any] = []
     for language in ("ru", "en", "kz", "uk", "ja"):
         marker = "✓ " if language == current else ""
         buttons.append(

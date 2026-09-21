@@ -8,6 +8,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from typing import cast
 
 ROOT = Path(__file__).resolve().parent.parent
 CACHE = ROOT / "sanctuary" / "typecheck.json"
@@ -32,14 +33,15 @@ def _run(paths: list[str]) -> None:
 
 def _cache() -> dict[str, object]:
     try:
-        value = json.loads(CACHE.read_text(encoding="utf-8"))
+        value = cast(object, json.loads(CACHE.read_text(encoding="utf-8")))
     except (OSError, ValueError, TypeError):
         return {"hmods": {}}
     if not isinstance(value, dict):
         return {"hmods": {}}
-    if not isinstance(value.get("hmods"), dict):
-        value["hmods"] = {}
-    return value
+    cache = cast('dict[str, object]', value)
+    if not isinstance(cache.get("hmods"), dict):
+        cache["hmods"] = {}
+    return cache
 
 
 def _save(value: dict[str, object]) -> None:
@@ -98,8 +100,9 @@ def check_kernel() -> None:
 def check_hmod(source: str, path: Path) -> None:
     key = _hmod_key(source, path)
     cache = _cache()
-    hmods = cache["hmods"]
-    assert isinstance(hmods, dict)
+    value = cache["hmods"]
+    assert isinstance(value, dict)
+    hmods = cast('dict[str, object]', value)
     if hmods.get(str(path.resolve())) == key:
         return
     with tempfile.TemporaryDirectory(prefix="hotaru-pyright-") as tmp:
@@ -112,8 +115,9 @@ def check_hmod(source: str, path: Path) -> None:
 
 def check_hmods(paths: list[Path]) -> None:
     cache = _cache()
-    hmods = cache["hmods"]
-    assert isinstance(hmods, dict)
+    value = cache["hmods"]
+    assert isinstance(value, dict)
+    hmods = cast('dict[str, object]', value)
     pending: list[tuple[Path, str, str]] = []
     for path in paths:
         source = path.read_text(encoding="utf-8")
@@ -123,7 +127,7 @@ def check_hmods(paths: list[Path]) -> None:
     if not pending:
         return
     with tempfile.TemporaryDirectory(prefix="hotaru-pyright-") as tmp:
-        files = []
+        files: list[str] = []
         for index, (path, source, _) in enumerate(pending):
             dest = Path(tmp) / f"{index}-{path.stem}.py"
             dest.write_text(_PREAMBLE + source, encoding="utf-8")

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 from goygram.sugar import html_to_entities
 from goygram.types.kbd import kbd_to_tl
@@ -32,10 +32,13 @@ def _html_to_entities(html_src: str) -> tuple[str, list[dict[str, Any]]]:
 def _kbd(buttons: Any) -> dict[str, Any] | None:
     if buttons is None:
         return None
-    if isinstance(buttons, dict) and buttons.get("_") in {"replyInlineMarkup", "replyKeyboardMarkup", "replyKeyboardHide", "replyForceReply"}:
-        return buttons
+    if isinstance(buttons, dict):
+        mapping = cast('dict[str, Any]', buttons)
+        if mapping.get("_") in {"replyInlineMarkup", "replyKeyboardMarkup", "replyKeyboardHide", "replyForceReply"}:
+            return mapping
     if isinstance(buttons, list):
-        buttons = {"inline_keyboard": [row if isinstance(row, (list, tuple)) else [row] for row in buttons]}
+        rows: list[Any] = [row if isinstance(row, (list, tuple)) else [row] for row in cast('list[Any]', buttons)]
+        buttons = {"inline_keyboard": rows}
     if isinstance(buttons, dict) and "inline_keyboard" not in buttons and "keyboard" not in buttons:
         return None
     markup = kbd_to_tl(buttons)
@@ -47,7 +50,7 @@ def _markup_of(result: dict[str, Any]) -> dict[str, Any] | None:
     if markup is None:
         return None
     if isinstance(markup, list):
-        rows = [row if isinstance(row, (list, tuple)) else [row] for row in markup]
+        rows: list[Any] = [row if isinstance(row, (list, tuple)) else [row] for row in cast('list[Any]', markup)]
         markup = {"inline_keyboard": rows}
     return _kbd(markup)
 
@@ -105,7 +108,7 @@ def _thumb(result: dict[str, Any]) -> dict[str, Any] | None:
 
 
 def to_tl_result(result: dict[str, Any]) -> dict[str, Any] | None:
-    if isinstance(result, dict) and result.get("_") == "inputBotInlineResult":
+    if result.get("_") == "inputBotInlineResult":
         return result
     kind = str(result.get("type", "article"))
     if kind in {"location", "venue", "contact"}:

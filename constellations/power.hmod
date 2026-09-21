@@ -7,7 +7,7 @@ HOTARU = {
     "fade": "sundown",
 }
 
-from typing import Any
+from typing import Any, Mapping, cast
 
 
 import asyncio
@@ -93,11 +93,13 @@ async def sunrise(ctx: Any) -> Any:
     pending = ctx.state.get("restart_pending")
     if not isinstance(pending, dict):
         return
+    pending = cast(Mapping[str, object], pending)
     ctx.state.delete("restart_pending")
     ts = pending.get("ts")
     chat_id = pending.get("chat_id")
     message_id = pending.get("message_id")
-    peer_hex = pending.get("peer") if isinstance(pending.get("peer"), str) else None
+    peer = pending.get("peer")
+    peer_hex = peer if isinstance(peer, str) else None
     if not (isinstance(chat_id, int) and isinstance(message_id, int)):
         return
     took = max(1, round(time.time() - float(ts))) if isinstance(ts, (int, float)) else None

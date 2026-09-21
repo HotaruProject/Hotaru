@@ -5,7 +5,7 @@ HOTARU = {
     "capabilities": ["mt"],
 }
 
-from typing import Any, cast
+from typing import Any, List, Mapping, cast
 
 
 import html as _html
@@ -46,7 +46,7 @@ async def _reply_sender_id(ctx: Any, invocation: Any) -> Any:
         return None
     from_peer = reply.get("from_id")
     if isinstance(from_peer, dict):
-        uid = from_peer.get("user_id")
+        uid = cast(Mapping[str, object], from_peer).get("user_id")
         if isinstance(uid, int):
             return uid
     if isinstance(from_peer, int):
@@ -302,7 +302,7 @@ async def command_perms(ctx: Any, invocation: Any) -> Any:
         await ctx.respond(ctx.t("acl.empty", "Нет выданных прав. Используй !perm <user_id> <role>."), parse_mode="HTML")
         return
     from hotaru.access import permission_label
-    rows = []
+    rows: List[str] = []
     for entry in entries:
         rows.append(
             f"<code>{entry.user_id}</code> — <b>{_escape(permission_label(entry.permissions))}</b>"
@@ -317,7 +317,7 @@ async def command_whois(ctx: Any, invocation: Any) -> Any:
     user_id = int(invocation.args[0])
     from hotaru.access import permission_label
     permissions = ctx.access_admin.permissions_of(user_id)
-    labels = ctx.access_admin.user_labels(user_id)
+    _labels = ctx.access_admin.user_labels(user_id)
     rank = ctx.access_admin.rank_of(user_id)
     groups = [g.name for g in ctx.access_admin.sgroups().values() if user_id in g.users]
     groups_html = f"<br>groups: <code>{_escape(', '.join(groups))}</code>" if groups else ""

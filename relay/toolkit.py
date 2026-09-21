@@ -1,6 +1,4 @@
 from __future__ import annotations
-from hotaru.tl import as_tl
-
 import hashlib
 import html as _html_mod
 import json
@@ -11,7 +9,7 @@ import string
 import time
 from datetime import datetime, timezone
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 from urllib.parse import urlparse
 
 _BOOT_TS = time.perf_counter()
@@ -78,7 +76,7 @@ def args_split(text: str, separator: str | list[str]) -> list[str]:
     else:
         sections = [raw]
         for sep in separator:
-            new = []
+            new: list[str] = []
             for s in sections:
                 new.extend(s.split(sep))
             sections = new
@@ -86,7 +84,7 @@ def args_split(text: str, separator: str | list[str]) -> list[str]:
 
 
 def args_int(text: str) -> list[int]:
-    result = []
+    result: list[int] = []
     for arg in args_parse(text):
         try:
             result.append(int(arg))
@@ -96,7 +94,7 @@ def args_int(text: str) -> list[int]:
 
 
 def args_bool(text: str) -> list[bool]:
-    result = []
+    result: list[bool] = []
     for arg in args_parse(text):
         low = arg.lower()
         if low in ("true", "yes", "1", "on", "y", "да", "вкл"):
@@ -107,7 +105,7 @@ def args_bool(text: str) -> list[bool]:
 
 
 def args_float(text: str) -> list[float]:
-    result = []
+    result: list[float] = []
     for arg in args_parse(text):
         try:
             result.append(float(arg))
@@ -125,7 +123,7 @@ def escape_attr(value: Any) -> str:
 
 
 def escape_smart(text: str) -> str:
-    out = []
+    out: list[str] = []
     last = 0
     for m in _TAG_RE.finditer(text):
         out.append(escape(text[last:m.start()]))
@@ -156,29 +154,31 @@ def flag(code: str) -> str:
     return code
 
 
-def entity_url(entity: dict[str, Any] | Any, openmessage: bool = False) -> str:
+def entity_url(entity: object, openmessage: bool = False) -> str:
     if isinstance(entity, dict):
-        eid = entity.get("user_id") or entity.get("id") or entity.get("channel_id")
-        username = entity.get("username")
-        kind = entity.get("_", "")
+        data = cast('dict[str, Any]', entity)
+        eid = data.get("user_id") or data.get("id") or data.get("channel_id")
+        username = data.get("username")
+        kind = data.get("_", "")
     else:
         eid = getattr(entity, "id", None)
         username = getattr(entity, "username", None)
         kind = type(entity).__name__
-    if "user" in str(kind).lower() or (isinstance(entity, dict) and "user" in str(entity.get("_", "")).lower()):
+    if "user" in str(kind).lower() or (isinstance(entity, dict) and "user" in str(cast('dict[str, Any]', entity).get("_", "")).lower()):
         return f"tg://openmessage?id={eid}" if openmessage else f"tg://user?id={eid}"
     if username:
         return f"tg://resolve?domain={username}"
     return ""
 
 
-def entity_link(entity: dict[str, Any] | Any, label: str | None = None) -> str:
+def entity_link(entity: object, label: str | None = None) -> str:
     url = entity_url(entity)
     if not url:
         return escape(label or "")
     name = label or str(getattr(entity, "username", None) or getattr(entity, "id", ""))
     if isinstance(entity, dict):
-        name = label or str(entity.get("username") or entity.get("id") or entity.get("first_name") or "")
+        data = cast('dict[str, Any]', entity)
+        name = label or str(data.get("username") or data.get("id") or data.get("first_name") or "")
     return f'<a href="{escape_attr(url)}">{escape(name)}</a>'
 
 
@@ -241,9 +241,9 @@ def merge_dicts(a: dict[str, Any], b: dict[str, Any], *, deep: bool = True) -> d
         if key not in b:
             b[key] = a_val
         elif deep and isinstance(a_val, dict) and isinstance(b_val, dict):
-            b[key] = merge_dicts(a_val, b_val, deep=True)
+            b[key] = merge_dicts(cast('dict[str, Any]', a_val), cast('dict[str, Any]', b_val), deep=True)
         elif isinstance(a_val, list) and isinstance(b_val, list):
-            b[key] = list(dict.fromkeys(b_val + a_val))
+            b[key] = list(dict.fromkeys(cast('list[Any]', b_val) + cast('list[Any]', a_val)))
         else:
             b[key] = a_val
     return b
@@ -258,10 +258,10 @@ def json_ok(value: Any) -> bool:
 
 
 def flatten(nested: list[Any]) -> list[Any]:
-    result = []
+    result: list[Any] = []
     for item in nested:
         if isinstance(item, list):
-            result.extend(item)
+            result.extend(cast('list[Any]', item))
         else:
             result.append(item)
     return result
@@ -271,9 +271,9 @@ def censor(obj: Any, fields: list[str] | None = None, replacement: str = "***") 
     if fields is None:
         fields = ["phone", "password", "token", "secret", "api_hash", "api_id"]
     if isinstance(obj, dict):
-        return {k: (replacement if k.lower() in [f.lower() for f in fields] and isinstance(v, str) else censor(v, fields, replacement)) for k, v in obj.items()}
+        return {k: (replacement if k.lower() in [f.lower() for f in fields] and isinstance(v, str) else censor(v, fields, replacement)) for k, v in cast('dict[str, Any]', obj).items()}
     if isinstance(obj, list):
-        return [censor(item, fields, replacement) for item in obj]
+        return [censor(item, fields, replacement) for item in cast('list[Any]', obj)]
     return obj
 
 
@@ -303,7 +303,9 @@ def chat_id(message: Any) -> int | None:
 
 def entity_id(entity: Any) -> int | None:
     if isinstance(entity, dict):
-        return entity.get("channel_id") or entity.get("chat_id") or entity.get("user_id") or entity.get("id")
+        data = cast('dict[str, Any]', entity)
+        value = data.get("channel_id") or data.get("chat_id") or data.get("user_id") or data.get("id")
+        return cast(int | None, value)
     return getattr(entity, "id", None)
 
 
@@ -324,10 +326,12 @@ def mime(message: Any) -> str:
     if hasattr(message, "get"):
         media = message.get("media") or message.get("document")
         if isinstance(media, dict):
-            return media.get("mime_type", "")
+            value = cast('dict[str, Any]', media).get("mime_type", "")
+            return cast(str, value)
     m = getattr(message, "media", None)
     if isinstance(m, dict):
-        return m.get("mime_type", "")
+        value = cast('dict[str, Any]', m).get("mime_type", "")
+        return cast(str, value)
     if m is not None:
         return getattr(m, "mime_type", "") or ""
     return ""
@@ -352,19 +356,23 @@ def has_media(message: Any) -> bool:
             if message.get(kind):
                 return True
         media = message.get("media")
-        return isinstance(media, dict) and media is not None
+        return isinstance(media, dict)
     return getattr(message, "media", None) is not None
 
 
 def target_id(message: Any, arg_index: int = 0) -> int | None:
-    entities = getattr(message, "entities", None)
+    entities = cast('list[object]' | tuple[object, ...] | None, getattr(message, "entities", None))
     if entities:
         for ent in entities:
-            kind = getattr(ent, "_", "") or (ent.get("_", "") if isinstance(ent, dict) else "")
-            if "mentionname" in str(kind).lower():
-                uid = getattr(ent, "user_id", None) or (ent.get("user_id") if isinstance(ent, dict) else None)
-                if uid:
-                    return uid
+            if isinstance(ent, dict):
+                data = cast('dict[str, Any]', ent)
+                kind = data.get("_", "")
+                uid = data.get("user_id")
+            else:
+                kind = getattr(ent, "_", "")
+                uid = getattr(ent, "user_id", None)
+            if "mentionname" in str(kind).lower() and uid:
+                return cast(int, uid)
     args = args_parse(getattr(message, "text", "") or (message.get("text", "") if hasattr(message, "get") else ""))
     if len(args) > arg_index:
         try:
@@ -390,7 +398,7 @@ def uptime_fmt() -> str:
     days, remainder = divmod(total, 86400)
     hours, remainder = divmod(remainder, 3600)
     minutes, seconds = divmod(remainder, 60)
-    parts = []
+    parts: list[str] = []
     if days:
         parts.append(f"{days}d")
     if hours:
@@ -405,7 +413,7 @@ def duration(seconds: int | float) -> str:
     if seconds < 0:
         return "0s"
     units = [(31536000, "y"), (2592000, "mo"), (86400, "d"), (3600, "h"), (60, "m"), (1, "s")]
-    parts = []
+    parts: list[str] = []
     remaining = int(seconds)
     for unit_secs, label in units:
         if remaining >= unit_secs:
@@ -493,7 +501,7 @@ def list_items(items: list[str], ordered: bool = False) -> str:
 def kv(pairs: dict[str, Any] | list[tuple[str, Any]], bold_keys: bool = True) -> str:
     if isinstance(pairs, dict):
         pairs = list(pairs.items())
-    lines = []
+    lines: list[str] = []
     for key, value in pairs:
         k = f"<b>{escape(key)}</b>" if bold_keys else escape(key)
         lines.append(f"{k}: <code>{escape(value)}</code>")
@@ -503,7 +511,7 @@ def kv(pairs: dict[str, Any] | list[tuple[str, Any]], bold_keys: bool = True) ->
 def tree(items: list[str], indent: str = "  ") -> str:
     if not items:
         return ""
-    lines = []
+    lines: list[str] = []
     for i, item in enumerate(items):
         prefix = "└─ " if i == len(items) - 1 else "├─ "
         lines.append(escape(prefix + str(item)))
@@ -559,15 +567,16 @@ def countdown(seconds: int | float) -> str:
     return duration(seconds)
 
 
-def _rich_text(node: Any) -> str:
+def _rich_text(node: object) -> str:
     if not isinstance(node, dict):
         return escape(node) if node else ""
+    node = cast('dict[str, Any]', node)
     kind = node.get("_", "")
     inner = _rich_text(node.get("text")) if node.get("text") is not None else ""
     if kind == "textPlain":
         return escape(node.get("text") or "")
     if kind == "textConcat":
-        return "".join(_rich_text(item) for item in node.get("texts") or [])
+        return "".join(_rich_text(item) for item in cast('list[Any]', node.get("texts") or []))
     if kind == "textEmpty":
         return ""
     if kind == "textBold":
@@ -599,13 +608,14 @@ def _rich_text(node: Any) -> str:
     return inner
 
 
-def _rich_caption(node: Any) -> str:
+def _rich_caption(node: object) -> str:
     return _rich_text(node) if node is not None else ""
 
 
-def _rich_block(block: Any) -> str:
+def _rich_block(block: object) -> str:
     if not isinstance(block, dict):
         return ""
+    block = cast('dict[str, Any]', block)
     kind = block.get("_", "")
     text = _rich_text(block.get("text")) if block.get("text") is not None else ""
     if kind == "pageBlockParagraph":
@@ -634,45 +644,49 @@ def _rich_block(block: Any) -> str:
     if kind == "pageBlockAnchor":
         return f'<a name="{escape_attr(block.get("name") or "")}"></a>'
     if kind == "pageBlockList":
-        items = []
-        for item in block.get("items") or []:
+        items: list[str] = []
+        for item in cast('list[Any]', block.get("items") or []):
             if not isinstance(item, dict):
                 continue
+            item = cast('dict[str, Any]', item)
             if item.get("text") is not None:
                 inner = _rich_text(item.get("text"))
             else:
-                inner = "".join(_rich_block(sub) for sub in item.get("blocks") or [])
+                inner = "".join(_rich_block(sub) for sub in cast('list[Any]', item.get("blocks") or []))
             items.append(f"<li>{inner}</li>")
         return f"<ul>{''.join(items)}</ul>" if items else ""
     if kind == "pageBlockOrderedList":
-        items = []
-        for item in block.get("items") or []:
+        ordered_items: list[str] = []
+        for item in cast('list[Any]', block.get("items") or []):
             if not isinstance(item, dict):
                 continue
+            item = cast('dict[str, Any]', item)
             if item.get("text") is not None:
                 inner = _rich_text(item.get("text"))
             else:
-                inner = "".join(_rich_block(sub) for sub in item.get("blocks") or [])
-            items.append(f"<li>{inner}</li>")
-        return f"<ol>{''.join(items)}</ol>" if items else ""
+                inner = "".join(_rich_block(sub) for sub in cast('list[Any]', item.get("blocks") or []))
+            ordered_items.append(f"<li>{inner}</li>")
+        return f"<ol>{''.join(ordered_items)}</ol>" if ordered_items else ""
     if kind == "pageBlockBlockquote":
         return f"<blockquote>{text}{_rich_caption(block.get('caption'))}</blockquote>"
     if kind == "pageBlockPullquote":
         return f"<aside>{text}<cite>{_rich_caption(block.get('caption'))}</cite></aside>"
     if kind == "pageBlockDetails":
         title = _rich_text(block.get("title")) if block.get("title") is not None else ""
-        inner = "".join(_rich_block(sub) for sub in block.get("blocks") or [])
+        inner = "".join(_rich_block(sub) for sub in cast('list[Any]', block.get("blocks") or []))
         open_attr = " open" if block.get("open") else ""
         return f"<details{open_attr}><summary>{title}</summary>{inner}</details>"
     if kind == "pageBlockTable":
-        rows = []
-        for row in block.get("rows") or []:
+        rows: list[str] = []
+        for row in cast('list[Any]', block.get("rows") or []):
             if not isinstance(row, dict):
                 continue
-            cells = []
-            for cell in row.get("cells") or []:
+            row = cast('dict[str, Any]', row)
+            cells: list[str] = []
+            for cell in cast('list[Any]', row.get("cells") or []):
                 if not isinstance(cell, dict):
                     continue
+                cell = cast('dict[str, Any]', cell)
                 tag = "th" if cell.get("header") else "td"
                 cells.append(f"<{tag}>{_rich_text(cell.get('text'))}</{tag}>")
             if cells:
@@ -681,13 +695,13 @@ def _rich_block(block: Any) -> str:
     return text
 
 
-def _ent_get(e: Any, name: str, default: Any = None) -> Any:
+def _ent_get(e: object, name: str, default: Any = None) -> Any:
     if isinstance(e, dict):
-        return e.get(name, default)
+        return cast('dict[str, Any]', e).get(name, default)
     return getattr(e, name, default)
 
 
-def _ent_tags(e: Any, kind: str) -> tuple[str, str] | None:
+def _ent_tags(e: object, kind: str) -> tuple[str, str] | None:
     kl = kind.rsplit(".", 1)[-1].lower()
     if "bold" in kl:
         return "<b>", "</b>"
@@ -719,7 +733,7 @@ def _ent_tags(e: Any, kind: str) -> tuple[str, str] | None:
     return None
 
 
-def entities_to_html(text: str, entities: Any = None) -> str:
+def entities_to_html(text: str | None, entities: list[object] | tuple[object, ...] | None = None) -> str:
     text = "" if text is None else str(text)
     if not entities:
         return _html_mod.escape(text)
@@ -768,13 +782,15 @@ def entities_to_html(text: str, entities: Any = None) -> str:
     return "".join(out)
 
 
-def rich_to_html(message: Any) -> str:
+def rich_to_html(message: object) -> str:
     if not isinstance(message, dict):
         return ""
+    message = cast('dict[str, Any]', message)
     rich = message.get("rich_message") or message.get("richMessage")
     if not isinstance(rich, dict):
         return ""
-    return "".join(_rich_block(block) for block in rich.get("blocks") or [])
+    rich = cast('dict[str, Any]', rich)
+    return "".join(_rich_block(block) for block in cast('list[Any]', rich.get("blocks") or []))
 
 
 def btn_html(button: dict[str, Any]) -> str:
@@ -794,44 +810,47 @@ def btn_html(button: dict[str, Any]) -> str:
     return f"<tg-button{extra}>{text}</tg-button>"
 
 
-def buttons_html(buttons: Any, kind: str = "page") -> str:
+def buttons_html(buttons: list[Any], kind: str = "page") -> str:
     if not buttons:
         return ""
-    rows = buttons if isinstance(buttons[0], list) else [buttons]
+    rows: list[list[Any]] = cast('list[list[Any]]', buttons) if isinstance(buttons[0], list) else [buttons]
     if kind == "text":
         parts: list[str] = []
         for row in rows:
             for btn in row:
                 if isinstance(btn, dict):
-                    parts.append(btn_html(btn))
+                    parts.append(btn_html(cast('dict[str, Any]', btn)))
         return "".join(parts)
-    parts = []
+    page_parts: list[str] = []
     for row in rows:
-        inner = "".join(btn_html(btn) for btn in row if isinstance(btn, dict))
+        inner = "".join(btn_html(cast('dict[str, Any]', btn)) for btn in row if isinstance(btn, dict))
         if inner:
-            parts.append(f"<tg-button-row>{inner}</tg-button-row>")
-    return "".join(parts)
+            page_parts.append(f"<tg-button-row>{inner}</tg-button-row>")
+    return "".join(page_parts)
 
 
-def needs_form(buttons: Any) -> bool:
-    rows = buttons if isinstance(buttons, list) and buttons and isinstance(buttons[0], list) else [buttons or []]
+def needs_form(buttons: object) -> bool:
+    values = cast('list[Any]', buttons) if isinstance(buttons, list) else []
+    rows: list[Any] = values if values and isinstance(values[0], list) else [buttons or []]
     for row in rows:
         if not isinstance(row, list):
             continue
-        for btn in row:
-            if isinstance(btn, dict) and isinstance(btn.get("input"), str):
+        for btn in cast('list[Any]', row):
+            if isinstance(btn, dict) and isinstance(cast('dict[str, Any]', btn).get("input"), str):
                 return True
     return False
 
 
-def needs_callback(buttons: Any) -> bool:
-    rows = buttons if isinstance(buttons, list) and buttons and isinstance(buttons[0], list) else [buttons or []]
+def needs_callback(buttons: object) -> bool:
+    values = cast('list[Any]', buttons) if isinstance(buttons, list) else []
+    rows: list[Any] = values if values and isinstance(values[0], list) else [buttons or []]
     for row in rows:
         if not isinstance(row, list):
             continue
-        for btn in row:
+        for btn in cast('list[Any]', row):
             if not isinstance(btn, dict):
                 continue
+            btn = cast('dict[str, Any]', btn)
             if isinstance(btn.get("input"), str):
                 return True
             if btn.get("callback_data") or btn.get("data") or btn.get("callback") or callable(btn.get("handler")):

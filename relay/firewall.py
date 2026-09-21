@@ -3,10 +3,9 @@ from __future__ import annotations
 import contextlib
 import contextvars
 import os
-import socket
 import sys
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any, Generator
 
 _active = contextvars.ContextVar("hotaru_module_firewall", default=False)
 _trusted = contextvars.ContextVar("hotaru_module_trusted", default=False)
@@ -55,7 +54,7 @@ def _audit(event: str, args: tuple[Any, ...]) -> None:
 
 
 @contextlib.contextmanager
-def module_scope(owner: str = "") -> Iterator[None]:
+def module_scope(owner: str = "") -> Generator[None, None, None]:
     token = _active.set(True)
     owner_token = _owner.set(owner)
     try:
@@ -70,7 +69,7 @@ def current_module() -> str:
 
 
 @contextlib.contextmanager
-def trusted_scope() -> Iterator[None]:
+def trusted_scope() -> Generator[None, None, None]:
     token = _trusted.set(True)
     try:
         yield

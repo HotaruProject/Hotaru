@@ -61,7 +61,7 @@ class SecurityGate:
         self._seen_limit = seen_limit
         self._recent: list[tuple[str, int]] = []
 
-    def set_owner(self, owner_id: int | None) -> None:
+    def set_owner(self, owner_id: object) -> None:
         if owner_id is not None and not isinstance(owner_id, int):
             raise ValueError("owner id must be an integer")
         self.owner_id = owner_id

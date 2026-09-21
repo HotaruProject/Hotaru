@@ -5,7 +5,7 @@ HOTARU = {
     "capabilities": [],
 }
 
-from typing import Any
+from typing import Any, Tuple, cast
 
 async def command_ld(ctx: Any, invocation: Any) -> Any:
     runtime = ctx.runtime
@@ -14,7 +14,7 @@ async def command_ld(ctx: Any, invocation: Any) -> Any:
         return
     result = await runtime._command_ld(invocation)
     if isinstance(result, tuple):
-        text, buttons = result
+        text, buttons = cast(Tuple[Any, Any], result)
         await ctx.respond(text, buttons=buttons)
     else:
         await ctx.respond(result)
@@ -39,7 +39,7 @@ async def command_rm(ctx: Any, invocation: Any) -> Any:
         return
     result = await runtime._command_rm(invocation)
     if isinstance(result, tuple):
-        text, buttons = result
+        text, buttons = cast(Tuple[Any, Any], result)
         await ctx.respond(text, buttons=buttons)
     else:
         await ctx.respond(result)

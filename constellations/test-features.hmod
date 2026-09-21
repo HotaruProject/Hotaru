@@ -5,10 +5,7 @@ HOTARU = {
     "capabilities": ["mt", "state", "files", "net"],
 }
 
-from typing import Any
-
-
-import asyncio
+from typing import Any, List, Mapping, cast
 
 
 async def command_tfstatus(ctx: Any, invocation: Any) -> Any:
@@ -18,7 +15,7 @@ async def command_tfstatus(ctx: Any, invocation: Any) -> Any:
 
 async def command_tfhistory(ctx: Any, invocation: Any) -> Any:
     result = await ctx.tg.get("messages.getHistory", peer="me", limit=5, offset_id=0, offset_date=0, add_offset=0, max_id=0, min_id=0, hash=0)
-    items = result.get("messages", []) if isinstance(result, dict) else []
+    items = cast(List[Any], cast(Mapping[str, Any], result).get("messages", [])) if isinstance(result, dict) else []
     await ctx.respond(f"history items: {len(items)}")
 
 

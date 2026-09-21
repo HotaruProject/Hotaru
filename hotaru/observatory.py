@@ -5,19 +5,22 @@ import contextvars
 import io
 import json
 import logging
-import os
+
 import re
 import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any, Callable, Dict, Generator, TextIO, cast
 
 LEVELS = ("debug", "info", "warn", "error", "crit")
 _aliases = {"warning": "warn", "critical": "crit", "fatal": "crit", "exception": "error"}
 _numeric = {"debug": 10, "info": 20, "warn": 30, "error": 40, "crit": 50}
 
-_sink: contextvars.ContextVar[Any] = contextvars.ContextVar("hotaru_observatory_sink", default=None)
+Event = Dict[str, object]
+Subscriber = Callable[[Event], object]
+
+_sink: contextvars.ContextVar[Observatory | None] = contextvars.ContextVar("hotaru_observatory_sink", default=None)
 _module: contextvars.ContextVar[str] = contextvars.ContextVar("hotaru_observatory_module", default="")
 
 _secret_keys = (
@@ -81,7 +84,7 @@ def pretty_error(error: BaseException | None, *, frames: int = 4, note: str = ""
     depth = 0
     while cause is not None and depth < 2:
         lines.append(f"  caused by {type(cause).__name__}: {scrub_text(str(cause))[:200]}")
-        inner = []
+        inner: list[str] = []
         itb = cause.__traceback__
         while itb is not None:
             icode = itb.tb_frame.f_code
@@ -116,7 +119,7 @@ class Observatory:
         self.max_bytes = max_bytes
         self.level = norm_level(level)
         self._failed = 0.0
-        self._subscribers: list[Any] = []
+        self._subscribers: list[Subscriber] = []
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.path.parent.chmod(0o700)
         self.path.touch(exist_ok=True)
@@ -149,7 +152,7 @@ class Observatory:
             return tag
         return ""
 
-    def _redact(self, key: str, value: Any) -> Any:
+    def _redact(self, key: str, value: object) -> object:
         if is_secret_key(key):
             return "[REDACTED]"
         if value is None or isinstance(value, (int, float, bool)):
@@ -159,9 +162,9 @@ class Observatory:
         if isinstance(value, str):
             return scrub_text(value)[: self.max_value]
         if isinstance(value, dict):
-            return {str(k): self._redact(str(k), v) for k, v in list(value.items())[:64]}
+            return {str(k): self._redact(str(k), v) for k, v in list(cast('dict[object, object]', value).items())[:64]}
         if isinstance(value, (list, tuple)):
-            return [self._redact(key, item) for item in value[:64]]
+            return [self._redact(key, item) for item in cast('list[object]' | tuple[object, ...], value)[:64]]
         return scrub_text(str(value))[: self.max_value]
 
     def emit(self, component: str, event: str, level: str = "info", **fields: Any) -> None:
@@ -169,7 +172,7 @@ class Observatory:
         if not self._allowed(level):
             return
         now_ts = time.time()
-        payload = {
+        payload: Event = {
             "ts": now_ts,
             "time": datetime.fromtimestamp(now_ts, tz=timezone.utc).isoformat(timespec="milliseconds"),
             "level": level,
@@ -196,12 +199,12 @@ class Observatory:
         except OSError:
             self._failed = now
 
-    def subscribe(self, callback: Any) -> Any:
+    def subscribe(self, callback: Subscriber) -> Subscriber:
         if callback not in self._subscribers:
             self._subscribers.append(callback)
         return callback
 
-    def unsubscribe(self, callback: Any) -> None:
+    def unsubscribe(self, callback: Subscriber) -> None:
         with contextlib.suppress(ValueError):
             self._subscribers.remove(callback)
 
@@ -223,9 +226,12 @@ class Observatory:
                 if len(wanted) >= lines:
                     break
                 try:
-                    entry = json.loads(raw)
+                    decoded = cast(object, json.loads(raw))
                 except (ValueError, TypeError):
                     continue
+                if not isinstance(decoded, dict):
+                    continue
+                entry = cast('dict[str, Any]', decoded)
                 if component and entry.get("component") != component:
                     continue
                 if module and entry.get("module") != module:
@@ -316,7 +322,7 @@ logs = Logs()
 
 
 class _Writer(io.TextIOBase):
-    def __init__(self, original: Any, stream_name: str) -> None:
+    def __init__(self, original: TextIO, stream_name: str) -> None:
         self.original = original
         self.stream_name = stream_name
         self._buffer = ""
@@ -328,8 +334,6 @@ class _Writer(io.TextIOBase):
         observatory.emit("module", "output", level="info", stream=self.stream_name, msg=line[: observatory.max_value])
 
     def write(self, data: str) -> int:
-        if not isinstance(data, str):
-            data = str(data)
         try:
             self.original.write(data)
             self.original.flush()
@@ -377,7 +381,7 @@ def hook_stdio() -> None:
 
 
 @contextlib.contextmanager
-def scope(module_id: str) -> Iterator[None]:
+def scope(module_id: str) -> Generator[None, None, None]:
     token = _module.set(module_id)
     try:
         yield

@@ -9,7 +9,7 @@ import time
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, cast
 
-from goygram import GoyGram, Session
+from goygram import Session
 from relay.firewall import trusted_scope
 
 BOTFATHER = "@BotFather"
@@ -20,6 +20,14 @@ USERNAME_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9_]{2,31}bot$", re.IGNORECASE)
 
 class InlineError(RuntimeError):
     pass
+
+
+def _result_body(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        return {}
+    payload = cast('dict[str, Any]', value)
+    result = payload.get("result")
+    return cast('dict[str, Any]', result) if isinstance(result, dict) else payload
 
 
 @dataclass
@@ -34,7 +42,7 @@ class BotFatherConversation:
         self.app = app
         self.timeout = timeout
         self._peer: Any = None
-        self._last_id = 0
+        self._last_id: int = 0
         self._self_id = getattr(getattr(app, "mt", None), "self_id", None) or getattr(app, "self_id", None) or 0
 
     async def __aenter__(self) -> "BotFatherConversation":
@@ -49,10 +57,10 @@ class BotFatherConversation:
             min_id=0,
             hash=0,
         )
-        body = state.get("result") if isinstance(state, dict) and isinstance(state.get("result"), dict) else state
-        messages = body.get("messages") if isinstance(body, dict) else None
+        body = _result_body(state)
+        messages = body.get("messages")
         if messages:
-            self._last_id = max((m.get("id", 0) for m in messages if isinstance(m, dict)), default=0)
+            self._last_id = max((cast('dict[str, Any]', m).get("id", 0) for m in cast('list[Any]', messages) if isinstance(m, dict)), default=0)
         return self
 
     async def __aexit__(self, *exc: Any) -> None:
@@ -67,24 +75,27 @@ class BotFatherConversation:
         return self._extract_sent_id(result)
 
     def _extract_sent_id(self, result: Any) -> int:
-        body = result.get("result") if isinstance(result, dict) and isinstance(result.get("result"), dict) else result
-        if isinstance(body, dict):
+        body = _result_body(result)
+        if body:
             updates = body.get("updates")
             if isinstance(updates, list):
-                for update in updates:
+                for update in cast('list[Any]', updates):
                     if not isinstance(update, dict):
                         continue
-                    kind = update.get("_")
+                    update_dict = cast('dict[str, Any]', update)
+                    kind = update_dict.get("_")
                     if kind in ("updateNewMessage", "updateMessageID"):
-                        message = update.get("message")
-                        if isinstance(message, dict) and isinstance(message.get("id"), int):
-                            return message["id"]
-                    if kind == "updateMessageID" and isinstance(update.get("id"), int):
-                        return update["id"]
+                        message = update_dict.get("message")
+                        if isinstance(message, dict):
+                            message_data = cast('dict[str, Any]', message)
+                            if isinstance(message_data.get("id"), int):
+                                return cast(int, message_data["id"])
+                    if kind == "updateMessageID" and isinstance(update_dict.get("id"), int):
+                        return cast(int, update_dict["id"])
         return 0
 
     async def _delete(self, *ids: int) -> None:
-        valid = [i for i in ids if isinstance(i, int) and i > 0]
+        valid = [i for i in ids if i > 0]
         if not valid:
             return
         try:
@@ -99,7 +110,7 @@ class BotFatherConversation:
         if isinstance(sender, int):
             return sender == self._self_id
         if isinstance(sender, dict):
-            user_id = sender.get("user_id")
+            user_id = cast('dict[str, Any]', sender).get("user_id")
             return isinstance(user_id, int) and user_id == self._self_id
         return False
 
@@ -117,18 +128,20 @@ class BotFatherConversation:
                 min_id=0,
                 hash=0,
             )
-            body = result.get("result") if isinstance(result, dict) and isinstance(result.get("result"), dict) else result
-            messages = body.get("messages") if isinstance(body, dict) else None
-            for message in messages or []:
+            body = _result_body(result)
+            messages = body.get("messages")
+            for message in cast('list[Any]', messages) if isinstance(messages, list) else []:
                 if not isinstance(message, dict):
                     continue
-                if message.get("id", 0) <= floor:
+                message_dict = cast('dict[str, Any]', message)
+                message_id = message_dict.get("id", 0)
+                if not isinstance(message_id, int) or message_id <= floor:
                     continue
-                if self._is_mine(message):
-                    self._last_id = max(self._last_id, message["id"])
+                if self._is_mine(message_dict):
+                    self._last_id = max(self._last_id, message_id)
                     continue
-                self._last_id = max(self._last_id, message["id"])
-                return message
+                self._last_id = max(self._last_id, message_id)
+                return message_dict
             await asyncio.sleep(1.0)
         raise InlineError("BotFather response timeout")
 
@@ -144,9 +157,14 @@ class BotFatherConversation:
                 min_id=0,
                 hash=0,
             )
-            body = result.get("result") if isinstance(result, dict) and isinstance(result.get("result"), dict) else result
-            messages = body.get("messages") if isinstance(body, dict) else None
-            recent = [m for m in messages or [] if isinstance(m, dict) and m.get("id", 0) > self._last_id]
+            body = _result_body(result)
+            messages = body.get("messages")
+            recent: list[dict[str, Any]] = []
+            for item in cast('list[Any]', messages) if isinstance(messages, list) else []:
+                if isinstance(item, dict):
+                    message = cast('dict[str, Any]', item)
+                    if isinstance(message.get("id"), int) and message["id"] > self._last_id:
+                        recent.append(message)
             if not recent:
                 return
             for message in recent:
@@ -185,10 +203,11 @@ class BotFatherGuard:
         result = await self.app.mt_messages_get_peer_dialogs(
             peers=[{"_": "inputDialogPeer", "peer": peer}],
         )
-        body = result.get("result") if isinstance(result, dict) and isinstance(result.get("result"), dict) else result
-        for dialog in (body.get("dialogs") or []) if isinstance(body, dict) else []:
+        body = _result_body(result)
+        dialogs = body.get("dialogs")
+        for dialog in cast('list[Any]', dialogs) if isinstance(dialogs, list) else []:
             if isinstance(dialog, dict):
-                return dialog
+                return cast('dict[str, Any]', dialog)
         return None
 
     async def read_state(self) -> dict[str, Any]:
@@ -196,7 +215,7 @@ class BotFatherGuard:
         if dialog is None:
             return {"archived": False, "muted": False}
         settings_raw = dialog.get("notify_settings")
-        settings = settings_raw if isinstance(settings_raw, dict) else {}
+        settings = cast('dict[str, Any]', settings_raw) if isinstance(settings_raw, dict) else {}
         mute_until = settings.get("mute_until") or 0
         return {
             "archived": isinstance(dialog.get("folder_id"), int) and dialog["folder_id"] != 0,
@@ -205,8 +224,8 @@ class BotFatherGuard:
 
     async def _folder_peer(self, folder_id: int) -> dict[str, Any]:
         await self._resolve()
-        entity = self.app.mt.entity_usernames.get("botfather") or self.app.mt.entities.get(("user", BOTFATHER_ID)) or {}
-        access_hash = entity.get("access_hash") if isinstance(entity, dict) else 0
+        entity: Any = self.app.mt.entity_usernames.get("botfather") or self.app.mt.entities.get(("user", BOTFATHER_ID)) or {}
+        access_hash = cast('dict[str, Any]', entity).get("access_hash") if isinstance(entity, dict) else 0
         return {
             "_": "inputFolderPeer",
             "peer": {"_": "inputPeerUser", "user_id": BOTFATHER_ID, "access_hash": int(access_hash or 0)},
@@ -451,9 +470,10 @@ class InlineManager:
             me = await app.get_me()
             if not isinstance(me, dict):
                 raise InlineError("inline bot token validation failed")
-            botid = me.get("id")
-            username = me.get("username")
-            if not isinstance(botid, int) or botid <= 0 or not isinstance(username, str) or not username or me.get("is_bot") is not True:
+            me_dict = cast('dict[str, Any]', me)
+            botid = me_dict.get("id")
+            username = me_dict.get("username")
+            if not isinstance(botid, int) or botid <= 0 or not isinstance(username, str) or not username or me_dict.get("is_bot") is not True:
                 raise InlineError("inline bot identity is incomplete")
             username = username.lstrip("@")
             state = self.runtime.state
@@ -486,12 +506,19 @@ class InlineManager:
             async with BotFatherGuard(self.runtime.app), BotFatherConversation(self.runtime.app) as conv:
                 response = await conv.ask("/mybots")
                 markup = response.get("reply_markup")
-                rows = markup.get("rows") if isinstance(markup, dict) else None
-                if not rows:
+                rows = cast('dict[str, Any]', markup).get("rows") if isinstance(markup, dict) else None
+                if not isinstance(rows, list) or not rows:
                     return None
-                for row in rows:
-                    for button in row.get("buttons", []):
-                        text = button.get("text", "")
+                for row in cast('list[Any]', rows):
+                    if not isinstance(row, dict):
+                        continue
+                    buttons = cast('dict[str, Any]', row).get("buttons")
+                    for button in cast('list[Any]', buttons) if isinstance(buttons, list) else []:
+                        if not isinstance(button, dict):
+                            continue
+                        text = cast('dict[str, Any]', button).get("text", "")
+                        if not isinstance(text, str):
+                            continue
                         candidate = text.lstrip("@")
                         if not USERNAME_RE.match(candidate):
                             continue
@@ -733,11 +760,15 @@ class InlineManager:
             if main_mt is not None:
                 try:
                     result = await main_mt.call("users.getUsers", id=[{"_": "inputPeerSelf"}])
-                    body = result.get("result", result) if isinstance(result, dict) else result
-                    users = body.get("users") if isinstance(body, dict) else body
+                    if isinstance(result, list):
+                        body: dict[str, Any] = {}
+                        users: Any = cast('list[Any]', result)
+                    else:
+                        body = _result_body(result)
+                        users = body.get("users", body)
                     if isinstance(users, list) and users and isinstance(users[0], dict):
-                        username = users[0].get("username")
-                    elif isinstance(body, dict) and isinstance(body.get("username"), str):
+                        username = cast('dict[str, Any]', users[0]).get("username")
+                    elif isinstance(body.get("username"), str):
                         username = body.get("username")
                 except Exception as exc:
                     if runtime.observatory is not None:

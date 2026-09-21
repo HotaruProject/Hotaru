@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 SUPPORTED_LANGUAGES = ("ru", "en", "kz", "uk", "ja")
 DEFAULT_LANGUAGE = "en"
@@ -14,28 +14,40 @@ class TranslationError(ValueError):
     pass
 
 
+def _object_mapping(value: object) -> dict[str, object] | None:
+    if not isinstance(value, dict):
+        return None
+    result: dict[str, object] = {}
+    for key, item in cast('dict[object, object]', value).items():
+        if not isinstance(key, str):
+            return None
+        result[key] = item
+    return result
+
+
 class Lexicon:
     def __init__(self, root: str | Path, default_language: str = DEFAULT_LANGUAGE) -> None:
         self.root = Path(root)
-        self.default_language = self._validate_language(default_language)
-        self._cache: dict[str, dict[str, Any]] = {}
+        self.default_language = self.validate_language(default_language)
+        self._cache: dict[str, dict[str, object]] = {}
 
     def available_languages(self) -> tuple[str, ...]:
         return tuple(language for language in SUPPORTED_LANGUAGES if (self.root / f"{language}.json").is_file())
 
-    def load(self, language: str) -> dict[str, Any]:
-        language = self._validate_language(language)
+    def load(self, language: str) -> dict[str, object]:
+        language = self.validate_language(language)
         if language in self._cache:
             return self._cache[language]
         path = self.root / f"{language}.json"
         try:
-            payload = json.loads(path.read_text(encoding="utf-8"))
+            decoded = cast(object, json.loads(path.read_text(encoding="utf-8")))
         except (OSError, UnicodeError, json.JSONDecodeError) as exc:
             raise TranslationError(f"locale cannot be loaded: {language}") from exc
-        if not isinstance(payload, dict):
+        if not isinstance(decoded, dict):
             raise TranslationError(f"locale root must be an object: {language}")
+        payload = cast('dict[str, object]', decoded)
         meta = payload.get("meta")
-        if meta is not None and (not isinstance(meta, dict) or meta.get("language", language) != language):
+        if meta is not None and (not isinstance(meta, dict) or cast('dict[str, object]', meta).get("language", language) != language):
             raise TranslationError(f"locale metadata is invalid: {language}")
         self._validate_values(payload)
         self._cache[language] = payload
@@ -45,10 +57,10 @@ class Lexicon:
         return self._lookup(self.load(language), key) is not None
 
     def get(self, locale: str, key: str, default: Any = None, **params: Any) -> str:
-        if not isinstance(key, str) or not key:
+        if not key:
             raise TranslationError("translation key must be a non-empty string")
         languages: list[str] = []
-        if isinstance(locale, str) and locale.casefold() in SUPPORTED_LANGUAGES:
+        if locale.casefold() in SUPPORTED_LANGUAGES:
             languages.append(locale.casefold())
         for extra in (self.default_language, "ru", "en"):
             if extra not in languages:
@@ -69,15 +81,15 @@ class Lexicon:
         except (KeyError, IndexError, ValueError):
             return default if isinstance(default, str) else value
 
-    def bundle(self, language: str) -> dict[str, Any]:
+    def bundle(self, language: str) -> dict[str, object]:
         base = self.load(self.default_language)
         selected = self.load(language)
 
-        def merge(left: dict[str, Any], right: dict[str, Any]) -> dict[str, Any]:
+        def merge(left: dict[str, object], right: dict[str, object]) -> dict[str, object]:
             result = dict(left)
             for key, value in right.items():
                 if isinstance(value, dict) and isinstance(result.get(key), dict):
-                    result[key] = merge(result[key], value)
+                    result[key] = merge(cast('dict[str, object]', result[key]), cast('dict[str, object]', value))
                 else:
                     result[key] = value
             return result
@@ -85,24 +97,27 @@ class Lexicon:
         return merge(base, selected)
 
     @staticmethod
-    def _lookup(payload: dict[str, Any], key: str) -> Any:
-        value: Any = payload
+    def _lookup(payload: dict[str, object], key: str) -> object:
+        value: object = payload
         for part in key.split("."):
-            if not isinstance(value, dict) or part not in value:
+            mapping = _object_mapping(value)
+            if mapping is None:
                 return None
-            value = value[part]
+            if part not in mapping:
+                return None
+            value = mapping[part]
         return value
 
     @staticmethod
-    def _validate_language(language: str) -> str:
-        if not isinstance(language, str) or language.casefold() not in SUPPORTED_LANGUAGES:
+    def validate_language(language: str) -> str:
+        if language.casefold() not in SUPPORTED_LANGUAGES:
             raise TranslationError(f"unsupported language: {language}")
         return language.casefold()
 
     @classmethod
-    def _validate_values(cls, value: Any) -> None:
+    def _validate_values(cls, value: object) -> None:
         if isinstance(value, dict):
-            for key, item in value.items():
+            for key, item in cast('dict[object, object]', value).items():
                 if not isinstance(key, str) or not key:
                     raise TranslationError("locale contains an invalid key")
                 cls._validate_values(item)
@@ -113,7 +128,7 @@ class Lexicon:
 class Translator:
     def __init__(self, lexicon: Lexicon, language: str) -> None:
         self.lexicon = lexicon
-        self.language = lexicon._validate_language(language)
+        self.language = lexicon.validate_language(language)
 
     def t(self, key: str, default: str | None = None, **params: Any) -> str:
         return self.lexicon.get(self.language, key, default, **params)

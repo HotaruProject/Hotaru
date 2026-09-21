@@ -5,10 +5,9 @@ HOTARU = {
     "capabilities": ["mt"],
 }
 
-from typing import Any
+from typing import Any, List
 
 
-import asyncio
 import html as _html
 
 def _escape(value: Any) -> Any:
@@ -32,7 +31,7 @@ async def command_accs(ctx: Any, invocation: Any) -> Any:
     if not items:
         await ctx.respond(ctx.t("accounts.empty", "Аккаунты не зарегистрированы."), parse_mode="HTML")
         return
-    rows = []
+    rows: List[str] = []
     for profile in items:
         vault_ok = ctx.accounts.vault_ready(profile.account_number)
         vault_state = "✓" if vault_ok else "✗"

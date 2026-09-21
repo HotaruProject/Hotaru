@@ -31,7 +31,7 @@ from relay.proxies import (
     ForumHelper,
 )
 from relay.toolkit import TOOLS, buttons_html, needs_form, needs_callback
-from .tl import Button, TL, as_tl
+from .tl import as_tl
 
 log = logging.getLogger(__name__)
 
@@ -45,15 +45,18 @@ def reply_message_id(message: Any) -> int | None:
         value = getattr(candidate, "id", None)
         if isinstance(value, int):
             return value
-        if isinstance(candidate, dict) and isinstance(candidate.get("id"), int):
-            return int(candidate["id"])
+        if isinstance(candidate, dict):
+            candidate_data = cast('dict[str, Any]', candidate)
+            if isinstance(candidate_data.get("id"), int):
+                return int(candidate_data["id"])
     for source in (message, getattr(message, "raw", None)):
         getter = getattr(source, "get", None)
         if not callable(getter):
             continue
         header = getter("reply_to")
         if isinstance(header, dict):
-            value = header.get("reply_to_msg_id") or header.get("reply_to_id")
+            header_data = cast('dict[str, Any]', header)
+            value = header_data.get("reply_to_msg_id") or header_data.get("reply_to_id")
             if isinstance(value, int):
                 return value
         for name in ("reply_to_msg_id", "reply_to_message_id"):
@@ -266,10 +269,10 @@ class ResponseService:
         if content is not None:
             if isinstance(content, str):
                 kwargs.setdefault("text", content)
-            elif isinstance(content, dict) and content.get("_") == "inputRichMessageHTML":
-                rich_message = content
+            elif isinstance(content, dict) and cast('dict[str, Any]', content).get("_") == "inputRichMessageHTML":
+                rich_message = cast('dict[str, Any]', content)
             else:
-                media = content
+                media = cast(Any, content)
         if file is not None:
             media = file
         if kwargs.get("topic_id") is None:
@@ -285,7 +288,7 @@ class ResponseService:
                         kwargs["topic_id"] = candidate
                         break
         if inline or form is not None or buttons is not None:
-            data = form if isinstance(form, dict) else {"text": kwargs.pop("text", ""), "buttons": buttons}
+            data: dict[str, Any] = cast('dict[str, Any]', form) if isinstance(form, dict) else {"text": kwargs.pop("text", ""), "buttons": buttons}
             if hasattr(message, "form"):
                 return await message.form(data.get("text", ""), data.get("buttons"), **kwargs)
             return await self.answer(message, text=data.get("text", ""), buttons=data.get("buttons"), output="reply")
@@ -298,7 +301,7 @@ class ResponseService:
     async def split(self, message: Any, text: str, *, limit: int = 4096, **kwargs: Any) -> list[Any]:
         if limit < 1:
             raise ValueError("limit must be positive")
-        parts = []
+        parts: list[str] = []
         rest = text
         while len(rest) > limit:
             cut = max(rest.rfind("\n", 0, limit + 1), rest.rfind(" ", 0, limit + 1))
@@ -307,7 +310,7 @@ class ResponseService:
             parts.append(rest[:cut].rstrip())
             rest = rest[cut:].lstrip()
         parts.append(rest)
-        result = []
+        result: list[Any] = []
         for index, part in enumerate(parts):
             options = dict(kwargs)
             options["output"] = "edit" if index == 0 and kwargs.get("output", "auto") == "auto" else kwargs.get("output", "reply")
@@ -320,7 +323,7 @@ class ResponseService:
         parts = [part for part in split_html_text(text, limit) if part.strip()]
         if len(parts) > max_parts:
             return await self.fallback_file(message, text, **kwargs)
-        result = []
+        result: list[Any] = []
         for index, part in enumerate(parts):
             options = dict(kwargs)
             options["output"] = "edit" if index == 0 and kwargs.get("output", "auto") == "auto" else "reply"
@@ -534,15 +537,15 @@ class ModuleContext:
         try:
             with trusted_scope():
                 result = await app.mt_users_get_users( id=[{"_": "inputUserSelf"}])
-            body = result.get("result", result) if isinstance(result, dict) else result
+            body: Any = cast('dict[str, Any]', result).get("result", result) if isinstance(result, dict) else result
             if isinstance(body, dict):
-                users = body.get("users") or body.get("result") or []
+                body_data = cast('dict[str, Any]', body)
+                users: Any = body_data.get("users") or body_data.get("result") or []
             else:
                 users = body
-            first = users[0] if isinstance(users, list) and users else None
-            if not isinstance(first, dict):
-                first = body if isinstance(body, dict) else {}
-            self._premium = bool(first.get("premium"))
+            first: Any = cast('list[Any]', users)[0] if isinstance(users, list) and users else None
+            first_data = cast('dict[str, Any]', first) if isinstance(first, dict) else cast('dict[str, Any]', body) if isinstance(body, dict) else {}
+            self._premium = bool(first_data.get("premium"))
         except Exception:
             log.error("premium check failed", exc_info=True)
             return False
@@ -666,8 +669,8 @@ class ModuleContext:
         if topic_id is not None:
             kwargs["topic_id"] = topic_id
         if content is not None:
-            if isinstance(content, dict) and content.get("_") == "inputRichMessageHTML":
-                kwargs["rich_message"] = content
+            if isinstance(content, dict) and cast('dict[str, Any]', content).get("_") == "inputRichMessageHTML":
+                kwargs["rich_message"] = cast('dict[str, Any]', content)
             elif isinstance(content, str):
                 kwargs.setdefault("text", content)
             else:
@@ -739,7 +742,7 @@ class ModuleContext:
 
     def _remember_response(self, result: Any) -> None:
         if isinstance(result, list):
-            result = next((item for item in result if isinstance(item, Response) and item.action == "reply"), None)
+            result = next((item for item in cast('list[Any]', result) if isinstance(item, Response) and item.action == "reply"), None)
         if not isinstance(result, Response) or not result.delivered or result.action != "reply":
             return
         sent = extract_sent_message(result.message)
@@ -788,8 +791,8 @@ class ModuleContext:
         output = kwargs.pop("output", "reply")
         file_name = kwargs.pop("file_name", None)
         mime = kwargs.pop("mime_type", None) or kwargs.pop("mime", None) or "application/octet-stream"
-        if isinstance(file, dict) and str(as_tl(file).get("_", "")).startswith("inputMedia"):
-            media = file
+        if isinstance(file, dict) and str(as_tl(cast('dict[str, Any]', file)).get("_", "")).startswith("inputMedia"):
+            media = cast('dict[str, Any]', file)
         else:
             up = await put(app, file, file_name=file_name)
             media = document(up, mime=mime, file_name=file_name)
@@ -855,8 +858,9 @@ class ModuleContext:
 
     async def form(self, text: str, buttons: Any = None, *rows: Any, **kwargs: Any) -> FormHandle:
         if isinstance(buttons, dict) and "buttons" in buttons:
-            text = str(buttons.get("text", text))
-            buttons = buttons["buttons"]
+            button_data = cast('dict[str, Any]', buttons)
+            text = str(button_data.get("text", text))
+            buttons = button_data["buttons"]
         if buttons is None:
             buttons = list(rows)
         elif rows:
@@ -877,19 +881,20 @@ class ModuleContext:
         if not buttons or self.callback_router is None:
             return buttons
         ui = self.ui
-        result = []
-        for row in buttons:
-            current = []
+        result: list[list[Any]] = []
+        for row in cast('list[list[Any]]', buttons):
+            current: list[Any] = []
             for button in row:
-                if isinstance(button, dict) and callable(button.get("handler")) and isinstance(button.get("input"), str):
+                button_data = cast('dict[str, Any]', button) if isinstance(button, dict) else None
+                if button_data is not None and callable(button_data.get("handler")) and isinstance(button_data.get("input"), str):
+                    current.append(button_data)
+                    continue
+                if button_data is not None and callable(button_data.get("handler")) and "callback" not in button_data:
+                    button_data = {**button_data, "callback": button_data["handler"]}
+                if button_data is None or "callback" not in button_data:
                     current.append(button)
                     continue
-                if isinstance(button, dict) and callable(button.get("handler")) and "callback" not in button:
-                    button = {**button, "callback": button["handler"]}
-                if not isinstance(button, dict) or "callback" not in button:
-                    current.append(button)
-                    continue
-                current.append(ui.button(str(button.get("text", "")), button["callback"], button.get("payload"), style=button.get("style")))
+                current.append(ui.button(str(button_data.get("text", "")), button_data["callback"], button_data.get("payload"), style=button_data.get("style")))
             result.append(current)
         return result
 
@@ -1084,34 +1089,37 @@ class ModuleContext:
         if not hasattr(message, "get"):
             return None
         for kind in ("document", "photo", "video", "audio", "voice", "animation", "video_note", "sticker"):
-            media = message.get(kind)
+            media: Any = message.get(kind)
             if media is None:
                 continue
             if isinstance(media, list):
-                media = media[-1] if media else None
+                media = cast('list[Any]', media)[-1] if media else None
             if not isinstance(media, dict):
                 continue
+            media_data = cast('dict[str, Any]', media)
             return Attachment(
                 kind=kind,
-                file_name=media.get("file_name") or media.get("name"),
-                mime_type=media.get("mime_type"),
-                size=media.get("size") if isinstance(media.get("size"), int) else None,
-                raw=media,
+                file_name=media_data.get("file_name") or media_data.get("name"),
+                mime_type=media_data.get("mime_type"),
+                size=media_data.get("size") if isinstance(media_data.get("size"), int) else None,
+                raw=media_data,
             )
         media_wrap = message.get("media")
         if isinstance(media_wrap, dict):
-            document = media_wrap.get("document")
+            media_wrap_data = cast('dict[str, Any]', media_wrap)
+            document = media_wrap_data.get("document")
             if isinstance(document, dict):
+                document_data = cast('dict[str, Any]', document)
                 return Attachment(
                     kind="document",
-                    file_name=document.get("file_name"),
-                    mime_type=document.get("mime_type"),
-                    size=document.get("size") if isinstance(document.get("size"), int) else None,
-                    raw=document,
+                    file_name=document_data.get("file_name"),
+                    mime_type=document_data.get("mime_type"),
+                    size=document_data.get("size") if isinstance(document_data.get("size"), int) else None,
+                    raw=document_data,
                 )
-            photo = media_wrap.get("photo")
+            photo = media_wrap_data.get("photo")
             if isinstance(photo, dict):
-                return Attachment(kind="photo", file_name=None, mime_type="image/jpeg", size=None, raw=photo)
+                return Attachment(kind="photo", file_name=None, mime_type="image/jpeg", size=None, raw=cast('dict[str, Any]', photo))
         return None
 
     async def download(self, attachment: Attachment | None = None, destination: str | Path | None = None) -> Path:
@@ -1128,7 +1136,7 @@ class ModuleContext:
             destination = raw
         path = Path(destination)
         source = self.message
-        if self.attachment is None and target is not self.attachment:
+        if self.attachment is None:
             if not hasattr(source, "get") or source.get("reply_to") is not None:
                 fetched = await self.reply()
                 if fetched is not None:
@@ -1136,7 +1144,7 @@ class ModuleContext:
         if getattr(source, "src", None) == "bot" and hasattr(source, "download"):
             await source.download(str(path))
             return path
-        document = target.raw if isinstance(target.raw, dict) else None
+        document = cast('dict[str, Any]', target.raw) if isinstance(target.raw, dict) else None
         if document is None:
             raise ResponseError("attachment is not downloadable")
         app = getattr(self.runtime, "app", None) or getattr(self._source, "app", None)

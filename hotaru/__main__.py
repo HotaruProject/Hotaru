@@ -3,31 +3,21 @@ from __future__ import annotations
 from typing import Any
 import argparse
 import asyncio
-import importlib.util
 import sys
 
 
 def ensure_kernel_dependencies() -> None:
     from .boot import in_venv, maybe_reexec
+    from .deps import DependencyError, ensure_project
     if not in_venv():
         maybe_reexec()
         if not in_venv():
             raise SystemExit("run python -m hotaru from the repo so .venv can be created")
-    spec = importlib.util.spec_from_file_location("hotaru_deps_bootstrap", __file__.replace("__main__.py", "deps.py"))
-    if spec is None or spec.loader is None:
-        return
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    try:
-        spec.loader.exec_module(module)
-    except Exception as exc:
-        print(f"dependency bootstrap error: {exc}", file=sys.stderr)
-        raise SystemExit(1)
     from pathlib import Path
     root = Path(__file__).resolve().parent.parent
     try:
-        synced = module.ensure_project(root)
-    except module.DependencyError as exc:
+        synced = ensure_project(root)
+    except DependencyError as exc:
         print(f"dependency error: {exc}", file=sys.stderr)
         raise SystemExit(1)
     if synced.get("changed"):

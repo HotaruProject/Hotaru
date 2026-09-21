@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 
 def rpcname(method: str) -> str:
@@ -27,7 +27,7 @@ async def delete_chat_msg(app: Any, chat_id: Any, msg_id: int, revoke: bool = Tr
         channel_id = -chat_id - 1000000000000
         await mt.resolve_peer(chat_id)
         entity = mt.entities.get(("chat", channel_id)) if getattr(mt, "entities", None) is not None else None
-        access_hash = entity.get("access_hash", 0) if isinstance(entity, dict) else 0
+        access_hash = cast('dict[str, Any]', entity).get("access_hash", 0) if isinstance(entity, dict) else 0
         if not access_hash:
             raise ValueError("channel peer requires a non-zero access_hash")
         return await app.mt_channels_delete_messages(

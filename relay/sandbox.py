@@ -9,7 +9,7 @@ import sys
 import sysconfig
 import tempfile
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from . import toolkit as _toolkit
 from goygram.rich import rich_html
@@ -983,6 +983,11 @@ class SandboxError(RuntimeError):
     pass
 
 
+def _json_dict(text: str) -> dict[str, Any]:
+    value = cast(object, json.loads(text))
+    return cast('dict[str, Any]', value) if isinstance(value, dict) else {}
+
+
 class ModuleSandbox:
     def __init__(
         self,
@@ -1011,6 +1016,8 @@ class ModuleSandbox:
         self._cb_waiters: dict[tuple[str, str], asyncio.Future[Any]] = {}
         self._active_callback: dict[str, Any] = {}
         self._cb_respond_pending: list[dict[str, Any]] = []
+        self._pending_caps: list[dict[str, Any]] = []
+        self._respond_pending: list[dict[str, Any]] = []
         self._python = os.path.realpath(sys.executable)
         self._stdlib = sysconfig.get_paths()["stdlib"]
         self._stdlib_dst = f"/opt/py/lib/python{sys.version_info.major}.{sys.version_info.minor}"
@@ -1174,7 +1181,7 @@ class ModuleSandbox:
         process.stdin.write((json.dumps(hello) + "\n").encode("utf-8"))
         process.stdin.flush()
         ready = self._readline(process)
-        payload = json.loads(ready) if ready else {}
+        payload = _json_dict(ready) if ready else {}
         if not payload.get("ok"):
             stderr_tail = ""
             try:
@@ -1209,8 +1216,8 @@ class ModuleSandbox:
         if current is not None and current.poll() is None:
             return True
         loop = asyncio.get_running_loop()
-        process = await loop.run_in_executor(None, lambda: self._spawn(module_id, source, commands))
-        return process is not None
+        await loop.run_in_executor(None, lambda: self._spawn(module_id, source, commands))
+        return True
 
     async def call(self, module_id: str, command: str, args: list[str], payload: dict[str, Any], source: Any = None, target: str | None = None) -> Any:
         if source is not None:
@@ -1247,23 +1254,21 @@ class ModuleSandbox:
                 line = self._readline(process)
                 if not line:
                     raise SandboxError(f"sandbox worker died during call: {module_id}")
-                message = json.loads(line)
-                if isinstance(message, dict) and "cap" in message:
+                message = _json_dict(line)
+                if "cap" in message:
                     self._pending_caps.append(message)
                     continue
-                if isinstance(message, dict) and "log" in message:
+                if "log" in message:
                     self._sink_worker_log(module_id, message)
                     continue
-                if isinstance(message, dict) and "respond" in message:
+                if "respond" in message:
                     self._respond_pending.append(message)
                     continue
-                if isinstance(message, dict) and "cb_respond" in message:
-                    self._cb_respond_pending = getattr(self, "_cb_respond_pending", [])
+                if "cb_respond" in message:
                     self._cb_respond_pending.append(message)
                     continue
                 return message
 
-        self._pending_caps = getattr(self, "_pending_caps", [])
         task = asyncio.ensure_future(loop.run_in_executor(None, _roundtrip))
         while True:
             try:
@@ -1286,7 +1291,8 @@ class ModuleSandbox:
         cap_host = getattr(self.runtime, "cap_host", None)
         for message in caps:
             name = message.get("cap")
-            payload = message.get("payload") or {}
+            payload_value = message.get("payload")
+            payload = cast('dict[str, Any]', payload_value) if isinstance(payload_value, dict) else {}
             reply = {"kind": "cap_result", "ok": False, "error": "capability host is unavailable"}
             if cap_host is not None:
                 try:
@@ -1304,7 +1310,8 @@ class ModuleSandbox:
         self._respond_pending = []
         source = self._respond_sources.get(module_id)
         for message in pending:
-            payload = message.get("respond") or {}
+            payload_value = message.get("respond")
+            payload = cast('dict[str, Any]', payload_value) if isinstance(payload_value, dict) else {}
             reply = {"kind": "respond_result", "ok": False, "error": "respond failed"}
             try:
                 result = await self._trusted_respond(module_id, source, payload)
@@ -1322,7 +1329,8 @@ class ModuleSandbox:
         callback = getattr(self, "_active_callback", {}).get(module_id)
         process = self._workers.get(module_id)
         for message in pending:
-            data = message.get("cb_respond") or {}
+            data_value = message.get("cb_respond")
+            data = cast('dict[str, Any]', data_value) if isinstance(data_value, dict) else {}
             result = {"ok": False, "error": "callback context is unavailable"}
             try:
                 if callback is None:
@@ -1333,7 +1341,7 @@ class ModuleSandbox:
                         value = await callback.app.mt_messages_set_bot_callback_answer( query_id=int(callback.id), message=str(data.get("text", "")), alert=bool(data.get("alert", False)), cache_time=0)
                 elif action == "edit":
                     inline_mid = getattr(callback, "inline_message_id", None)
-                    params = {"id": inline_mid if isinstance(inline_mid, dict) else {"_": "inputBotInlineMessageID", "raw": inline_mid}, "message": str(data.get("text", ""))}
+                    params: dict[str, Any] = {"id": inline_mid if isinstance(inline_mid, dict) else {"_": "inputBotInlineMessageID", "raw": inline_mid}, "message": str(data.get("text", ""))}
                     markup = data.get("reply_markup")
                     if markup is not None:
                         tl_markup = kbd_to_tl(markup)
@@ -1413,12 +1421,13 @@ class ModuleSandbox:
         def remember(result: Any) -> Any:
             value = result
             if isinstance(result, list):
-                value = next((item.message for item in result if getattr(item, "action", None) == "reply"), None)
-            sent = extract_sent_message(value)
-            sent_id = sent.get("id") if isinstance(sent, dict) else None
+                value = next((item.message for item in cast('list[Any]', result) if getattr(item, "action", None) == "reply"), None)
+            sent_value = extract_sent_message(value)
+            sent = sent_value if isinstance(sent_value, dict) else {}
+            sent_id = sent.get("id")
             if isinstance(sent_id, int):
                 self._respond_targets[module_id] = sent_id
-            return result
+            return cast(Any, result)
 
         async def send_plain(value: str, *, mode: str) -> Any:
             plain, entities = html_to_entities(value)
@@ -1463,7 +1472,7 @@ class ModuleSandbox:
             except Exception as exc:
                 marker = str(exc).lower()
                 if "length" in marker or "too long" in marker or "MESSAGE_TOO_LONG" in str(exc):
-                    parts = []
+                    parts: list[str] = []
                     limit = 3800
                     rest = text
                     while len(rest) > limit:
@@ -1497,26 +1506,28 @@ class ModuleSandbox:
     def _sandbox_buttons(self, module_id: str, buttons: Any, chat_id: Any) -> Any:
         router = getattr(self.runtime, "callbacks", None)
         owner = getattr(getattr(self.runtime, "kernel", None), "owner_id", None)
-        normalized: list[Any] = []
-        rows = buttons if isinstance(buttons, list) and buttons and isinstance(buttons[0], list) else [buttons]
+        normalized: list[list[dict[str, Any]]] = []
+        button_values = cast('list[Any]', buttons) if isinstance(buttons, list) else []
+        rows: list[Any] = button_values if button_values and isinstance(button_values[0], list) else [buttons]
         for row in rows:
             if not isinstance(row, list):
                 row = [row]
-            out_row: list[Any] = []
-            for btn in row:
+            out_row: list[dict[str, Any]] = []
+            for btn in cast('list[Any]', row):
                 if not isinstance(btn, dict):
                     continue
-                item = {"text": btn.get("text", "")}
-                if btn.get("url"):
-                    item["url"] = btn["url"]
-                elif btn.get("action_id"):
-                    action_id = str(btn["action_id"])
+                button = cast('dict[str, Any]', btn)
+                item: dict[str, Any] = {"text": button.get("text", "")}
+                if button.get("url"):
+                    item["url"] = button["url"]
+                elif button.get("action_id"):
+                    action_id = str(button["action_id"])
                     if router is not None:
                         if not router.module_action_exists(module_id, action_id):
                             router.register_module_action_id(module_id, action_id, self._make_sandbox_cb(module_id, action_id))
                         from hotaru.callbacks import CallbackBinding
                         binding = CallbackBinding(int(owner or 0), None, 0)
-                        item["callback_data"] = router.issue_module(module_id, action_id, binding, btn.get("payload"))
+                        item["callback_data"] = router.issue_module(module_id, action_id, binding, button.get("payload"))
                     else:
                         raise PermissionError("callback store is unavailable")
                 out_row.append(item)
@@ -1542,9 +1553,9 @@ class ModuleSandbox:
                 }
             }
             loop = asyncio.get_running_loop()
-            task: asyncio.Future[Any] | None = None
+            task: asyncio.Future[dict[str, Any]] | None = None
 
-            def _reader() -> Any:
+            def _reader() -> dict[str, Any]:
                 assert process.stdin is not None
                 process.stdin.write((json.dumps(request) + "\n").encode("utf-8"))
                 process.stdin.flush()
@@ -1552,18 +1563,16 @@ class ModuleSandbox:
                     line = self._readline(process)
                     if not line:
                         raise SandboxError(f"sandbox worker died during callback: {module_id}")
-                    message = json.loads(line)
-                    if not isinstance(message, dict):
+                    message = _json_dict(line)
+                    if not message:
                         continue
                     if "cap" in message:
-                        self._pending_caps = getattr(self, "_pending_caps", [])
                         self._pending_caps.append(message)
                         continue
                     if "log" in message:
                         self._sink_worker_log(module_id, message)
                         continue
                     if "respond" in message:
-                        self._respond_pending = getattr(self, "_respond_pending", [])
                         self._respond_pending.append(message)
                         continue
                     if "cb_respond" in message:
@@ -1585,9 +1594,9 @@ class ModuleSandbox:
                         if getattr(self, "_cb_respond_pending", None):
                             await self._serve_cb_respond(module_id)
                         continue
-                if isinstance(result, dict) and result.get("ok"):
+                if result.get("ok"):
                     return result.get("result")
-                raise PermissionError(f"sandbox callback failed: {result.get('error') if isinstance(result, dict) else 'malformed'}")
+                raise PermissionError(f"sandbox callback failed: {result.get('error', 'malformed')}")
             except asyncio.TimeoutError:
                 raise PermissionError("sandbox callback timed out")
             finally:
