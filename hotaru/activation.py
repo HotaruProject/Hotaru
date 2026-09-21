@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import __future__
 import asyncio
 import inspect
 from dataclasses import dataclass
@@ -311,7 +312,8 @@ class ModuleManager:
         commands: Any = None
         try:
             with module_scope(loaded.manifest.module_id):
-                exec(compile(loaded.source, str(loaded.path), "exec"), namespace, namespace)
+                code = compile(loaded.source, str(loaded.path), "exec", flags=__future__.annotations.compiler_flag, dont_inherit=True)
+                exec(code, namespace, namespace)
             commands = self.binder.bind(loaded, namespace, kernel, is_kernel=is_kernel)
             instance = ModuleInstance(loaded, namespace, commands)
             if health is not None:

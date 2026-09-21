@@ -11,7 +11,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 CACHE = ROOT / "sanctuary" / "typecheck.json"
-_PREAMBLE = "from hotaru.response import ModuleContext\nctx: ModuleContext\n"
+_PREAMBLE = "from __future__ import annotations\nfrom hotaru.response import ModuleContext\nctx: ModuleContext\n"
 
 
 class TypeCheckError(RuntimeError):
@@ -62,6 +62,7 @@ def _environment() -> bytes:
     digest = hashlib.sha256()
     digest.update(sys.version.encode())
     digest.update(importlib.metadata.version("basedpyright").encode())
+    digest.update(_PREAMBLE.encode())
     for name in ("pyrightconfig.json", "pyproject.toml", "uv.lock"):
         path = ROOT / name
         digest.update(name.encode())
