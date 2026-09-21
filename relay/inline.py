@@ -7,7 +7,6 @@ import secrets
 import string
 import time
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any, Awaitable, Callable, cast
 
 from goygram import GoyGram, Session
@@ -615,14 +614,11 @@ class InlineManager:
             vault = bot_vault_path(self.runtime.config.session_dir, uid)
             vault.parent.mkdir(parents=True, exist_ok=True)
             name = vault.with_suffix("").name
-            from goygram.security import _read_vault
-            bot_session_data = _read_vault(vault, vault.with_suffix("").name) or {} if vault.exists() else {}
-            bot_session = Session(name=name, path=vault, data=bot_session_data)
+            bot_session = Session(name=name, path=vault)
         else:
-            name = str(self.runtime.config.session_dir / "hotaru-inline")
-            bot_session = Session(name=name)
-
-        self._mark_bot_session(bot_session)
+            vault = self.runtime.config.session_dir / "hotaru-inline.vault"
+            name = "hotaru-inline"
+            bot_session = Session(name=name, path=vault)
 
         if self.runtime.observatory is not None:
             path = getattr(bot_session, "path", None)
@@ -655,27 +651,12 @@ class InlineManager:
         self.bot_app.on_msg(self._dispatch_bot_pm)
         self.bot_app.on_update(self._dispatch_chosen)
         await self._auth_bot()
-        self._mark_bot_session(self.bot_app.session)
-        self.bot_app.self_id = self.info.bot_id
-        if self.bot_app.mt is not None:
-            self.bot_app.mt.self_id = self.info.bot_id
-        self.bot_app.session.save()
         self._task = asyncio.create_task(self._run(), name="hotaru:inline-bot")
         if self.runtime.observatory is not None:
             self.runtime.observatory.emit("inline", "run_scheduled", username=self.info.username)
 
-    def _mark_bot_session(self, session: Any) -> None:
-        info = self.info
-        if info is None:
-            return
-        user = session.data.get("user")
-        if not isinstance(user, dict):
-            user = {}
-        user.update({"id": info.bot_id, "bot": True, "username": info.username})
-        session.data.update({"user": user, "self_id": info.bot_id, "is_bot": True})
-
     async def _auth_bot(self) -> None:
-        from goygram.security import _mt_bot_auth_flow, bootstrap_session
+        from goygram.security import bootstrap_session
 
         app = self.bot_app
         info = self.info
@@ -713,34 +694,7 @@ class InlineManager:
             if self.runtime.observatory is not None:
                 self.runtime.observatory.emit("inline", "auth_result", attempt=attempt + 1, source=source or "none", result=bool(result))
             if source == "vault":
-                try:
-                    await app.mt_users_get_users(id=[{"_": "inputUserSelf"}])
-                except Exception as exc:
-                    if self.runtime.observatory is not None:
-                        self.runtime.observatory.emit("inline", "auth_vault_probe_error", attempt=attempt + 1, error=type(exc).__name__, detail=str(exc)[:240])
-                    if not self._is_session_auth_failure(exc):
-                        last = exc
-                        await asyncio.sleep(2.0 * (attempt + 1))
-                        continue
-                    path = getattr(app.session, "path", None)
-                    if not isinstance(path, Path):
-                        path = Path(f"{app.session.name}.vault")
-                    path.unlink(missing_ok=True)
-                    result = await _mt_bot_auth_flow(
-                        app.core,
-                        path,
-                        session_name=app.session.name,
-                        api_id=int(self.runtime.config.api_id),
-                        api_hash=str(self.runtime.config.api_hash),
-                        bot_token=info.token,
-                    )
-                    source = result.get("source") if isinstance(result, dict) else None
-                    if self.runtime.observatory is not None:
-                        self.runtime.observatory.emit("inline", "auth_import_result", attempt=attempt + 1, source=source or "none", result=bool(result))
-                else:
-                    if self.runtime.observatory is not None:
-                        self.runtime.observatory.emit("inline", "auth_vault_probe_ok", attempt=attempt + 1)
-                    return
+                return
 
             key = getattr(app.session, "auth_key", None)
             mt_key = getattr(getattr(app, "mt", None), "auth_key", None)
@@ -901,12 +855,6 @@ class InlineManager:
                 await app.close()
             except Exception:
                 pass
-            session = getattr(app, "session", None)
-            path = getattr(session, "path", None)
-            if path is not None:
-                path.unlink(missing_ok=True)
-            if self.runtime.observatory is not None:
-                self.runtime.observatory.emit("inline", "recovery_vault_removed", path=str(path) if path is not None else "memory")
             info = self.info
             if info is not None:
                 try:
