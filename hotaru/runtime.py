@@ -1193,9 +1193,7 @@ class Runtime:
             return "module unavailable"
         active = self.modules.get(module_id)
         if active is None:
-            if self.state is not None and module_id in self.state.module_ids():
-                return f"module: {module_id}\nstatus: disabled\nlasterror: {self.state.namespace(module_id).get('lasterror', 'none')}"
-            return f"module not loaded: {module_id}"
+            return f"module not found: {module_id}"
         manifest = active.loaded.manifest
         language = self.language()
         localized = manifest.localized(language, manifest.description)
@@ -1232,12 +1230,8 @@ class Runtime:
         entry_ids: list[str | None] = []
         if self.modules is not None:
             active = {item.loaded.manifest.module_id: item.loaded.manifest.version for item in self.modules.items()}
-            known: set[str] = set(self.state.module_ids()) if self.state is not None else set()
-            for module_id in sorted(set(active) | known):
-                if module_id in active:
-                    entries.append(f"{module_id} [loaded] v{active[module_id]}")
-                else:
-                    entries.append(f"{module_id} [not loaded]")
+            for module_id in sorted(active):
+                entries.append(f"{module_id} v{active[module_id]}")
                 entry_ids.append(module_id)
         if not entries:
             entries = [f"{self.config.prefix}{name}" for name in names]
@@ -1390,6 +1384,8 @@ class Runtime:
         caps = list(getattr(loaded.manifest, "capabilities", ()) or ())
         fingerprint = self._caps_fingerprint(loaded.manifest)
         if not caps or self._caps_consented(module_id, fingerprint):
+            if not caps:
+                self._mark_caps_consent(module_id, fingerprint)
             if self.modules is not None and self.modules.get(module_id) is not None:
                 result = await self._command_rl(SimpleNamespace(args=(module_id,)))
                 if result.startswith("reloaded:"):
@@ -1398,15 +1394,14 @@ class Runtime:
             try:
                 await self.activate_module(str(loaded.path))
             except Exception as exc:
+                loaded.path.unlink(missing_ok=True)
+                self.state.delete_module(module_id)
                 if self.observatory is not None:
                     self.observatory.emit("modules", "load_error", module=module_id, error=type(exc).__name__, detail=str(exc)[:240])
                 return loaded, f"load failed: {type(exc).__name__}"
             if self.observatory is not None:
                 self.observatory.emit("modules", "loaded", module=module_id, version=loaded.manifest.version)
             return loaded, "loaded"
-        namespace = self.state.namespace(module_id)
-        namespace.set("sourcepath", str(loaded.path))
-        namespace.set("moduleversion", loaded.manifest.version)
         return loaded, "confirm"
 
     async def _command_ld(self, invocation: Any) -> str | tuple[str, list[dict[str, str]]]:
@@ -1497,7 +1492,7 @@ class Runtime:
         module_id = invocation.args[0].casefold()
         active = self.modules.get(module_id)
         if active is None:
-            return f"module not loaded: {module_id}"
+            return f"module not found: {module_id}"
         old_path = active.loaded.path
         old_source = active.loaded.source
         candidate = self.relay_dir / f"{module_id}.hmod"
@@ -1585,8 +1580,11 @@ class Runtime:
             await callback.answer("Invalid request", alert=True)
             return None
         module_id = str(cast('dict[str, Any]', payload).get("module", "")).casefold()
+        (self.relay_dir / f"{module_id}.hmod").unlink(missing_ok=True)
+        if self.state is not None:
+            self.state.delete_module(module_id)
         await callback.answer("Cancelled")
-        return await callback.edit(f"module not loaded: {module_id}")
+        return await callback.edit(f"cancelled: {module_id}")
 
     async def _caps_confirm(self, callback: Any, payload: Any) -> object:
         if not isinstance(payload, dict) or self.modules is None or self.state is None:
@@ -1610,7 +1608,8 @@ class Runtime:
             self._mark_caps_consent(module_id, self._caps_fingerprint(loaded.manifest))
             await self.activate_module(source_path)
         except Exception as exc:
-            namespace.set("lasterror", f"{type(exc).__name__}: {str(exc)[:240]}")
+            Path(source_path).unlink(missing_ok=True)
+            self.state.delete_module(module_id)
             if self.observatory is not None:
                 self.observatory.emit("modules", "activation_error", module=module_id, error=type(exc).__name__, detail=str(exc)[:240])
             await callback.answer("Activation failed", alert=True)
@@ -1678,7 +1677,7 @@ class Runtime:
         if self._is_kernel_module(module_id):
             return f"kernel module is protected: {module_id}"
         if self.modules.get(module_id) is None:
-            return f"module not loaded: {module_id}"
+            return f"module not found: {module_id}"
         handle = self.callbacks.store.issue(
             CallbackBinding(self.kernel.owner_id, invocation.chat_id, invocation.message_id),
             {"action": "remove_confirm", "payload": module_id},
@@ -1691,8 +1690,8 @@ class Runtime:
             return None
         active = self.modules.get(payload)
         if active is None:
-            await callback.answer("Module is already unloaded", alert=True)
-            return await callback.edit(f"module not loaded: {payload}")
+            await callback.answer("Module not found", alert=True)
+            return await callback.edit(f"module not found: {payload}")
         result = await self.unload_module(payload)
         if result is not None:
             await callback.answer("Removal failed", alert=True)
@@ -1919,10 +1918,11 @@ class Runtime:
                 if modules.get(module_id) is not None:
                     continue
                 consent = namespace.get("caps-consent")
-                if not isinstance(consent, str):
-                    continue
                 source_path = namespace.get("sourcepath")
-                if not isinstance(source_path, str):
+                if not isinstance(consent, str) or not isinstance(source_path, str):
+                    if isinstance(source_path, str):
+                        Path(source_path).unlink(missing_ok=True)
+                    state.delete_module(module_id)
                     continue
                 try:
                     loaded = modules.loader.load(source_path)
@@ -1932,7 +1932,8 @@ class Runtime:
                         raise ValueError("capabilities changed; !trust required")
                     await self.activate_module(source_path)
                 except Exception as exc:
-                    namespace.set("lasterror", f"{type(exc).__name__}: {str(exc)[:240]}")
+                    Path(source_path).unlink(missing_ok=True)
+                    state.delete_module(module_id)
                     if self.observatory is not None:
                         self.observatory.emit("modules", "restore_error", module=module_id, error=type(exc).__name__, detail=str(exc)[:240])
                     continue
