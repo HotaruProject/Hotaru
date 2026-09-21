@@ -1346,7 +1346,8 @@ class Runtime:
         if self.stager is None:
             raise RuntimeError("build the runtime before staging modules")
         target = Path(destination) if destination is not None else self.relay_dir
-        return self.stager.stage_url(source, target)
+        with trusted_scope():
+            return self.stager.stage_url(source, target)
 
     async def _download_module_message(self, message: Any, destination: Path) -> None:
         source = message
