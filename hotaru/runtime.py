@@ -151,6 +151,11 @@ class Runtime:
 
         return cls(RuntimeConfig.from_database(path or DEFAULT_STATE_PATH))
 
+    def update_checkout(self) -> Any:
+        from .update import update_repository
+
+        return update_repository(Path(__file__).resolve().parent.parent)
+
     def build(self) -> Any:
         self.config.validate()
         if self.app is not None:
