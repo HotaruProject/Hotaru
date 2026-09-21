@@ -1360,7 +1360,10 @@ class Runtime:
             if isinstance(reply_id, int) and getattr(message, "src", None) != "bot":
                 cap_host = getattr(self, "cap_host", None)
                 if cap_host is not None:
-                    source = await cap_host.call("loader", "fetch", {"op": "message", "peer": message.chat_id, "id": reply_id})
+                    # Kernel-initiated fetch from inside a command's module_scope:
+                    # needs a trusted scope or the firewall blocks the socket.
+                    with trusted_scope():
+                        source = await cap_host.call("loader", "fetch", {"op": "message", "peer": message.chat_id, "id": reply_id})
         if source is None or not hasattr(source, "get"):
             raise ValueError("module file is missing")
         media = source.get("document") if isinstance(source.get("document"), dict) else source.get("media")
@@ -1372,7 +1375,11 @@ class Runtime:
         app = self.app
         if getattr(source, "src", None) == "bot":
             app = getattr(message, "app", None) or (getattr(self.inline, "bot_app", None) if self.inline is not None else None) or self.app
-        await take(app, media, str(destination))
+        # Kernel-initiated download (see ModuleStager.stage_url): trusted scope
+        # is required inside a command's module_scope, otherwise the firewall
+        # blocks it.
+        with trusted_scope():
+            await take(app, media, str(destination))
 
     async def load_module(self, source: str | Path, *, consent_screen: Any = None) -> tuple[Any, str]:
         if self.stager is None or self.state is None:

@@ -13,6 +13,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
 
+from relay.firewall import trusted_scope
+
 from .i18n import SUPPORTED_LANGUAGES
 
 
@@ -347,14 +349,18 @@ class ModuleStager:
         url = self.normalize_url(value)
         try:
             request = urllib.request.Request(url, headers={"Accept": "text/plain"}, method="GET")
-            with urllib.request.urlopen(request, timeout=timeout) as response:
-                final = urllib.parse.urlparse(cast(str, response.geturl()))
-                if final.scheme != "https" or (final.hostname or "").casefold() != "raw.githubusercontent.com":
-                    raise ModuleFetchError("module URL redirected to an unsafe host")
-                content_length = response.headers.get("Content-Length")
-                if content_length is not None and int(content_length) > self.loader.max_bytes:
-                    raise ModuleFetchError("module download exceeds the size limit")
-                data = response.read(self.loader.max_bytes + 1)
+            # Kernel-initiated download, not module code: command handlers run
+            # inside module_scope(), so the firewall would block socket.connect
+            # without an explicit trusted scope (see relay/firewall.py).
+            with trusted_scope():
+                with urllib.request.urlopen(request, timeout=timeout) as response:
+                    final = urllib.parse.urlparse(cast(str, response.geturl()))
+                    if final.scheme != "https" or (final.hostname or "").casefold() != "raw.githubusercontent.com":
+                        raise ModuleFetchError("module URL redirected to an unsafe host")
+                    content_length = response.headers.get("Content-Length")
+                    if content_length is not None and int(content_length) > self.loader.max_bytes:
+                        raise ModuleFetchError("module download exceeds the size limit")
+                    data = response.read(self.loader.max_bytes + 1)
         except (OSError, urllib.error.URLError) as exc:
             raise ModuleFetchError("module download failed") from exc
         if len(data) > self.loader.max_bytes:
