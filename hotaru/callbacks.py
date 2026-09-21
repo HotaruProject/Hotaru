@@ -192,14 +192,14 @@ class CallbackContext:
         return None
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class CallbackBinding:
     actor: int | str
     chat_id: int | str | None
     message_id: int | None
 
 
-@dataclass(slots=True)
+@dataclass
 class _Entry:
     binding: CallbackBinding
     value: Any

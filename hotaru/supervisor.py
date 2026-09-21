@@ -13,7 +13,7 @@ class Health(enum.Enum):
     STOPPED = "stopped"
 
 
-@dataclass(slots=True)
+@dataclass
 class SupervisorState:
     health: Health = Health.STOPPED
     connected_at: float | None = None

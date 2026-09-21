@@ -67,7 +67,7 @@ class ResponseError(RuntimeError):
     pass
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class Response:
     delivered: bool
     action: Literal["edit", "reply", "none"]
@@ -356,7 +356,7 @@ class ResponseService:
         return await self.smart(message, content, **kwargs)
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class Attachment:
     kind: str
     file_name: str | None
@@ -395,7 +395,7 @@ class ModuleMessage:
         return await self._source.download(destination)
 
 
-@dataclass(slots=True)
+@dataclass
 class ModuleContext:
     module_id: str
     _source: Any

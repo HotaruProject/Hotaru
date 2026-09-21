@@ -22,7 +22,7 @@ class BackupError(ValueError):
     pass
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class RestorePlan:
     archive: Path
     files: tuple[str, ...]

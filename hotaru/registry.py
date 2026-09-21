@@ -1,14 +1,16 @@
+from __future__ import annotations
+
 from dataclasses import dataclass
-from typing import Awaitable, Callable
+from typing import Awaitable, Callable, Union
 
 from .commands import CommandInvocation
 
-Handler = Callable[..., Awaitable[object] | object]
+Handler = Callable[..., Union[Awaitable[object], object]]
 
 KERNEL_MODULES: set[str] = set()
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class CommandSpec:
     name: str
     handler: Handler
@@ -17,14 +19,14 @@ class CommandSpec:
     sandbox: bool = False
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class WatcherSpec:
     name: str
     handler: Handler
     module_id: str
     sandbox: bool = False
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class TaskSpec:
     name: str
     handler: Handler

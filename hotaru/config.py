@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -38,7 +40,7 @@ def discover_state(path: str | Path = DEFAULT_STATE_PATH) -> Path:
     return bootstrap
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class RuntimeConfig:
     api_id: int | None
     api_hash: str | None

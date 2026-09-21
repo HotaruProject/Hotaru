@@ -1,11 +1,9 @@
 from __future__ import annotations
 
 import inspect
-from collections.abc import Awaitable, Callable
-from typing import Any
+from typing import Any, Awaitable, Callable, Union
 
-
-EventHandler = Callable[[Any], Awaitable[Any] | Any]
+EventHandler = Callable[[Any], Union[Awaitable[Any], Any]]
 
 
 class EventRouter:

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from typing import Any
 import argparse
 import asyncio
@@ -15,44 +17,22 @@ def ensure_kernel_dependencies() -> None:
     if spec is None or spec.loader is None:
         return
     module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
     try:
         spec.loader.exec_module(module)
-    except Exception:
-        return
+    except Exception as exc:
+        print(f"dependency bootstrap error: {exc}", file=sys.stderr)
+        raise SystemExit(1)
     from pathlib import Path
-    import tomllib
+    root = Path(__file__).resolve().parent.parent
     try:
-        project = tomllib.loads((Path(__file__).resolve().parent.parent / "pyproject.toml").read_text(encoding="utf-8"))
-        requirements = list(project.get("project", {}).get("dependencies", []))
-    except Exception:
-        requirements = ["goygram>=0.7.78"]
-    if not requirements:
-        return
-    module_root = module
-    satisfied = True
-    for line in requirements:
-        try:
-            requirement = module_root.parse_requirement(line)
-        except module_root.DependencyError:
-            satisfied = False
-            break
-        current = module_root.installed_version(requirement.canonical)
-        if current is None or not module_root.requirement_satisfied(requirement, current):
-            satisfied = False
-            break
-    if satisfied:
-        return
-    try:
-        result = asyncio.run(module_root.ensure(requirements))
-    except module_root.DependencyError as exc:
+        synced = module.ensure_project(root)
+    except module.DependencyError as exc:
         print(f"dependency error: {exc}", file=sys.stderr)
         raise SystemExit(1)
-    if result.get("installed") or result.get("upgraded"):
-        detail = ", ".join(result["installed"] + result["upgraded"])
-        print(f"dependencies resolved via {result['manager']}: {detail}")
-        for entry in list(sys.modules):
-            if entry == "goygram" or entry.startswith("goygram."):
-                del sys.modules[entry]
+    if synced.get("changed"):
+        import os
+        os.execv(sys.executable, [sys.executable, "-m", "hotaru", *sys.argv[1:]])
 
 
 def _apply_account_session(config: Any, session_base: Any) -> Any:

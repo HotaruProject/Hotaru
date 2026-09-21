@@ -6,10 +6,11 @@ build-backend = "hatchling.build"
 name = "hotaru"
 version = "0.1.5"
 description = "Hotaru userbot kernel on GoyGram"
-requires-python = ">=3.11"
+requires-python = ">=3.8"
 dependencies = [
-    "basedpyright>=1.40.1",
-    "goygram>=0.8.2",
+    "basedpyright==1.39.10; python_version < '3.10'",
+    "basedpyright>=1.40.1; python_version >= '3.10'",
+    "goygram>=0.8.3",
     "rich>=13.7",
 ]
 
@@ -25,8 +26,3 @@ packages = ["hotaru", "relay"]
 [tool.hatch.build.targets.wheel.force-include]
 "constellations" = "hotaru/constellations"
 "lexicon" = "hotaru/lexicon"
-
-[dependency-groups]
-dev = [
-    "basedpyright>=1.40.1",
-]

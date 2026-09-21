@@ -19,7 +19,7 @@ class ModuleValidationError(ValueError):
     pass
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class ModuleManifest:
     module_id: str
     version: str
@@ -108,7 +108,7 @@ def _kernel_command_description(module_id: str, command: str, language: str) -> 
     return None
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class LoadedModule:
     path: Path
     digest: str

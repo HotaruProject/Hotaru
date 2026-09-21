@@ -22,7 +22,7 @@ class InlineError(RuntimeError):
     pass
 
 
-@dataclass(slots=True)
+@dataclass
 class InlineBotInfo:
     token: str
     username: str

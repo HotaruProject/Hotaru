@@ -18,6 +18,8 @@ import subprocess
 import sys
 import time
 
+from hotaru.update import update_repository
+
 REPO_URL = "https://github.com/HotaruProject/Hotaru"
 
 
@@ -62,11 +64,7 @@ def _changelog(runtime: Any) -> Any:
     return _git(runtime, "log", "--pretty=format:%s", f"{current}..{latest}").splitlines()
 
 def _pull(runtime: Any) -> Any:
-    before = _current_commit(runtime)
-    _git(runtime, "reset", "--hard", "origin/main")
-    _git(runtime, "clean", "-fd")
-    after = _latest_commit(runtime)
-    return before, after
+    return update_repository(_repo_dir(runtime))
 
 def _serialize_inline(mid: Any) -> Any:
     if not isinstance(mid, dict):
@@ -368,14 +366,16 @@ async def _run_update(ctx: Any) -> Any:
         await _status(ctx, text)
     await say(f"<b>{_t(ctx, 'downloading', 'Downloading update…')}</b>")
     try:
-        before, after = _pull(ctx.runtime)
+        update = _pull(ctx.runtime)
     except Exception as exc:
         await say(f"<b>Update failed:</b> <i>{_escape(exc)}</i>")
         return
-    if before == after:
+    if update.before == update.after:
         await say(f"<b>{_t(ctx, 'up_to_date', 'Hotaru is up to date')}</b>")
         return
-    await say(f"<b>{_t(ctx, 'restarting', 'Updated to {commit}. Restarting…', commit=_escape(after[:7]))}</b>")
+    if update.conflicts:
+        await say(f"<b>Local conflicts preserved:</b> <code>{_escape(str(update.recovery))}</code>")
+    await say(f"<b>{_t(ctx, 'restarting', 'Updated to {commit}. Restarting…', commit=_escape(update.after[:7]))}</b>")
     pending = ctx.state.get("update_pending")
     if isinstance(pending, dict):
         pending = dict(pending)

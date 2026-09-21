@@ -14,7 +14,7 @@ class AccessVerdict(Enum):
     SILENT = "silent"
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class Principal:
     user_id: int | None
     chat_id: int | str | None
@@ -29,7 +29,7 @@ class SecurityError(RuntimeError):
     pass
 
 
-@dataclass(slots=True)
+@dataclass
 class RateWindow:
     hits: list[float] = field(default_factory=list)
 
@@ -41,7 +41,7 @@ class RateWindow:
         return True
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class ModulePolicy:
     module_id: str
     allow_others: bool = False

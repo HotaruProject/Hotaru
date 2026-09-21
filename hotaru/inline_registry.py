@@ -1,10 +1,13 @@
+from __future__ import annotations
+
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable
+from typing import Any, Awaitable, Callable, Dict, List, Optional, Union
 
-InlineHandler = Callable[..., Awaitable[list[dict[str, Any]] | dict[str, Any] | None] | list[dict[str, Any] | None] | dict[str, Any] | None]
+InlineResult = Union[List[Dict[str, Any]], Dict[str, Any], None]
+InlineHandler = Callable[..., Union[Awaitable[InlineResult], InlineResult]]
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class InlineCommandSpec:
     name: str
     handler: InlineHandler

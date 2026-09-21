@@ -9,7 +9,7 @@ class CapabilityDenied(PermissionError):
     pass
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class BehaviorEnvelope:
     actor: int | str | None
     module_id: str
@@ -21,7 +21,7 @@ class BehaviorEnvelope:
     side_effect: str
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class CapabilityProvider:
     provider_id: str
     version: str

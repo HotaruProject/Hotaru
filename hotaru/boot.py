@@ -32,6 +32,8 @@ def is_cli() -> bool:
                 return True
     if not sys.argv:
         return False
+    if sys.argv[0] == "-m":
+        return True
     name = Path(sys.argv[0]).name
     if name in {"__main__.py", "hotaru"}:
         return True
@@ -43,14 +45,13 @@ def is_cli() -> bool:
 
 def requirements() -> list[str]:
     try:
-        import tomllib
-        data = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
-        specs = list(data.get("project", {}).get("dependencies", []))
+        from .deps import project_requirements
+        specs = project_requirements(ROOT)
         if specs:
             return specs
     except Exception:
         pass
-    return ["goygram>=0.8.0", "basedpyright>=1.40.1"]
+    return ["goygram>=0.8.3", "rich>=13.7"]
 
 
 def _create_venv() -> None:
