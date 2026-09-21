@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import __future__
 import datetime
 import json
 import os
@@ -162,7 +163,7 @@ def _preflight(repo: Path, target: str) -> None:
         if result.returncode != 0:
             raise UpdateError((result.stderr or result.stdout).decode("utf-8", "replace").strip() or "update preflight failed")
         for path in (worktree / "constellations").glob("*.hmod"):
-            compile(path.read_text(encoding="utf-8"), str(path), "exec")
+            compile(path.read_text(encoding="utf-8"), str(path), "exec", flags=__future__.annotations.compiler_flag, dont_inherit=True)
     finally:
         _git(repo, "worktree", "remove", "--force", str(worktree), check=False)
         shutil.rmtree(str(worktree), ignore_errors=True)

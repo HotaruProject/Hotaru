@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import __future__
 import ast
 import hashlib
 import os
@@ -138,7 +139,7 @@ class HmodLoader:
         try:
             tree = ast.parse(source, filename=str(candidate), mode="exec")
             manifest = self._manifest(tree)
-            compile(tree, str(candidate), "exec")
+            compile(tree, str(candidate), "exec", flags=__future__.annotations.compiler_flag, dont_inherit=True)
         except (SyntaxError, ValueError, TypeError) as exc:
             raise ModuleValidationError("module failed validation") from exc
         from .typesafe import TypeCheckError, check_hmod

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import __future__
 import asyncio
 import json
 import os
@@ -764,7 +765,8 @@ def main():
     ns = {"__name__": cfg.get("module_id", "sandbox"), "cap": _cap_call, "mt": _mt_call, "net": _net_call, "tools": SimpleNamespace(**tools), "logs": _WorkerLogs()}
     try:
         with _capture_module_output():
-            exec(compile(cfg["source"], cfg.get("module_id", "sandbox"), "exec"), ns, ns)
+            code = compile(cfg["source"], cfg.get("module_id", "sandbox"), "exec", flags=__future__.annotations.compiler_flag, dont_inherit=True)
+            exec(code, ns, ns)
     except BaseException as exc:
         sys.stdout.write(json.dumps({"ok": False, "error": type(exc).__name__}) + "\n")
         sys.stdout.flush()
