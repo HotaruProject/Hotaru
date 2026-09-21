@@ -1,6 +1,6 @@
 HOTARU = {
     "id": "updater",
-    "version": "1.5.2",
+    "version": "1.5.3",
     "commands": ["upd", "updlog", "updoff", "updon"],
     "capabilities": ["net", "mt"],
     "tasks": {
@@ -14,7 +14,6 @@ from typing import Any
 
 import asyncio
 import os
-import shutil
 import subprocess
 import sys
 import time
@@ -67,28 +66,7 @@ def _pull(runtime: Any) -> Any:
     _git(runtime, "reset", "--hard", "origin/main")
     _git(runtime, "clean", "-fd")
     after = _latest_commit(runtime)
-    deps = False
-    try:
-        deps_changed = _git(runtime, "diff", "--name-only", before, after, "--", "pyproject.toml", "uv.lock")
-        deps = bool(deps_changed.strip())
-    except Exception:
-        pass
-    return before, after, deps
-
-def _sync_deps(runtime: Any) -> Any:
-    root = _repo_dir(runtime)
-    uv = shutil.which("uv")
-    if uv is None:
-        raise RuntimeError("uv is required to sync dependencies")
-    result = subprocess.run(
-        [uv, "sync", "--locked", "--no-cache"],
-        cwd=root,
-        timeout=600,
-        capture_output=True,
-        text=True,
-    )
-    if result.returncode != 0:
-        raise RuntimeError(result.stderr.strip() or result.stdout.strip() or "dependency sync failed")
+    return before, after
 
 def _serialize_inline(mid: Any) -> Any:
     if not isinstance(mid, dict):
@@ -390,20 +368,13 @@ async def _run_update(ctx: Any) -> Any:
         await _status(ctx, text)
     await say(f"<b>{_t(ctx, 'downloading', 'Downloading update…')}</b>")
     try:
-        before, after, deps_changed = _pull(ctx.runtime)
+        before, after = _pull(ctx.runtime)
     except Exception as exc:
         await say(f"<b>Update failed:</b> <i>{_escape(exc)}</i>")
         return
     if before == after:
         await say(f"<b>{_t(ctx, 'up_to_date', 'Hotaru is up to date')}</b>")
         return
-    if deps_changed:
-        await say(f"<b>{_t(ctx, 'syncing', 'Syncing dependencies…')}</b>")
-        try:
-            _sync_deps(ctx.runtime)
-        except Exception as exc:
-            await say(f"<b>Dependency sync failed:</b> <i>{_escape(exc)}</i>")
-            return
     await say(f"<b>{_t(ctx, 'restarting', 'Updated to {commit}. Restarting…', commit=_escape(after[:7]))}</b>")
     pending = ctx.state.get("update_pending")
     if isinstance(pending, dict):
