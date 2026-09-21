@@ -1,6 +1,6 @@
 HOTARU = {
     "id": "updater",
-    "version": "1.5.1",
+    "version": "1.5.2",
     "commands": ["upd", "updlog", "updoff", "updon"],
     "capabilities": ["net", "mt"],
     "tasks": {
@@ -14,6 +14,7 @@ from typing import Any
 
 import asyncio
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -76,15 +77,18 @@ def _pull(runtime: Any) -> Any:
 
 def _sync_deps(runtime: Any) -> Any:
     root = _repo_dir(runtime)
-    try:
-        subprocess.run(
-            [sys.executable, "-m", "hotaru_deps_sync"],
-            cwd=root,
-            timeout=600,
-            capture_output=True,
-        )
-    except Exception:
-        pass
+    uv = shutil.which("uv")
+    if uv is None:
+        raise RuntimeError("uv is required to sync dependencies")
+    result = subprocess.run(
+        [uv, "sync", "--locked", "--no-cache"],
+        cwd=root,
+        timeout=600,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(result.stderr.strip() or result.stdout.strip() or "dependency sync failed")
 
 def _serialize_inline(mid: Any) -> Any:
     if not isinstance(mid, dict):
@@ -395,7 +399,11 @@ async def _run_update(ctx: Any) -> Any:
         return
     if deps_changed:
         await say(f"<b>{_t(ctx, 'syncing', 'Syncing dependencies…')}</b>")
-        _sync_deps(ctx.runtime)
+        try:
+            _sync_deps(ctx.runtime)
+        except Exception as exc:
+            await say(f"<b>Dependency sync failed:</b> <i>{_escape(exc)}</i>")
+            return
     await say(f"<b>{_t(ctx, 'restarting', 'Updated to {commit}. Restarting…', commit=_escape(after[:7]))}</b>")
     pending = ctx.state.get("update_pending")
     if isinstance(pending, dict):
