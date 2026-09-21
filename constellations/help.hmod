@@ -85,7 +85,7 @@ async def _show_help(ctx: Any, invocation: Any) -> Any:
                 )
             else:
                 await ctx.respond(
-                    f'<b>Module not active:</b> <code>{_escape(module_id)}</code>',
+                    f'<b>Module not found:</b> <code>{_escape(module_id)}</code>',
                     parse_mode="HTML",
                 )
             return

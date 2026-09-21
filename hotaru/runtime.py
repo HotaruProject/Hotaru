@@ -1376,33 +1376,36 @@ class Runtime:
     async def load_module(self, source: str | Path, *, consent_screen: Any = None) -> tuple[Any, str]:
         if self.stager is None or self.state is None:
             raise RuntimeError("runtime services are not ready")
-        if isinstance(source, str) and source.startswith("https://"):
-            loaded = self.stage_module_url(source)
-        else:
-            loaded = self.stage_module(source)
-        module_id = loaded.manifest.module_id
-        caps = list(getattr(loaded.manifest, "capabilities", ()) or ())
-        fingerprint = self._caps_fingerprint(loaded.manifest)
-        if not caps or self._caps_consented(module_id, fingerprint):
-            if not caps:
-                self._mark_caps_consent(module_id, fingerprint)
-            if self.modules is not None and self.modules.get(module_id) is not None:
-                result = await self._command_rl(SimpleNamespace(args=(module_id,)))
-                if result.startswith("reloaded:"):
-                    return loaded, "updated"
-                return loaded, result
-            try:
-                await self.activate_module(str(loaded.path))
-            except Exception as exc:
-                loaded.path.unlink(missing_ok=True)
-                self.state.delete_module(module_id)
-                if self.observatory is not None:
-                    self.observatory.emit("modules", "load_error", module=module_id, error=type(exc).__name__, detail=str(exc)[:240])
-                return loaded, f"load failed: {type(exc).__name__}"
+        with tempfile.TemporaryDirectory(prefix=".hotaru-candidate-") as candidate_dir:
+            if isinstance(source, str) and source.startswith("https://"):
+                candidate = self.stage_module_url(source, candidate_dir)
+            else:
+                candidate = self.stage_module(source, candidate_dir)
+            module_id = candidate.manifest.module_id
+            caps = list(getattr(candidate.manifest, "capabilities", ()) or ())
+            fingerprint = self._caps_fingerprint(candidate.manifest)
+            if caps and not self._caps_consented(module_id, fingerprint):
+                return candidate, "confirm"
+            source_text = candidate.source
+        loaded = self.stager.stage_text(source_text, self.relay_dir)
+        if not caps:
+            self._mark_caps_consent(module_id, fingerprint)
+        if self.modules is not None and self.modules.get(module_id) is not None:
+            result = await self._command_rl(SimpleNamespace(args=(module_id,)))
+            if result.startswith("reloaded:"):
+                return loaded, "updated"
+            return loaded, result
+        try:
+            await self.activate_module(str(loaded.path))
+        except Exception as exc:
+            loaded.path.unlink(missing_ok=True)
+            self.state.delete_module(module_id)
             if self.observatory is not None:
-                self.observatory.emit("modules", "loaded", module=module_id, version=loaded.manifest.version)
-            return loaded, "loaded"
-        return loaded, "confirm"
+                self.observatory.emit("modules", "load_error", module=module_id, error=type(exc).__name__, detail=str(exc)[:240])
+            return loaded, f"load failed: {type(exc).__name__}"
+        if self.observatory is not None:
+            self.observatory.emit("modules", "loaded", module=module_id, version=loaded.manifest.version)
+        return loaded, "loaded"
 
     async def _command_ld(self, invocation: Any) -> str | tuple[str, list[dict[str, str]]]:
         if len(invocation.args) > 1:
@@ -1433,6 +1436,7 @@ class Runtime:
         screen = await self._render_caps_screen(
             module_id,
             loaded.manifest,
+            loaded.source,
             invocation.chat_id,
             invocation.message_id,
         )
@@ -1539,7 +1543,7 @@ class Runtime:
         return hashlib.sha256(payload.encode()).hexdigest()[:16]
 
     def _caps_consented(self, module_id: str, fingerprint: str) -> bool:
-        if self.state is None:
+        if self.state is None or module_id not in self.state.module_ids():
             return False
         namespace = self.state.namespace(module_id)
         return namespace.get("caps-consent") == fingerprint
@@ -1548,11 +1552,7 @@ class Runtime:
         if self.state is not None:
             self.state.namespace(module_id).set("caps-consent", fingerprint)
 
-    async def _render_caps_screen(self, module_id: str, manifest: Any, chat_id: int | str | None, message_id: int) -> tuple[str, list[dict[str, str]]] | str:
-        caps = list(getattr(manifest, "capabilities", ()) or ())
-        if not caps:
-            await self.activate_module(self.state.namespace(module_id).get("sourcepath") if self.state else self.relay_dir / f"{module_id}.hmod")
-            return f"loaded: {module_id} {manifest.version}"
+    async def _render_caps_screen(self, module_id: str, manifest: Any, source: str, chat_id: int | str | None, message_id: int) -> tuple[str, list[dict[str, str]]] | str:
         if self.callbacks is None or self.kernel is None or self.kernel.owner_id is None or chat_id is None:
             lines = [f"module {module_id} v{manifest.version} requests capabilities:"]
             lines.append(describe_caps(manifest.capabilities) or "none")
@@ -1561,7 +1561,7 @@ class Runtime:
         text = f"module {module_id} v{manifest.version} requests capabilities:\n" + (describe_caps(manifest.capabilities) or "none")
         confirm_handle = self.callbacks.store.issue(
             CallbackBinding(self.kernel.owner_id, chat_id, 0),
-            {"action": "caps_confirm", "payload": {"module": module_id}},
+            {"action": "caps_confirm", "payload": {"module": module_id, "source": source}},
         )
         cancel_handle = self.callbacks.store.issue(
             CallbackBinding(self.kernel.owner_id, chat_id, 0),
@@ -1580,36 +1580,26 @@ class Runtime:
             await callback.answer("Invalid request", alert=True)
             return None
         module_id = str(cast('dict[str, Any]', payload).get("module", "")).casefold()
-        (self.relay_dir / f"{module_id}.hmod").unlink(missing_ok=True)
-        if self.state is not None:
-            self.state.delete_module(module_id)
         await callback.answer("Cancelled")
         return await callback.edit(f"cancelled: {module_id}")
 
     async def _caps_confirm(self, callback: Any, payload: Any) -> object:
-        if not isinstance(payload, dict) or self.modules is None or self.state is None:
+        if not isinstance(payload, dict) or self.modules is None or self.state is None or self.stager is None:
             await callback.answer("Invalid request", alert=True)
             return None
         module_id = str(cast('dict[str, Any]', payload).get("module", "")).casefold()
-        namespace = self.state.namespace(module_id)
-        source_path = namespace.get("sourcepath")
-        if not isinstance(source_path, str):
-            candidate = self.relay_dir / f"{module_id}.hmod"
-            if not candidate.is_file():
-                await callback.answer("Source missing", alert=True)
-                return await callback.edit(f"module not found: {module_id}")
-            source_path = str(candidate)
+        source = cast('dict[str, Any]', payload).get("source")
+        if not isinstance(source, str):
+            await callback.answer("Source missing", alert=True)
+            return await callback.edit(f"module not found: {module_id}")
         try:
-            loaded = self.modules.loader.load(source_path)
+            loaded, action = await self.load_module(source)
+            if action == "confirm":
+                self._mark_caps_consent(module_id, self._caps_fingerprint(loaded.manifest))
+                loaded, action = await self.load_module(source)
+            if action not in {"loaded", "updated"}:
+                raise RuntimeError(action)
         except Exception as exc:
-            await callback.answer("Load failed", alert=True)
-            return await callback.edit(f"load failed: {type(exc).__name__}")
-        try:
-            self._mark_caps_consent(module_id, self._caps_fingerprint(loaded.manifest))
-            await self.activate_module(source_path)
-        except Exception as exc:
-            Path(source_path).unlink(missing_ok=True)
-            self.state.delete_module(module_id)
             if self.observatory is not None:
                 self.observatory.emit("modules", "activation_error", module=module_id, error=type(exc).__name__, detail=str(exc)[:240])
             await callback.answer("Activation failed", alert=True)
@@ -1667,37 +1657,6 @@ class Runtime:
             )
             return ("confirm restore", [{"text": "Confirm", "callback_data": handle}])
         return "usage: !bk | !bk list | !bk test <archive> | !bk restore <archive>"
-
-    async def _command_rm(self, invocation: Any) -> tuple[str, list[dict[str, str]]] | str:
-        if len(invocation.args) != 1 or self.modules is None or self.callbacks is None:
-            return "usage: !rm <module-id>"
-        if self.kernel is None or self.kernel.owner_id is None:
-            return "rm unavailable: explicit owner id required"
-        module_id = invocation.args[0].casefold()
-        if self._is_kernel_module(module_id):
-            return f"kernel module is protected: {module_id}"
-        if self.modules.get(module_id) is None:
-            return f"module not found: {module_id}"
-        handle = self.callbacks.store.issue(
-            CallbackBinding(self.kernel.owner_id, invocation.chat_id, invocation.message_id),
-            {"action": "remove_confirm", "payload": module_id},
-        )
-        return (f"confirm removal: {module_id}", [{"text": "Confirm", "callback_data": handle}])
-
-    async def _remove_confirm(self, callback: Any, payload: Any) -> object:
-        if not isinstance(payload, str) or self.modules is None:
-            await callback.answer("Invalid removal request", alert=True)
-            return None
-        active = self.modules.get(payload)
-        if active is None:
-            await callback.answer("Module not found", alert=True)
-            return await callback.edit(f"module not found: {payload}")
-        result = await self.unload_module(payload)
-        if result is not None:
-            await callback.answer("Removal failed", alert=True)
-            return await callback.edit(result)
-        await callback.answer("Module removed", alert=True)
-        return await callback.edit(f"removed: {payload}")
 
     async def _module_detail(self, callback: Any, payload: Any) -> object:
         if not isinstance(payload, str):

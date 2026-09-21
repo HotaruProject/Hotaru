@@ -42,9 +42,6 @@
         "rl": {
           "description": "Перезавантажити модуль"
         },
-        "rm": {
-          "description": "Видалити модуль"
-        },
         "bk": {
           "description": "Бекапи"
         },
@@ -158,8 +155,7 @@
       "kernel_modules": "Модулі ядра",
       "user_modules": "Користувацькі модулі",
       "commands": "Команди",
-      "capabilities": "Можливості",
-      "untrusted": "недовіренний"
+      "capabilities": "Можливості"
     },
     "accounts": {
       "description": "Multi-account management: register, authorize, spawn, stop accounts",

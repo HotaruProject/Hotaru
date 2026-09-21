@@ -42,9 +42,6 @@
         "rl": {
           "description": "モジュール再読み込み"
         },
-        "rm": {
-          "description": "モジュール削除（完全）"
-        },
         "bk": {
           "description": "バックアップ"
         },
@@ -158,8 +155,7 @@
       "kernel_modules": "カーネルモジュール",
       "user_modules": "ユーザーモジュール",
       "commands": "コマンド",
-      "capabilities": "機能",
-      "untrusted": "未信頼"
+      "capabilities": "機能"
     },
     "accounts": {
       "description": "Multi-account management: register, authorize, spawn, stop accounts",

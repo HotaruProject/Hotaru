@@ -635,7 +635,7 @@ class CapabilityHost:
                 runtime.state.delete_module(module_id)
                 raise PermissionError("modules capability is required")
             runtime._mark_caps_consent(module_id, runtime._caps_fingerprint(loaded.manifest))
-            loaded, action = await runtime.load_module(str(loaded.path))
+            loaded, action = await runtime.load_module(loaded.source)
         return {
             "module_id": module_id,
             "version": loaded.manifest.version,

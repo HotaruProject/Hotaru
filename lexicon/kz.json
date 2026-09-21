@@ -42,9 +42,6 @@
         "rl": {
           "description": "Модульді қайта жүктеу"
         },
-        "rm": {
-          "description": "Модульді өшіру"
-        },
         "bk": {
           "description": "Бэкаптар"
         },
@@ -158,8 +155,7 @@
       "kernel_modules": "Ядро модульдері",
       "user_modules": "Пайдаланушы модульдері",
       "commands": "Командалар",
-      "capabilities": "Мүмкіндіктер",
-      "untrusted": "жүктелмеген"
+      "capabilities": "Мүмкіндіктер"
     },
     "accounts": {
       "description": "Multi-account management: register, authorize, spawn, stop accounts",

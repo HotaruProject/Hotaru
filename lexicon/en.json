@@ -112,9 +112,6 @@
         "rl": {
           "description": "Reload module"
         },
-        "rm": {
-          "description": "Remove module"
-        },
         "bk": {
           "description": "Backups"
         },
