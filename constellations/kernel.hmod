@@ -5,7 +5,7 @@ HOTARU = {
     "capabilities": ["mt"],
 }
 
-from typing import Any
+from typing import Any, List, Tuple, cast
 
 
 async def command_ver(ctx: Any, invocation: Any) -> Any:
@@ -60,7 +60,7 @@ async def command_bk(ctx: Any, invocation: Any) -> Any:
         return
     result = await runtime._command_bk(invocation)
     if isinstance(result, tuple):
-        text, buttons = result
+        text, buttons = cast(Tuple[Any, Any], result)
         await ctx.respond(text, buttons=buttons)
     else:
         await ctx.respond(result)
@@ -90,7 +90,7 @@ async def command_lg(ctx: Any, invocation: Any) -> Any:
     if not entries:
         await ctx.respond("log: no entries at this level")
         return
-    lines = []
+    lines: List[str] = []
     for entry in reversed(entries):
         stamp = str(entry.get("time") or "")[11:19]
         tag = entry.get("module") or entry.get("component") or "core"

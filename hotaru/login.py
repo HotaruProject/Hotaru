@@ -3,10 +3,11 @@ from __future__ import annotations
 import asyncio
 import base64
 import io
+import importlib
 import sys
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Awaitable, Callable, cast
 
 from rich.align import Align
 from rich.console import Console
@@ -93,9 +94,13 @@ def collect_settings(state: Any) -> None:
 
 
 def _save_vault(app: Any, vault: Path, session_name: str, api_id: int, api_hash: str, user: dict[str, Any], extra: dict[str, Any] | None = None) -> None:
-    from goygram.security import _current_dc_id, _extract_auth_blob, _field, _write_vault
+    security = importlib.import_module("goygram.security")
+    _current_dc_id = cast(Callable[[Any], int | None], getattr(security, "_current_dc_id"))
+    _extract_auth_blob = cast(Callable[[dict[str, Any]], bytes | None], getattr(security, "_extract_auth_blob"))
+    _field = cast(Callable[..., Any], getattr(security, "_field"))
+    _write_vault = cast(Callable[[Path, dict[str, Any], str], None], getattr(security, "_write_vault"))
     auth_blob = _extract_auth_blob(extra or {}) or getattr(app.mt, "auth_key", None)
-    if user is None or auth_blob is None:
+    if auth_blob is None:
         raise RuntimeError("authorization did not return a session")
     payload = {
         "phone": user.get("phone", ""),
@@ -117,7 +122,11 @@ def _save_vault(app: Any, vault: Path, session_name: str, api_id: int, api_hash:
 
 async def _phone_login(console: Console, app: Any, api_id: int, api_hash: str) -> dict[str, Any]:
     from goygram import ext as rx
-    from goygram.security import _extract_error, _extract_phone_code_hash, _extract_user, _mt_req_with_migrate
+    security = importlib.import_module("goygram.security")
+    _extract_error = cast(Callable[[dict[str, Any]], str | None], getattr(security, "_extract_error"))
+    _extract_phone_code_hash = cast(Callable[[dict[str, Any]], str | None], getattr(security, "_extract_phone_code_hash"))
+    _extract_user = cast(Callable[[Any], dict[str, Any] | None], getattr(security, "_extract_user"))
+    _mt_req_with_migrate = cast(Callable[..., Awaitable[dict[str, Any]]], getattr(security, "_mt_req_with_migrate"))
     while True:
         raw = _ask(console, "Phone")
         try:
@@ -127,11 +136,11 @@ async def _phone_login(console: Console, app: Any, api_id: int, api_hash: str) -
             continue
         settings = rx.serialize_constructor("codeSettings", {"flags": 0})
         sent = await _mt_req_with_migrate(app, "auth_send_code", phone_number=phone, api_id=api_id, api_hash=api_hash, settings=settings)
-        err = _extract_error(sent) if isinstance(sent, dict) else str(sent)
+        err = _extract_error(sent)
         if err and "SESSION_PASSWORD_NEEDED" not in err:
             console.print(f"[red]{err}[/]")
             continue
-        code_hash = _extract_phone_code_hash(sent) if isinstance(sent, dict) else None
+        code_hash = _extract_phone_code_hash(sent)
         if not code_hash:
             console.print("[red]no code hash[/]")
             continue
@@ -143,9 +152,6 @@ async def _phone_login(console: Console, app: Any, api_id: int, api_hash: str) -
             except Exception as exc:
                 sign, sign_err = None, str(exc)
             else:
-                if not isinstance(sign, dict):
-                    console.print("[red]bad signIn[/]")
-                    continue
                 sign_err = _extract_error(sign) or ""
             if "PHONE_CODE_INVALID" in sign_err or "CODE_INVALID" in sign_err:
                 console.print("[red]wrong code[/]")
@@ -159,7 +165,7 @@ async def _phone_login(console: Console, app: Any, api_id: int, api_hash: str) -
                     except Exception as exc:
                         console.print(f"[red]{exc}[/]")
                         continue
-                    err2 = _extract_error(check) if isinstance(check, dict) else "bad 2FA"
+                    err2 = _extract_error(check)
                     if err2:
                         console.print(f"[red]{err2}[/]")
                         continue
@@ -168,16 +174,19 @@ async def _phone_login(console: Console, app: Any, api_id: int, api_hash: str) -
             elif sign_err:
                 console.print(f"[red]{sign_err}[/]")
                 continue
-            user = _extract_user(final) if isinstance(final, dict) else None
+            user = _extract_user(final)
             if not user:
                 console.print("[red]no user in session[/]")
                 continue
-            return {"user": user, "raw": final if isinstance(final, dict) else {}}
+            return {"user": user, "raw": final}
 
 
 async def _qr_login(console: Console, app: Any, api_id: int, api_hash: str) -> dict[str, Any] | None:
     from goygram.errors import GoyGramError
-    from goygram.security import _extract_error, _extract_user, _mt_req_with_migrate
+    security = importlib.import_module("goygram.security")
+    _extract_error = cast(Callable[[dict[str, Any]], str | None], getattr(security, "_extract_error"))
+    _extract_user = cast(Callable[[Any], dict[str, Any] | None], getattr(security, "_extract_user"))
+    _mt_req_with_migrate = cast(Callable[..., Awaitable[dict[str, Any]]], getattr(security, "_mt_req_with_migrate"))
     w = _width(console)
     while True:
         try:
@@ -185,7 +194,7 @@ async def _qr_login(console: Console, app: Any, api_id: int, api_hash: str) -> d
         except Exception as exc:
             console.print(f"[red]{exc}[/]")
             return None
-        if not isinstance(res, dict) or not res.get("ok"):
+        if not res.get("ok"):
             console.print(f"[red]{res}[/]")
             return None
         if res.get("type") == "loginToken":
@@ -226,16 +235,16 @@ async def _qr_login(console: Console, app: Any, api_id: int, api_hash: str) -> d
                         except Exception as exc2:
                             console.print(f"[red]{exc2}[/]")
                             continue
-                        err = _extract_error(check) if isinstance(check, dict) else "bad 2FA"
+                        err = _extract_error(check)
                         if err:
                             console.print(f"[red]{err}[/]")
                             continue
                         user = _extract_user(check)
                         if not user:
                             continue
-                        return {"user": user, "raw": check if isinstance(check, dict) else {}}
+                        return {"user": user, "raw": check}
                     break
-                if isinstance(poll, dict) and poll.get("type") == "loginTokenSuccess":
+                if poll.get("type") == "loginTokenSuccess":
                     user = _extract_user(poll)
                     if user:
                         return {"user": user, "raw": poll}

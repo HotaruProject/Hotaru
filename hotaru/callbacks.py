@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import base64
 import hashlib
 import inspect
@@ -9,7 +8,7 @@ import secrets
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from goygram.errors import EntityBoundsInvalidError
 from goygram import ext
@@ -43,12 +42,16 @@ class CallbackContext:
         if getattr(self, "src", None) == "mt" and getattr(self, "msg_id", None) is not None and not isinstance(getattr(self, "msg_id", None), int):
             self.inline_message_id = self.msg_id
         if getattr(self, "src", None) == "bot" and not getattr(self, "inline_message_id", None):
-            raw = getattr(self, "raw", {})
-            query = raw.get("callback_query") if isinstance(raw, dict) else None
-            if not isinstance(query, dict) and isinstance(raw, dict) and isinstance(raw.get("raw"), dict):
-                query = raw["raw"].get("callback_query")
-            if isinstance(query, dict) and isinstance(query.get("inline_message_id"), str):
-                self.inline_message_id = query["inline_message_id"]
+            raw_value = cast(object, getattr(self, "raw", {}))
+            raw = cast('dict[str, object]', raw_value) if isinstance(raw_value, dict) else {}
+            query_value = raw.get("callback_query")
+            nested_value = raw.get("raw")
+            if not isinstance(query_value, dict) and isinstance(nested_value, dict):
+                query_value = cast('dict[str, object]', nested_value).get("callback_query")
+            if isinstance(query_value, dict):
+                inline_message_id = cast('dict[str, object]', query_value).get("inline_message_id")
+                if isinstance(inline_message_id, str):
+                    self.inline_message_id = inline_message_id
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self._callback, name)
@@ -68,7 +71,7 @@ class CallbackContext:
         except EntityBoundsInvalidError:
             fallback = dict(data)
             entities = fallback.get("entities")
-            pre = [entity for entity in entities if isinstance(entity, dict) and entity.get("_") == "messageEntityPre"] if isinstance(entities, list) else []
+            pre = [cast('dict[str, object]', entity) for entity in cast('list[object]', entities) if isinstance(entity, dict) and cast('dict[str, object]', entity).get("_") == "messageEntityPre"] if isinstance(entities, list) else []
             if pre:
                 fallback["entities"] = pre
                 try:
@@ -116,17 +119,17 @@ class CallbackContext:
             app = bot_app or app
             log["bot"] = bool(getattr(app, "bot_token", None))
             if inline_mid is not None:
-                id_field = inline_mid if isinstance(inline_mid, dict) else {"_": "inputBotInlineMessageID", "raw": inline_mid} if isinstance(inline_mid, (str, bytes)) else None
+                inline_id: dict[str, Any] | None = cast('dict[str, Any]', inline_mid) if isinstance(inline_mid, dict) else {"_": "inputBotInlineMessageID", "raw": inline_mid} if isinstance(inline_mid, (str, bytes)) else None
                 log["branch"] = "editInlineBotMessage"
-                log["id_field"] = id_field
-                log["dc"] = id_field.get("dc_id") if isinstance(id_field, dict) else None
+                log["id_field"] = inline_id
+                log["dc"] = inline_id.get("dc_id") if inline_id is not None else None
                 _cb_log(log)
-                if id_field is None:
+                if inline_id is None:
                     return None
                 if use_rich:
                     data.pop("entities", None)
                     data["rich_message"] = {"_": "inputRichMessageHTML", **rich_html(text)}
-                return await self._edit_inline(app, id_field, "" if use_rich else plain, data)
+                return await self._edit_inline(app, inline_id, "" if use_rich else plain, data)
             log["branch"] = "editMessage"
             _cb_log(log)
             if isinstance(chat_id, int) and isinstance(msg_id, int):
@@ -144,14 +147,14 @@ class CallbackContext:
             plain, ents = html_to_entities(text)
             if ents:
                 data["entities"] = ents
-            id_field = inline_mid if isinstance(inline_mid, dict) else {"_": "inputBotInlineMessageID", "raw": inline_mid}
+            bot_inline_id: dict[str, Any] = cast('dict[str, Any]', inline_mid) if isinstance(inline_mid, dict) else {"_": "inputBotInlineMessageID", "raw": inline_mid}
             log["branch"] = "editInlineBotMessage-bot"
-            log["id_field"] = id_field
+            log["id_field"] = bot_inline_id
             _cb_log(log)
             if use_rich:
                 data.pop("entities", None)
                 data["rich_message"] = {"_": "inputRichMessageHTML", **rich_html(text)}
-            return await self._edit_inline(app, id_field, "" if use_rich else plain, data)
+            return await self._edit_inline(app, bot_inline_id, "" if use_rich else plain, data)
         log["branch"] = "fallback"
         _cb_log(log)
         return await self._callback.edit(text, **kwargs)
@@ -172,9 +175,11 @@ class CallbackContext:
             actor = getattr(self, "from_id", None)
             stored = getattr(runtime, "_form_msgs", None) if runtime is not None else None
             if isinstance(stored, dict) and actor in stored:
-                chat_id, msg_id = stored.pop(actor)
-            elif isinstance(stored, dict) and len(stored) == 1:
-                chat_id, msg_id = stored.pop(next(iter(stored)))
+                mapping = cast('dict[object, object]', stored)
+                chat_id, msg_id = cast('tuple[object, object]', mapping.pop(actor))
+            elif isinstance(stored, dict) and len(cast('dict[object, object]', stored)) == 1:
+                mapping = cast('dict[object, object]', stored)
+                chat_id, msg_id = cast('tuple[object, object]', mapping.pop(next(iter(mapping))))
         if isinstance(chat_id, int) and isinstance(msg_id, int) and app is not None:
             from relay.firewall import trusted_scope
             with trusted_scope():
@@ -182,7 +187,7 @@ class CallbackContext:
         inline_mid = getattr(self, "inline_message_id", None)
         bot_app = getattr(self, "app", None)
         if inline_mid is not None and bot_app is not None:
-            id_field = inline_mid if isinstance(inline_mid, dict) else {"_": "inputBotInlineMessageID", "raw": inline_mid} if isinstance(inline_mid, (str, bytes)) else None
+            id_field: dict[str, Any] | None = cast('dict[str, Any]', inline_mid) if isinstance(inline_mid, dict) else {"_": "inputBotInlineMessageID", "raw": inline_mid} if isinstance(inline_mid, (str, bytes)) else None
             if id_field is not None:
                 from relay.firewall import trusted_scope
                 with trusted_scope():
@@ -202,7 +207,7 @@ class CallbackBinding:
 @dataclass
 class _Entry:
     binding: CallbackBinding
-    value: Any
+    value: dict[str, Any]
     expires: float
 
 
@@ -243,7 +248,7 @@ class CallbackStore:
         self._items[handle] = _Entry(binding, value, time.monotonic() + self.ttl)
         return handle
 
-    def consume(self, handle: str, binding: CallbackBinding) -> Any:
+    def consume(self, handle: str, binding: CallbackBinding) -> dict[str, Any]:
         self._purge()
         entry = self._items.get(handle)
         decoded = self._unseal(handle)
@@ -266,18 +271,6 @@ class CallbackStore:
         for handle, entry in tuple(self._items.items()):
             if entry.expires <= now:
                 del self._items[handle]
-
-
-def _json_dumps(value: Any) -> str:
-    import json
-
-    return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
-
-
-def _json_loads(text: str) -> Any:
-    import json
-
-    return json.loads(text)
 
 
 class CallbackRouter:
@@ -334,8 +327,6 @@ class CallbackRouter:
         if not isinstance(data, str):
             raise CallbackDenied("callback payload is invalid")
         value = self.store.consume(data, binding)
-        if not isinstance(value, dict):
-            raise CallbackDenied("callback payload is invalid")
         handler = None
         if isinstance(value.get("module"), str):
             handlers = self._module_handlers.get(value["module"], {})

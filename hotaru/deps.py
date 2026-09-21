@@ -9,7 +9,7 @@ import importlib.util
 import json
 import os
 import re
-import shlex
+
 import shutil
 import subprocess
 import sys
@@ -17,7 +17,7 @@ import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any, Sequence, cast
 
 
 class DependencyError(RuntimeError):
@@ -78,10 +78,9 @@ def normalize_version(raw: str) -> str:
     return ".".join(numbers) + suffix
 
 
-def version_tuple(value: str) -> tuple[Any, ...]:
+def version_tuple(value: str) -> tuple[int | str, ...]:
     text = normalize_version(value)
-    pieces = []
-    current = ""
+    pieces: list[int | str] = []
     kind = None
     digits = re.match(r"^(\d+(?:\.\d+){0,3})(.*)$", text)
     if digits:
@@ -229,14 +228,6 @@ def find_env_manager() -> tuple[str, list[str]]:
     raise DependencyError("no supported package manager found: uv or pip")
 
 
-def _is_externally_managed() -> bool:
-    try:
-        marker = Path(sys.prefix).joinpath("lib", f"python{sys.version_info.major}.{sys.version_info.minor}", "EXTERNALLY-MANAGED")
-        return marker.exists()
-    except OSError:
-        return False
-
-
 def build_command(manager: tuple[str, list[str]], specs: list[str], *, upgrade: bool) -> list[str]:
     tool, prefix = manager
     command = list(prefix)
@@ -309,7 +300,7 @@ async def ensure(requirements: list[str], *, on_log: Any=None, timeout: float = 
 
 def ensure_kernel() -> dict[str, Any]:
     try:
-        loop = asyncio.get_running_loop()
+        asyncio.get_running_loop()
     except RuntimeError:
         return asyncio.run(ensure(["goygram>=0.7.78"]))
     raise DependencyError("call ensure() from async context, ensure_kernel() is blocking")
@@ -344,10 +335,10 @@ def project_requirements(root: Path) -> list[str]:
         elif char == "]":
             depth -= 1
             if depth == 0:
-                value = ast.literal_eval(project[start:index + 1])
-                if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+                value = cast(object, ast.literal_eval(project[start:index + 1]))
+                if not isinstance(value, list) or not all(isinstance(item, str) for item in cast('list[object]', value)):
                     raise DependencyError("project dependencies must be a string list")
-                return value
+                return cast('list[str]', value)
     raise DependencyError("project dependencies are incomplete")
 
 
@@ -371,10 +362,10 @@ def _dependency_marker(root: Path) -> Path:
 
 def _read_dependency_marker(root: Path) -> dict[str, Any]:
     try:
-        value = json.loads(_dependency_marker(root).read_text(encoding="utf-8"))
+        value = cast(object, json.loads(_dependency_marker(root).read_text(encoding="utf-8")))
     except (OSError, ValueError, TypeError):
         return {}
-    return value if isinstance(value, dict) else {}
+    return cast('dict[str, Any]', value) if isinstance(value, dict) else {}
 
 
 def _write_dependency_marker(root: Path, value: dict[str, Any]) -> None:
@@ -469,7 +460,7 @@ def ensure_project(root: Path) -> dict[str, Any]:
             changed = bool(result.get("installed") or result.get("upgraded"))
         if manager_name == "pip":
             _repair_environment_conflicts(requirements)
-        unresolved = []
+        unresolved: list[str] = []
         for line in requirements:
             requirement = parse_requirement(line)
             current = _installed_version_fresh(requirement.canonical)

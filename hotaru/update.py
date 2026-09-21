@@ -11,7 +11,7 @@ import tarfile
 import tempfile
 import time
 from pathlib import Path
-from typing import Any, Dict, List, NamedTuple, Optional, Sequence
+from typing import Any, Dict, List, NamedTuple, Optional, Sequence, cast
 
 
 class UpdateError(RuntimeError):
@@ -62,7 +62,7 @@ def _atomic_json(path: Path, value: Dict[str, Any]) -> None:
 
 def _untracked(repo: Path) -> List[str]:
     raw = _git(repo, "ls-files", "--others", "--exclude-standard", "-z").stdout
-    values = []
+    values: List[str] = []
     for item in raw.split(b"\0"):
         if not item:
             continue
@@ -111,26 +111,29 @@ def _resume_interrupted(repo: Path) -> Optional[UpdateResult]:
     for recovery in sorted(base.iterdir(), reverse=True):
         manifest_path = recovery / "manifest.json"
         try:
-            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest = cast(object, json.loads(manifest_path.read_text(encoding="utf-8")))
         except (OSError, ValueError, TypeError):
             continue
-        if not isinstance(manifest, dict) or manifest.get("stage") != "saved":
+        if not isinstance(manifest, dict):
             continue
-        before = str(manifest.get("before") or "")
-        target = str(manifest.get("target") or "")
-        stash = str(manifest.get("stash") or "")
+        record = cast(Dict[str, Any], manifest)
+        if record.get("stage") != "saved":
+            continue
+        before = str(record.get("before") or "")
+        target = str(record.get("target") or "")
+        stash = str(record.get("stash") or "")
         if not before or not target or not stash:
             continue
         _git(repo, "cat-file", "-e", target + "^{commit}")
         _git(repo, "reset", "--hard", target)
         _git(repo, "clean", "-fd", "-e", ".hotaru/")
         applied, conflicts = _apply_stash(repo, stash, recovery)
-        manifest["stage"] = "complete"
-        manifest["recovered"] = True
-        manifest["conflicts"] = conflicts
-        manifest["local_applied"] = applied
-        _atomic_json(manifest_path, manifest)
-        return UpdateResult(before, target, recovery, applied, conflicts, bool(manifest.get("history_replaced")))
+        record["stage"] = "complete"
+        record["recovered"] = True
+        record["conflicts"] = conflicts
+        record["local_applied"] = applied
+        _atomic_json(manifest_path, record)
+        return UpdateResult(before, target, recovery, applied, conflicts, bool(record.get("history_replaced")))
     return None
 
 
@@ -169,7 +172,7 @@ def _preflight(repo: Path, target: str) -> None:
         shutil.rmtree(str(worktree), ignore_errors=True)
 
 
-def _update_repository(root: Any) -> UpdateResult:
+def _update_repository(root: str | os.PathLike[str]) -> UpdateResult:
     repo = Path(root).resolve()
     resumed = _resume_interrupted(repo)
     if resumed is not None:
@@ -186,7 +189,7 @@ def _update_repository(root: Any) -> UpdateResult:
     recovery = None
     stash = None
     if status:
-        stamp = datetime.datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
+        stamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
         recovery = repo / ".hotaru" / "recovery" / (stamp + "-" + before[:12])
         recovery.mkdir(parents=True, exist_ok=False)
         (recovery / "status.bin").write_bytes(status)
@@ -216,7 +219,10 @@ def _update_repository(root: Any) -> UpdateResult:
         assert recovery is not None
         applied, conflicts = _apply_stash(repo, stash, recovery)
     if recovery is not None:
-        manifest = json.loads((recovery / "manifest.json").read_text(encoding="utf-8"))
+        decoded = cast(object, json.loads((recovery / "manifest.json").read_text(encoding="utf-8")))
+        if not isinstance(decoded, dict):
+            raise UpdateError("recovery manifest is invalid")
+        manifest = cast(Dict[str, Any], decoded)
         manifest["stage"] = "complete"
         manifest["conflicts"] = conflicts
         manifest["local_applied"] = applied
@@ -224,7 +230,7 @@ def _update_repository(root: Any) -> UpdateResult:
     return UpdateResult(before, target, recovery, applied, conflicts, replaced)
 
 
-def update_repository(root: Any) -> UpdateResult:
+def update_repository(root: str | os.PathLike[str]) -> UpdateResult:
     repo = Path(root).resolve()
     lock = _acquire_update_lock(repo)
     try:

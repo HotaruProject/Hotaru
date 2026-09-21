@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import cast
+
 BLOCKED_HOSTS = ("my.telegram.org",)
 BLOCKED_PEER_IDS = (777000,)
 BLOCKED_PEER_STRINGS = ("+777000", "777000")
@@ -34,12 +36,12 @@ def payload_hits_blocked(payload: object) -> bool:
         item = stack.pop()
         visited += 1
         if isinstance(item, dict):
-            for value in item.values():
+            for value in cast('dict[object, object]', item).values():
                 if is_blocked_peer(value):
                     return True
                 stack.append(value)
         elif isinstance(item, (list, tuple)):
-            for value in item:
+            for value in cast('list[object]' | tuple[object, ...], item):
                 if is_blocked_peer(value):
                     return True
                 stack.append(value)

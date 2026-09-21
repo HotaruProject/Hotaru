@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable, Dict, List, Optional, Union
+from typing import Any, Awaitable, Callable, Dict, List, Union
 
 InlineResult = Union[List[Dict[str, Any]], Dict[str, Any], None]
 InlineHandler = Callable[..., Union[Awaitable[InlineResult], InlineResult]]

@@ -13,20 +13,28 @@ import zipfile
 from dataclasses import dataclass
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Any
+from typing import Awaitable, Callable, TypeVar, TypedDict, cast
 
 from .modules import HmodLoader, ModuleValidationError
+
+T = TypeVar("T")
 
 
 class BackupError(ValueError):
     pass
 
 
+class DryRunResult(TypedDict):
+    format: int
+    files: tuple[str, ...]
+    metadata: dict[str, object]
+
+
 @dataclass(frozen=True)
 class RestorePlan:
     archive: Path
     files: tuple[str, ...]
-    metadata: dict[str, Any]
+    metadata: dict[str, object]
 
 
 class BackupService:
@@ -41,7 +49,7 @@ class BackupService:
         *,
         state_path: str | Path,
         module_paths: Sequence[str | Path],
-        metadata: dict[str, Any] | None = None,
+        metadata: dict[str, object] | None = None,
     ) -> Path:
         files: list[tuple[str, Path]] = []
         state = self._regular(Path(state_path))
@@ -80,7 +88,7 @@ class BackupService:
             temporary_path.unlink(missing_ok=True)
             snapshot.unlink(missing_ok=True)
 
-    def dry_run(self, archive_path: str | Path) -> dict[str, Any]:
+    def dry_run(self, archive_path: str | Path) -> DryRunResult:
         archive = self._regular(Path(archive_path))
         if archive.suffix != ".hbk":
             raise BackupError("backup must use the .hbk extension")
@@ -91,17 +99,22 @@ class BackupService:
             if any(Path(name).is_absolute() or ".." in Path(name).parts for name in names):
                 raise BackupError("backup contains an unsafe path")
             try:
-                manifest = json.loads(source.read("manifest.json"))
+                decoded = cast(object, json.loads(source.read("manifest.json")))
             except (json.JSONDecodeError, UnicodeDecodeError) as exc:
                 raise BackupError("backup manifest is invalid") from exc
-            records = manifest.get("files")
-            if manifest.get("format") != 1 or not isinstance(records, dict):
+            if not isinstance(decoded, dict):
                 raise BackupError("backup manifest is unsupported")
+            manifest = cast('dict[str, object]', decoded)
+            records_value = manifest.get("files")
+            if manifest.get("format") != 1 or not isinstance(records_value, dict):
+                raise BackupError("backup manifest is unsupported")
+            records = cast('dict[str, object]', records_value)
             expected = {"manifest.json", *records}
             if set(names) != expected:
                 raise BackupError("backup archive contains unexpected files")
-            for name, record in records.items():
-                if name not in names or not isinstance(record, dict):
+            for name, record_value in records.items():
+                record = cast('dict[str, object]', record_value) if isinstance(record_value, dict) else None
+                if name not in names or record is None:
                     raise BackupError("backup manifest does not match archive")
                 data = source.read(name)
                 if len(data) != record.get("size") or hashlib.sha256(data).hexdigest() != record.get("sha256"):
@@ -110,16 +123,18 @@ class BackupService:
                     self._validate_state(data)
                 elif name.startswith("modules/"):
                     self._validate_module(data)
-            return {"format": 1, "files": tuple(sorted(records)), "metadata": manifest.get("metadata", {})}
+            metadata = manifest.get("metadata", {})
+            return {"format": 1, "files": tuple(sorted(records)), "metadata": cast('dict[str, object]', metadata) if isinstance(metadata, dict) else {}}
 
     @classmethod
-    def _validate_metadata(cls, value: Any, depth: int = 0) -> None:
+    def _validate_metadata(cls, value: object, depth: int = 0) -> None:
         if depth > 4:
             raise BackupError("backup metadata is too deep")
         if isinstance(value, dict):
-            if len(value) > 64:
+            mapping = cast('dict[object, object]', value)
+            if len(mapping) > 64:
                 raise BackupError("backup metadata has too many fields")
-            for key, item in value.items():
+            for key, item in mapping.items():
                 if not isinstance(key, str):
                     raise BackupError("backup metadata keys must be strings")
                 lowered = key.casefold()
@@ -127,9 +142,10 @@ class BackupService:
                     raise BackupError("backup metadata contains a sensitive key")
                 cls._validate_metadata(item, depth + 1)
         elif isinstance(value, list):
-            if len(value) > 64:
+            values = cast('list[object]', value)
+            if len(values) > 64:
                 raise BackupError("backup metadata list is too large")
-            for item in value:
+            for item in values:
                 cls._validate_metadata(item, depth + 1)
         elif not isinstance(value, (str, int, float, bool)) and value is not None:
             raise BackupError("backup metadata is not JSON-compatible")
@@ -242,11 +258,11 @@ class BackupService:
     async def restore(
         self,
         archive_path: str | Path | RestorePlan,
-        activate: Any,
+        activate: Callable[[Path], T | Awaitable[T]],
         *,
-        rollback: Any | None = None,
+        rollback: Callable[[], object | Awaitable[object]] | None = None,
         timeout: float = 10.0,
-    ) -> Any:
+    ) -> T:
         if timeout <= 0:
             raise ValueError("timeout must be positive")
         plan = archive_path if isinstance(archive_path, RestorePlan) else self.plan(archive_path)

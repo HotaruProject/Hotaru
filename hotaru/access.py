@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-import json
 import time
 from dataclasses import dataclass, field
 from enum import IntFlag
-from typing import Any
+from typing import Any, cast
 
 from .state import StateStore
 
@@ -77,22 +76,24 @@ class AccessStore:
         self.reload()
 
     def reload(self) -> None:
-        raw = self.state.get_setting(self.KEY, [])
+        raw = cast(object, self.state.get_setting(self.KEY, []))
         entries: dict[int, AccessEntry] = {}
         if isinstance(raw, list):
-            for item in raw:
+            for item in cast('list[object]', raw):
                 if not isinstance(item, dict):
                     continue
-                user_id = item.get("user_id")
+                record = cast('dict[str, object]', item)
+                user_id = record.get("user_id")
                 if not isinstance(user_id, int) or user_id <= 0:
                     continue
-                bits = item.get("permissions", 0)
+                bits = record.get("permissions", 0)
+                added_by = record.get("added_by")
                 entries[user_id] = AccessEntry(
                     user_id=user_id,
                     permissions=Permission(bits) if isinstance(bits, int) else Permission(0),
-                    label=str(item.get("label", "") or ""),
-                    added_at=float(item.get("added_at", 0.0) or 0.0),
-                    added_by=item.get("added_by"),
+                    label=str(record.get("label", "") or ""),
+                    added_at=float(cast(int | float | str, record.get("added_at", 0.0) or 0.0)),
+                    added_by=added_by if isinstance(added_by, int) else None,
                 )
         self._cache = entries
 
@@ -113,7 +114,7 @@ class AccessStore:
         return self._cache.get(user_id)
 
     def grant(self, user_id: int, permissions: Permission, *, label: str = "", added_by: int | None = None) -> AccessEntry:
-        if not isinstance(user_id, int) or user_id <= 0:
+        if user_id <= 0:
             raise AccessError("user id must be a positive integer")
         entry = self._cache.get(user_id)
         if entry is None:
@@ -175,23 +176,23 @@ class AccessManager:
         self._tsec_cache: list[TsecRule] | None = None
 
     def set_owner(self, owner_id: int | None) -> None:
-        if owner_id is not None and (not isinstance(owner_id, int) or owner_id <= 0):
+        if owner_id is not None and owner_id <= 0:
             raise AccessError("owner id must be a positive integer")
         self.owner_id = owner_id
 
     @property
     def owners(self) -> tuple[int, ...]:
-        raw = self.store.state.get_setting(self.KEY_OWNERS, [])
-        extra = tuple(sorted({int(u) for u in raw if isinstance(u, int) and u > 0})) if isinstance(raw, list) else ()
+        raw = cast(object, self.store.state.get_setting(self.KEY_OWNERS, []))
+        extra = tuple(sorted({u for u in cast('list[object]', raw) if isinstance(u, int) and u > 0})) if isinstance(raw, list) else ()
         return (self.owner_id,) + tuple(u for u in extra if u != self.owner_id) if self.owner_id is not None else extra
 
     def add_owner(self, user_id: int) -> bool:
-        if not isinstance(user_id, int) or user_id <= 0:
+        if user_id <= 0:
             raise AccessError("user id must be a positive integer")
         if user_id == self.owner_id or user_id in self.owners:
             return False
-        raw = self.store.state.get_setting(self.KEY_OWNERS, [])
-        users = [u for u in raw if isinstance(u, int)] if isinstance(raw, list) else []
+        raw = cast(object, self.store.state.get_setting(self.KEY_OWNERS, []))
+        users = [u for u in cast('list[object]', raw) if isinstance(u, int)] if isinstance(raw, list) else []
         users.append(user_id)
         self.store.state.set_setting(self.KEY_OWNERS, users)
         return True
@@ -199,8 +200,8 @@ class AccessManager:
     def remove_owner(self, user_id: int) -> bool:
         if user_id == self.owner_id:
             raise AccessError("account owner cannot be removed")
-        raw = self.store.state.get_setting(self.KEY_OWNERS, [])
-        users = [u for u in raw if isinstance(u, int)] if isinstance(raw, list) else []
+        raw = cast(object, self.store.state.get_setting(self.KEY_OWNERS, []))
+        users = [u for u in cast('list[object]', raw) if isinstance(u, int)] if isinstance(raw, list) else []
         if user_id not in users:
             return False
         users.remove(user_id)
@@ -210,14 +211,21 @@ class AccessManager:
     def sgroups(self) -> dict[str, SecurityGroup]:
         if self._groups_cache is not None:
             return self._groups_cache
-        raw = self.store.state.get_setting(self.KEY_SGROUPS, {})
+        raw = cast(object, self.store.state.get_setting(self.KEY_SGROUPS, {}))
         groups: dict[str, SecurityGroup] = {}
         if isinstance(raw, dict):
-            for name, body in raw.items():
+            for name, body in cast('dict[object, object]', raw).items():
                 if not isinstance(name, str) or not isinstance(body, dict):
                     continue
-                users = [int(u) for u in body.get("users", []) if isinstance(u, int)]
-                perms = [dict(p) for p in body.get("permissions", []) if isinstance(p, dict)]
+                record = cast('dict[str, object]', body)
+                user_values = record.get("users", [])
+                permission_values = record.get("permissions", [])
+                users = [u for u in cast('list[object]', user_values) if isinstance(u, int)] if isinstance(user_values, list) else []
+                perms: list[dict[str, Any]] = []
+                if isinstance(permission_values, list):
+                    for permission in cast('list[object]', permission_values):
+                        if isinstance(permission, dict):
+                            perms.append(cast('dict[str, Any]', permission))
                 groups[name] = SecurityGroup(name=name, users=users, permissions=perms)
         self._groups_cache = groups
         return groups
@@ -256,20 +264,21 @@ class AccessManager:
     def tsec_rules(self) -> list[TsecRule]:
         if self._tsec_cache is not None:
             return self._tsec_cache
-        raw = self.store.state.get_setting(self.KEY_TSEC, [])
+        raw = cast(object, self.store.state.get_setting(self.KEY_TSEC, []))
         rules: list[TsecRule] = []
         if isinstance(raw, list):
-            for item in raw:
+            for item in cast('list[object]', raw):
                 if not isinstance(item, dict):
                     continue
+                record = cast('dict[str, object]', item)
                 try:
                     rule = TsecRule(
-                        target_type=str(item.get("target_type", "")),
-                        target=str(item.get("target") or ""),
-                        rule_type=str(item.get("rule_type", "")),
-                        rule=str(item.get("rule", "")),
-                        expires=float(item.get("expires", 0.0) or 0.0),
-                        label=str(item.get("label", "") or ""),
+                        target_type=str(record.get("target_type", "")),
+                        target=str(record.get("target") or ""),
+                        rule_type=str(record.get("rule_type", "")),
+                        rule=str(record.get("rule", "")),
+                        expires=float(cast(int | float | str, record.get("expires", 0.0) or 0.0)),
+                        label=str(record.get("label", "") or ""),
                     )
                     rule.validate()
                     rules.append(rule)
@@ -311,7 +320,7 @@ class AccessManager:
 
     def remove_tsec(self, target_type: str, target: int | str, rule: str) -> bool:
         rules = self.tsec_rules()
-        kept = []
+        kept: list[TsecRule] = []
         removed = False
         for existing in rules:
             if existing.target_type == target_type and existing.target == target and rule in {existing.rule, "*"}:
@@ -324,7 +333,7 @@ class AccessManager:
 
     def remove_tsec_all(self, target_type: str, target: int | str | None) -> bool:
         rules = self.tsec_rules()
-        kept = []
+        kept: list[TsecRule] = []
         removed = False
         for existing in rules:
             if target is None or target == "*":
@@ -431,37 +440,39 @@ class AccessManager:
         )
 
     def set_default_permission(self, module_id: str, command: str, permission: Permission) -> None:
-        raw = self.store.state.get_setting("access:defaults", {})
+        raw = cast(object, self.store.state.get_setting("access:defaults", {}))
         if not isinstance(raw, dict):
             raw = {}
-        raw[f"{module_id}:{command}"] = int(permission)
-        self.store.state.set_setting("access:defaults", raw)
+        values = cast('dict[str, object]', raw)
+        values[f"{module_id}:{command}"] = int(permission)
+        self.store.state.set_setting("access:defaults", values)
 
     def default_permission(self, module_id: str, command: str) -> Permission:
-        raw = self.store.state.get_setting("access:defaults", {})
+        raw = cast(object, self.store.state.get_setting("access:defaults", {}))
         if isinstance(raw, dict):
-            bits = raw.get(f"{module_id}:{command}")
+            bits = cast('dict[str, object]', raw).get(f"{module_id}:{command}")
             if isinstance(bits, int):
                 return Permission(bits)
         return DEFAULT_COMMAND_PERMISSION
 
     def clear_default(self, module_id: str, command: str) -> bool:
-        raw = self.store.state.get_setting("access:defaults", {})
+        raw = cast(object, self.store.state.get_setting("access:defaults", {}))
         if not isinstance(raw, dict):
             return False
+        values = cast('dict[str, object]', raw)
         key = f"{module_id}:{command}"
-        if key not in raw:
+        if key not in values:
             return False
-        raw.pop(key)
-        self.store.state.set_setting("access:defaults", raw)
+        values.pop(key)
+        self.store.state.set_setting("access:defaults", values)
         return True
 
     def defaults_items(self) -> tuple[tuple[str, str, Permission], ...]:
-        raw = self.store.state.get_setting("access:defaults", {})
+        raw = cast(object, self.store.state.get_setting("access:defaults", {}))
         if not isinstance(raw, dict):
             return ()
-        result = []
-        for key, bits in sorted(raw.items()):
+        result: list[tuple[str, str, Permission]] = []
+        for key, bits in sorted(cast('dict[str, object]', raw).items()):
             module_id, _, command = key.partition(":")
             if command:
                 result.append((module_id, command, Permission(bits) if isinstance(bits, int) else Permission(0)))
@@ -487,7 +498,7 @@ def permission_from_label(label: str) -> Permission | None:
 def permission_label(permission: Permission) -> str:
     if permission == Permission.EVERYONE:
         return "everyone"
-    names = []
+    names: list[str] = []
     if permission & Permission.OWNER:
         names.append("owner")
     if permission & Permission.ADMIN:

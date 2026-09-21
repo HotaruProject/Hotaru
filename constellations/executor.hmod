@@ -18,7 +18,6 @@ import pty
 import textwrap
 import time
 import traceback
-import json
 from dataclasses import fields as _dc_fields
 from dataclasses import is_dataclass
 from typing import Any, cast
@@ -173,12 +172,6 @@ def _clean_code(text: str) -> str:
     return text
 
 
-def _truncate(text: str, max_len: int = 3500) -> str:
-    if len(text) > max_len:
-        return text[:max_len] + f"\n\n... [Cut: {len(text) - max_len} chars]"
-    return text
-
-
 def _censor(ret: str, ctx: Any) -> str:
     runtime = getattr(ctx, "runtime", None)
     if runtime is not None:
@@ -234,10 +227,10 @@ class OutputUpdater:
         self.master_fd: Any = None
         self.process: Any = None
 
-    def _strip_ansi(self, text: str) -> str:
+    def strip_ansi(self, text: str) -> str:
         text = self.ansi_re.sub('', text)
         lines = text.split('\n')
-        res = []
+        res: list[str] = []
         for line in lines:
             parts = line.split('\r')
             valid_parts = [p for p in parts if p]
@@ -315,10 +308,11 @@ class OutputUpdater:
     def _kbd(self, buttons: list[Any] | None) -> dict[str, Any] | None:
         if not buttons:
             return None
-        rows = []
+        rows: list[list[dict[str, Any]]] = []
         for row in buttons:
-            clean = []
+            clean: list[dict[str, Any]] = []
             for b in row:
+                b = cast('dict[str, Any]', b)
                 item = {"text": str(b.get("text", ""))}
                 if b.get("callback_data") is not None:
                     item["callback_data"] = b["callback_data"]
@@ -362,7 +356,7 @@ class OutputUpdater:
         async with self._lock:
             if self.closed and not final:
                 return
-            buffer_str = self._strip_ansi(self.buffer).strip()
+            buffer_str = self.strip_ansi(self.buffer).strip()
             if sections is None:
                 sections = [("code" if self.is_py else "command", self.cmd, True)]
                 if buffer_str:
@@ -432,26 +426,6 @@ class StreamInterceptor(io.StringIO):
         return res
 
 
-async def _send_result(ctx: Any, sections: list[Any], elapsed_ms: float) -> None:
-    header = f"<code>{elapsed_ms:.1f}ms</code>"
-    parts = [f"<b>Executor</b> | {header}\n"]
-    for entry in sections:
-        title, content, is_code = entry[0], entry[1], entry[2]
-        lang = entry[3] if len(entry) > 3 else None
-        if not content:
-            continue
-        esc = _escape(_truncate(_censor(content, ctx)))
-        if is_code:
-            if lang:
-                block = f'<pre><code class="language-{lang}">{esc}</code></pre>'
-            else:
-                block = f"<pre>{esc}</pre>"
-            parts.append(f"<b>{_escape(title)}:</b>\n{block}")
-        else:
-            parts.append(f"<code>{_escape(title)}:</code> {esc}")
-    await ctx.respond("\n\n".join(parts), parse_mode="HTML", rich=False)
-
-
 def _get_raw_text(invocation: Any) -> str:
     msg = getattr(invocation, "message", None)
     if msg is None:
@@ -475,6 +449,7 @@ def _msg_id(value: Any) -> Any:
     if value is None:
         return None
     if isinstance(value, dict):
+        value = cast('dict[str, Any]', value)
         mid = value.get("id") or value.get("message_id") or value.get("msg_id")
         return int(mid) if isinstance(mid, int) else None
     mid = getattr(value, "id", None) or getattr(value, "message_id", None) or getattr(value, "msg_id", None)
@@ -489,7 +464,7 @@ def _attr_or(obj: Any, *names: Any) -> Any:
     if isinstance(obj, dict):
         for name in names:
             if name in obj:
-                return obj[name]
+                return cast(Any, obj[name])
         return None
     for name in names:
         value = getattr(obj, name, None)
@@ -539,14 +514,17 @@ def _sent_id(result: Any) -> Any:
         return None
     body = getattr(result, "message", result) if hasattr(result, "delivered") else result
     if isinstance(body, dict):
-        body = body.get("result", body)
+        body_dict = cast('dict[str, Any]', body)
+        body = body_dict.get("result", body_dict)
     sent = extract_sent_message(body)
     if sent is not None:
-        mid = sent.get("id") if isinstance(sent, dict) else getattr(sent, "id", None)
+        mid = sent.get("id")
         if isinstance(mid, int):
             return int(mid)
-    if isinstance(result, dict) and isinstance(result.get("message_id"), int):
-        return int(result["message_id"])
+    if isinstance(result, dict):
+        result_dict = cast('dict[str, Any]', result)
+        if isinstance(result_dict.get("message_id"), int):
+            return int(result_dict["message_id"])
     return _msg_id(body)
 
 
@@ -557,14 +535,15 @@ _SKIP = {"raw", "bytes", "access_hash", "file_reference", "phone", "api_hash", "
 def _clean_dict(d: Any) -> Any:
     if not isinstance(d, dict):
         return d
-    cleaned = {}
+    d = cast('dict[Any, Any]', d)
+    cleaned: dict[Any, Any] = {}
     for k, v in d.items():
         if k in _SKIP:
             continue
         if isinstance(v, dict):
             cleaned[k] = _clean_dict(v)
         elif isinstance(v, list):
-            cleaned[k] = [_clean_dict(i) if isinstance(i, dict) else i for i in v]
+            cleaned[k] = [_clean_dict(i) if isinstance(i, dict) else i for i in cast('list[Any]', v)]
         else:
             cleaned[k] = v
     return cleaned
@@ -599,7 +578,7 @@ def _format_val(v: Any, indent: int = 0, key: str = "") -> str:
         if not v:
             return "[]"
         lines = ["["]
-        for val in v:
+        for val in cast('list[Any]', v):
             lines.append(" " * (indent + 4) + f"{_format_val(val, indent + 4)},")
         lines.append(" " * indent + "]")
         return "\n".join(lines)
@@ -681,7 +660,7 @@ class _MsgProxy:
         plain = self._g("text", "raw_text", "message", "caption") or ""
         if not isinstance(plain, str):
             plain = str(plain) if plain else ""
-        ents = self._g("entities") or []
+        ents = cast(Any, self._g("entities") or [])
         tools = _tools(self.__dict__["_ctx"])
         conv = getattr(tools, "entities_to_html", None) if tools is not None else None
         if conv is not None:
@@ -842,11 +821,11 @@ class _MsgProxy:
         raw = self.__dict__.get("_raw")
         if raw is None:
             return "MsgProxy(empty)"
-        data = {}
+        data: dict[str, Any] = {}
         if hasattr(raw, "items"):
-            data = dict(raw)
+            data = dict(cast('dict[str, Any]', raw))
         elif hasattr(raw, "__dict__"):
-            data = {k: v for k, v in vars(raw).items() if not k.startswith("_")}
+            data = {k: v for k, v in cast('dict[str, Any]', vars(raw)).items() if not k.startswith("_")}
         data = _clean_dict(data)
         if "id" not in data and self.id is not None:
             data["id"] = self.id
@@ -1032,6 +1011,7 @@ class _DBProxy:
         lst = self.get(key, [])
         if not isinstance(lst, list):
             lst = [lst]
+        lst = cast('list[Any]', lst)
         lst.append(item)
         if max_len is not None:
             lst = lst[-max_len:]
@@ -1310,7 +1290,6 @@ async def command_sh(ctx: Any, invocation: Any) -> Any:
 
     inv_msg_id = _msg_id(invocation.message)
 
-    start_time = time.perf_counter()
     env = os.environ.copy()
     env["TERM"] = "xterm"
     bindir = os.path.dirname(sys.executable)
@@ -1392,7 +1371,7 @@ async def command_sh(ctx: Any, invocation: Any) -> Any:
     if skip_output:
         return
 
-    buffer_str = updater._strip_ansi(updater.buffer).strip()
+    buffer_str = updater.strip_ansi(updater.buffer).strip()
     sections = [("command", cmd, True)]
     if buffer_str:
         sections.append(("output", buffer_str, True))
@@ -1507,7 +1486,7 @@ async def command_py(ctx: Any, invocation: Any) -> Any:
         return
 
     sections: list[Any] = [("code", raw_code, True)]
-    buffer_str = updater._strip_ansi(updater.buffer).strip()
+    buffer_str = updater.strip_ansi(updater.buffer).strip()
     if buffer_str:
         sections.append(("output", buffer_str, True))
     if result_val is not _SENTINEL:

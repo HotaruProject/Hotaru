@@ -11,13 +11,17 @@ import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from .i18n import SUPPORTED_LANGUAGES
 
 
 class ModuleValidationError(ValueError):
     pass
+
+
+def _object_dict() -> dict[str, object]:
+    return {}
 
 
 @dataclass(frozen=True)
@@ -27,10 +31,10 @@ class ModuleManifest:
     commands: tuple[str, ...]
     capabilities: tuple[str, ...]
     watchers: tuple[str, ...] = ()
-    tasks: dict[str, dict[str, Any]] | None = None
+    tasks: dict[str, dict[str, object]] | None = None
     aliases: dict[str, str] | None = None
-    config_schema: dict[str, Any] | None = None
-    lexicon: dict[str, dict[str, Any]] | None = None
+    config_schema: dict[str, object] | None = None
+    lexicon: dict[str, dict[str, object]] | None = None
     requires: tuple[str, ...] = ()
     after: tuple[str, ...] = ()
     inline_commands: tuple[str, ...] = ()
@@ -39,7 +43,8 @@ class ModuleManifest:
 
     @property
     def description(self) -> str:
-        return self.localized("en").get("description", "")
+        value = self.localized("en").get("description", "")
+        return value if isinstance(value, str) else ""
 
     def __post_init__(self) -> Any:
         if self.tasks is None:
@@ -51,12 +56,12 @@ class ModuleManifest:
         if self.lexicon is None:
             object.__setattr__(self, "lexicon", {})
 
-    def localized(self, language: str, fallback: str | None = None) -> dict[str, Any]:
+    def localized(self, language: str, fallback: str | None = None) -> dict[str, object]:
         if self.lexicon:
             selected = self.lexicon.get(language) or self.lexicon.get("en") or {}
         else:
             selected = _kernel_lexicon_lookup(self.module_id, language)
-        result = dict(selected) if isinstance(selected, dict) else {}
+        result = dict(selected)
         if "description" not in result and fallback is not None:
             result["description"] = fallback
         return result
@@ -64,18 +69,17 @@ class ModuleManifest:
     def command_details(self, command: str, language: str, fallback: str | None = None) -> dict[str, str]:
         localized = self.localized(language)
         commands = localized.get("commands", {})
-        details = commands.get(command, {}) if isinstance(commands, dict) else {}
-        if not isinstance(details, dict):
-            details = {}
+        value = cast('dict[str, object]', commands).get(command, _object_dict()) if isinstance(commands, dict) else _object_dict()
+        details = cast('dict[object, object]', value) if isinstance(value, dict) else {}
         if "description" not in details:
             details = {"description": _kernel_command_description(self.module_id, command, language) or fallback, **details}
-        return {key: value for key, value in details.items() if isinstance(key, str) and isinstance(value, str)}
+        return {key: value for key, value in cast('dict[object, object]', details).items() if isinstance(key, str) and isinstance(value, str)}
 
 
-_kernel_lexicon_cache: Any = None
+_kernel_lexicon_cache: object | None = None
 
 
-def _kernel_lexicon() -> Any:
+def _kernel_lexicon() -> object:
     global _kernel_lexicon_cache
     if _kernel_lexicon_cache is None:
         from .i18n import Lexicon
@@ -86,12 +90,15 @@ def _kernel_lexicon() -> Any:
     return _kernel_lexicon_cache
 
 
-def _kernel_lexicon_lookup(module_id: str, language: str) -> dict[str, Any]:
+def _kernel_lexicon_lookup(module_id: str, language: str) -> dict[str, object]:
     try:
-        payload = _kernel_lexicon().bundle(language)
-        block = payload.get("kernel", {}).get(module_id)
+        from .i18n import Lexicon
+
+        payload = cast(Lexicon, _kernel_lexicon()).bundle(language)
+        kernel = payload.get("kernel", {})
+        block = cast('dict[str, object]', kernel).get(module_id) if isinstance(kernel, dict) else None
         if isinstance(block, dict):
-            return block
+            return cast('dict[str, object]', block)
     except Exception:
         pass
     return {}
@@ -99,11 +106,19 @@ def _kernel_lexicon_lookup(module_id: str, language: str) -> dict[str, Any]:
 
 def _kernel_command_description(module_id: str, command: str, language: str) -> str | None:
     try:
-        payload = _kernel_lexicon().bundle(language)
-        commands = payload.get("kernel", {}).get(module_id, {}).get("commands", {})
-        entry = commands.get(command) if isinstance(commands, dict) else None
-        if isinstance(entry, dict) and isinstance(entry.get("description"), str):
-            return entry["description"]
+        from .i18n import Lexicon
+
+        payload = cast(Lexicon, _kernel_lexicon()).bundle(language)
+        kernel = payload.get("kernel", {})
+        module_value = cast('dict[str, object]', kernel).get(module_id, _object_dict()) if isinstance(kernel, dict) else _object_dict()
+        module = cast('dict[str, object]', module_value) if isinstance(module_value, dict) else {}
+        commands_value = module.get("commands", {})
+        commands = cast('dict[str, object]', commands_value) if isinstance(commands_value, dict) else {}
+        entry = commands.get(command)
+        if isinstance(entry, dict):
+            description = cast('dict[str, object]', entry).get("description")
+            if isinstance(description, str):
+                return description
     except Exception:
         pass
     return None
@@ -180,10 +195,10 @@ class HmodLoader:
             raise ModuleValidationError("HOTARU must be a literal mapping") from exc
         if not isinstance(raw, dict):
             raise ModuleValidationError("HOTARU must be a mapping")
-        return HmodLoader._build_manifest(raw)
+        return HmodLoader._build_manifest(cast('dict[object, object]', raw))
 
     @staticmethod
-    def _build_manifest(raw: dict[Any, Any]) -> ModuleManifest:
+    def _build_manifest(raw: dict[object, object]) -> ModuleManifest:
         required = ("id", "version", "commands", "capabilities")
         if any(key not in raw for key in required):
             raise ModuleValidationError("manifest is missing required fields")
@@ -207,7 +222,7 @@ class HmodLoader:
             raise ModuleValidationError("manifest tasks must be a dictionary")
 
         aliases = raw.get("aliases", {})
-        if not isinstance(aliases, dict) or not all(isinstance(k, str) and isinstance(v, str) for k, v in aliases.items()):
+        if not isinstance(aliases, dict) or not all(isinstance(k, str) and isinstance(v, str) for k, v in cast('dict[object, object]', aliases).items()):
             raise ModuleValidationError("manifest aliases must be a string to string dictionary")
 
         config_schema = raw.get("config_schema", {})
@@ -225,14 +240,14 @@ class HmodLoader:
         after = raw.get("after", [])
         if not HmodLoader._strings(after):
             raise ModuleValidationError("manifest after must contain module ids")
-        for dep in after:
+        for dep in cast('list[str]', after):
             if not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,63}", dep):
                 raise ModuleValidationError(f"manifest after entry is invalid: {dep}")
 
         inline_commands = raw.get("inline_commands", [])
         if not HmodLoader._strings(inline_commands):
             raise ModuleValidationError("manifest inline_commands must contain strings")
-        for inline_name in inline_commands:
+        for inline_name in cast('list[str]', inline_commands):
             if not inline_name.isidentifier():
                 raise ModuleValidationError(f"manifest inline command is invalid: {inline_name}")
 
@@ -247,53 +262,53 @@ class HmodLoader:
             raise ModuleValidationError("manifest fade must be a string")
         if fade and not fade.isidentifier():
             raise ModuleValidationError("manifest fade is invalid")
-        for language, translation in translations.items():
+        for language, translation in cast('dict[object, object]', translations).items():
             if language not in SUPPORTED_LANGUAGES or not isinstance(translation, dict):
                 raise ModuleValidationError("manifest translations are invalid")
             if "description" in translation and not isinstance(translation["description"], str):
                 raise ModuleValidationError("manifest translation description is invalid")
-            translated_commands = translation.get("commands", {})
+            translated_commands = cast('dict[str, object]', translation).get("commands", {})
             if not isinstance(translated_commands, dict):
                 raise ModuleValidationError("manifest translation commands are invalid")
-            if not set(translated_commands).issubset(set(commands)):
+            if not set(cast('dict[object, object]', translated_commands)).issubset(set(cast('list[str]', commands))):
                 raise ModuleValidationError("manifest translation contains an unknown command")
-            translated_inline = translation.get("inline_commands", {})
+            translated_inline = cast('dict[str, object]', translation).get("inline_commands", {})
             if not isinstance(translated_inline, dict):
                 raise ModuleValidationError("manifest translation inline commands are invalid")
-            if not set(translated_inline).issubset(set(raw.get("inline_commands", []))):
+            if not set(cast('dict[object, object]', translated_inline)).issubset(set(cast('list[object]', raw.get("inline_commands", [])))):
                 raise ModuleValidationError("manifest translation contains an unknown inline command")
-            for inline_name, meta in translated_inline.items():
+            for inline_name, meta in cast('dict[object, object]', translated_inline).items():
                 if not isinstance(inline_name, str) or not isinstance(meta, dict):
                     raise ModuleValidationError("manifest inline command translation is invalid")
-                for meta_key, meta_value in meta.items():
+                for meta_key, meta_value in cast('dict[object, object]', meta).items():
                     if meta_key not in {"title", "description", "message", "thumb_url"} or not isinstance(meta_value, str):
                         raise ModuleValidationError("manifest inline command translation values are invalid")
-            for command, details in translated_commands.items():
+            for command, details in cast('dict[object, object]', translated_commands).items():
                 if not isinstance(command, str) or not isinstance(details, dict):
                     raise ModuleValidationError("manifest command translation is invalid")
-                if any(not isinstance(value, str) for value in details.values()):
+                if any(not isinstance(value, str) for value in cast('dict[object, object]', details).values()):
                     raise ModuleValidationError("manifest command translation values are invalid")
 
         return ModuleManifest(
-            module_id, 
-            version, 
-            tuple(commands), 
-            tuple(capabilities),
-            tuple(watchers), 
-            tasks,
-            aliases,
-            config_schema,
-            translations,
-            tuple(requires),
-            tuple(after),
-            tuple(inline_commands),
+            module_id,
+            version,
+            tuple(cast("list[str]", commands)),
+            tuple(cast("list[str]", capabilities)),
+            tuple(cast("list[str]", watchers)),
+            cast("dict[str, dict[str, object]]", tasks),
+            cast("dict[str, str]", aliases),
+            cast("dict[str, object]", config_schema),
+            cast("dict[str, dict[str, object]]", translations),
+            tuple(cast("list[str]", requires)),
+            tuple(cast("list[str]", after)),
+            tuple(cast("list[str]", inline_commands)),
             rise,
             fade,
         )
 
     @staticmethod
-    def _strings(value: Any) -> bool:
-        return isinstance(value, list) and all(isinstance(item, str) and item for item in value)
+    def _strings(value: object) -> bool:
+        return isinstance(value, list) and all(isinstance(item, str) and item for item in cast('list[object]', value))
 
 
 class ModuleFetchError(ValueError):
@@ -333,7 +348,7 @@ class ModuleStager:
         try:
             request = urllib.request.Request(url, headers={"Accept": "text/plain"}, method="GET")
             with urllib.request.urlopen(request, timeout=timeout) as response:
-                final = urllib.parse.urlparse(response.geturl())
+                final = urllib.parse.urlparse(cast(str, response.geturl()))
                 if final.scheme != "https" or (final.hostname or "").casefold() != "raw.githubusercontent.com":
                     raise ModuleFetchError("module URL redirected to an unsafe host")
                 content_length = response.headers.get("Content-Length")

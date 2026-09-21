@@ -19,13 +19,12 @@ from collections.abc import Awaitable
 
 from .capabilities import CapabilityBroker
 from .backup import BackupService
-from .callbacks import CallbackBinding, CallbackContext, CallbackDenied, CallbackRouter
+from .callbacks import CallbackBinding, CallbackDenied, CallbackRouter
 from .config import RuntimeConfig
 from .commands import CommandParser
 from goygram.types import InlineObj
 from .events import EventRouter
 from relay.inline import InlineManager
-from relay.inline_tl import to_tl_results
 from relay.inline_tl import answer_tl
 from relay.sandbox import ModuleSandbox
 from relay.caps import CapabilityHost, describe as describe_caps
@@ -46,7 +45,7 @@ from .registry import Handler
 from .response import FormHandle, ModuleContextFactory, ResponseService, reply_message_id
 from .security import SecurityGate
 from .state import StateStore
-from .supervisor import ConnectionSupervisor, Health
+from .supervisor import ConnectionSupervisor
 from .tasks import TaskSupervisor
 from goygram.rich import rich_html
 
@@ -74,7 +73,7 @@ class InputContext:
         return None
 
     async def edit(self, text: str, **kwargs: Any) -> Any:
-        buttons = kwargs.pop("buttons", None) or []
+        buttons: Any = kwargs.pop("buttons", None) or []
         return await self.runtime._edit_input_form(self, text, buttons, kwargs)
 
     async def delete(self) -> bool:
@@ -82,7 +81,7 @@ class InputContext:
         bot = getattr(getattr(self.runtime, "inline", None), "bot_app", None)
         if mid is None or bot is None:
             return True
-        id_field = mid if isinstance(mid, dict) else {"_": "inputBotInlineMessageID", "raw": mid}
+        id_field: dict[str, Any] = cast('dict[str, Any]', mid) if isinstance(mid, dict) else {"_": "inputBotInlineMessageID", "raw": mid}
         try:
             with trusted_scope():
                 await bot.mt_messages_edit_inline_bot_message(id=id_field, message="\u200b")
@@ -129,7 +128,7 @@ class Runtime:
     cap_host: CapabilityHost | None = None
     lexicon: Lexicon | None = None
     closed: bool = False
-    _inline_forms: dict[str, tuple[str, list[dict[str, str]], bool]] | None = None
+    _inline_forms: dict[str, tuple[str, list[list[dict[str, Any]]], bool]] | None = None
     _forms: dict[str, tuple[Any, Any, str, Any, dict[str, Any]]] | None = None
     _input_requests: dict[str, tuple[Any, ...]] | None = None
     _form_expiry: dict[str, float] | None = None
@@ -182,8 +181,9 @@ class Runtime:
         previous_disable = logging.root.manager.disable
         logging.disable(logging.INFO)
         try:
-            from goygram.security import _read_vault
-            session_data = _read_vault(vault, Path(session_name).name) or {} if vault.exists() else {}
+            from goygram import security as goygram_security
+            read_vault = getattr(goygram_security, "_read_vault")
+            session_data: dict[str, Any] = cast('dict[str, Any]', read_vault(vault, Path(session_name).name) or {}) if vault.exists() else {}
             self.app = GoyGram(
                 bot_token=self.config.bot_token if self.config.api_id is None else None,
                 api_id=self.config.api_id,
@@ -284,7 +284,7 @@ class Runtime:
         except CallbackDenied:
             return None
 
-    async def _send_form(self, command: Any, text: str, buttons: list[dict[str, str]], options: dict[str, Any] | None = None) -> Any:
+    async def _send_form(self, command: Any, text: str, buttons: list[Any], options: dict[str, Any] | None = None) -> Any:
         if self.inline is None:
             raise RuntimeError("inline bot form transport is unavailable")
         if self.inline.info is None:
@@ -311,10 +311,6 @@ class Runtime:
             actor = int(owner)
         options.setdefault("callback_actor", actor)
         options.setdefault("delete_source", True)
-        if isinstance(options.get("module_id"), str) and options["module_id"]:
-            module_id = options["module_id"]
-        else:
-            module_id = ""
         chat_id = getattr(command, "chat_id", None)
         if not isinstance(chat_id, (int, str)):
             raise RuntimeError("form target chat is missing")
@@ -340,18 +336,19 @@ class Runtime:
             if not blocked or not await self.inline.reopen_owner_chat(chat_id):
                 raise
             sent = await self.inline.bot_app.send_msg(chat_id, text, reply_to=reply_to if isinstance(reply_to, int) else None, topic_id=topic_id if isinstance(topic_id, int) else None, parse_mode="HTML")
-        body = sent.get("result", sent) if isinstance(sent, dict) else sent
-        form_id = body.get("message_id") if isinstance(body, dict) else getattr(body, "message_id", None)
+        body: Any = cast('dict[str, Any]', sent).get("result", sent) if isinstance(sent, dict) else sent
+        form_id = cast('dict[str, Any]', body).get("message_id") if isinstance(body, dict) else getattr(body, "message_id", None)
         if not isinstance(form_id, int):
             raise RuntimeError("inline form message id is missing")
-        rebound = []
+        rebound: list[list[dict[str, str]]] = []
         for row in buttons:
             if isinstance(row, dict):
-                row = [row]
-            current = []
-            for button in row:
+                row = [cast('dict[str, Any]', row)]
+            current: list[dict[str, str]] = []
+            for button in cast('list[Any]', row):
                 if not isinstance(button, dict):
                     continue
+                button = cast('dict[str, Any]', button)
                 handle = button.get("callback_data")
                 if isinstance(handle, str) and self.callbacks is not None:
                     current.append({"text": button.get("text", ""), "callback_data": self.callbacks.store.rebind(handle, CallbackBinding(actor, chat_id, form_id))})
@@ -369,7 +366,7 @@ class Runtime:
         await bot_app.mt_messages_edit_message( **edit_data)
         if hasattr(command, "delete"):
             await command.delete()
-        return sent
+        return cast('dict[str, Any]', sent) if isinstance(sent, dict) else sent
 
     def register_form(self, handle: Any, source: Any, text: str, buttons: Any, options: dict[str, Any]) -> None:
         if self._forms is None:
@@ -415,52 +412,59 @@ class Runtime:
             try:
                 source = SimpleNamespace(src=row[2], chat_id=int(row[3]) if row[3] else None, id=row[4], inline_message_id=row[5], module_id=row[1])
                 handle = FormHandle(self, source, key=row[0])
-                handle._key = row[0]
-                buttons = json.loads(row[7])
-                options = json.loads(row[8])
+                setattr(handle, "_key", row[0])
+                buttons: Any = json.loads(row[7])
+                options = cast('dict[str, Any]', json.loads(row[8]))
                 module_id = str(row[1] or options.get("module_id", ""))
-                actions = options.get("actions", []) if isinstance(options.get("actions"), list) else []
+                actions = cast('list[Any]', options.get("actions", [])) if isinstance(options.get("actions"), list) else []
                 if actions and self.callbacks is not None and self.kernel is not None:
                     for item in actions:
                         if not isinstance(item, dict):
                             continue
-                        row_index = item.get("row")
-                        column_index = item.get("column")
+                        item_data = cast('dict[str, Any]', item)
+                        row_index = item_data.get("row")
+                        column_index = item_data.get("column")
                         if not isinstance(row_index, int) or not isinstance(column_index, int):
                             continue
                         if row_index >= len(buttons):
                             continue
-                        row_items = [buttons[row_index]] if isinstance(buttons[row_index], dict) else buttons[row_index]
-                        if not isinstance(row_items, list) or column_index >= len(row_items):
+                        row_value: Any = cast('list[Any]', buttons)[row_index]
+                        row_items: Any = [cast('dict[str, Any]', row_value)] if isinstance(row_value, dict) else row_value
+                        if not isinstance(row_items, list):
                             continue
-                        button = row_items[column_index]
+                        row_values = cast('list[Any]', row_items)
+                        if column_index >= len(row_values):
+                            continue
+                        button = row_values[column_index]
                         if not isinstance(button, dict):
                             continue
-                        action_id = str(item.get("action_id", ""))
+                        button = cast('dict[str, Any]', button)
+                        action_id = str(item_data.get("action_id", ""))
                         if not action_id or not self.callbacks.module_action_exists(module_id, action_id):
                             continue
                         button["_action_id"] = action_id
-                        button["_payload"] = item.get("payload")
+                        button["_payload"] = item_data.get("payload")
                         actor = options.get("callback_actor")
                         if not isinstance(actor, int):
                             actor = int(self.kernel.owner_id or 0)
-                        button["callback_data"] = self.callbacks.issue_module(module_id, action_id, CallbackBinding(actor, None, 0), item.get("payload"))
+                        button["callback_data"] = self.callbacks.issue_module(module_id, action_id, CallbackBinding(actor, None, 0), item_data.get("payload"))
 
                 if not module_id or self.modules is None:
                     raise ValueError("restored form owner is unavailable")
                 rehydrated = self.modules.rehydrate_form(module_id, {"form_id": row[0], "text": row[6], "buttons": buttons, "options": options})
                 if asyncio.iscoroutine(rehydrated) or isinstance(rehydrated, asyncio.Future):
-                    rehydrated = await rehydrated
+                    rehydrated = cast(Any, await rehydrated)
                 if rehydrated is None and not actions:
                     rehydrated = {"text": row[6], "buttons": buttons}
                 elif rehydrated is None:
                     raise ValueError("restored form actions are unavailable")
                 if not isinstance(rehydrated, dict):
                     raise ValueError("restored form rehydrator is invalid")
-                row_text = str(rehydrated.get("text", row[6]))
-                row_buttons = rehydrated.get("buttons", buttons)
-                if isinstance(rehydrated.get("options"), dict):
-                    options.update(rehydrated["options"])
+                rehydrated_data = cast('dict[str, Any]', rehydrated)
+                row_text = str(rehydrated_data.get("text", row[6]))
+                row_buttons: Any = rehydrated_data.get("buttons", buttons)
+                if isinstance(rehydrated_data.get("options"), dict):
+                    options.update(cast('dict[str, Any]', rehydrated_data["options"]))
                 if not isinstance(row_buttons, list):
                     raise ValueError("restored form buttons are invalid")
                 self._forms[row[0]] = (handle, source, row_text, row_buttons, options)
@@ -484,8 +488,8 @@ class Runtime:
     async def unload_module_forms(self, module_id: str) -> int:
         if self._forms is None:
             return 0
-        handles = []
-        for handle, source, text, buttons, options in tuple(self._forms.values()):
+        handles: list[Any] = []
+        for handle, _source, _text, _buttons, options in tuple(self._forms.values()):
             if options.get("module_id") == module_id:
                 handles.append(handle)
         for handle in handles:
@@ -613,15 +617,17 @@ class Runtime:
         self.state.connection.commit()
 
     def _form_actions(self, buttons: Any) -> list[dict[str, Any]]:
-        result = []
-        for row in buttons or []:
-            row = [row] if isinstance(row, dict) else row
-            for button in row:
-                if isinstance(button, dict) and button.get("_action_id"):
-                    result.append({"action_id": button["_action_id"], "payload": button.get("_payload")})
+        result: list[dict[str, Any]] = []
+        for row in cast('list[Any]', buttons or []):
+            row = [cast('dict[str, Any]', row)] if isinstance(row, dict) else row
+            for button in cast('list[Any]', row):
+                if isinstance(button, dict):
+                    button_data = cast('dict[str, Any]', button)
+                    if button_data.get("_action_id"):
+                        result.append({"action_id": button_data["_action_id"], "payload": button_data.get("_payload")})
         return result
 
-    async def _insert_inline_form(self, command: Any, text: str, buttons: list[dict[str, str]], options: dict[str, Any] | None = None) -> Any:
+    async def _insert_inline_form(self, command: Any, text: str, buttons: list[Any], options: dict[str, Any] | None = None) -> Any:
         if self.inline is None or self.inline.info is None or self.app is None or self.app.mt is None:
             raise RuntimeError("inline insertion transport is not ready")
         chat_id = getattr(command, "chat_id", None)
@@ -645,15 +651,16 @@ class Runtime:
         self._form_module_ids[nonce] = str(options.get("module_id") or "")
         if self._inline_forms is None:
             self._inline_forms = {}
-        inline_buttons = []
-        action_records = []
+        inline_buttons: list[list[dict[str, Any]]] = []
+        action_records: list[dict[str, Any]] = []
         for row_index, row in enumerate(buttons):
             if isinstance(row, dict):
-                row = [row]
-            current = []
-            for column_index, button in enumerate(row):
+                row = [cast('dict[str, Any]', row)]
+            current: list[dict[str, Any]] = []
+            for column_index, button in enumerate(cast('list[Any]', row)):
                 if not isinstance(button, dict):
                     continue
+                button = cast('dict[str, Any]', button)
                 if callable(button.get("handler")) and isinstance(button.get("input"), str):
                     token = secrets.token_urlsafe(10)
                     if self._input_requests is None:
@@ -711,15 +718,15 @@ class Runtime:
             query="hotaru-form:" + nonce,
             offset="",
         )
-        body = result.get("result", result) if isinstance(result, dict) else result
-        if isinstance(body, dict) and isinstance(body.get("bot_results"), dict):
-            body = body["bot_results"]
-        if isinstance(body, dict) and isinstance(body.get("results"), dict):
-            body = body["results"]
-        if isinstance(body, dict) and isinstance(body.get("query"), dict):
-            body = body["query"]
-        query_id = body.get("query_id") if isinstance(body, dict) else None
-        results = body.get("results") if isinstance(body, dict) else None
+        body: Any = cast('dict[str, Any]', result).get("result", result) if isinstance(result, dict) else result
+        if isinstance(body, dict) and isinstance(cast('dict[str, Any]', body).get("bot_results"), dict):
+            body = cast('dict[str, Any]', body)["bot_results"]
+        if isinstance(body, dict) and isinstance(cast('dict[str, Any]', body).get("results"), dict):
+            body = cast('dict[str, Any]', body)["results"]
+        if isinstance(body, dict) and isinstance(cast('dict[str, Any]', body).get("query"), dict):
+            body = cast('dict[str, Any]', body)["query"]
+        query_id = cast('dict[str, Any]', body).get("query_id") if isinstance(body, dict) else None
+        results = cast('dict[str, Any]', body).get("results") if isinstance(body, dict) else None
         if not isinstance(query_id, (int, str)) or not isinstance(results, list) or not results:
             raise RuntimeError("inline bot returned no form result")
         if self._form_chosen is None:
@@ -728,10 +735,10 @@ class Runtime:
         ready.clear()
         sent_result = await self.app.mt_messages_send_inline_bot_result(
             peer=peer,
-            reply_to={"_": "inputReplyToMessage", "reply_to_msg_id": reply_to, **({"top_msg_id": options.get("topic_id")} if isinstance(options, dict) and isinstance(options.get("topic_id"), int) else {})},
+            reply_to={"_": "inputReplyToMessage", "reply_to_msg_id": reply_to, **({"top_msg_id": options.get("topic_id")} if isinstance(options.get("topic_id"), int) else {})},
             random_id=secrets.randbits(63),
             query_id=query_id,
-            id=results[0].get("id"),
+            id=cast('dict[str, Any]', cast('list[Any]', results)[0]).get("id"),
             clear_draft=True,
         )
         try:
@@ -752,7 +759,7 @@ class Runtime:
                 self.state.set_setting("inline-reference-chat", chat_id)
                 self.state.set_setting("inline-reference-message", int(sent["id"]))
             return sent
-        return result
+        return cast('dict[str, Any]', result) if isinstance(result, dict) else result
 
     async def _delete_inline_source(self, command: Any, chat_id: int | str, message_id: int) -> None:
         if getattr(command, "src", None) == "bot":
@@ -849,7 +856,6 @@ class Runtime:
         finally:
             if self._input_requests is not None:
                 self._input_requests.pop(token, None)
-        form_id = (self._form_inline_ids or {}).get(form_nonce) if form_nonce else None
         await self._drop_transfer(source, ctx.inline_message_id)
 
     async def _edit_input_form(self, ctx: InputContext, text: str, buttons: Any, options: dict[str, Any]) -> Any:
@@ -864,7 +870,7 @@ class Runtime:
         bot = getattr(getattr(self, "inline", None), "bot_app", None)
         if bot is None:
             raise RuntimeError("inline bot is not ready")
-        layout = []
+        layout: list[list[dict[str, Any]]] = []
         command = ctx.source
         if nonce is None:
             nonce = secrets.token_urlsafe(12)
@@ -872,13 +878,14 @@ class Runtime:
         actor = options.get("callback_actor")
         if not isinstance(actor, int):
             actor = int(getattr(command, "from_id", 0) or getattr(self.kernel, "owner_id", 0) or 0)
-        for row in buttons or []:
+        for row in cast('list[Any]', buttons or []):
             if isinstance(row, dict):
-                row = [row]
-            current = []
-            for button in row:
+                row = [cast('dict[str, Any]', row)]
+            current: list[dict[str, Any]] = []
+            for button in cast('list[Any]', row):
                 if not isinstance(button, dict):
                     continue
+                button = cast('dict[str, Any]', button)
                 if callable(button.get("handler")) and isinstance(button.get("input"), str):
                     token = secrets.token_urlsafe(10)
                     if self._input_requests is None:
@@ -903,15 +910,14 @@ class Runtime:
                 else:
                     current.append({key: value for key, value in button.items() if key not in {"style", "handler", "callback", "payload"}})
             layout.append(current)
-        if nonce is not None:
-            if self._inline_forms is None:
-                self._inline_forms = {}
-            self._inline_forms[nonce] = (text, layout, bool(options.get("rich", False)))
-            if module_id:
-                if self._form_module_ids is None:
-                    self._form_module_ids = {}
-                self._form_module_ids[nonce] = module_id
-        id_field = inline_id if isinstance(inline_id, dict) else {"_": "inputBotInlineMessageID", "raw": inline_id}
+        if self._inline_forms is None:
+            self._inline_forms = {}
+        self._inline_forms[nonce] = (text, layout, bool(options.get("rich", False)))
+        if module_id:
+            if self._form_module_ids is None:
+                self._form_module_ids = {}
+            self._form_module_ids[nonce] = module_id
+        id_field: dict[str, Any] = cast('dict[str, Any]', inline_id) if isinstance(inline_id, dict) else {"_": "inputBotInlineMessageID", "raw": inline_id}
         if options.get("rich"):
             data: dict[str, Any] = {"id": id_field, "message": "", "rich_message": {"_": "inputRichMessageHTML", **rich_html(text)}}
         else:
@@ -928,7 +934,7 @@ class Runtime:
     async def _drop_transfer(self, source: Any, inline_id: Any) -> None:
         bot = getattr(getattr(self, "inline", None), "bot_app", None)
         if inline_id is not None and bot is not None:
-            id_field = inline_id if isinstance(inline_id, dict) else {"_": "inputBotInlineMessageID", "raw": inline_id}
+            id_field: dict[str, Any] = cast('dict[str, Any]', inline_id) if isinstance(inline_id, dict) else {"_": "inputBotInlineMessageID", "raw": inline_id}
             try:
                 with trusted_scope():
                     await bot.mt_messages_edit_inline_bot_message(id=id_field, message="\u200b")
@@ -945,18 +951,21 @@ class Runtime:
                 hist = await app.mt_messages_get_history(peer=peer, offset_id=0, offset_date=0, add_offset=0, limit=8, max_id=0, min_id=0, hash=0)
         except Exception:
             return
-        body = hist.get("result", hist) if isinstance(hist, dict) else hist
-        for message in (body.get("messages") if isinstance(body, dict) else None) or []:
+        body: Any = cast('dict[str, Any]', hist).get("result", hist) if isinstance(hist, dict) else hist
+        messages = cast('dict[str, Any]', body).get("messages") if isinstance(body, dict) else None
+        for message in cast('list[Any]', messages or []):
             if not isinstance(message, dict):
                 continue
-            via = message.get("via_bot_id")
+            message_data = cast('dict[str, Any]', message)
+            via: Any = message_data.get("via_bot_id")
             if isinstance(via, dict):
-                via = via.get("user_id") or via.get("id")
+                via_data = cast('dict[str, Any]', via)
+                via = via_data.get("user_id") or via_data.get("id")
             if int(via or 0) != bot_id:
                 continue
-            if str(message.get("message") or "") != "🔄":
+            if str(message_data.get("message") or "") != "🔄":
                 continue
-            mid = message.get("id")
+            mid = message_data.get("id")
             if isinstance(mid, int):
                 try:
                     await delete_chat_msg(app, chat_id, mid)
@@ -972,7 +981,7 @@ class Runtime:
         parts = text.split()
         language = self.language()
         if not parts:
-            results = []
+            results: list[dict[str, Any]] = []
             for spec in sorted(registry.items(), key=lambda item: item.name):
                 meta = self._inline_command_meta(spec, language)
                 results.append(InlineObj.article(
@@ -1021,7 +1030,8 @@ class Runtime:
     def _is_kernel_module(self, module_id: str) -> bool:
         if self.modules is None:
             return False
-        binding = self.modules._bindings.get(module_id)
+        bindings = cast('dict[str, Any]', getattr(self.modules, "_bindings"))
+        binding = bindings.get(module_id)
         if binding and binding[2]:
             return True
         active = self.modules.get(module_id)
@@ -1036,10 +1046,11 @@ class Runtime:
             result = [result]
         if not isinstance(result, list):
             return []
-        normalized = []
-        for item in result:
+        normalized: list[dict[str, Any]] = []
+        for item in cast('list[Any]', result):
             if not isinstance(item, dict):
                 continue
+            item = cast('dict[str, Any]', item)
             if "message" not in item and "photo" not in item and "gif" not in item and "video" not in item and "file" not in item:
                 continue
             normalized.append(item)
@@ -1055,16 +1066,20 @@ class Runtime:
         entry: dict[str, Any] = {}
         details = manifest.localized(language).get("inline_commands", {})
         if isinstance(details, dict):
-            candidate = details.get(spec.name)
+            candidate = cast('dict[str, Any]', details).get(spec.name)
             if isinstance(candidate, dict):
-                entry = candidate
+                entry = cast('dict[str, Any]', candidate)
         if not entry:
             try:
                 payload = self.lexicon.bundle(language) if self.lexicon is not None else {}
-                block = payload.get("kernel", {}).get(manifest.module_id, {}).get("inline_commands", {})
-                candidate = block.get(spec.name) if isinstance(block, dict) else None
+                kernel_value = payload.get("kernel", {})
+                kernel = cast('dict[str, object]', kernel_value) if isinstance(kernel_value, dict) else {}
+                module_value = kernel.get(manifest.module_id, {})
+                module = cast('dict[str, object]', module_value) if isinstance(module_value, dict) else {}
+                block = module.get("inline_commands", {})
+                candidate = cast('dict[str, Any]', block).get(spec.name) if isinstance(block, dict) else None
                 if isinstance(candidate, dict):
-                    entry = candidate
+                    entry = cast('dict[str, Any]', candidate)
                 elif isinstance(candidate, str):
                     entry = {"description": candidate}
             except Exception:
@@ -1160,7 +1175,8 @@ class Runtime:
         if self.kernel is not None:
             lines.append(f"running_commands: {self.kernel.running()}")
         if self.inline is not None and self.inline.info is not None:
-            running = self.inline._task is not None and not self.inline._task.done()
+            inline_task = cast(asyncio.Task[Any] | None, getattr(self.inline, "_task"))
+            running = inline_task is not None and not inline_task.done()
             lines.append(f"inline: @{self.inline.info.username} ({'running' if running else 'stopped'})")
         return "\n".join(lines)
 
@@ -1216,7 +1232,7 @@ class Runtime:
         entry_ids: list[str | None] = []
         if self.modules is not None:
             active = {item.loaded.manifest.module_id: item.loaded.manifest.version for item in self.modules.items()}
-            known = set(self.state.module_ids()) if self.state is not None else set()
+            known: set[str] = set(self.state.module_ids()) if self.state is not None else set()
             for module_id in sorted(set(active) | known):
                 if module_id in active:
                     entries.append(f"{module_id} [loaded] v{active[module_id]}")
@@ -1260,9 +1276,11 @@ class Runtime:
                 info = await self.inline.ensure_bot()
             except Exception as exc:
                 return f"inline bot provisioning failed: {type(exc).__name__}"
-        if self.inline._task is None or self.inline._task.done():
+        inline_task = cast(asyncio.Task[Any] | None, getattr(self.inline, "_task"))
+        if inline_task is None or inline_task.done():
             await self.inline.start()
-        running = self.inline._task is not None and not self.inline._task.done()
+        inline_task = cast(asyncio.Task[Any] | None, getattr(self.inline, "_task"))
+        running = inline_task is not None and not inline_task.done()
         return f"inline bot: @{info.username} ({'running' if running else 'starting'})"
 
     @property
@@ -1293,15 +1311,15 @@ class Runtime:
         try:
             with trusted_scope():
                 result = await app.mt_users_get_users( id=[{"_": "inputUserSelf"}])
-            body = result.get("result", result) if isinstance(result, dict) else result
+            body: Any = cast('dict[str, Any]', result).get("result", result) if isinstance(result, dict) else result
             if isinstance(body, dict):
-                users = body.get("users") or body.get("result") or []
+                body_data = cast('dict[str, Any]', body)
+                users: Any = body_data.get("users") or body_data.get("result") or []
             else:
                 users = body
-            first = users[0] if isinstance(users, list) and users else None
-            if not isinstance(first, dict):
-                first = body if isinstance(body, dict) else {}
-            self._premium_cache = bool(first.get("premium"))
+            first: Any = cast('list[Any]', users)[0] if isinstance(users, list) and users else None
+            first_data = cast('dict[str, Any]', first) if isinstance(first, dict) else cast('dict[str, Any]', body) if isinstance(body, dict) else {}
+            self._premium_cache = bool(first_data.get("premium"))
         except Exception:
             log.error("premium check failed", exc_info=True)
             return False
@@ -1310,7 +1328,7 @@ class Runtime:
     def set_language(self, language: str) -> str:
         if self.lexicon is None:
             self.lexicon = Lexicon(self.lexicon_dir)
-        normalized = self.lexicon._validate_language(language)
+        normalized = self.lexicon.validate_language(language)
         if self.state is None:
             raise RuntimeError("state is unavailable")
         self.state.set_setting("language", normalized)
@@ -1343,7 +1361,7 @@ class Runtime:
             source = candidate if candidate is not None and (candidate.get("document") or candidate.get("media")) else None
         if source is None or not hasattr(source, "get"):
             reply_to = message.get("reply_to")
-            reply_id = reply_to.get("reply_to_msg_id") if isinstance(reply_to, dict) else None
+            reply_id = cast('dict[str, Any]', reply_to).get("reply_to_msg_id") if isinstance(reply_to, dict) else None
             if isinstance(reply_id, int) and getattr(message, "src", None) != "bot":
                 cap_host = getattr(self, "cap_host", None)
                 if cap_host is not None:
@@ -1374,7 +1392,7 @@ class Runtime:
         if not caps or self._caps_consented(module_id, fingerprint):
             if self.modules is not None and self.modules.get(module_id) is not None:
                 result = await self._command_rl(SimpleNamespace(args=(module_id,)))
-                if isinstance(result, str) and result.startswith("reloaded:"):
+                if result.startswith("reloaded:"):
                     return loaded, "updated"
                 return loaded, result
             try:
@@ -1386,10 +1404,9 @@ class Runtime:
             if self.observatory is not None:
                 self.observatory.emit("modules", "loaded", module=module_id, version=loaded.manifest.version)
             return loaded, "loaded"
-        if self.state is not None:
-            namespace = self.state.namespace(module_id)
-            namespace.set("sourcepath", str(loaded.path))
-            namespace.set("moduleversion", loaded.manifest.version)
+        namespace = self.state.namespace(module_id)
+        namespace.set("sourcepath", str(loaded.path))
+        namespace.set("moduleversion", loaded.manifest.version)
         return loaded, "confirm"
 
     async def _command_ld(self, invocation: Any) -> str | tuple[str, list[dict[str, str]]]:
@@ -1567,7 +1584,7 @@ class Runtime:
         if not isinstance(payload, dict):
             await callback.answer("Invalid request", alert=True)
             return None
-        module_id = str(payload.get("module", "")).casefold()
+        module_id = str(cast('dict[str, Any]', payload).get("module", "")).casefold()
         await callback.answer("Cancelled")
         return await callback.edit(f"module not loaded: {module_id}")
 
@@ -1575,7 +1592,7 @@ class Runtime:
         if not isinstance(payload, dict) or self.modules is None or self.state is None:
             await callback.answer("Invalid request", alert=True)
             return None
-        module_id = str(payload.get("module", "")).casefold()
+        module_id = str(cast('dict[str, Any]', payload).get("module", "")).casefold()
         namespace = self.state.namespace(module_id)
         source_path = namespace.get("sourcepath")
         if not isinstance(source_path, str):
@@ -1602,7 +1619,7 @@ class Runtime:
         text = f"loaded: {module_id} {loaded.manifest.version}"
         if getattr(callback, "inline_message_id", None) and getattr(callback, "app", None) is not None:
             inline_mid = callback.inline_message_id
-            id_field = inline_mid if isinstance(inline_mid, dict) else {"_": "inputBotInlineMessageID", "raw": inline_mid}
+            id_field: dict[str, Any] = cast('dict[str, Any]', inline_mid) if isinstance(inline_mid, dict) else {"_": "inputBotInlineMessageID", "raw": inline_mid}
             return await callback.app.mt_messages_edit_inline_bot_message( id=id_field, message=text)
         return await callback.edit(text)
 
@@ -1817,13 +1834,16 @@ class Runtime:
         self.state = None
         state.close()
         try:
-            await backups.restore(
-                plan,
-                lambda staged: backups.activate_staged(
+            def activate_staged(staged: str | Path) -> None:
+                backups.activate_staged(
                     staged,
                     state_path=self.config.state_path,
                     modules_path=modules_path,
-                ),
+                )
+
+            await backups.restore(
+                plan,
+                activate_staged,
             )
         finally:
             self.state = StateStore(self.config.state_path)

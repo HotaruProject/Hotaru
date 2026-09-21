@@ -5,6 +5,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+from typing import cast
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -24,7 +25,8 @@ def in_venv() -> bool:
 
 
 def is_cli() -> bool:
-    orig = [str(part) for part in (getattr(sys, "orig_argv", None) or [])]
+    raw = cast(object, getattr(sys, "orig_argv", None))
+    orig = [str(part) for part in cast('list[object]', raw)] if isinstance(raw, list) else []
     for index, part in enumerate(orig):
         if part == "-m" and index + 1 < len(orig):
             mod = orig[index + 1]

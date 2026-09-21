@@ -400,12 +400,12 @@ class InputMedia(TypedDict, total=False):
 
 
 def as_tl(value: object) -> dict[str, Any]:
-    return cast(dict[str, Any], value) if isinstance(value, dict) else {}
+    return cast('dict[str, Any]', value) if isinstance(value, dict) else {}
 
 
 def as_buttons(value: object) -> list[list[Button]]:
     if not isinstance(value, list) or not value:
         return []
     if isinstance(value[0], list):
-        return cast(list[list[Button]], value)
-    return [cast(list[Button], value)]
+        return cast('list[list[Button]]', value)
+    return [cast('list[Button]', value)]

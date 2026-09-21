@@ -7,9 +7,8 @@ import subprocess
 import urllib.parse
 import urllib.request
 from functools import partial
-from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 
 from .denylist import is_blocked_host, payload_hits_blocked
 from .firewall import trusted_scope
@@ -177,7 +176,7 @@ KNOWN = frozenset(PROVIDERS)
 
 
 def describe(capabilities: tuple[str, ...]) -> str:
-    lines = []
+    lines: list[str] = []
     for cap in capabilities:
         meta = PROVIDERS.get(cap)
         if meta is None:
@@ -185,6 +184,14 @@ def describe(capabilities: tuple[str, ...]) -> str:
             continue
         lines.append(f"{cap}: {meta['title']} — {meta['detail']}")
     return "\n".join(lines)
+
+
+def _result_body(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        return {}
+    payload = cast('dict[str, Any]', value)
+    result = payload.get("result")
+    return cast('dict[str, Any]', result) if isinstance(result, dict) else payload
 
 
 class CapabilityHost:
@@ -277,8 +284,9 @@ class CapabilityHost:
                 min_id=0,
                 hash=0,
             )
-            body = result.get("result") if isinstance(result, dict) and isinstance(result.get("result"), dict) else result
-            return [m for m in (body.get("messages") if isinstance(body, dict) else []) or [] if isinstance(m, dict)]
+            body = _result_body(result)
+            messages = body.get("messages")
+            return [cast('dict[str, Any]', message) for message in cast('list[Any]', messages) if isinstance(message, dict)] if isinstance(messages, list) else []
 
         if op == "message":
             peer_value = payload.get("peer")
@@ -293,7 +301,8 @@ class CapabilityHost:
             return await _history(payload.get("peer"), int(payload.get("offset_id") or 0), int(payload.get("limit") or 20))
         if op == "reply":
             header = payload.get("reply_to")
-            reply_id = header.get("reply_to_msg_id") or header.get("reply_to_id") if isinstance(header, dict) else None
+            header_dict = cast('dict[str, Any]', header) if isinstance(header, dict) else None
+            reply_id = header_dict.get("reply_to_msg_id") or header_dict.get("reply_to_id") if header_dict is not None else None
             if not isinstance(reply_id, int):
                 return None
             for message in await _history(payload.get("peer"), reply_id + 1, 3):
@@ -311,8 +320,8 @@ class CapabilityHost:
                 entity = app.mt.entity_usernames.get(username)
                 if entity is None:
                     result = await app.mt_contacts_resolve_username( username=username)
-                    body = result.get("result") if isinstance(result, dict) and isinstance(result.get("result"), dict) else result
-                    app.mt._ingest_entities(body if isinstance(body, dict) else {})
+                    body = _result_body(result)
+                    app.mt._ingest_entities(body)
                     entity = app.mt.entity_usernames.get(username)
                 return entity
             if isinstance(value, int):
@@ -398,10 +407,11 @@ class CapabilityHost:
             raise PermissionError("mt payload targets a denied peer")
         if not lowered.startswith(("get", "search")) and lowered not in MT_READ_ONLY:
             self._audit_mt(module_id, lowered, payload)
-        kwargs = payload.get("kwargs") or {}
-        if not isinstance(kwargs, dict):
+        raw_kwargs_value = payload.get("kwargs")
+        if raw_kwargs_value is not None and not isinstance(raw_kwargs_value, dict):
             raise PermissionError("mt kwargs must be a mapping")
-        kwargs = {k: v for k, v in kwargs.items() if isinstance(k, str) and k not in ("api_id", "api_hash")}
+        raw_kwargs: dict[Any, Any] = cast('dict[Any, Any]', raw_kwargs_value) if isinstance(raw_kwargs_value, dict) else {}
+        kwargs: dict[str, Any] = {k: v for k, v in raw_kwargs.items() if isinstance(k, str) and k not in ("api_id", "api_hash")}
         rich_message = kwargs.get("rich_message")
         if rich_message is not None:
             allowed = False
@@ -410,7 +420,7 @@ class CapabilityHost:
             except Exception:
                 allowed = False
             if not allowed:
-                html_text = rich_message.get("html") if isinstance(rich_message, dict) else None
+                html_text = cast('dict[str, Any]', rich_message).get("html") if isinstance(rich_message, dict) else None
                 kwargs.pop("rich_message", None)
                 if isinstance(html_text, str) and lowered.startswith(("messages.send", "messages.edit")):
                     plain_html = rich_to_plain(html_text)
@@ -426,8 +436,7 @@ class CapabilityHost:
             if isinstance(limit, (int, float)) and int(limit) > 500:
                 kwargs = dict(kwargs, limit=500)
         result = await getattr(app, rpcname(method))(**kwargs)
-        body = result.get("result") if isinstance(result, dict) and isinstance(result.get("result"), dict) else result
-        return body
+        return _result_body(result)
 
     def _audit_mt(self, module_id: str, method: str, payload: dict[str, Any]) -> None:
         observatory = getattr(self.runtime, "observatory", None)
@@ -574,11 +583,11 @@ class CapabilityHost:
             raise PermissionError("module manager is not ready")
         if op == "list":
             if runtime.state is not None:
-                ids = set(runtime.state.module_ids())
+                module_ids: set[str] = set(runtime.state.module_ids())
             else:
-                ids = set()
-            ids |= {item.loaded.manifest.module_id for item in modules.items()}
-            return [self._module_brief(module_id) for module_id in sorted(ids)]
+                module_ids = set()
+            module_ids |= {item.loaded.manifest.module_id for item in modules.items()}
+            return [self._module_brief(module_id) for module_id in sorted(module_ids)]
         if op == "info":
             target = payload.get("module_id")
             if not isinstance(target, str) or not target:
@@ -587,7 +596,7 @@ class CapabilityHost:
         if op == "hashes":
             result: dict[str, str] = {}
             if runtime.state is not None:
-                ids = set(runtime.state.module_ids())
+                ids: set[str] = set(runtime.state.module_ids())
             else:
                 ids = set()
             ids |= {item.loaded.manifest.module_id for item in modules.items()}
@@ -678,7 +687,10 @@ class CapabilityHost:
             return await put(app, path, file_name=filename or None)
 
         if op == "download":
-            msg_dict = payload.get("message") or {}
+            raw_message_value = payload.get("message")
+            if raw_message_value is not None and not isinstance(raw_message_value, dict):
+                raise PermissionError("invalid message object")
+            msg_dict = cast('dict[str, Any]', raw_message_value) if isinstance(raw_message_value, dict) else {}
             destination = payload.get("destination")
             if destination:
                 dest_path = os.path.abspath(os.path.join(sandbox_root, str(destination)))

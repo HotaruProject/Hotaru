@@ -5,7 +5,7 @@ import asyncio
 import inspect
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Awaitable, Callable
+from typing import Any, Callable
 
 from .modules import HmodLoader, LoadedModule
 from .tasks import TaskSupervisor

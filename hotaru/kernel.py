@@ -5,13 +5,17 @@ import inspect
 from collections import OrderedDict
 from relay.denylist import is_blocked_peer
 from relay.firewall import module_scope
-from typing import Any
+from typing import Any, Protocol, cast
 
 from .commands import CommandInvocation, CommandParser
 from .registry import CommandRegistry
 from .inline_registry import InlineRegistry
 from .security import AccessVerdict, SecurityGate
 from .access import AccessManager, Permission
+
+
+class SupportsGet(Protocol):
+    def get(self, key: str, default: object = None) -> object: ...
 
 
 class Kernel:
@@ -179,13 +183,16 @@ class Kernel:
                     return None
             return None
         if spec.kernel and self.response_service is not None:
-            if isinstance(result, tuple) and len(result) == 2:
-                if self.form_sender is not None and result[1]:
-                    return await self.form_sender(message, result[0], result[1])
-                return await self.response_service.answer(message, text=result[0], buttons=result[1], output="edit")
+            if isinstance(result, tuple):
+                values = cast('tuple[object, ...]', result)
+                if len(values) == 2:
+                    text, buttons = values
+                    if self.form_sender is not None and buttons:
+                        return await self.form_sender(message, text, buttons)
+                    return await self.response_service.answer(message, text=text, buttons=buttons, output="edit")
             if isinstance(result, str):
                 return await self.response_service.answer(message, text=result, output="edit")
-        return result
+        return cast(object, result)
 
     async def _invoke(self, spec: Any, invocation: CommandInvocation, message: Any) -> object:
         if self.sandbox is not None and spec.sandbox:
@@ -335,26 +342,33 @@ class Kernel:
     def _sandbox_attachment(cls, message: Any) -> dict[str, Any] | None:
         if message is None or not hasattr(message, "get"):
             return None
+        source = cast(SupportsGet, message)
         for kind in ("document", "photo", "video", "audio", "voice", "animation", "video_note", "sticker"):
-            media = message.get(kind)
+            media = source.get(kind)
             if media is None:
                 continue
             if isinstance(media, list):
-                media = media[-1] if media else None
+                values = cast('list[object]', media)
+                media = values[-1] if values else None
             if not isinstance(media, dict):
                 continue
+            record = cast('dict[str, object]', media)
+            size = record.get("size")
             return {
                 "kind": kind,
-                "file_name": media.get("file_name") or media.get("name"),
-                "mime_type": media.get("mime_type"),
-                "size": media.get("size") if isinstance(media.get("size"), int) else None,
+                "file_name": record.get("file_name") or record.get("name"),
+                "mime_type": record.get("mime_type"),
+                "size": size if isinstance(size, int) else None,
             }
-        media_wrap = message.get("media")
+        media_wrap = source.get("media")
         if isinstance(media_wrap, dict):
-            document = media_wrap.get("document")
+            wrapper = cast('dict[str, object]', media_wrap)
+            document = wrapper.get("document")
             if isinstance(document, dict):
-                return {"kind": "document", "file_name": document.get("file_name"), "mime_type": document.get("mime_type"), "size": document.get("size") if isinstance(document.get("size"), int) else None}
-            photo = media_wrap.get("photo")
+                record = cast('dict[str, object]', document)
+                size = record.get("size")
+                return {"kind": "document", "file_name": record.get("file_name"), "mime_type": record.get("mime_type"), "size": size if isinstance(size, int) else None}
+            photo = wrapper.get("photo")
             if isinstance(photo, dict):
                 return {"kind": "photo", "file_name": None, "mime_type": "image/jpeg", "size": None}
         return None

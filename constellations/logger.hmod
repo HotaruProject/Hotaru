@@ -10,7 +10,7 @@ HOTARU = {
     "fade": "unhook",
 }
 
-from typing import Any
+from typing import Any, Dict, List, Mapping, cast
 
 
 import asyncio
@@ -36,7 +36,7 @@ LEVELS = {
 LEVEL_NAMES = ["all", "debug", "info", "warn", "error", "fatal"]
 _DEFAULT_FLOOR = LEVELS["info"]
 
-_state: dict[str, Any] = {"sub": None, "queue": None, "topic_id": None, "last_sync": 0.0, "failed": 0, "last_error": ""}
+_state: Dict[str, Any] = {"sub": None, "queue": None, "topic_id": None, "last_sync": 0.0, "failed": 0, "last_error": ""}
 
 
 def _obs(ctx: Any) -> Any:
@@ -59,7 +59,7 @@ def _level_floor(state: Any) -> Any:
     return _DEFAULT_FLOOR
 
 
-def _fmt(payload: Any) -> Any:
+def _fmt(payload: Mapping[str, Any]) -> str:
     level = str(payload.get("level") or "info").upper()
     comp = str(payload.get("component") or "-")
     event = str(payload.get("event") or "-")
@@ -76,6 +76,7 @@ def _fmt(payload: Any) -> Any:
 def _sink(payload: Any) -> Any:
     if not isinstance(payload, dict):
         return
+    payload = cast(Mapping[str, Any], payload)
     if payload.get("component") == "logger":
         return
     if payload.get("component") == "forum":
@@ -136,7 +137,7 @@ async def task_pump(ctx: Any) -> Any:
     queue = _state.get("queue")
     if queue is None:
         return
-    batch = []
+    batch: List[Mapping[str, Any]] = []
     while not queue.empty() and len(batch) < 40:
         try:
             stamped, payload = queue.get_nowait()
