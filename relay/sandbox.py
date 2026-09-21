@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import __future__
 import asyncio
+import base64
 import json
 import os
 import subprocess
@@ -21,6 +22,36 @@ from relay.firewall import trusted_scope
 
 _TOOLKIT_SOURCE = Path(_toolkit.__file__).read_text(encoding="utf-8")
 
+# Reserved marker for bytes transported through the sandbox JSON protocol.
+# A mapping that holds nothing but this key decodes back to bytes; any other
+# shape (extra keys, non-string value, bad padding) passes through untouched.
+_PROTO_BYTES_KEY = "$bytes"
+
+
+def _proto_default(value: Any) -> Any:
+    if isinstance(value, (bytes, bytearray)):
+        return {_PROTO_BYTES_KEY: base64.b64encode(bytes(value)).decode("ascii")}
+    raise TypeError(f"object of type {type(value).__name__} is not JSON serializable")
+
+
+def _proto_object_hook(data: dict[str, Any]) -> Any:
+    if set(data.keys()) == {_PROTO_BYTES_KEY}:
+        encoded = data[_PROTO_BYTES_KEY]
+        if isinstance(encoded, str):
+            try:
+                return base64.b64decode(encoded.encode("ascii"))
+            except ValueError:
+                return data
+    return data
+
+
+def _proto_dumps(payload: Any) -> str:
+    return json.dumps(payload, default=_proto_default)
+
+
+def _proto_loads(text: str) -> Any:
+    return json.loads(text, object_hook=_proto_object_hook)
+
 SANDBOX_BASE_ROOT = "/run/hotaru-sandbox"
 SANDBOX_UID = 65534
 SANDBOX_GID = 65534
@@ -28,6 +59,7 @@ SANDBOX_GID = 65534
 WORKER_SOURCE = r'''
 import asyncio
 import __future__
+import base64
 import contextlib
 import io
 import json
@@ -40,6 +72,34 @@ from types import SimpleNamespace
 import re as _re
 
 _HOST_OUT = sys.stdout
+
+_PROTO_BYTES_KEY = "$bytes"
+
+
+def _proto_default(value):
+    if isinstance(value, (bytes, bytearray)):
+        return {_PROTO_BYTES_KEY: base64.b64encode(bytes(value)).decode("ascii")}
+    raise TypeError("object of type " + type(value).__name__ + " is not JSON serializable")
+
+
+def _proto_object_hook(data):
+    if isinstance(data, dict) and set(data) == {_PROTO_BYTES_KEY}:
+        encoded = data[_PROTO_BYTES_KEY]
+        if isinstance(encoded, str):
+            try:
+                return base64.b64decode(encoded.encode("ascii"))
+            except ValueError:
+                return data
+    return data
+
+
+def _proto_dumps(payload):
+    return json.dumps(payload, default=_proto_default)
+
+
+def _proto_loads(text):
+    return json.loads(text, object_hook=_proto_object_hook)
+
 
 def rich_html(html):
     return {"html": _re.sub(r"\n(?![^<]*>)", "<br>", html)}
@@ -171,14 +231,14 @@ def apply_limits(mem_mb, file_mb, nofile, cpu_seconds, net_blocked):
 
 
 def _cap_call(name, payload):
-    req = json.dumps({"cap": name, "payload": payload})
+    req = _proto_dumps({"cap": name, "payload": payload})
     _HOST_OUT.write(req + "\n")
     _HOST_OUT.flush()
     while True:
         line = sys.stdin.readline()
         if not line:
             raise OSError("host closed the sandbox channel")
-        resp = json.loads(line)
+        resp = _proto_loads(line)
         if resp.get("kind") != "cap_result":
             continue
         if not resp.get("ok"):
@@ -211,14 +271,14 @@ def _net_call(url, data=None, timeout=10.0):
 
 
 def _respond_call(payload):
-    req = json.dumps({"respond": payload})
+    req = _proto_dumps({"respond": payload})
     _HOST_OUT.write(req + "\n")
     _HOST_OUT.flush()
     while True:
         line = sys.stdin.readline()
         if not line:
             raise OSError("host closed the sandbox channel")
-        resp = json.loads(line)
+        resp = _proto_loads(line)
         if resp.get("kind") != "respond_result":
             continue
         if not resp.get("ok"):
@@ -268,13 +328,13 @@ _sandbox_callbacks = {}
 
 
 def _cb_respond_call(data):
-    _HOST_OUT.write(json.dumps({"cb_respond": data}) + "\n")
+    _HOST_OUT.write(_proto_dumps({"cb_respond": data}) + "\n")
     _HOST_OUT.flush()
     for line in sys.stdin:
         line = line.strip()
         if not line:
             continue
-        msg = json.loads(line)
+        msg = _proto_loads(line)
         if "cb_respond_result" in msg:
             result = msg["cb_respond_result"]
             if not result.get("ok"):
@@ -741,7 +801,7 @@ def _capture_module_output():
 
 
 def main():
-    cfg = json.loads(sys.stdin.readline())
+    cfg = _proto_loads(sys.stdin.readline())
     policy = cfg.get("seccomp") or {}
     SECCOMP_CFG["allow"] = set(policy.get("allow", []))
     SECCOMP_CFG["errno"] = set(policy.get("errno", []))
@@ -774,13 +834,13 @@ def main():
         trace = exc.__traceback__
         while trace is not None and trace.tb_next is not None:
             trace = trace.tb_next
-        sys.stdout.write(json.dumps({"ok": False, "error": type(exc).__name__, "detail": str(exc)[:400], "line": trace.tb_lineno if trace is not None else 0}) + "\n")
+        sys.stdout.write(_proto_dumps({"ok": False, "error": type(exc).__name__, "detail": str(exc)[:400], "line": trace.tb_lineno if trace is not None else 0}) + "\n")
         sys.stdout.flush()
         sys.exit(1)
-    sys.stdout.write(json.dumps({"ok": True, "commands": list(cfg.get("commands", []))}) + "\n")
+    sys.stdout.write(_proto_dumps({"ok": True, "commands": list(cfg.get("commands", []))}) + "\n")
     sys.stdout.flush()
     for line in sys.stdin:
-        req = json.loads(line)
+        req = _proto_loads(line)
         if "cb" in req:
             cb_data = req["cb"]
             action_id = cb_data.get("action_id")
@@ -797,7 +857,7 @@ def main():
                     out = {"ok": True, "result": result}
                 except BaseException as exc:
                     out = {"ok": False, "error": type(exc).__name__}
-            sys.stdout.write(json.dumps(out) + "\n")
+            sys.stdout.write(_proto_dumps(out) + "\n")
             sys.stdout.flush()
             continue
         try:
@@ -834,7 +894,7 @@ def main():
                     out = {"ok": True, "result": result}
         except BaseException as exc:
             out = {"ok": False, "error": type(exc).__name__}
-        sys.stdout.write(json.dumps(out) + "\n")
+        sys.stdout.write(_proto_dumps(out) + "\n")
         sys.stdout.flush()
 
 
@@ -990,7 +1050,7 @@ class SandboxError(RuntimeError):
 
 
 def _json_dict(text: str) -> dict[str, Any]:
-    value = cast(object, json.loads(text))
+    value = cast(object, _proto_loads(text))
     return cast('dict[str, Any]', value) if isinstance(value, dict) else {}
 
 
@@ -1185,7 +1245,7 @@ class ModuleSandbox:
             preexec_fn=self._make_preexec(),
         )
         assert process.stdin is not None and process.stdout is not None
-        process.stdin.write((json.dumps(hello) + "\n").encode("utf-8"))
+        process.stdin.write((_proto_dumps(hello) + "\n").encode("utf-8"))
         process.stdin.flush()
         ready = self._readline(process)
         payload = _json_dict(ready) if ready else {}
@@ -1268,7 +1328,7 @@ class ModuleSandbox:
         loop = asyncio.get_running_loop()
         def _roundtrip() -> Any:
             assert process.stdin is not None
-            process.stdin.write((json.dumps(request) + "\n").encode("utf-8"))
+            process.stdin.write((_proto_dumps(request) + "\n").encode("utf-8"))
             process.stdin.flush()
             while True:
                 line = self._readline(process)
@@ -1321,7 +1381,7 @@ class ModuleSandbox:
                     reply = {"kind": "cap_result", "ok": False, "error": f"{type(exc).__name__}: {exc}"[:200]}
             process = self._workers.get(module_id)
             if process is not None and process.poll() is None and process.stdin is not None:
-                process.stdin.write((json.dumps(reply) + "\n").encode("utf-8"))
+                process.stdin.write((_proto_dumps(reply) + "\n").encode("utf-8"))
                 process.stdin.flush()
 
     async def _serve_respond(self, module_id: str) -> None:
@@ -1338,7 +1398,7 @@ class ModuleSandbox:
                 reply = {"kind": "respond_result", "ok": False, "error": f"{type(exc).__name__}: {exc}"[:200]}
             process = self._workers.get(module_id)
             if process is not None and process.poll() is None and process.stdin is not None:
-                process.stdin.write((json.dumps(reply) + "\n").encode("utf-8"))
+                process.stdin.write((_proto_dumps(reply) + "\n").encode("utf-8"))
                 process.stdin.flush()
 
     async def _serve_cb_respond(self, module_id: str) -> None:
@@ -1375,7 +1435,7 @@ class ModuleSandbox:
             except Exception as exc:
                 result = {"ok": False, "error": f"{type(exc).__name__}: {exc}"[:200]}
             if process is not None and process.poll() is None and process.stdin is not None:
-                process.stdin.write((json.dumps({"cb_respond_result": result}) + "\n").encode("utf-8"))
+                process.stdin.write((_proto_dumps({"cb_respond_result": result}) + "\n").encode("utf-8"))
                 process.stdin.flush()
 
     async def _trusted_respond(self, module_id: str, source: Any, payload: dict[str, Any]) -> Any:
