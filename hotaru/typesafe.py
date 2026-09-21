@@ -108,7 +108,21 @@ def check_hmod(source: str, path: Path) -> None:
     with tempfile.TemporaryDirectory(prefix="hotaru-pyright-") as tmp:
         dest = Path(tmp) / f"{path.stem}.py"
         dest.write_text(_PREAMBLE + source, encoding="utf-8")
-        _run([str(dest)])
+        try:
+            _run([str(dest)])
+        except TypeCheckError as exc:
+            lines: list[str] = []
+            marker = f"{dest}:"
+            offset = _PREAMBLE.count("\n")
+            for line in str(exc).splitlines():
+                if line.strip() == str(dest):
+                    line = f"{line[:len(line) - len(line.lstrip())]}{path.name}"
+                head, found, rest = line.partition(marker)
+                number, colon, tail = rest.partition(":") if found else ("", "", "")
+                if number.isdigit() and colon:
+                    line = f"{head}{path.name}:{max(1, int(number) - offset)}:{tail}"
+                lines.append(line)
+            raise TypeCheckError("\n".join(lines)) from exc
     hmods[str(path.resolve())] = key
     _save(cache)
 

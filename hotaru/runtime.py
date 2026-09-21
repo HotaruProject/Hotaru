@@ -1427,7 +1427,7 @@ class Runtime:
         except Exception as exc:
             if self.observatory is not None:
                 self.observatory.emit("modules", "load_error", error=type(exc).__name__, detail=str(exc)[:240])
-            return f"load failed: {type(exc).__name__}: {str(exc)[:160]}"
+            return f"load failed: {type(exc).__name__}: {str(exc)[:3500]}"
         finally:
             if temporary is not None:
                 temporary.unlink(missing_ok=True)
