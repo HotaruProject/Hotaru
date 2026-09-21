@@ -18,8 +18,6 @@ import subprocess
 import sys
 import time
 
-from hotaru.update import update_repository
-
 REPO_URL = "https://github.com/HotaruProject/Hotaru"
 
 
@@ -64,7 +62,7 @@ def _changelog(runtime: Any) -> Any:
     return _git(runtime, "log", "--pretty=format:%s", f"{current}..{latest}").splitlines()
 
 def _pull(runtime: Any) -> Any:
-    return update_repository(_repo_dir(runtime))
+    return runtime.update_checkout()
 
 def _serialize_inline(mid: Any) -> Any:
     if not isinstance(mid, dict):

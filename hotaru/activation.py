@@ -349,7 +349,7 @@ class ModuleManager:
                     await self._rise_host(loaded, namespace, kernel, rise_ctx)
             return active
         except Exception as exc:
-            if "commands" in locals():
+            if commands is not None:
                 self.binder.unbind(loaded, commands, kernel, is_kernel=is_kernel)
             import traceback; traceback.print_exc(); raise ActivationError(f"module activation failed: {loaded.manifest.module_id}") from exc
 
