@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import asyncio
 import hashlib
 import json
@@ -9,7 +11,7 @@ import tempfile
 import time
 import traceback
 from dataclasses import dataclass, replace
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
@@ -101,7 +103,7 @@ class FormRecord:
         self.options = options
 
 
-@dataclass(slots=True)
+@dataclass
 class Runtime:
     KERNEL_MODULE_ID = "kernel-core"
     config: RuntimeConfig
@@ -1603,7 +1605,7 @@ class Runtime:
         if self.backups is None or self.state is None or self.modules is None:
             raise RuntimeError("backup services are not ready")
         module_paths = [active.loaded.path for active in self.modules.items()]
-        stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S.%fZ")
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ")
         destination = self.config.state_path.parent / "backups" / f"{stamp}.hbk"
         result = self.backups.create(destination, state_path=self.config.state_path, module_paths=module_paths, metadata={"reason": "operator"})
         removed = self.backups.prune(destination.parent, keep=self.config.backup_keep)
@@ -1734,7 +1736,7 @@ class Runtime:
         module_paths = [active.loaded.path for active in self.modules.items()]
         if candidate not in module_paths:
             module_paths.append(candidate)
-        stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S.%fZ")
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ")
         destination = self.config.state_path.parent / "backups" / f"{stamp}.hbk"
         result = self.backups.create(
             destination,
@@ -1883,33 +1885,36 @@ class Runtime:
             raise ValueError("timeout must be positive")
         if self.state is None or self.modules is None or self.kernel is None:
             raise RuntimeError("runtime services are not ready")
+        state = self.state
+        modules = self.modules
         restored: list[str] = []
+        async def restore() -> None:
+            for module_id in self._load_order(state.module_ids()[:256]):
+                namespace = state.namespace(module_id)
+                if modules.get(module_id) is not None:
+                    continue
+                consent = namespace.get("caps-consent")
+                if not isinstance(consent, str):
+                    continue
+                source_path = namespace.get("sourcepath")
+                if not isinstance(source_path, str):
+                    continue
+                try:
+                    loaded = modules.loader.load(source_path)
+                    if loaded.manifest.module_id != module_id:
+                        raise ValueError("module id mismatch")
+                    if self._caps_fingerprint(loaded.manifest) != consent:
+                        raise ValueError("capabilities changed; !trust required")
+                    await self.activate_module(source_path)
+                except Exception as exc:
+                    namespace.set("lasterror", f"{type(exc).__name__}: {str(exc)[:240]}")
+                    if self.observatory is not None:
+                        self.observatory.emit("modules", "restore_error", module=module_id, error=type(exc).__name__, detail=str(exc)[:240])
+                    continue
+                restored.append(module_id)
         try:
-            async with asyncio.timeout(timeout):
-                for module_id in self._load_order(self.state.module_ids()[:256]):
-                    namespace = self.state.namespace(module_id)
-                    if self.modules.get(module_id) is not None:
-                        continue
-                    consent = namespace.get("caps-consent")
-                    if not isinstance(consent, str):
-                        continue
-                    source_path = namespace.get("sourcepath")
-                    if not isinstance(source_path, str):
-                        continue
-                    try:
-                        loaded = self.modules.loader.load(source_path)
-                        if loaded.manifest.module_id != module_id:
-                            raise ValueError("module id mismatch")
-                        if self._caps_fingerprint(loaded.manifest) != consent:
-                            raise ValueError("capabilities changed; !trust required")
-                        await self.activate_module(source_path)
-                    except Exception as exc:
-                        namespace.set("lasterror", f"{type(exc).__name__}: {str(exc)[:240]}")
-                        if self.observatory is not None:
-                            self.observatory.emit("modules", "restore_error", module=module_id, error=type(exc).__name__, detail=str(exc)[:240])
-                        continue
-                    restored.append(module_id)
-        except TimeoutError:
+            await asyncio.wait_for(restore(), timeout)
+        except asyncio.TimeoutError:
             if self.observatory is not None:
                 self.observatory.emit("modules", "restore_timeout", restored=len(restored))
         return tuple(restored)

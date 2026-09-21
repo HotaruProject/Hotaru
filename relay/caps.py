@@ -6,6 +6,7 @@ import os
 import subprocess
 import urllib.parse
 import urllib.request
+from functools import partial
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -362,8 +363,11 @@ class CapabilityHost:
         workspace.mkdir(parents=True, exist_ok=True)
         env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "HOME": str(workspace), "LANG": "C.UTF-8"}
         try:
-            proc = await asyncio.to_thread(
-                subprocess.run,
+            loop = asyncio.get_running_loop()
+            proc = await loop.run_in_executor(
+                None,
+                partial(
+                    subprocess.run,
                 ["/bin/sh", "-lc", command],
                 cwd=str(workspace),
                 env=env,
@@ -371,6 +375,7 @@ class CapabilityHost:
                 text=True,
                 timeout=timeout,
                 check=False,
+                ),
             )
         except subprocess.TimeoutExpired:
             raise PermissionError(f"shell command timed out after {timeout}s")

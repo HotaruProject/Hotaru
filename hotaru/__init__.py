@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from .boot import maybe_reexec
 
 maybe_reexec()

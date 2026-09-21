@@ -2,7 +2,7 @@
   "include": ["hotaru", "relay"],
   "exclude": [".venv", ".venv2", "dist", "observatory", "sanctuary"],
   "typeCheckingMode": "strict",
-  "pythonVersion": "3.11",
+  "pythonVersion": "3.8",
   "pythonPlatform": "Linux",
   "venvPath": ".",
   "venv": ".venv",

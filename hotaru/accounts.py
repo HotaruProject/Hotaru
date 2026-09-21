@@ -56,7 +56,7 @@ def vault_name(session_name: str) -> str:
     return f"{session_name}.vault"
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class AccountProfile:
     user_id: int
     account_number: int

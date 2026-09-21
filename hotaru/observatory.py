@@ -9,7 +9,7 @@ import os
 import re
 import sys
 import time
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
 
@@ -171,7 +171,7 @@ class Observatory:
         now_ts = time.time()
         payload = {
             "ts": now_ts,
-            "time": datetime.fromtimestamp(now_ts, tz=UTC).isoformat(timespec="milliseconds"),
+            "time": datetime.fromtimestamp(now_ts, tz=timezone.utc).isoformat(timespec="milliseconds"),
             "level": level,
             "component": component,
             "event": event,

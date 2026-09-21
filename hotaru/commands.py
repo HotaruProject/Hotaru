@@ -1,10 +1,12 @@
+from __future__ import annotations
+
 from dataclasses import dataclass
 from typing import Any
 
 from .layouts import swap_layout
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class CommandInvocation:
     name: str
     args: tuple[str, ...]

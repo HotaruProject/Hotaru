@@ -15,7 +15,7 @@ class ActivationError(RuntimeError):
     pass
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class ActiveModule:
     loaded: LoadedModule
     context: Any
@@ -24,7 +24,7 @@ class ActiveModule:
 Starter = Callable[[LoadedModule], Any]
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class ModuleInstance:
     loaded: LoadedModule
     namespace: dict[str, Any]

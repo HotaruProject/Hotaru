@@ -24,7 +24,7 @@ DEFAULT_COMMAND_PERMISSION = Permission.OWNER
 PUBLIC_COMMAND_PERMISSION = Permission.EVERYONE
 
 
-@dataclass(slots=True)
+@dataclass
 class AccessEntry:
     user_id: int
     permissions: Permission = Permission(0)
@@ -33,7 +33,7 @@ class AccessEntry:
     added_by: int | None = None
 
 
-@dataclass(slots=True)
+@dataclass
 class SecurityGroup:
     name: str
     users: list[int]
@@ -46,7 +46,7 @@ class SecurityGroup:
             raise AccessError("group name is too long")
 
 
-@dataclass(slots=True)
+@dataclass
 class TsecRule:
     target_type: str
     target: int | str
@@ -66,7 +66,7 @@ class TsecRule:
             raise AccessError("rule duration must not be negative")
 
 
-@dataclass(slots=True)
+@dataclass
 class AccessStore:
     state: StateStore
     _cache: dict[int, AccessEntry] = field(default_factory=dict)
