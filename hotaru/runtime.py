@@ -737,7 +737,9 @@ class Runtime:
         if isinstance(sent, dict) and isinstance(sent.get("id"), int):
             if self._form_msgs is None:
                 self._form_msgs = {}
-            actor = int(getattr(self.kernel, "owner_id", 0) or 0)
+            actor = options.get("callback_actor")
+            if not isinstance(actor, int):
+                actor = int(getattr(self.kernel, "owner_id", 0) or 0)
             self._form_msgs[actor] = (chat_id, int(sent["id"]))
             if self.state is not None and isinstance(chat_id, int):
                 self.state.set_setting("inline-reference-chat", chat_id)
