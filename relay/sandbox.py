@@ -39,6 +39,8 @@ from pathlib import Path
 from types import SimpleNamespace
 import re as _re
 
+_HOST_OUT = sys.stdout
+
 def rich_html(html):
     return {"html": _re.sub(r"\n(?![^<]*>)", "<br>", html)}
 
@@ -170,8 +172,8 @@ def apply_limits(mem_mb, file_mb, nofile, cpu_seconds, net_blocked):
 
 def _cap_call(name, payload):
     req = json.dumps({"cap": name, "payload": payload})
-    sys.stdout.write(req + "\n")
-    sys.stdout.flush()
+    _HOST_OUT.write(req + "\n")
+    _HOST_OUT.flush()
     while True:
         line = sys.stdin.readline()
         if not line:
@@ -210,8 +212,8 @@ def _net_call(url, data=None, timeout=10.0):
 
 def _respond_call(payload):
     req = json.dumps({"respond": payload})
-    sys.stdout.write(req + "\n")
-    sys.stdout.flush()
+    _HOST_OUT.write(req + "\n")
+    _HOST_OUT.flush()
     while True:
         line = sys.stdin.readline()
         if not line:
@@ -266,8 +268,8 @@ _sandbox_callbacks = {}
 
 
 def _cb_respond_call(data):
-    sys.stdout.write(json.dumps({"cb_respond": data}) + "\n")
-    sys.stdout.flush()
+    _HOST_OUT.write(json.dumps({"cb_respond": data}) + "\n")
+    _HOST_OUT.flush()
     for line in sys.stdin:
         line = line.strip()
         if not line:
@@ -1019,9 +1021,10 @@ class ModuleSandbox:
         self._respond_targets: dict[str, int] = {}
         self._cb_waiters: dict[tuple[str, str], asyncio.Future[Any]] = {}
         self._active_callback: dict[str, Any] = {}
-        self._cb_respond_pending: list[dict[str, Any]] = []
-        self._pending_caps: list[dict[str, Any]] = []
-        self._respond_pending: list[dict[str, Any]] = []
+        self._cb_respond_pending: dict[str, list[dict[str, Any]]] = {}
+        self._pending_caps: dict[str, list[dict[str, Any]]] = {}
+        self._respond_pending: dict[str, list[dict[str, Any]]] = {}
+        self._roundtrip_locks: dict[str, asyncio.Lock] = {}
         self._python = os.path.realpath(sys.executable)
         self._stdlib = sysconfig.get_paths()["stdlib"]
         self._stdlib_dst = f"/opt/py/lib/python{sys.version_info.major}.{sys.version_info.minor}"
@@ -1227,15 +1230,16 @@ class ModuleSandbox:
         return True
 
     async def call(self, module_id: str, command: str, args: list[str], payload: dict[str, Any], source: Any = None, target: str | None = None) -> Any:
-        if source is not None:
-            self._respond_sources[module_id] = source
-            self._respond_targets.pop(module_id, None)
-        try:
-            result = await self.roundtrip(module_id, {"command": command, "args": args, "payload": payload, "target": target})
-        finally:
+        async with self._roundtrip_lock(module_id):
             if source is not None:
-                self._respond_sources.pop(module_id, None)
+                self._respond_sources[module_id] = source
                 self._respond_targets.pop(module_id, None)
+            try:
+                result = await self._roundtrip(module_id, {"command": command, "args": args, "payload": payload, "target": target})
+            finally:
+                if source is not None:
+                    self._respond_sources.pop(module_id, None)
+                    self._respond_targets.pop(module_id, None)
         if not isinstance(result, dict) or not result.get("ok"):
             raise SandboxError(f"sandbox call failed: {result.get('error') if isinstance(result, dict) else 'malformed'}")
         return result.get("result")
@@ -1247,12 +1251,21 @@ class ModuleSandbox:
         return result.get("result")
 
     async def roundtrip(self, module_id: str, request: dict[str, Any]) -> dict[str, Any] | None:
+        async with self._roundtrip_lock(module_id):
+            return await self._roundtrip(module_id, request)
+
+    def _roundtrip_lock(self, module_id: str) -> asyncio.Lock:
+        lock = self._roundtrip_locks.get(module_id)
+        if lock is None:
+            lock = asyncio.Lock()
+            self._roundtrip_locks[module_id] = lock
+        return lock
+
+    async def _roundtrip(self, module_id: str, request: dict[str, Any]) -> dict[str, Any] | None:
         process = self._workers.get(module_id)
         if process is None or process.poll() is not None:
             raise SandboxError(f"sandbox worker is not running: {module_id}")
         loop = asyncio.get_running_loop()
-        self._respond_pending = getattr(self, "_respond_pending", [])
-
         def _roundtrip() -> Any:
             assert process.stdin is not None
             process.stdin.write((json.dumps(request) + "\n").encode("utf-8"))
@@ -1263,16 +1276,16 @@ class ModuleSandbox:
                     raise SandboxError(f"sandbox worker died during call: {module_id}")
                 message = _json_dict(line)
                 if "cap" in message:
-                    self._pending_caps.append(message)
+                    self._pending_caps.setdefault(module_id, []).append(message)
                     continue
                 if "log" in message:
                     self._sink_worker_log(module_id, message)
                     continue
                 if "respond" in message:
-                    self._respond_pending.append(message)
+                    self._respond_pending.setdefault(module_id, []).append(message)
                     continue
                 if "cb_respond" in message:
-                    self._cb_respond_pending.append(message)
+                    self._cb_respond_pending.setdefault(module_id, []).append(message)
                     continue
                 return message
 
@@ -1281,11 +1294,11 @@ class ModuleSandbox:
             try:
                 return await asyncio.wait_for(asyncio.shield(task), timeout=0.05)
             except asyncio.TimeoutError:
-                if self._pending_caps:
+                if self._pending_caps.get(module_id):
                     await self._serve_caps(module_id)
-                if self._respond_pending:
+                if self._respond_pending.get(module_id):
                     await self._serve_respond(module_id)
-                if getattr(self, "_cb_respond_pending", None):
+                if self._cb_respond_pending.get(module_id):
                     await self._serve_cb_respond(module_id)
                 continue
             except Exception:
@@ -1293,8 +1306,7 @@ class ModuleSandbox:
                 raise
 
     async def _serve_caps(self, module_id: str) -> None:
-        caps = self._pending_caps
-        self._pending_caps = []
+        caps = self._pending_caps.pop(module_id, [])
         cap_host = getattr(self.runtime, "cap_host", None)
         for message in caps:
             name = message.get("cap")
@@ -1313,8 +1325,7 @@ class ModuleSandbox:
                 process.stdin.flush()
 
     async def _serve_respond(self, module_id: str) -> None:
-        pending = self._respond_pending
-        self._respond_pending = []
+        pending = self._respond_pending.pop(module_id, [])
         source = self._respond_sources.get(module_id)
         for message in pending:
             payload_value = message.get("respond")
@@ -1331,8 +1342,7 @@ class ModuleSandbox:
                 process.stdin.flush()
 
     async def _serve_cb_respond(self, module_id: str) -> None:
-        pending = getattr(self, "_cb_respond_pending", [])
-        self._cb_respond_pending = []
+        pending = self._cb_respond_pending.pop(module_id, [])
         callback = getattr(self, "_active_callback", {}).get(module_id)
         process = self._workers.get(module_id)
         for message in pending:
@@ -1545,9 +1555,6 @@ class ModuleSandbox:
         async def handler(callback: Any, payload: Any) -> object:
             self._active_callback = getattr(self, "_active_callback", {})
             self._active_callback[module_id] = callback
-            process = self._workers.get(module_id)
-            if process is None or process.poll() is not None or process.stdin is None:
-                raise PermissionError("sandbox callback worker is not running")
             request = {
                 "cb": {
                     "module_id": module_id,
@@ -1559,57 +1566,15 @@ class ModuleSandbox:
                     "inline_message_id": getattr(callback, "inline_message_id", None),
                 }
             }
-            loop = asyncio.get_running_loop()
-            task: asyncio.Future[dict[str, Any]] | None = None
-
-            def _reader() -> dict[str, Any]:
-                assert process.stdin is not None
-                process.stdin.write((json.dumps(request) + "\n").encode("utf-8"))
-                process.stdin.flush()
-                while True:
-                    line = self._readline(process)
-                    if not line:
-                        raise SandboxError(f"sandbox worker died during callback: {module_id}")
-                    message = _json_dict(line)
-                    if not message:
-                        continue
-                    if "cap" in message:
-                        self._pending_caps.append(message)
-                        continue
-                    if "log" in message:
-                        self._sink_worker_log(module_id, message)
-                        continue
-                    if "respond" in message:
-                        self._respond_pending.append(message)
-                        continue
-                    if "cb_respond" in message:
-                        self._cb_respond_pending.append(message)
-                        continue
-                    return message
-
             try:
-                task = asyncio.ensure_future(loop.run_in_executor(None, _reader))
-                while True:
-                    try:
-                        result = await asyncio.wait_for(asyncio.shield(task), timeout=0.05)
-                        break
-                    except asyncio.TimeoutError:
-                        if getattr(self, "_pending_caps", None):
-                            await self._serve_caps(module_id)
-                        if getattr(self, "_respond_pending", None):
-                            await self._serve_respond(module_id)
-                        if getattr(self, "_cb_respond_pending", None):
-                            await self._serve_cb_respond(module_id)
-                        continue
+                result = await self.roundtrip(module_id, request)
+                if result is None:
+                    raise PermissionError("sandbox callback failed: malformed")
                 if result.get("ok"):
                     return result.get("result")
                 raise PermissionError(f"sandbox callback failed: {result.get('error', 'malformed')}")
-            except asyncio.TimeoutError:
-                raise PermissionError("sandbox callback timed out")
             finally:
                 self._active_callback.pop(module_id, None)
-                if task is not None and not task.done():
-                    task.cancel()
 
         return handler
 
