@@ -1,11 +1,11 @@
 HOTARU = {
     "id": "help",
-    "version": "1.1.0",
+    "version": "1.1.1",
     "commands": ["hlp", "help"],
     "capabilities": ["mt"],
 }
 
-from typing import Any, List, Set
+from typing import Any, List
 
 __all__ = ["_plain_module_line", "_plain_section"]
 
@@ -120,26 +120,19 @@ async def _show_help(ctx: Any, invocation: Any) -> Any:
 
     if runtime.modules is not None:
         active = {item.loaded.manifest.module_id: item for item in runtime.modules.items()}
-        known: Set[str] = set(runtime.state.module_ids()) if runtime.state is not None else set()
 
-        for module_id in sorted(set(active.keys()) | known, key=str.casefold):
-            if module_id in active:
-                item = active[module_id]
-                manifest = item.loaded.manifest
-                is_kernel = (
-                    module_id in runtime.modules._bindings
-                    and runtime.modules._bindings[module_id][2]
-                )
-                line = _module_line(runtime, module_id, manifest, is_kernel)
-                if is_kernel:
-                    kernel_modules.append(line)
-                else:
-                    user_modules.append(line)
+        for module_id in sorted(active, key=str.casefold):
+            item = active[module_id]
+            manifest = item.loaded.manifest
+            is_kernel = (
+                module_id in runtime.modules._bindings
+                and runtime.modules._bindings[module_id][2]
+            )
+            line = _module_line(runtime, module_id, manifest, is_kernel)
+            if is_kernel:
+                kernel_modules.append(line)
             else:
-                user_modules.append(
-                    f'<p><tg-emoji emoji-id="5404553572727660202">❌</tg-emoji> '
-                    f'<code>{_escape(module_id)}</code> <i>({_escape(ctx.t("kernel.help_ui.untrusted", "not loaded"))})</i></p>'
-                )
+                user_modules.append(line)
     else:
         for name in sorted(runtime.kernel.registry.names(), key=str.casefold):
             user_modules.append(

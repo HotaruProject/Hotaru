@@ -188,8 +188,7 @@
       "kernel_modules": "Kernel Modules",
       "user_modules": "User Modules",
       "commands": "Commands",
-      "capabilities": "Capabilities",
-      "untrusted": "not loaded"
+      "capabilities": "Capabilities"
     },
     "accounts": {
       "description": "Multi-account management: register, authorize, spawn, stop accounts",

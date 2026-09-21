@@ -629,14 +629,11 @@ class CapabilityHost:
         else:
             raise PermissionError("modules load requires an https url or module source text")
         module_id = loaded.manifest.module_id
-        if action == "staged":
+        if action == "confirm":
             if not self._allowed(caller_id, "modules"):
-                return {
-                    "module_id": module_id,
-                    "version": loaded.manifest.version,
-                    "digest": loaded.digest,
-                    "action": "staged",
-                }
+                loaded.path.unlink(missing_ok=True)
+                runtime.state.delete_module(module_id)
+                raise PermissionError("modules capability is required")
             runtime._mark_caps_consent(module_id, runtime._caps_fingerprint(loaded.manifest))
             loaded, action = await runtime.load_module(str(loaded.path))
         return {
@@ -663,7 +660,7 @@ class CapabilityHost:
             raise PermissionError("modules reload requires a module_id")
         module_id = target.casefold()
         if runtime.modules.get(module_id) is None:
-            raise PermissionError(f"module not loaded: {module_id}")
+            raise PermissionError(f"module not found: {module_id}")
         result = await runtime._command_rl(SimpleNamespace(args=(module_id, "force")))
         return {"module_id": module_id, "action": "reloaded", "detail": result}
 
