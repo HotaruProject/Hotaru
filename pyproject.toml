@@ -9,7 +9,7 @@ description = "Hotaru userbot kernel on GoyGram"
 requires-python = ">=3.11"
 dependencies = [
     "basedpyright>=1.40.1",
-    "goygram>=0.8.0",
+    "goygram>=0.8.2",
     "rich>=13.7",
 ]
 
