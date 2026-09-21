@@ -1380,6 +1380,8 @@ class Runtime:
         with tempfile.TemporaryDirectory(prefix=".hotaru-candidate-") as candidate_dir:
             if isinstance(source, str) and source.startswith("https://"):
                 candidate = self.stage_module_url(source, candidate_dir)
+            elif isinstance(source, str) and ("\n" in source or source.lstrip().startswith("HOTARU")):
+                candidate = self.stager.stage_text(source, candidate_dir)
             else:
                 candidate = self.stage_module(source, candidate_dir)
             module_id = candidate.manifest.module_id
