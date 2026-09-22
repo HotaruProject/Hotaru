@@ -22,9 +22,6 @@ from relay.firewall import trusted_scope
 
 _TOOLKIT_SOURCE = Path(_toolkit.__file__).read_text(encoding="utf-8")
 
-# Reserved marker for bytes transported through the sandbox JSON protocol.
-# A mapping that holds nothing but this key decodes back to bytes; any other
-# shape (extra keys, non-string value, bad padding) passes through untouched.
 _PROTO_BYTES_KEY = "$bytes"
 
 
