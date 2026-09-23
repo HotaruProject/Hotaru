@@ -1379,38 +1379,39 @@ class Runtime:
     async def load_module(self, source: str | Path, *, consent_screen: Any = None) -> tuple[Any, str]:
         if self.stager is None or self.state is None:
             raise RuntimeError("runtime services are not ready")
-        with tempfile.TemporaryDirectory(prefix=".hotaru-candidate-") as candidate_dir:
-            if isinstance(source, str) and source.startswith("https://"):
-                candidate = self.stage_module_url(source, candidate_dir)
-            elif isinstance(source, str) and ("\n" in source or source.lstrip().startswith("HOTARU")):
-                candidate = self.stager.stage_text(source, candidate_dir)
-            else:
-                candidate = self.stage_module(source, candidate_dir)
-            module_id = candidate.manifest.module_id
-            caps = list(getattr(candidate.manifest, "capabilities", ()) or ())
-            fingerprint = self._caps_fingerprint(candidate.manifest)
-            if caps and not self._caps_consented(module_id, fingerprint):
-                return candidate, "confirm"
-            source_text = candidate.source
-        loaded = self.stager.stage_text(source_text, self.relay_dir)
-        if not caps:
-            self._mark_caps_consent(module_id, fingerprint)
-        if self.modules is not None and self.modules.get(module_id) is not None:
-            result = await self._command_rl(SimpleNamespace(args=(module_id,)))
-            if result.startswith("reloaded:"):
-                return loaded, "updated"
-            return loaded, result
-        try:
-            await self.activate_module(str(loaded.path))
-        except Exception as exc:
-            loaded.path.unlink(missing_ok=True)
-            self.state.delete_module(module_id)
+        with trusted_scope():
+            with tempfile.TemporaryDirectory(prefix=".hotaru-candidate-") as candidate_dir:
+                if isinstance(source, str) and source.startswith("https://"):
+                    candidate = self.stage_module_url(source, candidate_dir)
+                elif isinstance(source, str) and ("\n" in source or source.lstrip().startswith("HOTARU")):
+                    candidate = self.stager.stage_text(source, candidate_dir)
+                else:
+                    candidate = self.stage_module(source, candidate_dir)
+                module_id = candidate.manifest.module_id
+                caps = list(getattr(candidate.manifest, "capabilities", ()) or ())
+                fingerprint = self._caps_fingerprint(candidate.manifest)
+                if caps and not self._caps_consented(module_id, fingerprint):
+                    return candidate, "confirm"
+                source_text = candidate.source
+            loaded = self.stager.stage_text(source_text, self.relay_dir)
+            if not caps:
+                self._mark_caps_consent(module_id, fingerprint)
+            if self.modules is not None and self.modules.get(module_id) is not None:
+                result = await self._command_rl(SimpleNamespace(args=(module_id,)))
+                if result.startswith("reloaded:"):
+                    return loaded, "updated"
+                return loaded, result
+            try:
+                await self.activate_module(str(loaded.path))
+            except Exception as exc:
+                loaded.path.unlink(missing_ok=True)
+                self.state.delete_module(module_id)
+                if self.observatory is not None:
+                    self.observatory.emit("modules", "load_error", module=module_id, error=type(exc).__name__, detail=str(exc)[:240])
+                return loaded, f"load failed: {type(exc).__name__}"
             if self.observatory is not None:
-                self.observatory.emit("modules", "load_error", module=module_id, error=type(exc).__name__, detail=str(exc)[:240])
-            return loaded, f"load failed: {type(exc).__name__}"
-        if self.observatory is not None:
-            self.observatory.emit("modules", "loaded", module=module_id, version=loaded.manifest.version)
-        return loaded, "loaded"
+                self.observatory.emit("modules", "loaded", module=module_id, version=loaded.manifest.version)
+            return loaded, "loaded"
 
     async def _command_ld(self, invocation: Any) -> str | tuple[str, list[Any]]:
         if len(invocation.args) > 1:
@@ -1454,32 +1455,33 @@ class Runtime:
     async def unload_module(self, module_id: str) -> str | None:
         if self.modules is None or self.state is None:
             raise RuntimeError("runtime services are not ready")
-        module_id = module_id.casefold()
-        if self._is_kernel_module(module_id):
-            return f"kernel module is protected: {module_id}"
-        active = self.modules.get(module_id)
-        namespace = self.state.namespace(module_id)
-        source_path = active.loaded.path if active is not None else Path(namespace.get("sourcepath", self.relay_dir / f"{module_id}.hmod"))
-        if not source_path.is_file():
-            return f"module not found: {module_id}"
-        try:
-            self._backup_before_activation(source_path)
-            if active is not None:
-                await self.deactivate_module(module_id)
-            source_path.unlink()
-        except Exception as exc:
-            if active is not None and self.modules.get(module_id) is None and source_path.is_file():
-                try:
-                    await self.activate_module(str(source_path))
-                except Exception:
-                    pass
+        with trusted_scope():
+            module_id = module_id.casefold()
+            if self._is_kernel_module(module_id):
+                return f"kernel module is protected: {module_id}"
+            active = self.modules.get(module_id)
+            namespace = self.state.namespace(module_id)
+            source_path = active.loaded.path if active is not None else Path(namespace.get("sourcepath", self.relay_dir / f"{module_id}.hmod"))
+            if not source_path.is_file():
+                return f"module not found: {module_id}"
+            try:
+                self._backup_before_activation(source_path)
+                if active is not None:
+                    await self.deactivate_module(module_id)
+                source_path.unlink()
+            except Exception as exc:
+                if active is not None and self.modules.get(module_id) is None and source_path.is_file():
+                    try:
+                        await self.activate_module(str(source_path))
+                    except Exception:
+                        pass
+                if self.observatory is not None:
+                    self.observatory.emit("modules", "unload_error", module=module_id, error=type(exc).__name__, detail=str(exc)[:240])
+                return f"unload failed: {type(exc).__name__}"
+            self.state.delete_module(module_id)
             if self.observatory is not None:
-                self.observatory.emit("modules", "unload_error", module=module_id, error=type(exc).__name__, detail=str(exc)[:240])
-            return f"unload failed: {type(exc).__name__}"
-        self.state.delete_module(module_id)
-        if self.observatory is not None:
-            self.observatory.emit("modules", "unloaded", module=module_id)
-        return None
+                self.observatory.emit("modules", "unloaded", module=module_id)
+            return None
 
     async def _command_ul(self, invocation: Any) -> str:
         if len(invocation.args) != 1 or self.modules is None or self.state is None:
@@ -1500,45 +1502,46 @@ class Runtime:
         force = len(invocation.args) == 2 and invocation.args[1].casefold() == "force"
         if len(invocation.args) == 2 and not force:
             return "usage: !rl <module-id> [force]"
-        module_id = invocation.args[0].casefold()
-        active = self.modules.get(module_id)
-        if active is None:
-            return f"module not found: {module_id}"
-        old_path = active.loaded.path
-        old_source = active.loaded.source
-        candidate = self.relay_dir / f"{module_id}.hmod"
-        reload_path = candidate if candidate.is_file() else old_path
-        if reload_path == candidate:
-            candidate_loaded = self.modules.loader.load(candidate)
-            if candidate_loaded.manifest.module_id != module_id:
-                return f"module id mismatch: {module_id}"
-            current_version = self._version_key(active.loaded.manifest.version)
-            candidate_version = self._version_key(candidate_loaded.manifest.version)
-            if not force and current_version is not None and candidate_version is not None and candidate_version < current_version:
-                if self.observatory is not None:
-                    self.observatory.emit("modules", "update_blocked", module=module_id, old_version=active.loaded.manifest.version, new_version=candidate_loaded.manifest.version, reason="downgrade")
-                return f"reload blocked: version downgrade {active.loaded.manifest.version} to {candidate_loaded.manifest.version}"
-        await self.deactivate_module(module_id)
-        try:
-            await self.activate_module(str(reload_path))
-        except Exception as exc:
-            if self.observatory is not None:
-                self.observatory.emit("modules", "update_error", module=module_id, error=type(exc).__name__)
+        with trusted_scope():
+            module_id = invocation.args[0].casefold()
+            active = self.modules.get(module_id)
+            if active is None:
+                return f"module not found: {module_id}"
+            old_path = active.loaded.path
+            old_source = active.loaded.source
+            candidate = self.relay_dir / f"{module_id}.hmod"
+            reload_path = candidate if candidate.is_file() else old_path
+            if reload_path == candidate:
+                candidate_loaded = self.modules.loader.load(candidate)
+                if candidate_loaded.manifest.module_id != module_id:
+                    return f"module id mismatch: {module_id}"
+                current_version = self._version_key(active.loaded.manifest.version)
+                candidate_version = self._version_key(candidate_loaded.manifest.version)
+                if not force and current_version is not None and candidate_version is not None and candidate_version < current_version:
+                    if self.observatory is not None:
+                        self.observatory.emit("modules", "update_blocked", module=module_id, old_version=active.loaded.manifest.version, new_version=candidate_loaded.manifest.version, reason="downgrade")
+                    return f"reload blocked: version downgrade {active.loaded.manifest.version} to {candidate_loaded.manifest.version}"
+            await self.deactivate_module(module_id)
             try:
-                if self.stager is None:
-                    raise RuntimeError("module stager is unavailable")
-                self.stager.stage_text(old_source, old_path.parent)
-                await self.modules.activate_source(old_path, self.kernel, sandbox=self.sandbox)
-            except Exception:
-                return f"reload failed: {type(exc).__name__}; rollback failed"
+                await self.activate_module(str(reload_path))
+            except Exception as exc:
+                if self.observatory is not None:
+                    self.observatory.emit("modules", "update_error", module=module_id, error=type(exc).__name__)
+                try:
+                    if self.stager is None:
+                        raise RuntimeError("module stager is unavailable")
+                    self.stager.stage_text(old_source, old_path.parent)
+                    await self.modules.activate_source(old_path, self.kernel, sandbox=self.sandbox)
+                except Exception:
+                    return f"reload failed: {type(exc).__name__}; rollback failed"
+                if self.observatory is not None:
+                    self.observatory.emit("modules", "rollback_restored", module=module_id, version=active.loaded.manifest.version)
+                return f"reload failed: {type(exc).__name__}; previous version restored"
             if self.observatory is not None:
-                self.observatory.emit("modules", "rollback_restored", module=module_id, version=active.loaded.manifest.version)
-            return f"reload failed: {type(exc).__name__}; previous version restored"
-        if self.observatory is not None:
-            current = self.modules.get(module_id)
-            version = current.loaded.manifest.version if current is not None else ""
-            self.observatory.emit("modules", "update_applied", module=module_id, version=version)
-        return f"reloaded: {module_id}"
+                current = self.modules.get(module_id)
+                version = current.loaded.manifest.version if current is not None else ""
+                self.observatory.emit("modules", "update_applied", module=module_id, version=version)
+            return f"reloaded: {module_id}"
 
 
 
@@ -1720,23 +1723,24 @@ class Runtime:
     def _backup_before_activation(self, path: str | Path) -> Path:
         if self.backups is None or self.state is None or self.modules is None:
             raise RuntimeError("backup services are not ready")
-        candidate = Path(path)
-        self.modules.loader.load(candidate)
-        module_paths = [active.loaded.path for active in self.modules.items()]
-        if candidate not in module_paths:
-            module_paths.append(candidate)
-        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ")
-        destination = self.config.state_path.parent / "backups" / f"{stamp}.hbk"
-        result = self.backups.create(
-            destination,
-            state_path=self.config.state_path,
-            module_paths=module_paths,
-            metadata={"reason": "module_activation", "module": str(candidate.name)},
-        )
-        removed = self.backups.prune(destination.parent, keep=self.config.backup_keep)
-        if self.observatory is not None:
-            self.observatory.emit("backup", "created", files=len(module_paths) + 1, removed=len(removed))
-        return result
+        with trusted_scope():
+            candidate = Path(path)
+            self.modules.loader.load(candidate)
+            module_paths = [active.loaded.path for active in self.modules.items()]
+            if candidate not in module_paths:
+                module_paths.append(candidate)
+            stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ")
+            destination = self.config.state_path.parent / "backups" / f"{stamp}.hbk"
+            result = self.backups.create(
+                destination,
+                state_path=self.config.state_path,
+                module_paths=module_paths,
+                metadata={"reason": "module_activation", "module": str(candidate.name)},
+            )
+            removed = self.backups.prune(destination.parent, keep=self.config.backup_keep)
+            if self.observatory is not None:
+                self.observatory.emit("backup", "created", files=len(module_paths) + 1, removed=len(removed))
+            return result
 
     def stage_module(self, source: str | Path, destination: str | Path | None = None) -> Any:
         if self.stager is None:
