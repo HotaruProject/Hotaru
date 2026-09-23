@@ -3,6 +3,28 @@ HOTARU = {
     "version": "1.0.2",
     "commands": ["tfstatus", "tfhistory", "tfstate", "tffile", "tfnet", "tfbutton", "tfmedia", "tfinlinerich", "tfrichboth"],
     "capabilities": ["mt", "state", "files", "net"],
+    "config_schema": {
+        "debug_mode": {
+            "type": "bool",
+            "default": False,
+            "description": "Enable verbose diagnostic outputs",
+            "category": "Diagnostics",
+        },
+        "sample_limit": {
+            "type": "int",
+            "default": 5,
+            "minimum": 1,
+            "maximum": 50,
+            "description": "Number of sample items to fetch",
+            "category": "Diagnostics",
+        },
+        "test_tag": {
+            "type": "str",
+            "default": "hotaru-test",
+            "description": "Tag attached to test messages",
+            "category": "General",
+        },
+    },
 }
 
 from typing import Any, List, Mapping, cast

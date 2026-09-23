@@ -114,6 +114,10 @@ class Lexicon:
             raise TranslationError(f"unsupported language: {language}")
         return language.casefold()
 
+    @staticmethod
+    def _validate_language(language: object) -> bool:
+        return isinstance(language, str) and language.casefold() in SUPPORTED_LANGUAGES
+
     @classmethod
     def _validate_values(cls, value: object) -> None:
         if isinstance(value, dict):

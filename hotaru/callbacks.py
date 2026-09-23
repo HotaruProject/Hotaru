@@ -83,7 +83,44 @@ class CallbackContext:
             with trusted_scope():
                 return await app.mt_messages_edit_inline_bot_message(id=id_field, message=message, **fallback)
 
+    @staticmethod
+    def _has_input_buttons(buttons: Any) -> bool:
+        if not isinstance(buttons, list):
+            return False
+        for row in cast("list[Any]", buttons):
+            items: list[Any] = [cast("Any", row)] if isinstance(row, dict) else (cast("list[Any]", row) if isinstance(row, list) else [])
+            for btn in items:
+                b = cast("dict[str, Any]", btn)
+                if isinstance(btn, dict) and isinstance(b.get("input"), str):
+                    return True
+        return False
+
+
     async def edit(self, text: str, **kwargs: Any) -> Any:
+        runtime = getattr(self._callback, "_hotaru_runtime", None)
+        raw_buttons = kwargs.get("buttons")
+        if runtime is not None and self._has_input_buttons(raw_buttons):
+            from hotaru.runtime import InputContext
+            buttons = cast("list[Any]", kwargs.pop("buttons", []))
+            kwargs.pop("kbd", None)
+            if not isinstance(getattr(self, "chat_id", None), int):
+                if runtime.state is not None:
+                    ref_chat = runtime.state.get_setting("inline-reference-chat")
+                    if isinstance(ref_chat, int):
+                        self.chat_id = ref_chat
+                if not isinstance(getattr(self, "chat_id", None), int) and runtime._form_msgs:
+                    for c_id, _ in runtime._form_msgs.values():
+                        if isinstance(c_id, int):
+                            self.chat_id = c_id
+                            break
+            ctx = InputContext(runtime, self, None, "", None)
+            ctx.inline_message_id = getattr(self, "inline_message_id", None)
+            ctx.form_nonce = getattr(self, "form_nonce", None)
+            assert runtime is not None
+            return await runtime._edit_input_form(ctx, text, buttons, kwargs)
+
+
+
         inline_mid = getattr(self, "inline_message_id", None)
         app = getattr(self, "app", None)
         chat_id = getattr(self, "chat_id", None)
@@ -101,15 +138,20 @@ class CallbackContext:
         if getattr(self, "src", None) == "mt" and app is not None:
             data = dict(kwargs)
             use_rich = bool(data.pop("rich", False))
+            raw_buttons = data.pop("buttons", None)
             raw_kbd = data.pop("reply_markup", data.pop("kbd", None))
+            if raw_kbd is None and raw_buttons is not None:
+                raw_kbd = {"inline_keyboard": raw_buttons}
             if raw_kbd is not None:
                 markup = kbd_to_tl(raw_kbd)
                 if markup is not None:
                     data["reply_markup"] = markup
             data.pop("parse_mode", None)
-            plain, ents = html_to_entities(text)
+            plain, raw_ents = html_to_entities(text)
+            ents = [e for e in raw_ents if int(e.get("length", 0)) > 0]
             if ents:
                 data["entities"] = ents
+
             log["plain_len"] = len(plain or "")
             log["plain_u16"] = len((plain or "").encode("utf-16-le")) // 2
             log["ents"] = len(ents)
@@ -138,15 +180,21 @@ class CallbackContext:
         if inline_mid is not None and app is not None:
             data = dict(kwargs)
             use_rich = bool(data.pop("rich", False))
-            kbd = data.pop("kbd", None)
+            raw_buttons = data.pop("buttons", None)
+            kbd = data.pop("kbd", data.pop("reply_markup", None))
+            if kbd is None and raw_buttons is not None:
+                kbd = {"inline_keyboard": raw_buttons}
             data.pop("parse_mode", None)
             if kbd is not None:
-                markup = kbd_to_tl(kbd.to_dict() if hasattr(kbd, "to_dict") else kbd)
+                raw_k: Any = kbd
+                markup = kbd_to_tl(raw_k.to_dict() if hasattr(raw_k, "to_dict") else raw_k)
                 if markup is not None:
                     data["reply_markup"] = markup
-            plain, ents = html_to_entities(text)
+            plain, raw_ents = html_to_entities(text)
+            ents = [e for e in raw_ents if int(e.get("length", 0)) > 0]
             if ents:
                 data["entities"] = ents
+
             bot_inline_id: dict[str, Any] = cast('dict[str, Any]', inline_mid) if isinstance(inline_mid, dict) else {"_": "inputBotInlineMessageID", "raw": inline_mid}
             log["branch"] = "editInlineBotMessage-bot"
             log["id_field"] = bot_inline_id
