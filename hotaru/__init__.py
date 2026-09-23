@@ -11,7 +11,25 @@ from .kernel import Kernel
 from .layouts import swap_layout
 from .modules import HmodLoader, LoadedModule, ModuleCatalog, ModuleFetchError, ModuleManifest, ModuleStager, ModuleValidationError
 from .i18n import Lexicon, TranslationError, Translator
-from .config import RuntimeConfig
+from .config import (
+    Boolean,
+    Choice,
+    ConfigError,
+    ConfigField,
+    ConfigManager,
+    ConfigNotFoundError,
+    ConfigSchema,
+    ConfigValidationError,
+    Float,
+    Integer,
+    ModuleConfig,
+    RuntimeConfig,
+    Secret,
+    Series,
+    String,
+    Union,
+    Validator,
+)
 from .activation import ActivationError, ActiveModule, ModuleBinder, ModuleInstance, ModuleManager
 from .backup import BackupError, BackupService, RestorePlan
 from .capabilities import BehaviorEnvelope, CapabilityBroker, CapabilityDenied, CapabilityProvider
@@ -59,6 +77,22 @@ __all__ = [
     "CommandSpec",
     "Runtime",
     "RuntimeConfig",
+    "Boolean",
+    "Choice",
+    "ConfigError",
+    "ConfigField",
+    "ConfigManager",
+    "ConfigNotFoundError",
+    "ConfigSchema",
+    "ConfigValidationError",
+    "Float",
+    "Integer",
+    "ModuleConfig",
+    "Secret",
+    "Series",
+    "String",
+    "Union",
+    "Validator",
     "Attachment",
     "FormHandle",
     "ModuleMessage",

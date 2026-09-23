@@ -57,7 +57,7 @@ class InputContext:
         self.query = query
         self.value = value
         self.payload = payload
-        self.form_nonce = None
+        self.form_nonce: str | None = None
         self.inline_message_id = getattr(query, "msg_id", None)
 
     async def reject(self, text: str = "Invalid value") -> Any:
@@ -73,7 +73,14 @@ class InputContext:
         return None
 
     async def edit(self, text: str, **kwargs: Any) -> Any:
-        buttons: Any = kwargs.pop("buttons", None) or []
+        raw_buttons: Any = kwargs.pop("buttons", None)
+        if raw_buttons is None and "kbd" in kwargs:
+            raw_kbd = kwargs.pop("kbd")
+            if isinstance(raw_kbd, dict):
+                raw_buttons = cast('dict[str, Any]', raw_kbd).get("inline_keyboard", [])
+            else:
+                raw_buttons = raw_kbd
+        buttons: list[Any] = cast("list[Any]", raw_buttons) if isinstance(raw_buttons, list) else []
         return await self.runtime._edit_input_form(self, text, buttons, kwargs)
 
     async def delete(self) -> bool:
@@ -865,15 +872,15 @@ class Runtime:
         inline_id = (self._form_inline_ids or {}).get(nonce) if nonce else None
         if inline_id is None:
             inline_id = ctx.inline_message_id
-        if inline_id is None:
-            raise RuntimeError("form inline id is missing")
-        bot = getattr(getattr(self, "inline", None), "bot_app", None)
-        if bot is None:
-            raise RuntimeError("inline bot is not ready")
         layout: list[list[dict[str, Any]]] = []
         command = ctx.source
         if nonce is None:
             nonce = secrets.token_urlsafe(12)
+        if self._form_inline_ids is None:
+            self._form_inline_ids = {}
+        if inline_id is not None:
+            self._form_inline_ids[nonce] = inline_id
+        ctx.form_nonce = nonce
         module_id = str(options.get("module_id") or (self._form_module_ids or {}).get(nonce) or "")
         actor = options.get("callback_actor")
         if not isinstance(actor, int):
@@ -917,61 +924,96 @@ class Runtime:
             if self._form_module_ids is None:
                 self._form_module_ids = {}
             self._form_module_ids[nonce] = module_id
+        markup = kbd_to_tl({"inline_keyboard": layout})
+        if inline_id is None:
+            chat_id = getattr(command, "chat_id", None)
+            msg_id = getattr(command, "id", None) or getattr(command, "msg_id", None)
+            if self.app is not None and chat_id is not None and isinstance(msg_id, int):
+                plain, raw_ents = html_to_entities(text)
+                ents = [e for e in raw_ents if int(e.get("length", 0)) > 0]
+                data_msg: dict[str, Any] = {"peer": chat_id, "id": msg_id, "message": plain}
+                if ents:
+                    data_msg["entities"] = ents
+                if markup is not None:
+                    data_msg["reply_markup"] = markup
+                with trusted_scope():
+                    return await self.app.mt_messages_edit_message(**data_msg)
+            raise RuntimeError("form inline id is missing")
+        bot = getattr(getattr(self, "inline", None), "bot_app", None)
+        if bot is None:
+            raise RuntimeError("inline bot is not ready")
         id_field: dict[str, Any] = cast('dict[str, Any]', inline_id) if isinstance(inline_id, dict) else {"_": "inputBotInlineMessageID", "raw": inline_id}
         if options.get("rich"):
             data: dict[str, Any] = {"id": id_field, "message": "", "rich_message": {"_": "inputRichMessageHTML", **rich_html(text)}}
         else:
-            plain, ents = html_to_entities(text)
+            plain, raw_ents = html_to_entities(text)
+            ents = [e for e in raw_ents if int(e.get("length", 0)) > 0]
             data = {"id": id_field, "message": plain}
             if ents:
                 data["entities"] = ents
-        markup = kbd_to_tl({"inline_keyboard": layout})
+
         if markup is not None:
             data["reply_markup"] = markup
         with trusted_scope():
             return await bot.mt_messages_edit_inline_bot_message(**data)
 
     async def _drop_transfer(self, source: Any, inline_id: Any) -> None:
+        chat_id = getattr(source, "chat_id", None)
+        if not isinstance(chat_id, int) and self.state is not None:
+            ref_chat = self.state.get_setting("inline-reference-chat")
+            if isinstance(ref_chat, int):
+                chat_id = ref_chat
+        if not isinstance(chat_id, int) and self._form_msgs:
+            for c_id, _ in self._form_msgs.values():
+                if isinstance(c_id, int):
+                    chat_id = c_id
+                    break
+        app = self.app
+        bot_id = getattr(getattr(self.inline, "info", None), "bot_id", None)
+        deleted = False
+        if app is not None and isinstance(chat_id, int) and isinstance(bot_id, int):
+            for _ in range(3):
+                try:
+                    with trusted_scope():
+                        peer = await app.mt.resolve_peer(chat_id)
+                        hist = await app.mt_messages_get_history(peer=peer, offset_id=0, offset_date=0, add_offset=0, limit=10, max_id=0, min_id=0, hash=0)
+                except Exception:
+                    break
+                body: Any = cast('dict[str, Any]', hist).get("result", hist) if isinstance(hist, dict) else hist
+                messages = cast('dict[str, Any]', body).get("messages") if isinstance(body, dict) else None
+                for message in cast('list[Any]', messages or []):
+                    if not isinstance(message, dict):
+                        continue
+                    message_data = cast('dict[str, Any]', message)
+                    via: Any = message_data.get("via_bot_id")
+                    if isinstance(via, dict):
+                        via_data = cast('dict[str, Any]', via)
+                        via = via_data.get("user_id") or via_data.get("id")
+                    if int(via or 0) != bot_id:
+                        continue
+                    if str(message_data.get("message") or "") not in {"🔄", "\u200b"}:
+                        continue
+                    mid = message_data.get("id")
+                    if isinstance(mid, int):
+                        try:
+                            with trusted_scope():
+                                await delete_chat_msg(app, chat_id, mid)
+                            deleted = True
+                        except Exception:
+                            pass
+                    break
+                if deleted:
+                    break
+                await asyncio.sleep(0.2)
         bot = getattr(getattr(self, "inline", None), "bot_app", None)
-        if inline_id is not None and bot is not None:
+        if inline_id is not None and bot is not None and not deleted:
             id_field: dict[str, Any] = cast('dict[str, Any]', inline_id) if isinstance(inline_id, dict) else {"_": "inputBotInlineMessageID", "raw": inline_id}
             try:
                 with trusted_scope():
                     await bot.mt_messages_edit_inline_bot_message(id=id_field, message="\u200b")
             except Exception:
                 pass
-        app = self.app
-        chat_id = getattr(source, "chat_id", None)
-        bot_id = getattr(getattr(self.inline, "info", None), "bot_id", None)
-        if app is None or not isinstance(chat_id, int) or not isinstance(bot_id, int):
-            return
-        try:
-            with trusted_scope():
-                peer = await app.mt.resolve_peer(chat_id)
-                hist = await app.mt_messages_get_history(peer=peer, offset_id=0, offset_date=0, add_offset=0, limit=8, max_id=0, min_id=0, hash=0)
-        except Exception:
-            return
-        body: Any = cast('dict[str, Any]', hist).get("result", hist) if isinstance(hist, dict) else hist
-        messages = cast('dict[str, Any]', body).get("messages") if isinstance(body, dict) else None
-        for message in cast('list[Any]', messages or []):
-            if not isinstance(message, dict):
-                continue
-            message_data = cast('dict[str, Any]', message)
-            via: Any = message_data.get("via_bot_id")
-            if isinstance(via, dict):
-                via_data = cast('dict[str, Any]', via)
-                via = via_data.get("user_id") or via_data.get("id")
-            if int(via or 0) != bot_id:
-                continue
-            if str(message_data.get("message") or "") != "🔄":
-                continue
-            mid = message_data.get("id")
-            if isinstance(mid, int):
-                try:
-                    await delete_chat_msg(app, chat_id, mid)
-                except Exception:
-                    pass
-            return
+
 
     async def _dispatch_inline_command(self, text: str, query: Any) -> list[dict[str, Any]]:
         kernel = self.kernel

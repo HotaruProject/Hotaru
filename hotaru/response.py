@@ -509,6 +509,20 @@ class ModuleContext:
         return ModulesHelper(self)
 
     @property
+    def config(self) -> Any:
+        from .config import ModuleConfig
+        schema = None
+        if self.runtime is not None:
+            mod_mgr = getattr(self.runtime, "modules", None)
+            if mod_mgr is not None and hasattr(mod_mgr, "get"):
+                active = mod_mgr.get(self.module_id)
+                if active is not None and getattr(active, "loaded", None) is not None:
+                    manifest = getattr(active.loaded, "manifest", None)
+                    if manifest is not None:
+                        schema = getattr(manifest, "config_schema", None)
+        return ModuleConfig(self.module_id, self.state, schema)
+
+    @property
     def ui(self) -> Any:
         owner_id = getattr(self._source, "from_id", None)
         if not isinstance(owner_id, int) and self.runtime is not None:
@@ -644,7 +658,9 @@ class ModuleContext:
             kwargs.pop("inline", None)
             kwargs.pop("rich_fallback", None)
             if buttons is not None:
-                kwargs["kbd"] = {"inline_keyboard": self._normalize_buttons(buttons)}
+                norm_btns = self._normalize_buttons(buttons)
+                kwargs["kbd"] = {"inline_keyboard": norm_btns}
+                kwargs["buttons"] = norm_btns
             try:
                 await callback.answer()
             except Exception:

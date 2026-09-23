@@ -1,149 +1,349 @@
 HOTARU = {
     "id": "config",
-    "version": "1.0.0",
-    "commands": ["conf", "config"],
+    "version": "2.2.0",
+    "commands": ["conf"],
     "capabilities": ["mt"],
+    "lexicon": {
+        "en": {
+            "description": "Module configuration",
+            "commands": {
+                "conf": {"description": "Configure modules"},
+            },
+        },
+        "ru": {
+            "description": "Настройки модулей",
+            "commands": {
+                "conf": {"description": "Управление настройками"},
+            },
+        },
+    },
 }
 
-from typing import Any, Dict, List, Mapping
+from typing import Any, Dict, List
+import html
+from hotaru.config import (
+    BooleanValidator,
+    ChoiceValidator,
+    ConfigSchema,
+    FloatValidator,
+    IntegerValidator,
+    ModuleConfig,
+)
+
+
+def _escape(value: Any) -> str:
+    return html.escape(str(value), quote=False)
+
+
+def _find_modules(ctx: Any) -> List[Any]:
+    runtime = ctx.runtime
+    items: List[Any] = []
+    modules = getattr(runtime, "modules", None)
+    if modules is not None and hasattr(modules, "items"):
+        for mod in modules.items():
+            if getattr(mod, "loaded", None) and getattr(mod.loaded, "manifest", None):
+                manifest = mod.loaded.manifest
+                if getattr(manifest, "config_schema", None):
+                    schema = ConfigSchema.from_manifest(manifest.config_schema)
+                    if len(schema) > 0:
+                        items.append((str(manifest.module_id), schema))
+    return items
+
+
+def _directory_form(ctx: Any) -> Dict[str, Any]:
+    modules = _find_modules(ctx)
+    if not modules:
+        return {
+            "text": "<b>Конфигурация</b>\n\nНастраиваемых модулей нет.",
+            "buttons": [[ctx.ui.close("Закрыть")]],
+            "inline": True,
+        }
+
+    text = "<b>Конфигурация</b>\n\nВыберите модуль:"
+    buttons: List[List[Any]] = []
+    row: List[Any] = []
+
+    for mod_id, _schema in modules:
+        def make_handler(m: str) -> Any:
+            async def handler(c: Any, p: Any) -> Any:
+                await c.edit(**_module_form(ctx, m))
+            return handler
+
+        row.append(ctx.ui.button(f"📦 {mod_id}", make_handler(mod_id)))
+        if len(row) == 2:
+            buttons.append(row)
+            row = []
+
+    if row:
+        buttons.append(row)
+
+    buttons.append([ctx.ui.close("Закрыть")])
+    return {"text": text, "buttons": buttons, "inline": True, "module_id": "config"}
+
+
+def _module_form(ctx: Any, module_id: str) -> Dict[str, Any]:
+    runtime = ctx.runtime
+    modules = getattr(runtime, "modules", None)
+    active = modules.get(module_id) if modules is not None and hasattr(modules, "get") else None
+    if not active or not getattr(active, "loaded", None):
+        return {
+            "text": f"<b>Ошибка:</b> Модуль <code>{_escape(module_id)}</code> не найден.",
+            "buttons": [[ctx.ui.close("Закрыть")]],
+            "inline": True,
+            "module_id": module_id,
+        }
+
+    manifest = active.loaded.manifest
+    if not manifest or not manifest.config_schema:
+        return {
+            "text": f"<b>Ошибка:</b> У модуля <code>{_escape(module_id)}</code> нет настроек.",
+            "buttons": [[ctx.ui.close("Закрыть")]],
+            "inline": True,
+            "module_id": module_id,
+        }
+
+    schema = ConfigSchema.from_manifest(manifest.config_schema)
+    namespace = runtime.state.namespace(module_id)
+    mod_config = ModuleConfig(module_id, namespace, schema)
+
+    text = f"<b>{_escape(module_id)}</b>\n\n"
+    param_buttons: List[Any] = []
+
+    for key, field in schema.items():
+        val = mod_config.get(key)
+        disp = field.format_value(val)
+        disp_str = disp if disp != "" else "(пусто)"
+        text += f"• <b>{_escape(key)}</b>: <code>{_escape(disp_str)}</code>\n"
+
+
+
+        def make_param_handler(k: str) -> Any:
+            async def handler(c: Any, p: Any) -> Any:
+                await c.edit(**_parameter_form(ctx, module_id, k))
+            return handler
+
+        param_buttons.append(ctx.ui.button(f"⚙️ {key}", make_param_handler(key)))
+
+    buttons: List[List[Any]] = []
+    for i in range(0, len(param_buttons), 2):
+        buttons.append(param_buttons[i:i + 2])
+
+    async def on_back(c: Any, p: Any) -> Any:
+        await c.edit(**_directory_form(ctx))
+
+    buttons.append([ctx.ui.button("Назад", on_back), ctx.ui.close("Закрыть")])
+    return {"text": text, "buttons": buttons, "inline": True, "module_id": module_id}
+
+
+def _parameter_form(ctx: Any, module_id: str, key: str) -> Dict[str, Any]:
+    runtime = ctx.runtime
+    modules = getattr(runtime, "modules", None)
+    active = modules.get(module_id) if modules is not None and hasattr(modules, "get") else None
+    if not active or not getattr(active, "loaded", None):
+        return {
+            "text": f"<b>Ошибка:</b> Модуль <code>{_escape(module_id)}</code> не найден.",
+            "buttons": [[ctx.ui.close("Закрыть")]],
+            "inline": True,
+            "module_id": module_id,
+        }
+
+    manifest = active.loaded.manifest
+    if not manifest or not manifest.config_schema:
+        return {
+            "text": f"<b>Ошибка:</b> У модуля <code>{_escape(module_id)}</code> нет настроек.",
+            "buttons": [[ctx.ui.close("Закрыть")]],
+            "inline": True,
+            "module_id": module_id,
+        }
+
+    schema = ConfigSchema.from_manifest(manifest.config_schema)
+    field = schema.get(key)
+    if not field:
+        return {
+            "text": f"<b>Ошибка:</b> Параметр <code>{_escape(key)}</code> не найден.",
+            "buttons": [[ctx.ui.close("Закрыть")]],
+            "inline": True,
+            "module_id": module_id,
+        }
+
+    namespace = runtime.state.namespace(module_id)
+    mod_config = ModuleConfig(module_id, namespace, schema)
+    val = mod_config.get(key)
+    disp = field.format_value(val)
+    disp_str = disp if disp != "" else "(пусто)"
+    def_str = str(field.default) if (field.default is not None and str(field.default) != "") else "(пусто)"
+
+
+    text = (
+        f"<b>{_escape(module_id)}</b> ➜ <b>{_escape(key)}</b>\n\n"
+        f"• Значение: <code>{_escape(disp_str)}</code>\n"
+        f"• Тип: <code>{_escape(field.validator.name)}</code>\n"
+        f"• По умолчанию: <code>{_escape(def_str)}</code>\n"
+    )
+
+    if field.description:
+        text += f"• Описание: <i>{_escape(field.description)}</i>\n"
+
+    buttons: List[List[Any]] = []
+
+    def make_input_handler(k: str, field_obj: Any) -> Any:
+        async def handler(c: Any, p: Any = None) -> Any:
+            typed = getattr(c, "value", None)
+            if typed is None and isinstance(p, str):
+                typed = p
+            if typed is None:
+                return
+            try:
+                coerced = field_obj.parse_input(str(typed).strip())
+                mod_config.set(k, coerced)
+            except Exception as exc:
+                try:
+                    await c.answer(f"Ошибка: {exc}", alert=True)
+                except Exception:
+                    pass
+                return
+            await c.edit(**_parameter_form(ctx, module_id, k))
+        return handler
+
+
+    if isinstance(field.validator, BooleanValidator):
+        def make_toggle(cur_v: bool) -> Any:
+            async def handler(c: Any, p: Any) -> Any:
+                mod_config.set(key, not cur_v)
+                await c.edit(**_parameter_form(ctx, module_id, key))
+            return handler
+
+        lbl = "🔘 True" if bool(val) else "⚪️ False"
+        buttons.append([ctx.ui.button(lbl, make_toggle(bool(val)))])
+
+    elif isinstance(field.validator, ChoiceValidator):
+        choice_row: List[Any] = []
+        for opt in field.validator.options:
+            def make_choice(chosen: Any) -> Any:
+                async def handler(c: Any, p: Any) -> Any:
+                    mod_config.set(key, chosen)
+                    await c.edit(**_parameter_form(ctx, module_id, key))
+                return handler
+
+            is_sel = (opt == val or str(opt).casefold() == str(val).casefold())
+            lbl = f"🔘 {opt}" if is_sel else f"⚪️ {opt}"
+            choice_row.append(ctx.ui.button(lbl, make_choice(opt)))
+        for i in range(0, len(choice_row), 3):
+            buttons.append(choice_row[i:i + 3])
+
+    elif isinstance(field.validator, IntegerValidator):
+        cur_i = int(val) if isinstance(val, int) else field.validator.default
+        v_int = field.validator
+
+        def make_int_step(delta: int, cur: int, validator: IntegerValidator) -> Any:
+            async def handler(c: Any, p: Any) -> Any:
+                new_val = cur + delta
+                if validator.minimum is not None and new_val < validator.minimum:
+                    await c.answer(f"Минимум: {validator.minimum}", alert=True)
+                    return
+                if validator.maximum is not None and new_val > validator.maximum:
+                    await c.answer(f"Максимум: {validator.maximum}", alert=True)
+                    return
+                mod_config.set(key, new_val)
+                await c.edit(**_parameter_form(ctx, module_id, key))
+            return handler
+
+        buttons.append([
+            ctx.ui.button("-1", make_int_step(-1, cur_i, v_int)),
+            ctx.ui.button("+1", make_int_step(1, cur_i, v_int)),
+        ])
+        buttons.append([ctx.ui.input("✏️ Ввести", make_input_handler(key, field), placeholder=f"Новое значение {key}")])
+
+    elif isinstance(field.validator, FloatValidator):
+        cur_f = float(val) if isinstance(val, (int, float)) else field.validator.default
+        v_flt = field.validator
+
+        def make_flt_step(delta: float, cur: float, validator: FloatValidator) -> Any:
+            async def handler(c: Any, p: Any) -> Any:
+                new_val = round(cur + delta, 2)
+                if validator.minimum is not None and new_val < validator.minimum:
+                    await c.answer(f"Минимум: {validator.minimum}", alert=True)
+                    return
+                if validator.maximum is not None and new_val > validator.maximum:
+                    await c.answer(f"Максимум: {validator.maximum}", alert=True)
+                    return
+                mod_config.set(key, new_val)
+                await c.edit(**_parameter_form(ctx, module_id, key))
+            return handler
+
+        buttons.append([
+            ctx.ui.button("-0.5", make_flt_step(-0.5, cur_f, v_flt)),
+            ctx.ui.button("+0.5", make_flt_step(0.5, cur_f, v_flt)),
+        ])
+        buttons.append([ctx.ui.input("✏️ Ввести", make_input_handler(key, field), placeholder=f"Новое значение {key}")])
+
+    else:
+        buttons.append([ctx.ui.input("✏️ Ввести", make_input_handler(key, field), placeholder=f"Новое значение {key}")])
+
+    def make_reset(def_val: Any) -> Any:
+        async def handler(c: Any, p: Any) -> Any:
+            mod_config.set(key, def_val)
+            await c.edit(**_parameter_form(ctx, module_id, key))
+        return handler
+
+    async def on_back(c: Any, p: Any) -> Any:
+        await c.edit(**_module_form(ctx, module_id))
+
+    buttons.append([
+        ctx.ui.button("🔄 Сброс", make_reset(field.default)),
+        ctx.ui.button("Назад", on_back),
+        ctx.ui.close("Закрыть"),
+    ])
+
+    return {"text": text, "buttons": buttons, "inline": True, "module_id": module_id}
 
 
 async def command_conf(ctx: Any, invocation: Any) -> Any:
-    await _show_config(ctx, invocation)
-
-async def command_config(ctx: Any, invocation: Any) -> Any:
-    await _show_config(ctx, invocation)
-
-async def _show_config(ctx: Any, invocation: Any) -> Any:
-    _runtime = ctx.runtime
-
-    if len(invocation.args) == 0:
-        await _show_directory(ctx)
+    args = list(invocation.args) if invocation and getattr(invocation, "args", None) else []
+    if not args:
+        await ctx.respond(**_directory_form(ctx))
         return
 
-    module_id = invocation.args[0].casefold()
-    form = _build_module_config_form(ctx, module_id, None)
-    if form:
-        await ctx.respond(**form)
-    else:
-        await ctx.respond("<b>❌ Module not found or has no configuration</b>", parse_mode="HTML")
+    module_id = args[0].casefold()
+    if len(args) == 1:
+        await ctx.respond(**_module_form(ctx, module_id))
+        return
 
+    arg1 = args[1]
+    if arg1.casefold() == "reset":
+        runtime = ctx.runtime
+        active = runtime.modules.get(module_id) if getattr(runtime, "modules", None) else None
+        if not active or not getattr(active, "loaded", None) or not active.loaded.manifest.config_schema:
+            await ctx.respond(f"Модуль <code>{_escape(module_id)}</code> не найден.")
+            return
+        schema = ConfigSchema.from_manifest(active.loaded.manifest.config_schema)
+        ns = runtime.state.namespace(module_id)
+        mod_conf = ModuleConfig(module_id, ns, schema)
+        mod_conf.reset()
+        await ctx.respond(**_module_form(ctx, module_id))
+        return
 
-async def _show_directory(ctx: Any) -> Any:
+    key = arg1
+    new_val = " ".join(args[2:]) if len(args) > 2 else None
     runtime = ctx.runtime
+    active = runtime.modules.get(module_id) if getattr(runtime, "modules", None) else None
+    if not active or not getattr(active, "loaded", None) or not active.loaded.manifest.config_schema:
+        await ctx.respond(f"Модуль <code>{_escape(module_id)}</code> не найден.")
+        return
+    schema = ConfigSchema.from_manifest(active.loaded.manifest.config_schema)
+    field = schema.get(key)
+    if not field:
+        await ctx.respond(f"Параметр <code>{_escape(key)}</code> не найден.")
+        return
 
-    modules_with_config: List[str] = []
-    if runtime.modules:
-        for mod in runtime.modules.items():
-            if mod.loaded and mod.loaded.manifest and mod.loaded.manifest.config_schema:
-                modules_with_config.append(mod.loaded.manifest.module_id)
+    if new_val is not None:
+        ns = runtime.state.namespace(module_id)
+        mod_conf = ModuleConfig(module_id, ns, schema)
+        try:
+            coerced = field.parse_input(new_val)
+            mod_conf.set(key, coerced)
+        except Exception as exc:
+            await ctx.respond(f"Ошибка: <code>{_escape(exc)}</code>")
+            return
 
-    modules_with_config.sort()
-
-    ITEMS_PER_PAGE = 5
-
-    def build_page(page: int=0) -> Dict[str, Any]:
-        total_pages = max(1, (len(modules_with_config) + ITEMS_PER_PAGE - 1) // ITEMS_PER_PAGE)
-
-        if not modules_with_config:
-            return {"text": "<b>ℹ️ No configurable modules found</b>", "buttons": [[ctx.ui.close("❌ Close")]], "inline": True}
-
-        page = max(0, min(page, total_pages - 1))
-        start_idx = page * ITEMS_PER_PAGE
-        end_idx = start_idx + ITEMS_PER_PAGE
-
-        page_modules = modules_with_config[start_idx:end_idx]
-
-        text = f"🗂 <b>Configuration Directory</b>\n"
-        text += f"<i>Page {page + 1} of {total_pages}</i>\n\n"
-        text += f"Select a module to configure:\n"
-
-        buttons: List[List[Any]] = []
-        for mod_id in page_modules:
-            def make_mod_handler(m_id: str) -> Any:
-                async def handler(c: Any, p: Any) -> Any:
-                    form = _build_module_config_form(ctx, m_id, lambda: build_page(page))
-                    if form:
-                        await c.edit(**form)
-                    else:
-                        await c.answer("Module no longer available", alert=True)
-                return handler
-
-            buttons.append([ctx.ui.button(f"📦 {mod_id}", make_mod_handler(mod_id))])
-
-        nav_buttons: List[Any] = []
-        if page > 0:
-            def make_prev(p: int) -> Any:
-                async def handler(c: Any, p_load: Any) -> Any:
-                    await c.edit(**build_page(p - 1))
-                return handler
-            nav_buttons.append(ctx.ui.button("◀️ Prev", make_prev(page)))
-
-        if page < total_pages - 1:
-            def make_next(p: int) -> Any:
-                async def handler(c: Any, p_load: Any) -> Any:
-                    await c.edit(**build_page(p + 1))
-                return handler
-            nav_buttons.append(ctx.ui.button("Next ▶️", make_next(page)))
-
-        if nav_buttons:
-            buttons.append(nav_buttons)
-
-        buttons.append([ctx.ui.close("❌ Close Settings")])
-        return {"text": text, "buttons": buttons, "inline": True}
-
-    await ctx.respond(**build_page(0))
-
-
-def _build_module_config_form(ctx: Any, module_id: Any, back_builder: Any) -> Any:
-    runtime = ctx.runtime
-    active = runtime.modules.get(module_id) if runtime.modules else None
-    if not active:
-        return None
-    schema = active.loaded.manifest.config_schema
-    if not schema:
-        return None
-
-    namespace = runtime.state.namespace(module_id)
-
-    def build_form() -> Dict[str, Any]:
-        text = f"⚙️ <b>Configuration Control</b>\n"
-        text += f"📦 <b>Module:</b> <code>{module_id}</code>\n\n"
-
-        buttons: List[List[Any]] = []
-
-        for key, spec in schema.items():
-            val = namespace.get(key, spec.get("default"))
-            type_lbl = spec.get("type", "str")
-            text += f"🔹 <b>{key}</b> [<code>{type_lbl}</code>]: <b>{val}</b>\n"
-            if "description" in spec:
-                text += f"   <i>{spec['description']}</i>\n"
-            text += "\n"
-
-            def make_handler(k: str, s: Mapping[str, Any]) -> Any:
-                async def handler(c: Any, p: Any) -> Any:
-                    new_val = c.value
-                    if s.get("type") == "int":
-                        try:
-                            new_val = int(new_val)
-                        except ValueError:
-                            await c.answer("⚠️ Must be an integer", alert=True)
-                            return
-                    elif s.get("type") == "bool":
-                        new_val = new_val.lower() in ("true", "1", "yes", "y", "on")
-                    namespace.set(k, new_val)
-                    await c.edit(**build_form())
-                return handler
-
-            buttons.append([ctx.ui.input(f"✏️ Edit {key}", make_handler(key, spec), placeholder=f"Enter new value for {key}")])
-
-        if back_builder:
-            async def back_handler(c: Any, p: Any) -> Any:
-                await c.edit(**back_builder())
-            buttons.append([ctx.ui.button("🔙 Back to Directory", back_handler), ctx.ui.close("❌ Close Settings")])
-        else:
-            buttons.append([ctx.ui.close("❌ Close Settings")])
-
-        return {"text": text, "buttons": buttons, "inline": True}
-
-    return build_form()
+    await ctx.respond(**_parameter_form(ctx, module_id, key))

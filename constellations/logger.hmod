@@ -6,6 +6,29 @@ HOTARU = {
     "tasks": {
         "pump": {"interval": 2, "autostart": True},
     },
+    "config_schema": {
+        "level": {
+            "type": "choice",
+            "options": ["all", "debug", "info", "warn", "error", "fatal"],
+            "default": "info",
+            "description": "Minimum log level to record",
+            "category": "General",
+        },
+        "batch_size": {
+            "type": "int",
+            "default": 20,
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Log events to batch per message",
+            "category": "Performance",
+        },
+        "auto_topic": {
+            "type": "bool",
+            "default": True,
+            "description": "Automatically manage logs topic in forum",
+            "category": "General",
+        },
+    },
     "rise": "hookup",
     "fade": "unhook",
 }

@@ -74,6 +74,13 @@ class StateNamespace:
         ).fetchall()
         return tuple(row[0] for row in rows)
 
+    def all(self) -> dict[str, Any]:
+        rows = self._connection.execute(
+            "SELECT key, value FROM module_state WHERE module_id = ? ORDER BY key",
+            (self.module_id,),
+        ).fetchall()
+        return {row[0]: json.loads(row[1]) for row in rows}
+
     @staticmethod
     def _validate_key(key: str) -> None:
         if not re.fullmatch(r"[a-zA-Z0-9_][a-zA-Z0-9_:.-]{0,127}", key):
@@ -159,6 +166,10 @@ class StateStore:
                 "INSERT INTO runtime_settings(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
                 (key, encoded),
             )
+
+    def all_settings(self) -> dict[str, Any]:
+        rows = self.connection.execute("SELECT key, value FROM runtime_settings ORDER BY key").fetchall()
+        return {row[0]: json.loads(row[1]) for row in rows}
 
     def delete_module(self, module_id: str) -> bool:
         with self.connection:
