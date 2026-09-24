@@ -132,6 +132,7 @@ class Runtime:
     supervisor: ConnectionSupervisor | None = None
     security: SecurityGate | None = None
     sandbox: ModuleSandbox | None = None
+    form_sender: Any = None
     cap_host: CapabilityHost | None = None
     lexicon: Lexicon | None = None
     closed: bool = False
@@ -257,6 +258,7 @@ class Runtime:
         self._forum_ready = asyncio.Event()
         self.context_factory.inline_manager = self.inline
         self.context_factory.form_sender = self._send_form
+        self.form_sender = self._send_form
         self.sandbox = ModuleSandbox(self)
         self.kernel.sandbox = self.sandbox
         self.kernel.context_factory = self.context_factory
@@ -347,20 +349,32 @@ class Runtime:
         form_id = cast('dict[str, Any]', body).get("message_id") if isinstance(body, dict) else getattr(body, "message_id", None)
         if not isinstance(form_id, int):
             raise RuntimeError("inline form message id is missing")
-        rebound: list[list[dict[str, str]]] = []
+        rebound: list[list[dict[str, Any]]] = []
         for row in buttons:
             if isinstance(row, dict):
                 row = [cast('dict[str, Any]', row)]
-            current: list[dict[str, str]] = []
+            current: list[dict[str, Any]] = []
             for button in cast('list[Any]', row):
                 if not isinstance(button, dict):
                     continue
                 button = cast('dict[str, Any]', button)
                 handle = button.get("callback_data")
+                btn_item: dict[str, Any] = {"text": button.get("text", "")}
+                if button.get("style"):
+                    btn_item["style"] = button["style"]
+                if button.get("icon_custom_emoji_id"):
+                    btn_item["icon_custom_emoji_id"] = button["icon_custom_emoji_id"]
                 if isinstance(handle, str) and self.callbacks is not None:
-                    current.append({"text": button.get("text", ""), "callback_data": self.callbacks.store.rebind(handle, CallbackBinding(actor, chat_id, form_id))})
+                    btn_item["callback_data"] = self.callbacks.store.rebind(handle, CallbackBinding(actor, chat_id, form_id))
+                    current.append(btn_item)
                 elif isinstance(button.get("url"), str):
-                    current.append({"text": button.get("text", ""), "url": button["url"]})
+                    btn_item["url"] = button["url"]
+                    current.append(btn_item)
+                else:
+                    for k, v in button.items():
+                        if k not in btn_item:
+                            btn_item[k] = v
+                    current.append(btn_item)
             rebound.append(current)
         bot_app = self.inline.bot_app
         plain, ents = html_to_entities(text)
@@ -681,6 +695,11 @@ class Runtime:
                         action_records.append({"row": row_index, "column": column_index, "action_id": action_id, "payload": button.get("payload")})
                         button = {**button, "_action_id": action_id, "_payload": button.get("payload")}
                 handle = button.get("callback_data")
+                btn_item: dict[str, Any] = {"text": button.get("text", "")}
+                if button.get("style"):
+                    btn_item["style"] = button["style"]
+                if button.get("icon_custom_emoji_id"):
+                    btn_item["icon_custom_emoji_id"] = button["icon_custom_emoji_id"]
                 if isinstance(handle, str):
                     if button.get("_action_id") and not any(item.get("action_id") == button["_action_id"] for item in action_records):
                         action_records.append({"row": row_index, "column": column_index, "action_id": button["_action_id"], "payload": button.get("_payload")})
@@ -689,7 +708,8 @@ class Runtime:
                     actor = options.get("callback_actor")
                     if not isinstance(actor, int):
                         actor = int(self.kernel.owner_id or 0)
-                    current.append({"text": button.get("text", ""), "callback_data": self.callbacks.store.rebind(handle, CallbackBinding(actor, None, 0))})
+                    btn_item["callback_data"] = self.callbacks.store.rebind(handle, CallbackBinding(actor, None, 0))
+                    current.append(btn_item)
                 elif button.get("_action_id") and self.callbacks is not None:
                     payload = button.get("_payload")
                     if not any(item.get("action_id") == button["_action_id"] for item in action_records):
@@ -698,11 +718,16 @@ class Runtime:
                     if not isinstance(actor, int):
                         actor = int(getattr(self.kernel, "owner_id", 0) or 0)
                     issued = self.callbacks.issue_module(options.get("module_id", ""), str(button["_action_id"]), CallbackBinding(actor, None, 0), payload)
-                    current.append({"text": button.get("text", ""), "callback_data": issued})
+                    btn_item["callback_data"] = issued
+                    current.append(btn_item)
                 elif isinstance(button.get("url"), str):
-                    current.append({"text": button.get("text", ""), "url": button["url"]})
+                    btn_item["url"] = button["url"]
+                    current.append(btn_item)
                 else:
-                    current.append({key: value for key, value in button.items() if key != "style"})
+                    for k, v in button.items():
+                        if k not in btn_item:
+                            btn_item[k] = v
+                    current.append(btn_item)
             inline_buttons.append(current)
         self._inline_forms[nonce] = (text, inline_buttons, bool(options.get("rich", False)))
         options["module_id"] = options.get("module_id", "")
@@ -901,21 +926,33 @@ class Runtime:
                     current.append({"text": button.get("text", ""), "switch_inline_query_current_chat": "hotaru-input:" + token + " "})
                     continue
                 handle = button.get("callback_data")
+                btn_item: dict[str, Any] = {"text": button.get("text", "")}
+                if button.get("style"):
+                    btn_item["style"] = button["style"]
+                if button.get("icon_custom_emoji_id"):
+                    btn_item["icon_custom_emoji_id"] = button["icon_custom_emoji_id"]
                 if isinstance(handle, str) and self.callbacks is not None:
                     handle = self.callbacks.store.rebind(handle, CallbackBinding(actor, None, 0))
-                    current.append({"text": button.get("text", ""), "callback_data": handle})
+                    btn_item["callback_data"] = handle
+                    current.append(btn_item)
                     continue
                 if callable(button.get("handler")) and module_id and self.callbacks is not None:
                     action_id = self.callbacks.register_module_action(module_id, button["handler"])
                     issued = self.callbacks.issue_module(module_id, str(action_id), CallbackBinding(actor, None, 0), button.get("payload"))
-                    current.append({"text": button.get("text", ""), "callback_data": issued})
+                    btn_item["callback_data"] = issued
+                    current.append(btn_item)
                     continue
                 if isinstance(button.get("url"), str):
-                    current.append({"text": button.get("text", ""), "url": button["url"]})
+                    btn_item["url"] = button["url"]
+                    current.append(btn_item)
                 elif isinstance(button.get("switch_inline_query_current_chat"), str):
-                    current.append({"text": button.get("text", ""), "switch_inline_query_current_chat": button["switch_inline_query_current_chat"]})
+                    btn_item["switch_inline_query_current_chat"] = button["switch_inline_query_current_chat"]
+                    current.append(btn_item)
                 else:
-                    current.append({key: value for key, value in button.items() if key not in {"style", "handler", "callback", "payload"}})
+                    for k, v in button.items():
+                        if k not in {"handler", "callback", "payload"} and k not in btn_item:
+                            btn_item[k] = v
+                    current.append(btn_item)
             layout.append(current)
         if self._inline_forms is None:
             self._inline_forms = {}
