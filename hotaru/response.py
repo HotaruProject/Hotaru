@@ -50,13 +50,33 @@ def reply_message_id(message: Any) -> int | None:
             if isinstance(candidate_data.get("id"), int):
                 return int(candidate_data["id"])
     for source in (message, getattr(message, "raw", None)):
+        if source is None:
+            continue
+        header = getattr(source, "reply_to", None)
+        if isinstance(header, dict):
+            header_dict = cast('dict[str, Any]', header)
+            value = header_dict.get("reply_to_msg_id") or header_dict.get("reply_to_id")
+            if isinstance(value, int):
+                return value
+        elif header is not None:
+            value = getattr(header, "reply_to_msg_id", None) or getattr(header, "reply_to_id", None)
+            if isinstance(value, int):
+                return value
+        for name in ("reply_to_msg_id", "reply_to_message_id"):
+            value = getattr(source, name, None)
+            if isinstance(value, int):
+                return value
         getter = getattr(source, "get", None)
         if not callable(getter):
             continue
-        header = getter("reply_to")
-        if isinstance(header, dict):
-            header_data = cast('dict[str, Any]', header)
+        header_val = getter("reply_to")
+        if isinstance(header_val, dict):
+            header_data = cast('dict[str, Any]', header_val)
             value = header_data.get("reply_to_msg_id") or header_data.get("reply_to_id")
+            if isinstance(value, int):
+                return value
+        elif header_val is not None:
+            value = getattr(header_val, "reply_to_msg_id", None) or getattr(header_val, "reply_to_id", None)
             if isinstance(value, int):
                 return value
         for name in ("reply_to_msg_id", "reply_to_message_id"):
