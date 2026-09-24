@@ -1474,6 +1474,9 @@ class ModuleSandbox:
             buttons = self._sandbox_buttons(module_id, buttons, chat_id)
             options = dict(kwargs.pop("module_options", {}))
             options.setdefault("module_id", module_id)
+            for k, v in kwargs.items():
+                if k not in options:
+                    options[k] = v
             form_sender = getattr(self.runtime, "form_sender", None) or getattr(self.runtime, "_send_form", None) or getattr(getattr(self.runtime, "context_factory", None), "form_sender", None) or getattr(getattr(self.runtime, "kernel", None), "form_sender", None)
             if form_sender is None:
                 raise PermissionError("form transport is unavailable")

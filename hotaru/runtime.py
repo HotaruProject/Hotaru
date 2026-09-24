@@ -328,12 +328,15 @@ class Runtime:
         reply_to = options.get("reply_to")
         if not isinstance(reply_to, int):
             reply_to = reply_message_id(command)
-        if not isinstance(reply_to, int):
-            reply_to = getattr(command, "id", None) or getattr(command, "message_id", None)
         topic_id = options.get("topic_id")
-        if not isinstance(topic_id, int) and hasattr(command, "get"):
+        if not isinstance(topic_id, int):
             for key in ("message_thread_id", "topic_id", "topic"):
-                value = command.get(key)
+                if hasattr(command, "get"):
+                    value = command.get(key)
+                    if isinstance(value, int):
+                        topic_id = value
+                        break
+                value = getattr(command, key, None)
                 if isinstance(value, int):
                     topic_id = value
                     break
@@ -657,16 +660,21 @@ class Runtime:
             raise RuntimeError("inline insertion source message is missing")
         if not isinstance(options, dict):
             options = {}
-        if not isinstance(options.get("topic_id"), int) and hasattr(command, "get"):
+        if not isinstance(options.get("topic_id"), int):
             for key in ("message_thread_id", "topic_id", "topic"):
-                value = command.get(key)
+                if hasattr(command, "get"):
+                    value = command.get(key)
+                    if isinstance(value, int):
+                        options["topic_id"] = value
+                        break
+                value = getattr(command, key, None)
                 if isinstance(value, int):
                     options["topic_id"] = value
                     break
         nonce = secrets.token_urlsafe(12)
         reply_to = options.get("reply_to")
         if not isinstance(reply_to, int):
-            reply_to = reply_message_id(command) or message_id
+            reply_to = reply_message_id(command)
         if self._form_module_ids is None:
             self._form_module_ids = {}
         self._form_module_ids[nonce] = str(options.get("module_id") or "")
@@ -765,9 +773,17 @@ class Runtime:
             self._form_chosen = {}
         ready = self._form_chosen.setdefault(nonce, asyncio.Event())
         ready.clear()
+        reply_param: dict[str, Any] | None = None
+        topic_id = options.get("topic_id")
+        if isinstance(reply_to, int):
+            reply_param = {"_": "inputReplyToMessage", "reply_to_msg_id": reply_to}
+            if isinstance(topic_id, int):
+                reply_param["top_msg_id"] = topic_id
+        elif isinstance(topic_id, int):
+            reply_param = {"_": "inputReplyToMessage", "reply_to_msg_id": topic_id, "top_msg_id": topic_id}
         sent_result = await self.app.mt_messages_send_inline_bot_result(
             peer=peer,
-            reply_to={"_": "inputReplyToMessage", "reply_to_msg_id": reply_to, **({"top_msg_id": options.get("topic_id")} if isinstance(options.get("topic_id"), int) else {})},
+            **({"reply_to": reply_param} if reply_param is not None else {}),
             random_id=secrets.randbits(63),
             query_id=query_id,
             id=cast('dict[str, Any]', cast('list[Any]', results)[0]).get("id"),
