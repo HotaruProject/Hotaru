@@ -347,7 +347,7 @@ class SandboxCallbackProxy:
         return _cb_respond_call({"action": "answer", "text": str(text), "alert": bool(alert)})
 
     async def edit(self, text, **kwargs):
-        return _cb_respond_call({"action": "edit", "text": str(text), **{k: v for k, v in kwargs.items() if isinstance(v, (str, int, float, bool, type(None)))}})
+        return _cb_respond_call({"action": "edit", "text": str(text), **{k: v for k, v in kwargs.items() if isinstance(v, (str, int, float, bool, list, dict, type(None)))}})
 
     async def delete(self):
         return _cb_respond_call({"action": "delete"})
@@ -585,15 +585,32 @@ class _RichProxy:
 
 class _UiProxy:
     @staticmethod
-    def button(text, action_id, payload=None):
-        return {"text": text, "action_id": action_id, "payload": payload}
+    def button(text, action_id, payload=None, *, style=None):
+        res = {"text": text, "action_id": action_id, "payload": payload}
+        if style is not None:
+            res["style"] = style
+        return res
 
     @staticmethod
     def primary(text, callback, payload=None):
         import secrets as _secrets
         action_id = _secrets.token_hex(8)
         _sandbox_callbacks[action_id] = callback
-        return {"text": text, "action_id": action_id, "payload": payload}
+        return {"text": text, "action_id": action_id, "payload": payload, "style": "primary"}
+
+    @staticmethod
+    def success(text, callback, payload=None):
+        import secrets as _secrets
+        action_id = _secrets.token_hex(8)
+        _sandbox_callbacks[action_id] = callback
+        return {"text": text, "action_id": action_id, "payload": payload, "style": "success"}
+
+    @staticmethod
+    def danger(text, callback, payload=None):
+        import secrets as _secrets
+        action_id = _secrets.token_hex(8)
+        _sandbox_callbacks[action_id] = callback
+        return {"text": text, "action_id": action_id, "payload": payload, "style": "danger"}
 
     @staticmethod
     def url(text, url):
@@ -1418,6 +1435,8 @@ class ModuleSandbox:
                     params: dict[str, Any] = {"id": inline_mid if isinstance(inline_mid, dict) else {"_": "inputBotInlineMessageID", "raw": inline_mid}, "message": str(data.get("text", ""))}
                     markup = data.get("reply_markup")
                     if markup is not None:
+                        if isinstance(markup, list):
+                            markup = self._sandbox_buttons(module_id, markup, getattr(callback, "chat_id", None))
                         tl_markup = kbd_to_tl(markup)
                         if tl_markup is not None:
                             params["reply_markup"] = tl_markup
@@ -1455,7 +1474,7 @@ class ModuleSandbox:
             buttons = self._sandbox_buttons(module_id, buttons, chat_id)
             options = dict(kwargs.pop("module_options", {}))
             options.setdefault("module_id", module_id)
-            form_sender = getattr(self.runtime, "form_sender", None)
+            form_sender = getattr(self.runtime, "form_sender", None) or getattr(self.runtime, "_send_form", None) or getattr(getattr(self.runtime, "context_factory", None), "form_sender", None) or getattr(getattr(self.runtime, "kernel", None), "form_sender", None)
             if form_sender is None:
                 raise PermissionError("form transport is unavailable")
             return await form_sender(source, text or "", buttons, options)
@@ -1592,6 +1611,10 @@ class ModuleSandbox:
                     continue
                 button = cast('dict[str, Any]', btn)
                 item: dict[str, Any] = {"text": button.get("text", "")}
+                if button.get("style"):
+                    item["style"] = button["style"]
+                if button.get("icon_custom_emoji_id"):
+                    item["icon_custom_emoji_id"] = button["icon_custom_emoji_id"]
                 if button.get("url"):
                     item["url"] = button["url"]
                 elif button.get("action_id"):
@@ -1604,6 +1627,12 @@ class ModuleSandbox:
                         item["callback_data"] = router.issue_module(module_id, action_id, binding, button.get("payload"))
                     else:
                         raise PermissionError("callback store is unavailable")
+                elif button.get("callback_data"):
+                    item["callback_data"] = button["callback_data"]
+                else:
+                    for k, v in button.items():
+                        if k not in item:
+                            item[k] = v
                 out_row.append(item)
             normalized.append(out_row)
         return normalized
