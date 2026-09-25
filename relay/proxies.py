@@ -1541,8 +1541,11 @@ class ModulesHelper:
             payload["source"] = source
         return await self._host.cap("modules", payload)
 
-    async def unload(self, module_id: str) -> Any:
-        return await self._host.cap("modules", {"op": "unload", "module_id": module_id})
+    async def unload(self, module_id: str, purge: bool = False) -> Any:
+        return await self._host.cap("modules", {"op": "unload", "module_id": module_id, "purge": purge})
 
     async def reload(self, module_id: str) -> Any:
         return await self._host.cap("modules", {"op": "reload", "module_id": module_id})
+
+    async def reset(self, module_id: str) -> Any:
+        return await self._host.cap("modules", {"op": "reset", "module_id": module_id})

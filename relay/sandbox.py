@@ -804,11 +804,14 @@ class _ModulesProxy:
             payload["source"] = source
         return _cap_call("modules", payload)
 
-    async def unload(self, module_id):
-        return _cap_call("modules", {"op": "unload", "module_id": module_id})
+    async def unload(self, module_id, purge=False):
+        return _cap_call("modules", {"op": "unload", "module_id": module_id, "purge": purge})
 
     async def reload(self, module_id):
         return _cap_call("modules", {"op": "reload", "module_id": module_id})
+
+    async def reset(self, module_id):
+        return _cap_call("modules", {"op": "reset", "module_id": module_id})
 
 
 def _build_tools(source):

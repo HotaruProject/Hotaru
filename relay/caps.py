@@ -579,6 +579,8 @@ class CapabilityHost:
             return await self._modules_unload(module_id, payload)
         if op == "reload":
             return await self._modules_reload(module_id, payload)
+        if op == "reset":
+            return await self._modules_reset(module_id, payload)
         raise PermissionError(f"unknown modules op: {op}")
 
     async def _modules_load(self, caller_id: str, payload: dict[str, Any]) -> Any:
@@ -616,10 +618,21 @@ class CapabilityHost:
         target = payload.get("module_id")
         if not isinstance(target, str) or not target:
             raise PermissionError("modules unload requires a module_id")
-        result = await runtime.unload_module(target)
+        purge = bool(payload.get("purge", False))
+        result = await runtime.unload_module(target, purge=purge)
         if result is not None:
             raise PermissionError(result)
-        return {"module_id": target.casefold(), "action": "unloaded"}
+        return {"module_id": target.casefold(), "action": "unloaded", "purged": purge}
+
+    async def _modules_reset(self, caller_id: str, payload: dict[str, Any]) -> Any:
+        runtime = self.runtime
+        target = payload.get("module_id")
+        if not isinstance(target, str) or not target:
+            raise PermissionError("modules reset requires a module_id")
+        result = await runtime.reset_module_database(target)
+        if "not found" in result:
+            raise PermissionError(result)
+        return {"module_id": target.casefold(), "action": "reset", "detail": result}
 
     async def _modules_reload(self, caller_id: str, payload: dict[str, Any]) -> Any:
         runtime = self.runtime

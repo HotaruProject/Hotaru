@@ -173,8 +173,9 @@ class StateStore:
 
     def delete_module(self, module_id: str) -> bool:
         with self.connection:
-            result = self.connection.execute("DELETE FROM module_state WHERE module_id = ?", (module_id,))
-        return result.rowcount > 0
+            r1 = self.connection.execute("DELETE FROM module_state WHERE module_id = ?", (module_id,))
+            r2 = self.connection.execute("DELETE FROM form_state WHERE module_id = ?", (module_id,))
+        return (r1.rowcount > 0) or (r2.rowcount > 0)
 
     def relocate(self, path: str | Path) -> None:
         dest = Path(path)

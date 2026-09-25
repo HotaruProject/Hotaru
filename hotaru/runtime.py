@@ -1603,7 +1603,16 @@ class Runtime:
             return screen
         return f"load failed: {module_id} {loaded.manifest.version}\n{screen}"
 
-    async def unload_module(self, module_id: str) -> str | None:
+    def purge_module_data(self, module_id: str) -> None:
+        module_id = module_id.casefold()
+        if self.state is not None:
+            self.state.delete_module(module_id)
+            workspace = self.state.path.parent / "workspaces" / module_id
+            if workspace.is_dir():
+                import shutil
+                shutil.rmtree(workspace, ignore_errors=True)
+
+    async def unload_module(self, module_id: str, *, purge: bool = False) -> str | None:
         if self.modules is None or self.state is None:
             raise RuntimeError("runtime services are not ready")
         with trusted_scope():
@@ -1629,16 +1638,71 @@ class Runtime:
                 if self.observatory is not None:
                     self.observatory.emit("modules", "unload_error", module=module_id, error=type(exc).__name__, detail=str(exc)[:240])
                 return f"unload failed: {type(exc).__name__}"
-            self.state.delete_module(module_id)
+            if purge:
+                self.purge_module_data(module_id)
             if self.observatory is not None:
-                self.observatory.emit("modules", "unloaded", module=module_id)
+                self.observatory.emit("modules", "unloaded", module=module_id, purged=purge)
             return None
 
     async def _command_ul(self, invocation: Any) -> str:
-        if len(invocation.args) != 1 or self.modules is None or self.state is None:
-            return "usage: !ul <module-id>"
-        result = await self.unload_module(invocation.args[0])
-        return result or f"unloaded permanently: {invocation.args[0].casefold()}"
+        if self.modules is None or self.state is None:
+            return "runtime services are not ready"
+        flags = {"-c", "--clean", "-p", "--purge", "-r", "--reset", "-d", "--drop"}
+        purge = False
+        target_args: list[str] = []
+        for arg in invocation.args:
+            if arg.casefold() in flags:
+                purge = True
+            else:
+                target_args.append(arg)
+        prefix = getattr(getattr(self, "config", None), "prefix", ".")
+        if len(target_args) != 1:
+            return f"usage: {prefix}ul [-c] <module-id>"
+        module_id = target_args[0]
+        result = await self.unload_module(module_id, purge=purge)
+        if result:
+            return result
+        if purge:
+            return f"unloaded permanently: {module_id.casefold()} (database purged)"
+        return f"unloaded: {module_id.casefold()} (database preserved)"
+
+    async def reset_module_database(self, module_id: str) -> str:
+        if self.state is None or self.modules is None:
+            raise RuntimeError("runtime services are not ready")
+        with trusted_scope():
+            module_id = module_id.casefold()
+            active = self.modules.get(module_id)
+            relay_path = self.relay_dir / f"{module_id}.hmod"
+            const_path = self.constellations_dir / f"{module_id}.hmod"
+            has_file = relay_path.is_file() or const_path.is_file() or (active is not None and active.loaded.path.is_file())
+            has_state = module_id in self.state.module_ids()
+            if active is None and not has_file and not has_state:
+                return f"module not found: {module_id}"
+
+            self.purge_module_data(module_id)
+
+            if active is not None:
+                source_path = active.loaded.path
+                if source_path.is_file():
+                    try:
+                        await self.deactivate_module(module_id)
+                        await self.activate_module(str(source_path))
+                    except Exception as exc:
+                        if self.observatory is not None:
+                            self.observatory.emit("modules", "reset_reload_error", module=module_id, error=type(exc).__name__)
+                        return f"database reset, but reload failed: {type(exc).__name__}"
+
+            if self.observatory is not None:
+                self.observatory.emit("modules", "database_reset", module=module_id)
+            return f"database reset: {module_id}"
+
+    async def _command_rs(self, invocation: Any) -> str:
+        if self.modules is None or self.state is None:
+            return "runtime services are not ready"
+        prefix = getattr(getattr(self, "config", None), "prefix", ".")
+        if len(invocation.args) != 1:
+            return f"usage: {prefix}rs <module-id>"
+        return await self.reset_module_database(invocation.args[0])
 
     @staticmethod
     def _version_key(value: str) -> tuple[int, ...] | None:

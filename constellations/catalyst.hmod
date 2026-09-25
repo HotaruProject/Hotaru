@@ -1,7 +1,7 @@
 HOTARU = {
     "id": "catalyst",
-    "version": "1.1.0",
-    "commands": ['ld', 'ul', 'rl', 'ex'],
+    "version": "1.2.0",
+    "commands": ['ld', 'ul', 'rl', 'ex', 'rs', 'resetdb'],
     "capabilities": [],
 }
 
@@ -43,3 +43,13 @@ async def command_ex(ctx: Any, invocation: Any) -> Any:
     result = await runtime._command_ex(invocation, ctx=ctx)
     if result:
         await ctx.respond(result)
+
+async def command_rs(ctx: Any, invocation: Any) -> Any:
+    runtime = ctx.runtime
+    if runtime is None:
+        await ctx.respond("runtime unavailable")
+        return
+    result = await runtime._command_rs(invocation)
+    await ctx.respond(result)
+
+command_resetdb = command_rs
