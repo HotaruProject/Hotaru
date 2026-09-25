@@ -5,7 +5,6 @@ import hashlib
 import inspect
 import json
 import secrets
-import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
@@ -256,21 +255,39 @@ class CallbackBinding:
 class _Entry:
     binding: CallbackBinding
     value: dict[str, Any]
-    expires: float
+    consumed: bool = False
 
 
-def _derive_key(seed: str) -> bytes:
+def derive_key(seed: str) -> bytes:
     return hashlib.sha256(("hotaru-cb:" + seed).encode()).digest()
 
 
+_derive_key = derive_key
+
+
 class CallbackStore:
-    def __init__(self, *, ttl: float = 300.0, max_items: int = 4096, secret: bytes | None = None) -> None:
-        if ttl <= 0 or max_items < 1:
-            raise ValueError("invalid callback store limits")
+    def __init__(self, *, ttl: float = 0.0, max_items: int = 16384, secret: bytes | None = None, connection: Any = None) -> None:
         self.ttl = ttl
         self.max_items = max_items
         self._key = secret or _derive_key(secrets.token_hex(16))
+        self.connection = connection
         self._items: dict[str, _Entry] = {}
+        if self.connection is not None:
+            self._init_db()
+
+    def _init_db(self) -> None:
+        if self.connection is None:
+            return
+        self.connection.execute(
+            "CREATE TABLE IF NOT EXISTS callback_store ("
+            "handle TEXT PRIMARY KEY, "
+            "actor TEXT NOT NULL, "
+            "chat_id TEXT, "
+            "message_id INTEGER, "
+            "value TEXT NOT NULL, "
+            "consumed INTEGER NOT NULL DEFAULT 0)"
+        )
+        self.connection.commit()
 
     def _seal(self) -> str:
         nonce = secrets.token_bytes(12)
@@ -288,45 +305,111 @@ class CallbackStore:
         except BaseException:
             return None
 
-    def issue(self, binding: CallbackBinding, value: dict[str, Any]) -> str:
-        self._purge()
-        if len(self._items) >= self.max_items:
-            raise CallbackDenied("callback store is full")
-        handle = self._seal()
-        self._items[handle] = _Entry(binding, value, time.monotonic() + self.ttl)
+    def issue(self, binding: CallbackBinding, value: dict[str, Any], handle: str | None = None) -> str:
+        self._prune()
+        if handle is None:
+            handle = self._seal()
+        entry = _Entry(binding, value, consumed=False)
+        self._items[handle] = entry
+        if self.connection is not None:
+            chat_str = str(binding.chat_id) if binding.chat_id is not None else None
+            val_str = json.dumps(value, ensure_ascii=False, default=str)
+            self.connection.execute(
+                "INSERT OR REPLACE INTO callback_store(handle, actor, chat_id, message_id, value, consumed) VALUES (?, ?, ?, ?, ?, 0)",
+                (handle, str(binding.actor), chat_str, binding.message_id, val_str),
+            )
+            self.connection.commit()
         return handle
 
     def consume(self, handle: str, binding: CallbackBinding) -> dict[str, Any]:
-        self._purge()
         entry = self._items.get(handle)
+        if entry is None and self.connection is not None:
+            row = self.connection.execute(
+                "SELECT actor, chat_id, message_id, value, consumed FROM callback_store WHERE handle = ?",
+                (handle,),
+            ).fetchone()
+            if row is not None:
+                actor_val: str = str(row[0])
+                chat_raw = row[1]
+                chat_val: int | str | None = int(chat_raw) if (isinstance(chat_raw, str) and chat_raw.lstrip("-").isdigit()) else chat_raw
+                msg_val: int | None = int(row[2]) if isinstance(row[2], (int, str)) and str(row[2]).isdigit() else None
+                val_data = cast('dict[str, Any]', json.loads(row[3]))
+                is_consumed = bool(row[4])
+                entry = _Entry(
+                    CallbackBinding(
+                        int(actor_val) if actor_val.isdigit() else actor_val,
+                        chat_val,
+                        msg_val,
+                    ),
+                    val_data,
+                    consumed=is_consumed,
+                )
+                self._items[handle] = entry
         decoded = self._unseal(handle)
-        chat_ok = entry is not None and (entry.binding.chat_id in (None, 0) or entry.binding.chat_id == binding.chat_id)
-        message_ok = entry is not None and (entry.binding.message_id in (None, 0) or entry.binding.message_id == binding.message_id)
-        if entry is None or entry.binding.actor != binding.actor or not chat_ok or not message_ok or not isinstance(decoded, bytes):
-            raise CallbackDenied("callback is invalid or expired")
-        del self._items[handle]
+        if entry is None or not isinstance(decoded, bytes):
+            raise CallbackDenied("callback is invalid")
+        if entry.consumed:
+            raise CallbackDenied("callback has already been used")
+        chat_ok = entry.binding.chat_id in (None, 0) or binding.chat_id in (None, 0) or str(entry.binding.chat_id) == str(binding.chat_id)
+        message_ok = entry.binding.message_id in (None, 0) or binding.message_id in (None, 0) or entry.binding.message_id == binding.message_id
+        actor_ok = str(entry.binding.actor) == str(binding.actor)
+        if not actor_ok or not chat_ok or not message_ok:
+            raise CallbackDenied("callback is invalid")
+        entry.consumed = True
+        if self.connection is not None:
+            self.connection.execute("UPDATE callback_store SET consumed = 1 WHERE handle = ?", (handle,))
+            self.connection.commit()
         return entry.value
 
     def rebind(self, handle: str, binding: CallbackBinding) -> str:
-        self._purge()
         entry = self._items.get(handle)
+        if entry is None and self.connection is not None:
+            row = self.connection.execute(
+                "SELECT actor, chat_id, message_id, value, consumed FROM callback_store WHERE handle = ?",
+                (handle,),
+            ).fetchone()
+            if row is not None:
+                val_data = cast('dict[str, Any]', json.loads(row[3]))
+                entry = _Entry(binding, val_data, consumed=bool(row[4]))
+                self._items[handle] = entry
         if entry is None or not isinstance(self._unseal(handle), bytes):
-            raise CallbackDenied("callback is invalid or expired")
+            raise CallbackDenied("callback is invalid")
+        if entry.consumed:
+            raise CallbackDenied("callback has already been used")
+        entry.consumed = True
+        if self.connection is not None:
+            self.connection.execute("UPDATE callback_store SET consumed = 1 WHERE handle = ?", (handle,))
+            self.connection.commit()
         return self.issue(binding, entry.value)
 
-    def _purge(self) -> None:
-        now = time.monotonic()
-        for handle, entry in tuple(self._items.items()):
-            if entry.expires <= now:
-                del self._items[handle]
+    def _prune(self) -> None:
+        if len(self._items) > self.max_items:
+            consumed_keys = [k for k, v in self._items.items() if v.consumed]
+            for k in consumed_keys[:len(self._items) - self.max_items]:
+                del self._items[k]
 
 
 class CallbackRouter:
-    def __init__(self, store: CallbackStore | None = None) -> None:
+    def __init__(self, store: CallbackStore | None = None, runtime: Any = None) -> None:
         self.store = store or CallbackStore()
+        self.runtime = runtime
         self._handlers: dict[str, Any] = {}
         self._module_handlers: dict[str, dict[str, Any]] = {}
         self._module_seq = 0
+
+    @staticmethod
+    async def _default_close_handler(callback: Any, payload: Any = None) -> Any:
+        try:
+            await callback.answer()
+        except Exception:
+            pass
+        deleter = getattr(callback, "delete", None)
+        if callable(deleter):
+            result = deleter()
+            if inspect.isawaitable(result):
+                return await result
+            return result
+        return None
 
     def register(self, action: str, handler: Any) -> None:
         if not action or action in self._handlers:
@@ -357,9 +440,6 @@ class CallbackRouter:
         return action_id
 
     def issue_module(self, module_id: str, action_id: str, binding: CallbackBinding, payload: Any = None) -> str:
-        handlers = self._module_handlers.get(module_id, {})
-        if action_id not in handlers:
-            raise CallbackDenied("module callback is unavailable")
         return self.store.issue(binding, {"module": module_id, "action_id": action_id, "payload": payload})
 
     async def dispatch(self, callback: Any) -> object:
@@ -377,8 +457,32 @@ class CallbackRouter:
         value = self.store.consume(data, binding)
         handler = None
         if isinstance(value.get("module"), str):
-            handlers = self._module_handlers.get(value["module"], {})
-            handler = handlers.get(str(value.get("action_id")))
+            module_id = value["module"]
+            handlers = self._module_handlers.get(module_id, {})
+            action_id = str(value.get("action_id"))
+            handler = handlers.get(action_id)
+            if handler is None:
+                close_cand = hashlib.sha256((module_id + ":UIBuilder.close.<locals>.handler").encode()).hexdigest()[:24]
+                if action_id == close_cand:
+                    handler = self._default_close_handler
+            if handler is None and self.runtime is not None and getattr(self.runtime, "modules", None) is not None:
+                active = self.runtime.modules.get(module_id)
+                if active is not None:
+                    ctx_obj = getattr(active, "context", None)
+                    ns = getattr(ctx_obj, "namespace", {}) if ctx_obj is not None else {}
+                    if isinstance(ns, dict):
+                        typed_ns = cast('dict[str, Any]', ns)
+                        for item_name, item_fn in typed_ns.items():
+                            name_str = str(item_name)
+                            fn_obj = item_fn
+                            if callable(fn_obj):
+                                qname = str(getattr(fn_obj, "__qualname__", getattr(fn_obj, "__name__", name_str)))
+                                cand1 = hashlib.sha256((module_id + ":" + qname).encode()).hexdigest()[:24]
+                                cand2 = hashlib.sha256((module_id + ":" + name_str).encode()).hexdigest()[:24]
+                                if action_id in (cand1, cand2):
+                                    handler = fn_obj
+                                    handlers[action_id] = fn_obj
+                                    break
         else:
             action = value.get("action")
             handler = self._handlers.get(action) if isinstance(action, str) else None

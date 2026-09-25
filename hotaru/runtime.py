@@ -19,7 +19,7 @@ from collections.abc import Awaitable
 
 from .capabilities import CapabilityBroker
 from .backup import BackupService
-from .callbacks import CallbackBinding, CallbackDenied, CallbackRouter
+from .callbacks import CallbackBinding, CallbackDenied, CallbackRouter, CallbackStore, derive_key
 from .config import RuntimeConfig
 from .commands import CommandParser
 from goygram.types import InlineObj
@@ -232,12 +232,18 @@ class Runtime:
             self.kernel.registry.register_alias(alias, command)
         self.capabilities = CapabilityBroker()
         self.context_factory = ModuleContextFactory(self.state, self.responses, self)
-        self.callbacks = CallbackRouter()
+        cb_secret = self.state.get_setting("callback_secret")
+        if not isinstance(cb_secret, str) or not cb_secret:
+            cb_secret = secrets.token_hex(32)
+            self.state.set_setting("callback_secret", cb_secret)
+        cb_key = derive_key(cb_secret)
+        self.callbacks = CallbackRouter(CallbackStore(secret=cb_key, connection=self.state.connection), runtime=self)
         self.cap_host = CapabilityHost(self)
         self.context_factory.cap_host = self.cap_host
         self.context_factory.callback_router = self.callbacks
         self.callbacks.register("caps_confirm", self._caps_confirm)
         self.callbacks.register("caps_cancel", self._caps_cancel)
+        self.callbacks.register("restore_confirm", self._restore_confirm)
         self.event_router = EventRouter(self._event_error)
         self.backups = BackupService()
         self.observatory = Observatory(Path("observatory/runtime/events.jsonl"))
@@ -291,7 +297,11 @@ class Runtime:
             pass
         try:
             return await self.callbacks.dispatch(callback)
-        except CallbackDenied:
+        except CallbackDenied as exc:
+            try:
+                await callback.answer(str(exc) if str(exc) else "Callback denied", alert=True)
+            except Exception:
+                pass
             return None
 
     async def _send_form(self, command: Any, text: str, buttons: list[Any], options: dict[str, Any] | None = None) -> Any:
@@ -431,87 +441,74 @@ class Runtime:
         rows = self.state.connection.execute("SELECT form_id, module_id, source, chat_id, message_id, inline_message_id, text, buttons, options, expires FROM form_state").fetchall()
         restored = 0
         for row in rows:
-            if row[9] is not None and row[9] <= time.time():
-                self.state.connection.execute("DELETE FROM form_state WHERE form_id = ?", (row[0],))
-                continue
             try:
                 source = SimpleNamespace(src=row[2], chat_id=int(row[3]) if row[3] else None, id=row[4], inline_message_id=row[5], module_id=row[1])
                 handle = FormHandle(self, source, key=row[0])
                 setattr(handle, "_key", row[0])
-                buttons: Any = json.loads(row[7])
+                buttons_raw: Any = json.loads(row[7])
+                buttons_list: list[Any] = cast('list[Any]', buttons_raw) if isinstance(buttons_raw, list) else []
                 options = cast('dict[str, Any]', json.loads(row[8]))
                 module_id = str(row[1] or options.get("module_id", ""))
                 actions = cast('list[Any]', options.get("actions", [])) if isinstance(options.get("actions"), list) else []
                 if actions and self.callbacks is not None and self.kernel is not None:
+                    actor = options.get("callback_actor")
+                    if not isinstance(actor, int):
+                        actor = int(self.kernel.owner_id or 0)
                     for item in actions:
                         if not isinstance(item, dict):
                             continue
                         item_data = cast('dict[str, Any]', item)
                         row_index = item_data.get("row")
                         column_index = item_data.get("column")
-                        if not isinstance(row_index, int) or not isinstance(column_index, int):
-                            continue
-                        if row_index >= len(buttons):
-                            continue
-                        row_value: Any = cast('list[Any]', buttons)[row_index]
-                        row_items: Any = [cast('dict[str, Any]', row_value)] if isinstance(row_value, dict) else row_value
-                        if not isinstance(row_items, list):
-                            continue
-                        row_values = cast('list[Any]', row_items)
-                        if column_index >= len(row_values):
-                            continue
-                        button = row_values[column_index]
-                        if not isinstance(button, dict):
-                            continue
-                        button = cast('dict[str, Any]', button)
                         action_id = str(item_data.get("action_id", ""))
-                        if not action_id or not self.callbacks.module_action_exists(module_id, action_id):
+                        if not action_id:
                             continue
-                        button["_action_id"] = action_id
-                        button["_payload"] = item_data.get("payload")
-                        actor = options.get("callback_actor")
-                        if not isinstance(actor, int):
-                            actor = int(self.kernel.owner_id or 0)
-                        button["callback_data"] = self.callbacks.issue_module(module_id, action_id, CallbackBinding(actor, None, 0), item_data.get("payload"))
-
-                if not module_id or self.modules is None:
-                    raise ValueError("restored form owner is unavailable")
-                rehydrated = self.modules.rehydrate_form(module_id, {"form_id": row[0], "text": row[6], "buttons": buttons, "options": options})
-                if asyncio.iscoroutine(rehydrated) or isinstance(rehydrated, asyncio.Future):
-                    rehydrated = cast(Any, await rehydrated)
-                if rehydrated is None and not actions:
-                    rehydrated = {"text": row[6], "buttons": buttons}
-                elif rehydrated is None:
-                    raise ValueError("restored form actions are unavailable")
+                        if isinstance(row_index, int) and isinstance(column_index, int) and row_index < len(buttons_list):
+                            row_val: Any = buttons_list[row_index]
+                            row_items: list[Any] = [row_val] if isinstance(row_val, dict) else (cast('list[Any]', row_val) if isinstance(row_val, list) else [])
+                            if column_index < len(row_items):
+                                btn_val: Any = row_items[column_index]
+                                if isinstance(btn_val, dict):
+                                    btn = cast('dict[str, Any]', btn_val)
+                                    btn["_action_id"] = action_id
+                                    btn["_payload"] = item_data.get("payload")
+                                    cb_handle: Any = btn.get("callback_data")
+                                    if isinstance(cb_handle, str):
+                                        self.callbacks.store.issue(
+                                            CallbackBinding(actor, None, 0),
+                                            {"module": module_id, "action_id": action_id, "payload": item_data.get("payload")},
+                                            handle=cb_handle,
+                                        )
+                rehydrated: Any = None
+                if module_id and self.modules is not None:
+                    try:
+                        rehydrated = self.modules.rehydrate_form(module_id, {"form_id": row[0], "text": row[6], "buttons": buttons_list, "options": options})
+                        if asyncio.iscoroutine(rehydrated) or isinstance(rehydrated, asyncio.Future):
+                            rehydrated = cast(Any, await rehydrated)
+                    except Exception:
+                        rehydrated = None
                 if not isinstance(rehydrated, dict):
-                    raise ValueError("restored form rehydrator is invalid")
+                    rehydrated = {"text": row[6], "buttons": buttons_list}
                 rehydrated_data = cast('dict[str, Any]', rehydrated)
                 row_text = str(rehydrated_data.get("text", row[6]))
-                row_buttons: Any = rehydrated_data.get("buttons", buttons)
+                row_buttons: list[Any] = cast('list[Any]', rehydrated_data["buttons"]) if isinstance(rehydrated_data.get("buttons"), list) else buttons_list
                 if isinstance(rehydrated_data.get("options"), dict):
                     options.update(cast('dict[str, Any]', rehydrated_data["options"]))
-                if not isinstance(row_buttons, list):
-                    raise ValueError("restored form buttons are invalid")
                 self._forms[row[0]] = (handle, source, row_text, row_buttons, options)
                 if str(row[0]).startswith("inline:"):
                     if self._inline_forms is None:
                         self._inline_forms = {}
                     self._inline_forms[str(row[0]).split(":", 1)[1]] = (row_text, row_buttons, bool(options.get("rich", False)))
-                if row[9] is not None:
-                    self._form_expiry[row[0]] = time.monotonic() + max(0.0, row[9] - time.time())
                 restored += 1
             except Exception:
-                self.state.connection.execute("DELETE FROM form_state WHERE form_id = ?", (row[0],))
                 continue
-        self.state.connection.commit()
         return restored
 
     async def refresh_forms(self) -> int:
-        self.purge_forms()
         return await self.restore_forms()
 
     async def unload_module_forms(self, module_id: str) -> int:
-        if self._forms is None:
+        if self._forms is None or getattr(self, "closed", False):
             return 0
         handles: list[Any] = []
         for handle, _source, _text, _buttons, options in tuple(self._forms.values()):
@@ -541,7 +538,7 @@ class Runtime:
         self.state.connection.commit()
 
     async def edit_form(self, handle: Any, text: str | None, buttons: Any = None, **kwargs: Any) -> Any:
-        if self._form_expiry and self._form_expiry.get(handle.key, 0) <= time.monotonic():
+        if self._form_expiry and handle.key in self._form_expiry and self._form_expiry[handle.key] <= time.monotonic():
             await self.delete_form(handle)
             raise RuntimeError("form has expired")
         entry = (self._forms or {}).get(handle.key)
@@ -643,13 +640,15 @@ class Runtime:
 
     def _form_actions(self, buttons: Any) -> list[dict[str, Any]]:
         result: list[dict[str, Any]] = []
-        for row in cast('list[Any]', buttons or []):
-            row = [cast('dict[str, Any]', row)] if isinstance(row, dict) else row
-            for button in cast('list[Any]', row):
+        for row_index, row in enumerate(cast('list[Any]', buttons or [])):
+            items = [cast('dict[str, Any]', row)] if isinstance(row, dict) else row
+            if not isinstance(items, list):
+                continue
+            for column_index, button in enumerate(cast('list[Any]', items)):
                 if isinstance(button, dict):
                     button_data = cast('dict[str, Any]', button)
                     if button_data.get("_action_id"):
-                        result.append({"action_id": button_data["_action_id"], "payload": button_data.get("_payload")})
+                        result.append({"row": row_index, "column": column_index, "action_id": button_data["_action_id"], "payload": button_data.get("_payload")})
         return result
 
     async def _insert_inline_form(self, command: Any, text: str, buttons: list[Any], options: dict[str, Any] | None = None) -> Any:
@@ -1221,7 +1220,7 @@ class Runtime:
             return await self.callbacks.dispatch(callback)
         except CallbackDenied as exc:
             try:
-                await callback.answer("Callback expired, send the command again", alert=True)
+                await callback.answer(str(exc) if str(exc) else "Callback denied", alert=True)
             except Exception:
                 pass
             if self.observatory is not None:
@@ -2132,7 +2131,6 @@ class Runtime:
             raise RuntimeError("inline bot is required")
         with trusted_scope():
             await self.inline.start()
-            await self.refresh_forms()
             if self.inline.info is None:
                 raise RuntimeError("inline bot did not start")
             if self.observatory is not None:
@@ -2233,9 +2231,11 @@ class Runtime:
         if self.inline is not None:
             await self.inline.stop()
         if self._forms is not None:
-            for key in tuple(self._forms):
-                handle = self._forms[key][0]
-                await self.delete_form(handle)
+            self._forms.clear()
+        if self._inline_forms is not None:
+            self._inline_forms.clear()
+        if self._form_expiry is not None:
+            self._form_expiry.clear()
         if self.kernel is not None:
             await self.kernel.cancel_all()
         if self.modules is not None:
