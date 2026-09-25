@@ -145,6 +145,7 @@ class Runtime:
     _forum_ready: asyncio.Event | None = None
     _app_task: asyncio.Task[None] | None = None
     _premium_cache: bool | None = None
+    _premium_checked_at: float = 0.0
     _forum_helper: Any = None
     forum_title: str = "Hotaru Userbot"
     _form_msgs: dict[int, tuple[Any, int]] | None = None
@@ -1390,16 +1391,17 @@ class Runtime:
         value = self.state.get_setting("language", "ru")
         return value.casefold() if isinstance(value, str) and value.casefold() in SUPPORTED_LANGUAGES else "ru"
 
-    async def is_premium(self) -> bool:
-        cached = self._premium_cache
-        if cached is not None:
-            return cached
+    async def is_premium(self, refresh: bool = False) -> bool:
+        if not refresh and self._premium_cache is True:
+            return True
+        if not refresh and self._premium_cache is False and (time.time() - getattr(self, "_premium_checked_at", 0.0)) < 60.0:
+            return False
         app = self.app
         if app is None or getattr(app, "mt", None) is None:
-            return False
+            return bool(self._premium_cache)
         try:
             with trusted_scope():
-                result = await app.mt_users_get_users( id=[{"_": "inputUserSelf"}])
+                result = await app.mt_users_get_users(id=[{"_": "inputUserSelf"}])
             body: Any = cast('dict[str, Any]', result).get("result", result) if isinstance(result, dict) else result
             if isinstance(body, dict):
                 body_data = cast('dict[str, Any]', body)
@@ -1408,11 +1410,20 @@ class Runtime:
                 users = body
             first: Any = cast('list[Any]', users)[0] if isinstance(users, list) and users else None
             first_data = cast('dict[str, Any]', first) if isinstance(first, dict) else cast('dict[str, Any]', body) if isinstance(body, dict) else {}
-            self._premium_cache = bool(first_data.get("premium"))
+            self._premium_cache = bool(first_data.get("premium") or first_data.get("is_premium"))
+            self._premium_checked_at = time.time()
+            if isinstance(first_data, dict) and first_data:
+                if isinstance(getattr(app, "_me_cache", None), dict):
+                    app._me_cache.update(first_data)
+                session = getattr(app, "session", None)
+                if session is not None and isinstance(getattr(session, "data", None), dict):
+                    user_dict = session.data.get("user")
+                    if isinstance(user_dict, dict):
+                        user_dict.update(first_data)
         except Exception:
             log.error("premium check failed", exc_info=True)
-            return False
-        return self._premium_cache
+            return self._premium_cache if self._premium_cache is not None else False
+        return bool(self._premium_cache)
 
     def set_language(self, language: str) -> str:
         if self.lexicon is None:
@@ -2125,6 +2136,10 @@ class Runtime:
                 raise RuntimeError("inline bot did not start")
             if self.observatory is not None:
                 self.observatory.emit("inline", "started", username=self.inline.info.username)
+            try:
+                await self.is_premium(refresh=True)
+            except Exception:
+                pass
 
     async def _ensure_forum(self) -> None:
         from relay.proxies import ForumHelper
