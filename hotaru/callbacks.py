@@ -5,6 +5,7 @@ import hashlib
 import inspect
 import json
 import secrets
+import types
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
@@ -33,8 +34,12 @@ class CallbackDenied(PermissionError):
 
 
 class CallbackContext:
-    def __init__(self, callback: Any) -> None:
+    def __init__(self, callback: Any, runtime: Any = None) -> None:
         self._callback = callback
+        if runtime is not None:
+            self._hotaru_runtime = runtime
+        elif hasattr(callback, "_hotaru_runtime"):
+            self._hotaru_runtime = getattr(callback, "_hotaru_runtime")
         for name in ("src", "raw", "app", "id", "chat_id", "from_id", "msg_id", "data", "text", "inline_message_id"):
             if hasattr(callback, name):
                 setattr(self, name, getattr(callback, name))
@@ -96,7 +101,7 @@ class CallbackContext:
 
 
     async def edit(self, text: str, **kwargs: Any) -> Any:
-        runtime = getattr(self._callback, "_hotaru_runtime", None)
+        runtime = getattr(self, "_hotaru_runtime", getattr(self._callback, "_hotaru_runtime", None))
         raw_buttons = kwargs.get("buttons")
         if runtime is not None and self._has_input_buttons(raw_buttons):
             from hotaru.runtime import InputContext
@@ -117,8 +122,6 @@ class CallbackContext:
             ctx.form_nonce = getattr(self, "form_nonce", None)
             assert runtime is not None
             return await runtime._edit_input_form(ctx, text, buttons, kwargs)
-
-
 
         inline_mid = getattr(self, "inline_message_id", None)
         app = getattr(self, "app", None)
@@ -155,11 +158,11 @@ class CallbackContext:
             log["plain_u16"] = len((plain or "").encode("utf-16-le")) // 2
             log["ents"] = len(ents)
             log["entities"] = ents
-            runtime = getattr(self._callback, "_hotaru_runtime", None)
             bot_app = getattr(getattr(runtime, "inline", None), "bot_app", None) if runtime is not None else None
-            app = bot_app or app
-            log["bot"] = bool(getattr(app, "bot_token", None))
+            user_app = getattr(runtime, "app", None) or app
             if inline_mid is not None:
+                target_app = bot_app or user_app
+                log["bot"] = bool(getattr(target_app, "bot_token", None))
                 inline_id: dict[str, Any] | None = cast('dict[str, Any]', inline_mid) if isinstance(inline_mid, dict) else {"_": "inputBotInlineMessageID", "raw": inline_mid} if isinstance(inline_mid, (str, bytes)) else None
                 log["branch"] = "editInlineBotMessage"
                 log["id_field"] = inline_id
@@ -170,38 +173,68 @@ class CallbackContext:
                 if use_rich:
                     data.pop("entities", None)
                     data["rich_message"] = {"_": "inputRichMessageHTML", **rich_html(text)}
-                return await self._edit_inline(app, inline_id, "" if use_rich else plain, data)
+                from relay.firewall import trusted_scope
+                with trusted_scope():
+                    return await self._edit_inline(target_app, inline_id, "" if use_rich else plain, data)
             log["branch"] = "editMessage"
+            log["bot"] = False
             _cb_log(log)
-            if isinstance(chat_id, int) and isinstance(msg_id, int):
-                return await app.mt_messages_edit_message(peer=chat_id, id=int(msg_id), message=plain, **data)
+            if isinstance(chat_id, int) and isinstance(msg_id, int) and user_app is not None:
+                from relay.firewall import trusted_scope
+                with trusted_scope():
+                    return await user_app.mt_messages_edit_message(peer=chat_id, id=int(msg_id), message=plain, **data)
             return None
-        if inline_mid is not None and app is not None:
-            data = dict(kwargs)
-            use_rich = bool(data.pop("rich", False))
-            raw_buttons = data.pop("buttons", None)
-            kbd = data.pop("kbd", data.pop("reply_markup", None))
-            if kbd is None and raw_buttons is not None:
-                kbd = {"inline_keyboard": raw_buttons}
-            data.pop("parse_mode", None)
-            if kbd is not None:
-                raw_k: Any = kbd
-                markup = kbd_to_tl(raw_k.to_dict() if hasattr(raw_k, "to_dict") else raw_k)
-                if markup is not None:
-                    data["reply_markup"] = markup
-            plain, raw_ents = html_to_entities(text)
-            ents = [e for e in raw_ents if int(e.get("length", 0)) > 0]
-            if ents:
-                data["entities"] = ents
+        if inline_mid is not None:
+            bot_app = getattr(getattr(runtime, "inline", None), "bot_app", None) if runtime is not None else None
+            target_app = bot_app or app
+            if target_app is not None:
+                data = dict(kwargs)
+                use_rich = bool(data.pop("rich", False))
+                raw_buttons = data.pop("buttons", None)
+                raw_kbd = data.pop("reply_markup", data.pop("kbd", None))
+                if raw_kbd is None and raw_buttons is not None:
+                    raw_kbd = {"inline_keyboard": raw_buttons}
+                if raw_kbd is not None:
+                    markup = kbd_to_tl(raw_kbd)
+                    if markup is not None:
+                        data["reply_markup"] = markup
+                data.pop("parse_mode", None)
+                plain, raw_ents = html_to_entities(text)
+                ents = [e for e in raw_ents if int(e.get("length", 0)) > 0]
+                if ents:
+                    data["entities"] = ents
 
-            bot_inline_id: dict[str, Any] = cast('dict[str, Any]', inline_mid) if isinstance(inline_mid, dict) else {"_": "inputBotInlineMessageID", "raw": inline_mid}
-            log["branch"] = "editInlineBotMessage-bot"
-            log["id_field"] = bot_inline_id
-            _cb_log(log)
-            if use_rich:
-                data.pop("entities", None)
-                data["rich_message"] = {"_": "inputRichMessageHTML", **rich_html(text)}
-            return await self._edit_inline(app, bot_inline_id, "" if use_rich else plain, data)
+                bot_inline_id: dict[str, Any] = cast('dict[str, Any]', inline_mid) if isinstance(inline_mid, dict) else {"_": "inputBotInlineMessageID", "raw": inline_mid}
+                log["branch"] = "editInlineBotMessage-bot"
+                log["id_field"] = bot_inline_id
+                _cb_log(log)
+                if use_rich:
+                    data.pop("entities", None)
+                    data["rich_message"] = {"_": "inputRichMessageHTML", **rich_html(text)}
+                from relay.firewall import trusted_scope
+                with trusted_scope():
+                    return await self._edit_inline(target_app, bot_inline_id, "" if use_rich else plain, data)
+        if isinstance(chat_id, int) and isinstance(msg_id, int):
+            user_app = getattr(runtime, "app", None) or app
+            if user_app is not None:
+                data = dict(kwargs)
+                use_rich = bool(data.pop("rich", False))
+                raw_buttons = data.pop("buttons", None)
+                raw_kbd = data.pop("reply_markup", data.pop("kbd", None))
+                if raw_kbd is None and raw_buttons is not None:
+                    raw_kbd = {"inline_keyboard": raw_buttons}
+                if raw_kbd is not None:
+                    markup = kbd_to_tl(raw_kbd)
+                    if markup is not None:
+                        data["reply_markup"] = markup
+                data.pop("parse_mode", None)
+                plain, raw_ents = html_to_entities(text)
+                ents = [e for e in raw_ents if int(e.get("length", 0)) > 0]
+                if ents:
+                    data["entities"] = ents
+                from relay.firewall import trusted_scope
+                with trusted_scope():
+                    return await user_app.mt_messages_edit_message(peer=chat_id, id=int(msg_id), message=plain, **data)
         log["branch"] = "fallback"
         _cb_log(log)
         return await self._callback.edit(text, **kwargs)
@@ -361,6 +394,14 @@ class CallbackStore:
             self.connection.commit()
         return entry.value
 
+    def unconsume(self, handle: str) -> None:
+        entry = self._items.get(handle)
+        if entry is not None:
+            entry.consumed = False
+        if self.connection is not None:
+            self.connection.execute("UPDATE callback_store SET consumed = 0 WHERE handle = ?", (handle,))
+            self.connection.commit()
+
     def rebind(self, handle: str, binding: CallbackBinding) -> str:
         entry = self._items.get(handle)
         if entry is None and self.connection is not None:
@@ -410,6 +451,10 @@ class CallbackRouter:
                 return await result
             return result
         return None
+
+    @property
+    def default_close_handler(self) -> Any:
+        return self._default_close_handler
 
     def register(self, action: str, handler: Any) -> None:
         if not action or action in self._handlers:
@@ -462,34 +507,124 @@ class CallbackRouter:
             action_id = str(value.get("action_id"))
             handler = handlers.get(action_id)
             if handler is None:
-                close_cand = hashlib.sha256((module_id + ":UIBuilder.close.<locals>.handler").encode()).hexdigest()[:24]
-                if action_id == close_cand:
+                close_cands = {
+                    "close",
+                    "ui_close",
+                    hashlib.sha256((module_id + ":close").encode()).hexdigest()[:24],
+                    hashlib.sha256((module_id + ":UiHelper.close.<locals>.handler").encode()).hexdigest()[:24],
+                    hashlib.sha256((module_id + ":UIBuilder.close.<locals>.handler").encode()).hexdigest()[:24],
+                    hashlib.sha256((module_id + ":_UiProxy.close.<locals>.handler").encode()).hexdigest()[:24],
+                    hashlib.sha256(b"_show_main.<locals>.close").hexdigest()[:16],
+                    hashlib.sha256((module_id + ":_show_main.<locals>.close").encode()).hexdigest()[:24],
+                }
+                if action_id in close_cands or action_id.startswith("close_") or action_id.endswith("_close"):
                     handler = self._default_close_handler
+            if handler is None and self.runtime is not None:
+                sandbox = getattr(self.runtime, "sandbox", None)
+                if sandbox is not None and (
+                    (hasattr(sandbox, "has_module") and sandbox.has_module(module_id))
+                    or module_id in getattr(sandbox, "_workers", {})
+                    or (hasattr(self.runtime, "_is_kernel_module") and not self.runtime._is_kernel_module(module_id))
+                ):
+                    handler = sandbox._make_sandbox_cb(module_id, action_id)
+                    handlers[action_id] = handler
             if handler is None and self.runtime is not None and getattr(self.runtime, "modules", None) is not None:
                 active = self.runtime.modules.get(module_id)
                 if active is not None:
-                    ctx_obj = getattr(active, "context", None)
-                    ns = getattr(ctx_obj, "namespace", {}) if ctx_obj is not None else {}
+                    ns = getattr(active, "namespace", None)
+                    if not isinstance(ns, dict):
+                        ctx_obj = getattr(active, "context", None)
+                        ns = getattr(ctx_obj, "namespace", {}) if ctx_obj is not None else {}
                     if isinstance(ns, dict):
                         typed_ns = cast('dict[str, Any]', ns)
                         for item_name, item_fn in typed_ns.items():
                             name_str = str(item_name)
-                            fn_obj = item_fn
-                            if callable(fn_obj):
-                                qname = str(getattr(fn_obj, "__qualname__", getattr(fn_obj, "__name__", name_str)))
+                            if callable(item_fn):
+                                qname = str(getattr(item_fn, "__qualname__", getattr(item_fn, "__name__", name_str)))
                                 cand1 = hashlib.sha256((module_id + ":" + qname).encode()).hexdigest()[:24]
                                 cand2 = hashlib.sha256((module_id + ":" + name_str).encode()).hexdigest()[:24]
-                                if action_id in (cand1, cand2):
-                                    handler = fn_obj
-                                    handlers[action_id] = fn_obj
+                                cand3 = hashlib.sha256((module_id + ":" + getattr(item_fn, "__name__", "")).encode()).hexdigest()[:24]
+                                if action_id in (cand1, cand2, cand3):
+                                    handler = item_fn
+                                    handlers[action_id] = item_fn
                                     break
+                        if handler is None:
+                            saved_nonlocals: dict[str, Any] = {}
+                            raw_forms = getattr(self.runtime, "_forms", None)
+                            if isinstance(raw_forms, dict):
+                                forms_dict = cast('dict[str, Any]', raw_forms)
+                                for form_entry in forms_dict.values():
+                                    entry_tuple = cast('tuple[Any, ...]', form_entry) if isinstance(form_entry, (tuple, list)) else ()
+                                    if len(entry_tuple) >= 5 and isinstance(entry_tuple[4], dict):
+                                        form_opts = cast('dict[str, Any]', entry_tuple[4])
+                                        actions_list = cast('list[Any]', form_opts.get("actions", [])) if isinstance(form_opts.get("actions"), list) else []
+                                        for act in actions_list:
+                                            if isinstance(act, dict):
+                                                act_dict = cast('dict[str, Any]', act)
+                                                if str(act_dict.get("action_id", "")) == action_id:
+                                                    nl = act_dict.get("nonlocals")
+                                                    if isinstance(nl, dict):
+                                                        nl_dict = cast('dict[str, Any]', nl)
+                                                        saved_nonlocals.update(nl_dict)
+                                                    break
+                            found_code = None
+                            def _search_codes(code: Any) -> Any:
+                                for c in getattr(code, "co_consts", ()):
+                                    if isinstance(c, types.CodeType):
+                                        qn = getattr(c, "co_qualname", getattr(c, "co_name", ""))
+                                        cands = (
+                                            hashlib.sha256((module_id + ":" + qn).encode()).hexdigest()[:24],
+                                            hashlib.sha256((module_id + ":" + c.co_name).encode()).hexdigest()[:24],
+                                        )
+                                        if action_id in cands:
+                                            return c
+                                        sub = _search_codes(c)
+                                        if sub is not None:
+                                            return sub
+                                return None
+
+                            for item_fn in typed_ns.values():
+                                if callable(item_fn) and hasattr(item_fn, "__code__"):
+                                    found_code = _search_codes(item_fn.__code__)
+                                    if found_code is not None:
+                                        break
+
+                            if found_code is not None:
+                                context_factory = getattr(self.runtime, "context_factory", None)
+                                mod_ctx = context_factory.create(module_id, callback) if context_factory is not None else None
+                                def make_cell(val: Any) -> Any:
+                                    return (lambda: val).__closure__[0]  # type: ignore
+                                cells: list[Any] = []
+                                payload_val = value.get("payload")
+                                for var in getattr(found_code, "co_freevars", ()):
+                                    if var == "ctx":
+                                        cells.append(make_cell(mod_ctx))
+                                    elif var == "runtime":
+                                        cells.append(make_cell(self.runtime))
+                                    elif var in saved_nonlocals:
+                                        cells.append(make_cell(saved_nonlocals[var]))
+                                    elif isinstance(payload_val, dict) and var in payload_val:
+                                        cells.append(make_cell(payload_val[var]))
+                                    elif mod_ctx is not None and hasattr(mod_ctx, var):
+                                        cells.append(make_cell(getattr(mod_ctx, var)))
+                                    elif hasattr(active, var):
+                                        cells.append(make_cell(getattr(active, var)))
+                                    else:
+                                        cells.append(make_cell(None))
+                                try:
+                                    recreated = types.FunctionType(found_code, typed_ns, found_code.co_name, None, tuple(cells))
+                                    handler = recreated
+                                    handlers[action_id] = recreated
+                                except Exception:
+                                    pass
         else:
             action = value.get("action")
             handler = self._handlers.get(action) if isinstance(action, str) else None
         if handler is None:
+            self.store.unconsume(data)
             raise CallbackDenied("callback action is unavailable")
         with module_scope(str(value.get("module") or "")):
-            result = handler(CallbackContext(callback), value.get("payload"))
+            result = handler(CallbackContext(callback, self.runtime), value.get("payload"))
             if inspect.isawaitable(result):
                 return await result
             return result

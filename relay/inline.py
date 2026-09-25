@@ -940,6 +940,10 @@ class InlineManager:
             except Exception as exc:
                 if self.runtime.observatory is not None:
                     self.runtime.observatory.emit("inline", "handler_error", error=type(exc).__name__, detail=str(exc)[:240])
+                try:
+                    await query.answer(results=[], cache_time=0, is_personal=True)
+                except Exception:
+                    pass
 
     @staticmethod
     def _form_article(text: str, buttons: list[dict[str, str]]) -> dict[str, Any]:

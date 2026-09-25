@@ -316,7 +316,7 @@ class Runtime:
         if self.inline.info is None or self.inline.bot_app is None:
             raise RuntimeError("inline bot form transport is not ready")
         try:
-            await asyncio.wait_for(self.inline.ready.wait(), timeout=10.0)
+            await asyncio.wait_for(self.inline.ready.wait(), timeout=15.0)
         except asyncio.TimeoutError as exc:
             raise RuntimeError("inline bot polling is not ready") from exc
         owner = self.kernel.owner_id if self.kernel is not None else None
@@ -472,6 +472,8 @@ class Runtime:
                                     btn = cast('dict[str, Any]', btn_val)
                                     btn["_action_id"] = action_id
                                     btn["_payload"] = item_data.get("payload")
+                                    if item_data.get("nonlocals"):
+                                        btn["_nonlocals"] = item_data["nonlocals"]
                                     cb_handle: Any = btn.get("callback_data")
                                     if isinstance(cb_handle, str):
                                         self.callbacks.store.issue(
@@ -479,6 +481,13 @@ class Runtime:
                                             {"module": module_id, "action_id": action_id, "payload": item_data.get("payload")},
                                             handle=cb_handle,
                                         )
+                                    if action_id in ("close", "ui_close") or action_id.startswith("close_") or action_id == hashlib.sha256((module_id + ":UiHelper.close.<locals>.handler").encode()).hexdigest()[:24]:
+                                        self.callbacks.register_module_action_id(module_id, action_id, self.callbacks.default_close_handler)
+                                    elif self.sandbox is not None and (
+                                        self.sandbox.has_module(module_id)
+                                        or not self._is_kernel_module(module_id)
+                                    ):
+                                        self.callbacks.register_module_action_id(module_id, action_id, self.sandbox.make_sandbox_cb(module_id, action_id))
                 rehydrated: Any = None
                 if module_id and self.modules is not None:
                     try:
@@ -648,7 +657,10 @@ class Runtime:
                 if isinstance(button, dict):
                     button_data = cast('dict[str, Any]', button)
                     if button_data.get("_action_id"):
-                        result.append({"row": row_index, "column": column_index, "action_id": button_data["_action_id"], "payload": button_data.get("_payload")})
+                        entry = {"row": row_index, "column": column_index, "action_id": button_data["_action_id"], "payload": button_data.get("_payload")}
+                        if button_data.get("_nonlocals"):
+                            entry["nonlocals"] = button_data["_nonlocals"]
+                        result.append(entry)
         return result
 
     async def _insert_inline_form(self, command: Any, text: str, buttons: list[Any], options: dict[str, Any] | None = None) -> Any:
@@ -700,7 +712,10 @@ class Runtime:
                 if callable(button.get("handler")) and "callback" not in button:
                     action_id = self.callbacks.register_module_action(options.get("module_id", ""), button["handler"]) if self.callbacks is not None else ""
                     if action_id:
-                        action_records.append({"row": row_index, "column": column_index, "action_id": action_id, "payload": button.get("payload")})
+                        entry = {"row": row_index, "column": column_index, "action_id": action_id, "payload": button.get("payload")}
+                        if button.get("_nonlocals"):
+                            entry["nonlocals"] = button["_nonlocals"]
+                        action_records.append(entry)
                         button = {**button, "_action_id": action_id, "_payload": button.get("payload")}
                 handle = button.get("callback_data")
                 btn_item: dict[str, Any] = {"text": button.get("text", "")}
@@ -710,23 +725,38 @@ class Runtime:
                     btn_item["icon_custom_emoji_id"] = button["icon_custom_emoji_id"]
                 if isinstance(handle, str):
                     if button.get("_action_id") and not any(item.get("action_id") == button["_action_id"] for item in action_records):
-                        action_records.append({"row": row_index, "column": column_index, "action_id": button["_action_id"], "payload": button.get("_payload")})
+                        entry = {"row": row_index, "column": column_index, "action_id": button["_action_id"], "payload": button.get("_payload")}
+                        if button.get("_nonlocals"):
+                            entry["nonlocals"] = button["_nonlocals"]
+                        action_records.append(entry)
                     if self.callbacks is None or self.kernel is None:
                         continue
                     actor = options.get("callback_actor")
                     if not isinstance(actor, int):
                         actor = int(self.kernel.owner_id or 0)
                     btn_item["callback_data"] = self.callbacks.store.rebind(handle, CallbackBinding(actor, None, 0))
+                    if button.get("_action_id"):
+                        btn_item["_action_id"] = button["_action_id"]
+                        btn_item["_payload"] = button.get("_payload")
+                        if button.get("_nonlocals"):
+                            btn_item["_nonlocals"] = button["_nonlocals"]
                     current.append(btn_item)
                 elif button.get("_action_id") and self.callbacks is not None:
                     payload = button.get("_payload")
                     if not any(item.get("action_id") == button["_action_id"] for item in action_records):
-                        action_records.append({"row": row_index, "column": column_index, "action_id": button["_action_id"], "payload": payload})
+                        entry = {"row": row_index, "column": column_index, "action_id": button["_action_id"], "payload": payload}
+                        if button.get("_nonlocals"):
+                            entry["nonlocals"] = button["_nonlocals"]
+                        action_records.append(entry)
                     actor = options.get("callback_actor")
                     if not isinstance(actor, int):
                         actor = int(getattr(self.kernel, "owner_id", 0) or 0)
                     issued = self.callbacks.issue_module(options.get("module_id", ""), str(button["_action_id"]), CallbackBinding(actor, None, 0), payload)
                     btn_item["callback_data"] = issued
+                    btn_item["_action_id"] = button["_action_id"]
+                    btn_item["_payload"] = payload
+                    if button.get("_nonlocals"):
+                        btn_item["_nonlocals"] = button["_nonlocals"]
                     current.append(btn_item)
                 elif isinstance(button.get("url"), str):
                     btn_item["url"] = button["url"]
@@ -752,12 +782,26 @@ class Runtime:
         with trusted_scope():
             bot = await self.app.mt.resolve_peer("@" + self.inline.info.username)
             peer = await self.app.mt.resolve_peer(chat_id)
-        result = await self.app.mt_messages_get_inline_bot_results(
-            bot=bot,
-            peer=peer,
-            query="hotaru-form:" + nonce,
-            offset="",
-        )
+        try:
+            result = await self.app.mt_messages_get_inline_bot_results(
+                bot=bot,
+                peer=peer,
+                query="hotaru-form:" + nonce,
+                offset="",
+            )
+        except Exception as exc:
+            if "BOT_RESPONSE_TIMEOUT" in str(exc):
+                if self.observatory is not None:
+                    self.observatory.emit("inline", "get_results_timeout_retry", nonce=nonce)
+                await asyncio.sleep(0.5)
+                result = await self.app.mt_messages_get_inline_bot_results(
+                    bot=bot,
+                    peer=peer,
+                    query="hotaru-form:" + nonce,
+                    offset="",
+                )
+            else:
+                raise
         body: Any = cast('dict[str, Any]', result).get("result", result) if isinstance(result, dict) else result
         if isinstance(body, dict) and isinstance(cast('dict[str, Any]', body).get("bot_results"), dict):
             body = cast('dict[str, Any]', body)["bot_results"]
@@ -825,6 +869,7 @@ class Runtime:
 
             verdict = self.security.check(query, transport="inline")
             if verdict is not AccessVerdict.ALLOW:
+                await answer_tl(query, results=[], cache_time=0, is_personal=True)
                 return
         text = (query.query or "").strip()
         if text.startswith("hotaru-input:"):
@@ -847,7 +892,7 @@ class Runtime:
             if self.observatory is not None:
                 self.observatory.emit("inline", "form_lookup", nonce=nonce, found=form is not None)
             if form is None:
-                await query.answer(results=[], cache_time=0, is_personal=True)
+                await answer_tl(query, results=[], cache_time=0, is_personal=True)
                 return
             form_text, buttons, rich = form
             result = InlineObj.article("hotaru-form", "Hotaru form", form_text, parse_mode="HTML")
@@ -1649,6 +1694,57 @@ class Runtime:
                 self.observatory.emit("modules", "update_applied", module=module_id, version=version)
             return f"reloaded: {module_id}"
 
+    async def _command_ex(self, invocation: Any, ctx: Any = None) -> Any:
+        if len(invocation.args) != 1 or self.modules is None:
+            prefix = getattr(getattr(self, "config", None), "prefix", ".")
+            return f"usage: {prefix}ex <module-id>"
+        with trusted_scope():
+            module_id = str(invocation.args[0]).casefold()
+            active = self.modules.get(module_id)
+            target_path: Path | None = None
+            source_bytes: bytes | None = None
+            version = "1.0.0"
+            if active is not None:
+                version = active.loaded.manifest.version
+                if active.loaded.path.is_file():
+                    target_path = active.loaded.path
+                elif active.loaded.source:
+                    source_bytes = str(active.loaded.source).encode("utf-8")
+            if target_path is None and source_bytes is None:
+                for d in (self.constellations_dir, self.relay_dir):
+                    cand = d / f"{module_id}.hmod"
+                    if cand.is_file():
+                        target_path = cand
+                        break
+            if target_path is None and source_bytes is None:
+                return f"module not found: {module_id}"
+            file_name = f"{module_id}.hmod"
+            caption = f"📦 <b>{module_id}</b> (v{version})"
+            import tempfile
+            temp_path: str | None = None
+            if target_path is not None:
+                file_payload: Any = str(target_path)
+            else:
+                fd, temp_path = tempfile.mkstemp(prefix=f"hotaru-ex-{module_id}-", suffix=".hmod")
+                os.close(fd)
+                with open(temp_path, "wb") as f:
+                    f.write(source_bytes or b"")
+                file_payload = temp_path
+            try:
+                if ctx is not None and hasattr(ctx, "respond_file"):
+                    await ctx.respond_file(file_payload, caption=caption, file_name=file_name, mime_type="text/plain")
+                    return None
+                if ctx is not None and hasattr(ctx, "send_file"):
+                    await ctx.send_file(file_payload, file_name=file_name, caption=caption, output="auto")
+                    return None
+            finally:
+                if temp_path is not None:
+                    try:
+                        os.unlink(temp_path)
+                    except OSError:
+                        pass
+            return f"exported: {file_name}"
+
 
 
 
@@ -2133,6 +2229,10 @@ class Runtime:
             await self.inline.start()
             if self.inline.info is None:
                 raise RuntimeError("inline bot did not start")
+            try:
+                await asyncio.wait_for(self.inline.ready.wait(), timeout=30.0)
+            except asyncio.TimeoutError as exc:
+                raise RuntimeError("inline bot polling is not ready") from exc
             if self.observatory is not None:
                 self.observatory.emit("inline", "started", username=self.inline.info.username)
             try:

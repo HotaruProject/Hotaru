@@ -1,7 +1,7 @@
 HOTARU = {
     "id": "catalyst",
-    "version": "1.0.1",
-    "commands": ['ld', 'ul', 'rl'],
+    "version": "1.1.0",
+    "commands": ['ld', 'ul', 'rl', 'ex'],
     "capabilities": [],
 }
 
@@ -18,6 +18,7 @@ async def command_ld(ctx: Any, invocation: Any) -> Any:
         await ctx.respond(text, buttons=buttons)
     else:
         await ctx.respond(result)
+
 async def command_ul(ctx: Any, invocation: Any) -> Any:
     runtime = ctx.runtime
     if runtime is None:
@@ -25,6 +26,7 @@ async def command_ul(ctx: Any, invocation: Any) -> Any:
         return
     result = await runtime._command_ul(invocation)
     await ctx.respond(result)
+
 async def command_rl(ctx: Any, invocation: Any) -> Any:
     runtime = ctx.runtime
     if runtime is None:
@@ -32,3 +34,12 @@ async def command_rl(ctx: Any, invocation: Any) -> Any:
         return
     result = await runtime._command_rl(invocation)
     await ctx.respond(result)
+
+async def command_ex(ctx: Any, invocation: Any) -> Any:
+    runtime = ctx.runtime
+    if runtime is None:
+        await ctx.respond("runtime unavailable")
+        return
+    result = await runtime._command_ex(invocation, ctx=ctx)
+    if result:
+        await ctx.respond(result)
