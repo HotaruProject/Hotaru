@@ -1246,6 +1246,7 @@ class ModuleSandbox:
         self.call_timeout = call_timeout
         self._workers: dict[str, subprocess.Popen[bytes]] = {}
         self._booted: dict[str, bool] = {}
+        self._module_defs: dict[str, tuple[str, list[str]]] = {}
         self._respond_sources: dict[str, Any] = {}
         self._respond_targets: dict[str, int] = {}
         self._cb_waiters: dict[tuple[str, str], asyncio.Future[Any]] = {}
@@ -1451,6 +1452,7 @@ class ModuleSandbox:
         return line.decode("utf-8", errors="replace").strip() if line else None
 
     async def start_module(self, module_id: str, source: str, commands: list[str]) -> bool:
+        self._module_defs[module_id] = (source, commands)
         current = self._workers.get(module_id)
         if current is not None and current.poll() is None:
             return True
@@ -1492,6 +1494,11 @@ class ModuleSandbox:
 
     async def _roundtrip(self, module_id: str, request: dict[str, Any]) -> dict[str, Any] | None:
         process = self._workers.get(module_id)
+        if (process is None or process.poll() is not None) and module_id in self._module_defs:
+            source, commands = self._module_defs[module_id]
+            loop = asyncio.get_running_loop()
+            await loop.run_in_executor(None, lambda: self._spawn(module_id, source, commands))
+            process = self._workers.get(module_id)
         if process is None or process.poll() is not None:
             raise SandboxError(f"sandbox worker is not running: {module_id}")
         loop = asyncio.get_running_loop()
@@ -1845,6 +1852,7 @@ class ModuleSandbox:
         return handler
 
     def stop_module(self, module_id: str) -> bool:
+        self._module_defs.pop(module_id, None)
         process = self._workers.pop(module_id, None)
         self._booted.pop(module_id, None)
         if process is None:
