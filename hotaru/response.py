@@ -563,12 +563,12 @@ class ModuleContext:
         return await self.cap("net", {"url": url, "data": data, "timeout": timeout})
 
     async def premium(self) -> bool:
-        if self._premium is True:
-            return True
         if self.runtime is not None and hasattr(self.runtime, "is_premium"):
             val = await self.runtime.is_premium()
             self._premium = val
             return val
+        if self._premium is not None:
+            return self._premium
         app = getattr(self.runtime, "app", None) if self.runtime is not None else None
         if app is None or getattr(app, "mt", None) is None:
             return False
@@ -586,6 +586,7 @@ class ModuleContext:
             self._premium = bool(first_data.get("premium") or first_data.get("is_premium"))
             if self.runtime is not None:
                 self.runtime._premium_cache = self._premium
+                self.runtime._premium_checked_at = time.time()
         except Exception:
             log.error("premium check failed", exc_info=True)
             return False
@@ -593,32 +594,38 @@ class ModuleContext:
 
     @property
     def is_premium(self) -> bool:
-        if self._premium is True:
-            return True
         runtime = self.runtime
         if runtime is not None:
+            checked_at = getattr(runtime, "_premium_checked_at", 0.0)
             cached = getattr(runtime, "_premium_cache", None)
-            if cached is True:
-                self._premium = True
-                return True
+            if cached is not None and (time.time() - checked_at) < 60.0:
+                self._premium = bool(cached)
+                return bool(cached)
             app = getattr(runtime, "app", None)
-            if app is not None:
-                me = getattr(app, "_me_cache", None)
-                if isinstance(me, dict) and bool(me.get("premium") or me.get("is_premium")):
-                    self._premium = True
-                    runtime._premium_cache = True
-                    return True
-                session = getattr(app, "session", None)
-                if session is not None and isinstance(getattr(session, "data", None), dict):
-                    user_dict = session.data.get("user")
-                    if isinstance(user_dict, dict) and bool(user_dict.get("premium") or user_dict.get("is_premium")):
+            if app is not None and checked_at == 0.0:
+                me: Any = getattr(app, "_me_cache", None)
+                if isinstance(me, dict):
+                    me_data = cast('dict[str, Any]', me)
+                    if bool(me_data.get("premium")) or bool(me_data.get("is_premium")):
                         self._premium = True
                         runtime._premium_cache = True
+                        runtime._premium_checked_at = time.time()
                         return True
-        if self._premium is not None:
-            return self._premium
-        cached = getattr(runtime, "_premium_cache", None) if runtime is not None else None
-        return bool(cached)
+                session: Any = getattr(app, "session", None)
+                if session is not None:
+                    s_data: Any = getattr(session, "data", None)
+                    if isinstance(s_data, dict):
+                        u_obj: Any = cast('dict[str, Any]', s_data).get("user")
+                        if isinstance(u_obj, dict):
+                            u_data = cast('dict[str, Any]', u_obj)
+                            if bool(u_data.get("premium")) or bool(u_data.get("is_premium")):
+                                self._premium = True
+                                runtime._premium_cache = True
+                                runtime._premium_checked_at = time.time()
+                                return True
+            if cached is not None:
+                return bool(cached)
+        return bool(self._premium) if self._premium is not None else False
 
     async def _via_bot(self, buttons: Any, kind: str | None) -> bool:
         if not await self.premium():
@@ -1031,7 +1038,10 @@ class ModuleContext:
                 kwargs["reply_markup"] = kbd_to_tl({"inline_keyboard": buttons})
             else:
                 html = str(html) + buttons_html(buttons, kind=kind)
-        if not self.is_premium:
+        allowed = self.is_premium
+        if not allowed:
+            allowed = await self.premium()
+        if not allowed:
             if fb == "bot":
                 result = await self._bot_form(html, None, kwargs)
                 return result if isinstance(result, Response) else Response(True, "reply", getattr(self._source, "src", None), result)
@@ -1232,5 +1242,32 @@ class ModuleContextFactory:
         self.runtime: Any = runtime
 
     def create(self, module_id: str, message: Any) -> ModuleContext:
-        cached = getattr(self.runtime, "_premium_cache", None) if self.runtime is not None else None
+        cached = None
+        if self.runtime is not None:
+            raw_cached = getattr(self.runtime, "_premium_cache", None)
+            checked_at = getattr(self.runtime, "_premium_checked_at", 0.0)
+            if raw_cached is not None and (time.time() - checked_at) < 60.0:
+                cached = raw_cached
+            elif raw_cached is None and checked_at == 0.0:
+                app = getattr(self.runtime, "app", None)
+                if app is not None:
+                    me: Any = getattr(app, "_me_cache", None)
+                    if isinstance(me, dict):
+                        me_data = cast('dict[str, Any]', me)
+                        if bool(me_data.get("premium")) or bool(me_data.get("is_premium")):
+                            cached = True
+                            self.runtime._premium_cache = True
+                            self.runtime._premium_checked_at = time.time()
+                    if cached is None:
+                        session: Any = getattr(app, "session", None)
+                        if session is not None:
+                            s_data: Any = getattr(session, "data", None)
+                            if isinstance(s_data, dict):
+                                u_obj: Any = cast('dict[str, Any]', s_data).get("user")
+                                if isinstance(u_obj, dict):
+                                    u_data = cast('dict[str, Any]', u_obj)
+                                    if bool(u_data.get("premium")) or bool(u_data.get("is_premium")):
+                                        cached = True
+                                        self.runtime._premium_cache = True
+                                        self.runtime._premium_checked_at = time.time()
         return ModuleContext(module_id, message, self._state.namespace(module_id), self._responses, self.cap_host, self.callback_router, self.inline_manager, self.form_sender, self.runtime, cached)
