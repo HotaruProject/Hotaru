@@ -586,6 +586,11 @@ class _RichProxy:
 class _UiProxy:
     @staticmethod
     def button(text, action_id, payload=None, *, style=None):
+        if callable(action_id):
+            import secrets as _secrets
+            action_key = _secrets.token_hex(8)
+            _sandbox_callbacks[action_key] = action_id
+            action_id = action_key
         res = {"text": text, "action_id": action_id, "payload": payload}
         if style is not None:
             res["style"] = style
@@ -1436,7 +1441,9 @@ class ModuleSandbox:
                     markup = data.get("reply_markup")
                     if markup is not None:
                         if isinstance(markup, list):
-                            markup = self._sandbox_buttons(module_id, markup, getattr(callback, "chat_id", None))
+                            markup = {"inline_keyboard": self._sandbox_buttons(module_id, markup, getattr(callback, "chat_id", None))}
+                        elif isinstance(markup, dict) and "inline_keyboard" in markup:
+                            markup = {"inline_keyboard": self._sandbox_buttons(module_id, markup["inline_keyboard"], getattr(callback, "chat_id", None))}
                         tl_markup = kbd_to_tl(markup)
                         if tl_markup is not None:
                             params["reply_markup"] = tl_markup
