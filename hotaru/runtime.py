@@ -1392,10 +1392,8 @@ class Runtime:
         return value.casefold() if isinstance(value, str) and value.casefold() in SUPPORTED_LANGUAGES else "ru"
 
     async def is_premium(self, refresh: bool = False) -> bool:
-        if not refresh and self._premium_cache is True:
-            return True
-        if not refresh and self._premium_cache is False and (time.time() - getattr(self, "_premium_checked_at", 0.0)) < 60.0:
-            return False
+        if not refresh and self._premium_cache is not None and (time.time() - getattr(self, "_premium_checked_at", 0.0)) < 60.0:
+            return bool(self._premium_cache)
         app = self.app
         if app is None or getattr(app, "mt", None) is None:
             return bool(self._premium_cache)
@@ -1412,14 +1410,17 @@ class Runtime:
             first_data = cast('dict[str, Any]', first) if isinstance(first, dict) else cast('dict[str, Any]', body) if isinstance(body, dict) else {}
             self._premium_cache = bool(first_data.get("premium") or first_data.get("is_premium"))
             self._premium_checked_at = time.time()
-            if isinstance(first_data, dict) and first_data:
-                if isinstance(getattr(app, "_me_cache", None), dict):
-                    app._me_cache.update(first_data)
+            if first_data:
+                me_dict = getattr(app, "_me_cache", None)
+                if isinstance(me_dict, dict):
+                    for k, v in first_data.items():
+                        me_dict[k] = v
                 session = getattr(app, "session", None)
                 if session is not None and isinstance(getattr(session, "data", None), dict):
                     user_dict = session.data.get("user")
                     if isinstance(user_dict, dict):
-                        user_dict.update(first_data)
+                        for k, v in first_data.items():
+                            user_dict[k] = v
         except Exception:
             log.error("premium check failed", exc_info=True)
             return self._premium_cache if self._premium_cache is not None else False
