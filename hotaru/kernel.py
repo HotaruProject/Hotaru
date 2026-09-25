@@ -89,7 +89,7 @@ class Kernel:
         for watcher in watchers:
             if self.sandbox is not None and watcher.sandbox:
                 asyncio.create_task(
-                    self.sandbox.call(watcher.module_id, watcher.name, [], payload, source=message, target=f"watcher_{watcher.name}"),
+                    self._invoke_sandbox_watcher(watcher, payload, message),
                     name=f"hotaru:watcher:{watcher.name}"
                 )
             else:
@@ -99,6 +99,13 @@ class Kernel:
                         self._invoke_watcher(watcher, context, message),
                         name=f"hotaru:watcher:{watcher.name}"
                     )
+
+    async def _invoke_sandbox_watcher(self, watcher: Any, payload: Any, message: Any) -> None:
+        try:
+            assert self.sandbox is not None
+            await self.sandbox.call(watcher.module_id, watcher.name, [], payload, source=message, target=f"watcher_{watcher.name}")
+        except Exception:
+            pass
 
     async def _invoke_watcher(self, watcher: Any, context: Any, message: Any) -> None:
         try:
