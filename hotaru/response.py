@@ -563,14 +563,18 @@ class ModuleContext:
         return await self.cap("net", {"url": url, "data": data, "timeout": timeout})
 
     async def premium(self) -> bool:
-        if self._premium is not None:
-            return self._premium
+        if self._premium is True:
+            return True
+        if self.runtime is not None and hasattr(self.runtime, "is_premium"):
+            val = await self.runtime.is_premium()
+            self._premium = val
+            return val
         app = getattr(self.runtime, "app", None) if self.runtime is not None else None
         if app is None or getattr(app, "mt", None) is None:
             return False
         try:
             with trusted_scope():
-                result = await app.mt_users_get_users( id=[{"_": "inputUserSelf"}])
+                result = await app.mt_users_get_users(id=[{"_": "inputUserSelf"}])
             body: Any = cast('dict[str, Any]', result).get("result", result) if isinstance(result, dict) else result
             if isinstance(body, dict):
                 body_data = cast('dict[str, Any]', body)
@@ -579,7 +583,9 @@ class ModuleContext:
                 users = body
             first: Any = cast('list[Any]', users)[0] if isinstance(users, list) and users else None
             first_data = cast('dict[str, Any]', first) if isinstance(first, dict) else cast('dict[str, Any]', body) if isinstance(body, dict) else {}
-            self._premium = bool(first_data.get("premium"))
+            self._premium = bool(first_data.get("premium") or first_data.get("is_premium"))
+            if self.runtime is not None:
+                self.runtime._premium_cache = self._premium
         except Exception:
             log.error("premium check failed", exc_info=True)
             return False
@@ -587,9 +593,30 @@ class ModuleContext:
 
     @property
     def is_premium(self) -> bool:
+        if self._premium is True:
+            return True
+        runtime = self.runtime
+        if runtime is not None:
+            cached = getattr(runtime, "_premium_cache", None)
+            if cached is True:
+                self._premium = True
+                return True
+            app = getattr(runtime, "app", None)
+            if app is not None:
+                me = getattr(app, "_me_cache", None)
+                if isinstance(me, dict) and bool(me.get("premium") or me.get("is_premium")):
+                    self._premium = True
+                    runtime._premium_cache = True
+                    return True
+                session = getattr(app, "session", None)
+                if session is not None and isinstance(getattr(session, "data", None), dict):
+                    user_dict = session.data.get("user")
+                    if isinstance(user_dict, dict) and bool(user_dict.get("premium") or user_dict.get("is_premium")):
+                        self._premium = True
+                        runtime._premium_cache = True
+                        return True
         if self._premium is not None:
             return self._premium
-        runtime = self.runtime
         cached = getattr(runtime, "_premium_cache", None) if runtime is not None else None
         return bool(cached)
 
@@ -631,6 +658,8 @@ class ModuleContext:
             raise ResponseError("buttons_as must be inline, page, or text")
         if use_rich:
             allowed = self.is_premium
+            if not allowed:
+                allowed = await self.premium()
             if not allowed:
                 if fb == "bot":
                     kwargs["rich"] = True
