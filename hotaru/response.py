@@ -753,7 +753,7 @@ class ModuleContext:
             self.runtime.purge_forms() if self.runtime is not None else None
             try:
                 result = await self.inline_form(kwargs.pop("text", ""), buttons, **kwargs)
-            except (InlineError, RuntimeError, ResponseError):
+            except (InlineError, RuntimeError, ResponseError, Exception):
                 kwargs["buttons"] = buttons
                 kwargs["buttons_as"] = "inline"
                 kwargs["output"] = mode

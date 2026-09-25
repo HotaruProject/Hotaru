@@ -1418,6 +1418,18 @@ class UiHelper:
             payload,
         )
         result = {"text": text, "callback_data": handle, "_action_id": action_id, "_payload": payload}
+        if callable(action):
+            try:
+                import inspect
+                cv = inspect.getclosurevars(action)
+                safe_nonlocals: dict[str, Any] = {}
+                for k, v in cv.nonlocals.items():
+                    if k not in ("ctx", "runtime", "self") and isinstance(v, (str, int, float, bool, list, dict)):
+                        safe_nonlocals[k] = v
+                if safe_nonlocals:
+                    result["_nonlocals"] = safe_nonlocals
+            except Exception:
+                pass
         if style is not None:
             if style not in {"primary", "success", "danger"}:
                 raise ValueError("button style is invalid")

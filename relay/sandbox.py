@@ -17,7 +17,7 @@ from goygram.rich import rich_html
 from goygram.sugar import extract_sent_message, html_to_entities
 from goygram.types.obj import Obj
 from hotaru.plainfmt import rich_to_plain
-from goygram.types.kbd import kbd_to_tl
+from hotaru.callbacks import CallbackBinding
 from relay.firewall import trusted_scope
 
 _TOOLKIT_SOURCE = Path(_toolkit.__file__).read_text(encoding="utf-8")
@@ -327,7 +327,10 @@ _sandbox_callbacks = {}
 def _cb_respond_call(data):
     _HOST_OUT.write(_proto_dumps({"cb_respond": data}) + "\n")
     _HOST_OUT.flush()
-    for line in sys.stdin:
+    while True:
+        line = sys.stdin.readline()
+        if not line:
+            raise OSError("host closed the sandbox channel")
         line = line.strip()
         if not line:
             continue
@@ -587,8 +590,9 @@ class _UiProxy:
     @staticmethod
     def button(text, action_id, payload=None, *, style=None):
         if callable(action_id):
-            import secrets as _secrets
-            action_key = _secrets.token_hex(8)
+            import hashlib
+            qname = getattr(action_id, "__qualname__", getattr(action_id, "__name__", "handler"))
+            action_key = hashlib.sha256(qname.encode()).hexdigest()[:16]
             _sandbox_callbacks[action_key] = action_id
             action_id = action_key
         res = {"text": text, "action_id": action_id, "payload": payload}
@@ -598,34 +602,67 @@ class _UiProxy:
 
     @staticmethod
     def primary(text, callback, payload=None):
-        import secrets as _secrets
-        action_id = _secrets.token_hex(8)
-        _sandbox_callbacks[action_id] = callback
-        return {"text": text, "action_id": action_id, "payload": payload, "style": "primary"}
+        return _UiProxy.button(text, callback, payload, style="primary")
 
     @staticmethod
     def success(text, callback, payload=None):
-        import secrets as _secrets
-        action_id = _secrets.token_hex(8)
-        _sandbox_callbacks[action_id] = callback
-        return {"text": text, "action_id": action_id, "payload": payload, "style": "success"}
+        return _UiProxy.button(text, callback, payload, style="success")
 
     @staticmethod
     def danger(text, callback, payload=None):
-        import secrets as _secrets
-        action_id = _secrets.token_hex(8)
-        _sandbox_callbacks[action_id] = callback
-        return {"text": text, "action_id": action_id, "payload": payload, "style": "danger"}
+        return _UiProxy.button(text, callback, payload, style="danger")
 
     @staticmethod
     def url(text, url):
         return {"text": text, "url": url}
 
     def on(self, callback):
-        import secrets as _secrets
-        action_id = _secrets.token_hex(8)
+        import hashlib
+        qname = getattr(callback, "__qualname__", getattr(callback, "__name__", "handler"))
+        action_id = hashlib.sha256(qname.encode()).hexdigest()[:16]
         _sandbox_callbacks[action_id] = callback
         return action_id
+
+    @staticmethod
+    def close(text="Close"):
+        return {"text": text, "action_id": "close", "style": "danger"}
+
+    @staticmethod
+    def grid(*buttons, columns=2):
+        rows = []
+        row = []
+        for b in buttons:
+            row.append(b)
+            if len(row) == columns:
+                rows.append(row)
+                row = []
+        if row:
+            rows.append(row)
+        return rows
+
+    @staticmethod
+    def row(*buttons):
+        return list(buttons)
+
+    @staticmethod
+    def rows(*rows):
+        return [list(r) for r in rows]
+
+    @staticmethod
+    def back(text, handler, payload=None):
+        return _UiProxy.button(text, handler, payload)
+
+    @staticmethod
+    def confirm(text, handler, payload=None):
+        return _UiProxy.button(text, handler, payload, style="success")
+
+    @staticmethod
+    def cancel(text, handler, payload=None):
+        return _UiProxy.button(text, handler, payload, style="danger")
+
+    @staticmethod
+    def callback(text, handler, payload=None, *, style=None):
+        return _UiProxy.button(text, handler, payload, style=style)
 
 
 class _TgProxy:
@@ -858,19 +895,132 @@ def main():
         sys.exit(1)
     sys.stdout.write(_proto_dumps({"ok": True, "commands": list(cfg.get("commands", []))}) + "\n")
     sys.stdout.flush()
-    for line in sys.stdin:
+    while True:
+        line = sys.stdin.readline()
+        if not line:
+            break
+        line = line.strip()
+        if not line:
+            continue
         req = _proto_loads(line)
         if "cb" in req:
             cb_data = req["cb"]
             action_id = cb_data.get("action_id")
             cb_handler = _sandbox_callbacks.get(action_id)
             if cb_handler is None:
+                if action_id == "close" or str(action_id).startswith("close_"):
+                    cb_proxy = SandboxCallbackProxy(cb_data)
+                    try:
+                        del_fn = getattr(cb_proxy, "delete", None)
+                        if callable(del_fn):
+                            res = del_fn()
+                            if asyncio.iscoroutine(res):
+                                asyncio.run(res)
+                        out = {"ok": True, "result": None}
+                    except BaseException:
+                        out = {"ok": True, "result": None}
+                    sys.stdout.write(_proto_dumps(out) + "\n")
+                    sys.stdout.flush()
+                    continue
+                import hashlib as _hashlib
+                import types as _types
+                mod_name = str(cb_data.get("module_id", ""))
+                for item_name, item_fn in ns.items():
+                    if callable(item_fn):
+                        qn = getattr(item_fn, "__qualname__", getattr(item_fn, "__name__", str(item_name)))
+                        cands = (
+                            _hashlib.sha256((mod_name + ":" + qn).encode()).hexdigest()[:24],
+                            _hashlib.sha256((mod_name + ":" + str(item_name)).encode()).hexdigest()[:24],
+                            _hashlib.sha256(qn.encode()).hexdigest()[:16],
+                            _hashlib.sha256(str(item_name).encode()).hexdigest()[:16],
+                            str(item_name),
+                        )
+                        if action_id in cands:
+                            cb_handler = item_fn
+                            _sandbox_callbacks[action_id] = item_fn
+                            break
+                if cb_handler is None:
+                    def _find_c(code, parent=None):
+                        for c in getattr(code, "co_consts", ()):
+                            if isinstance(c, _types.CodeType):
+                                qn = getattr(c, "co_qualname", getattr(c, "co_name", ""))
+                                cands = (
+                                    _hashlib.sha256((mod_name + ":" + qn).encode()).hexdigest()[:24],
+                                    _hashlib.sha256((mod_name + ":" + c.co_name).encode()).hexdigest()[:24],
+                                    _hashlib.sha256(qn.encode()).hexdigest()[:16],
+                                    _hashlib.sha256(c.co_name.encode()).hexdigest()[:16],
+                                    c.co_name,
+                                )
+                                if action_id in cands:
+                                    return c, parent or code
+                                sub, p = _find_c(c, code)
+                                if sub is not None:
+                                    return sub, p
+                        return None, None
+                    found_code, parent_code = None, None
+                    for fn in ns.values():
+                        if callable(fn) and hasattr(fn, "__code__"):
+                            found_code, parent_code = _find_c(fn.__code__)
+                            if found_code is not None:
+                                break
+                    if found_code is not None:
+                        ctx = SandboxContext(tools, {**cb_data, "args": ()})
+                        payload_val = cb_data.get("payload")
+                        def _make_cell(val):
+                            return (lambda: val).__closure__[0]
+                        memo = {}
+                        def _resolve(c, p):
+                            if c in memo:
+                                return memo[c]
+                            cells = []
+                            for var in getattr(c, "co_freevars", ()):
+                                if var == "ctx":
+                                    cells.append(_make_cell(ctx))
+                                elif var == "tools":
+                                    cells.append(_make_cell(tools))
+                                elif isinstance(payload_val, dict) and var in payload_val:
+                                    cells.append(_make_cell(payload_val[var]))
+                                else:
+                                    sibling = None
+                                    search_in = [p] if p else []
+                                    for sc in search_in:
+                                        for inner in getattr(sc, "co_consts", ()):
+                                            if isinstance(inner, _types.CodeType) and inner.co_name == var:
+                                                sibling = inner
+                                                break
+                                        if sibling is not None:
+                                            break
+                                    if sibling is not None:
+                                        cells.append(_make_cell(_resolve(sibling, p)))
+                                    elif payload_val is not None and not isinstance(payload_val, dict) and var not in ("ctx", "tools"):
+                                        cells.append(_make_cell(payload_val))
+                                    elif var in ns:
+                                        cells.append(_make_cell(ns[var]))
+                                    else:
+                                        cells.append(_make_cell(None))
+                            fn = _types.FunctionType(c, ns, c.co_name, None, tuple(cells))
+                            memo[c] = fn
+                            return fn
+                        try:
+                            cb_handler = _resolve(found_code, parent_code)
+                            _sandbox_callbacks[action_id] = cb_handler
+                        except Exception:
+                            pass
+            if cb_handler is None:
                 out = {"ok": False, "error": "no_callback_handler"}
             else:
                 cb_proxy = SandboxCallbackProxy(cb_data)
                 try:
                     with _capture_module_output():
-                        result = cb_handler(cb_proxy, cb_data.get("payload"))
+                        import inspect as _inspect
+                        try:
+                            sig = _inspect.signature(cb_handler)
+                            if len(sig.parameters) == 1:
+                                result = cb_handler(cb_proxy)
+                            else:
+                                result = cb_handler(cb_proxy, cb_data.get("payload"))
+                        except Exception:
+                            result = cb_handler(cb_proxy, cb_data.get("payload"))
                         if asyncio.iscoroutine(result):
                             result = asyncio.run(result)
                     out = {"ok": True, "result": result}
@@ -1434,21 +1584,24 @@ class ModuleSandbox:
                 action = data.get("action")
                 if action == "answer":
                     with trusted_scope():
-                        value = await callback.app.mt_messages_set_bot_callback_answer( query_id=int(callback.id), message=str(data.get("text", "")), alert=bool(data.get("alert", False)), cache_time=0)
+                        value = await callback.answer(str(data.get("text", "")), alert=bool(data.get("alert", False)))
                 elif action == "edit":
-                    inline_mid = getattr(callback, "inline_message_id", None)
-                    params: dict[str, Any] = {"id": inline_mid if isinstance(inline_mid, dict) else {"_": "inputBotInlineMessageID", "raw": inline_mid}, "message": str(data.get("text", ""))}
+                    kwargs: dict[str, Any] = {}
+                    for k in ("parse_mode", "rich", "style"):
+                        if k in data:
+                            kwargs[k] = data[k]
                     markup = data.get("reply_markup")
                     if markup is not None:
                         if isinstance(markup, list):
-                            markup = {"inline_keyboard": self._sandbox_buttons(module_id, markup, getattr(callback, "chat_id", None))}
+                            with trusted_scope():
+                                kwargs["buttons"] = self._sandbox_buttons(module_id, markup, getattr(callback, "chat_id", None))
                         elif isinstance(markup, dict) and "inline_keyboard" in markup:
-                            markup = {"inline_keyboard": self._sandbox_buttons(module_id, markup["inline_keyboard"], getattr(callback, "chat_id", None))}
-                        tl_markup = kbd_to_tl(markup)
-                        if tl_markup is not None:
-                            params["reply_markup"] = tl_markup
+                            with trusted_scope():
+                                kwargs["buttons"] = self._sandbox_buttons(module_id, markup["inline_keyboard"], getattr(callback, "chat_id", None))
+                        else:
+                            kwargs["reply_markup"] = markup
                     with trusted_scope():
-                        value = await callback.app.mt_messages_edit_inline_bot_message( **params)
+                        value = await callback.edit(str(data.get("text", "")), **kwargs)
                 elif action == "delete":
                     with trusted_scope():
                         value = await callback.delete()
@@ -1478,7 +1631,8 @@ class ModuleSandbox:
         if kwargs.get("buttons"):
             buttons = kwargs.pop("buttons")
             kwargs.pop("output", None)
-            buttons = self._sandbox_buttons(module_id, buttons, chat_id)
+            with trusted_scope():
+                buttons = self._sandbox_buttons(module_id, buttons, chat_id)
             options = dict(kwargs.pop("module_options", {}))
             options.setdefault("module_id", module_id)
             for k, v in kwargs.items():
@@ -1487,7 +1641,8 @@ class ModuleSandbox:
             form_sender = getattr(self.runtime, "form_sender", None) or getattr(self.runtime, "_send_form", None) or getattr(getattr(self.runtime, "context_factory", None), "form_sender", None) or getattr(getattr(self.runtime, "kernel", None), "form_sender", None)
             if form_sender is None:
                 raise PermissionError("form transport is unavailable")
-            return await form_sender(source, text or "", buttons, options)
+            with trusted_scope():
+                return await form_sender(source, text or "", buttons, options)
         rich = bool(kwargs.pop("rich", False))
         if rich:
             allowed = False
@@ -1607,45 +1762,59 @@ class ModuleSandbox:
         raise PermissionError("sandbox respond requires text content")
 
     def _sandbox_buttons(self, module_id: str, buttons: Any, chat_id: Any) -> Any:
-        router = getattr(self.runtime, "callbacks", None)
-        owner = getattr(getattr(self.runtime, "kernel", None), "owner_id", None)
-        normalized: list[list[dict[str, Any]]] = []
-        button_values = cast('list[Any]', buttons) if isinstance(buttons, list) else []
-        rows: list[Any] = button_values if button_values and isinstance(button_values[0], list) else [buttons]
-        for row in rows:
-            if not isinstance(row, list):
-                row = [row]
-            out_row: list[dict[str, Any]] = []
-            for btn in cast('list[Any]', row):
-                if not isinstance(btn, dict):
-                    continue
-                button = cast('dict[str, Any]', btn)
-                item: dict[str, Any] = {"text": button.get("text", "")}
-                if button.get("style"):
-                    item["style"] = button["style"]
-                if button.get("icon_custom_emoji_id"):
-                    item["icon_custom_emoji_id"] = button["icon_custom_emoji_id"]
-                if button.get("url"):
-                    item["url"] = button["url"]
-                elif button.get("action_id"):
-                    action_id = str(button["action_id"])
-                    if router is not None:
-                        if not router.module_action_exists(module_id, action_id):
-                            router.register_module_action_id(module_id, action_id, self._make_sandbox_cb(module_id, action_id))
-                        from hotaru.callbacks import CallbackBinding
-                        binding = CallbackBinding(int(owner or 0), None, 0)
-                        item["callback_data"] = router.issue_module(module_id, action_id, binding, button.get("payload"))
+        with trusted_scope():
+            router = getattr(self.runtime, "callbacks", None)
+            owner = getattr(getattr(self.runtime, "kernel", None), "owner_id", None)
+            normalized: list[list[dict[str, Any]]] = []
+            button_values = cast('list[Any]', buttons) if isinstance(buttons, list) else []
+            rows: list[Any] = button_values if button_values and isinstance(button_values[0], list) else [buttons]
+            for row in rows:
+                if not isinstance(row, list):
+                    row = [row]
+                out_row: list[dict[str, Any]] = []
+                for btn in cast('list[Any]', row):
+                    if not isinstance(btn, dict):
+                        continue
+                    button = cast('dict[str, Any]', btn)
+                    item: dict[str, Any] = {"text": button.get("text", "")}
+                    if button.get("style"):
+                        item["style"] = button["style"]
+                    if button.get("icon_custom_emoji_id"):
+                        item["icon_custom_emoji_id"] = button["icon_custom_emoji_id"]
+                    if button.get("url"):
+                        item["url"] = button["url"]
+                    elif button.get("action_id"):
+                        action_id = str(button["action_id"])
+                        if action_id == "close":
+                            if router is not None:
+                                if not router.module_action_exists(module_id, action_id):
+                                    router.register_module_action_id(module_id, action_id, getattr(router, "_default_close_handler", None))
+                                binding = CallbackBinding(int(owner or 0), None, 0)
+                                item["callback_data"] = router.issue_module(module_id, action_id, binding, button.get("payload"))
+                        elif router is not None:
+                            if not router.module_action_exists(module_id, action_id):
+                                router.register_module_action_id(module_id, action_id, self._make_sandbox_cb(module_id, action_id))
+                            binding = CallbackBinding(int(owner or 0), None, 0)
+                            item["callback_data"] = router.issue_module(module_id, action_id, binding, button.get("payload"))
+                        else:
+                            raise PermissionError("callback store is unavailable")
+                        item["_action_id"] = action_id
+                        item["_payload"] = button.get("payload")
+                    elif button.get("callback_data"):
+                        item["callback_data"] = button["callback_data"]
                     else:
-                        raise PermissionError("callback store is unavailable")
-                elif button.get("callback_data"):
-                    item["callback_data"] = button["callback_data"]
-                else:
-                    for k, v in button.items():
-                        if k not in item:
-                            item[k] = v
-                out_row.append(item)
-            normalized.append(out_row)
-        return normalized
+                        for k, v in button.items():
+                            if k not in item:
+                                item[k] = v
+                    out_row.append(item)
+                normalized.append(out_row)
+            return normalized
+
+    def has_module(self, module_id: str) -> bool:
+        return module_id in self._workers
+
+    def make_sandbox_cb(self, module_id: str, action_id: str) -> Any:
+        return self._make_sandbox_cb(module_id, action_id)
 
     def _make_sandbox_cb(self, module_id: str, action_id: str) -> Any:
         async def handler(callback: Any, payload: Any) -> object:
@@ -1663,7 +1832,8 @@ class ModuleSandbox:
                 }
             }
             try:
-                result = await self.roundtrip(module_id, request)
+                with trusted_scope():
+                    result = await self.roundtrip(module_id, request)
                 if result is None:
                     raise PermissionError("sandbox callback failed: malformed")
                 if result.get("ok"):
