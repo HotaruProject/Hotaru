@@ -415,8 +415,7 @@ def write(text: str) -> None:
 
 
 _prelude: Callable[[], str] | None = None
-_prelude_rows = 0
-_block_rows = 0
+_block_log: list[str] = []
 _WAKE_R, _WAKE_W = os.pipe()
 os.set_blocking(_WAKE_R, False)
 os.set_blocking(_WAKE_W, False)
@@ -429,19 +428,16 @@ def set_prelude(render: Callable[[], str] | None) -> None:
 
 
 def _block_write(text: str) -> None:
-    global _block_rows
-    _block_rows += text.count("\n")
+    _block_log.append(text)
     write(text)
 
 
 def print_prelude() -> None:
-    """Draw the block above the prompts and remember how many rows it took on screen."""
-    global _prelude_rows, _block_rows
+    """Draw the header block; _block_log keeps only what is written after it."""
     text = _prelude() if _prelude is not None else ""
-    _prelude_rows = text.count("\n") + 1 if text else 0
-    _block_rows = 0
+    del _block_log[:]
     if text:
-        _block_write(text + "\n")
+        write(text + "\n")
 
 
 def _on_winch(*_args: object) -> None:
@@ -606,13 +602,12 @@ class Prompt:
         write("\n")
 
     def _on_resize(self) -> None:
-        rows_self = self._prev_frame.count("\n") + 1 if self._prev_frame else 0
-        total = rows_self + _prelude_rows + _block_rows
-        if rows_self and total <= rows():
-            if total > 1:
-                write(move(0, -(total - 1)))
-            write(ERASE_DOWN)
-            print_prelude()
+        """Rewrapped lines make row arithmetic unusable: repaint the block from a clean screen."""
+        header = list(_block_log)
+        write("\x1b[2J\x1b[H")
+        print_prelude()
+        for chunk in header:
+            write(chunk)
         self._prev_frame = ""
         self.draw()
 
