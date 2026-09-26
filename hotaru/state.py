@@ -157,7 +157,7 @@ class StateNamespace:
 
 
 class StateStore:
-    def __init__(self, path: str | Path = "sanctuary/state.sqlite3") -> None:
+    def __init__(self, path: str | Path) -> None:
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.path.parent.chmod(0o700)
@@ -329,7 +329,13 @@ class StateStore:
         finally:
             target.close()
         self.connection.close()
+        previous = self.path
         self.path = dest
+        for stale in (previous, Path(f"{previous}-wal"), Path(f"{previous}-shm")):
+            try:
+                stale.unlink(missing_ok=True)
+            except OSError:
+                pass
         self.connection = sqlite3.connect(dest)
         self.connection.execute("PRAGMA foreign_keys = ON")
         self.connection.execute("PRAGMA journal_mode = WAL")

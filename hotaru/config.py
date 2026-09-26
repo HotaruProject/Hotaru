@@ -8,40 +8,28 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterator, Mapping, Sequence, cast
 
-from .accounts import account_db_path
 from .state import StateNamespace, StateStore
 
-DEFAULT_STATE_PATH = Path(__file__).resolve().parent.parent / "sanctuary/state.sqlite3"
 
-
-def discover_state(path: str | Path = DEFAULT_STATE_PATH) -> Path:
-    bootstrap = Path(path)
-    session_dir = Path(".")
-    active = None
-    if bootstrap.exists() and bootstrap.stat().st_size > 0:
-        state = StateStore(bootstrap)
-        try:
-            raw = state.get_setting("session-dir")
-            if raw:
-                session_dir = Path(str(raw)).expanduser()
-            active = state.get_setting("active-account")
-        except Exception:
-            pass
-        finally:
-            state.close()
-    root = session_dir.expanduser()
-    if not root.is_absolute():
-        root = (Path.cwd() / root).resolve()
-    else:
-        root = root.resolve()
-    if isinstance(active, int) and active > 0:
-        candidate = account_db_path(root, active)
-        if candidate.is_file():
-            return candidate
-    found = sorted(root.glob("sanctuary/account-*/hotaru-*.sqlite3")) or sorted(root.glob("sanctuary/account-*/state-*.sqlite3")) or sorted(root.glob("account-*/hotaru-*.sqlite3")) or sorted(root.glob("account-*/state-*.sqlite3"))
-    if found:
-        return found[0]
-    return bootstrap
+def discover_state(path: str | Path | None = None) -> Path:
+    if path is not None:
+        return Path(path)
+    root = Path.cwd()
+    configured = os.environ.get("HOTARU_SESSION_DIR") or os.environ.get("SESSION_DIR")
+    if configured:
+        candidate = Path(configured).expanduser()
+        root = candidate if candidate.is_absolute() else Path.cwd() / candidate
+    root = root.resolve()
+    for pattern in (
+        "sanctuary/account-*/hotaru-*.sqlite3",
+        "account-*/hotaru-*.sqlite3",
+        "sanctuary/account-*/state-*.sqlite3",
+        "account-*/state-*.sqlite3",
+    ):
+        found = sorted(root.glob(pattern))
+        if found:
+            return found[0]
+    return root / "sanctuary/pending.sqlite3"
 
 
 class ConfigError(ValueError):
@@ -731,7 +719,7 @@ class RuntimeConfig:
     sandbox: str = "auto"
 
     @classmethod
-    def from_database(cls, path: str | Path = DEFAULT_STATE_PATH) -> "RuntimeConfig":
+    def from_database(cls, path: str | Path | None = None) -> "RuntimeConfig":
         path = discover_state(path)
         dotenv = load_dotenv()
         state = StateStore(path)
