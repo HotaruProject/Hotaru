@@ -99,9 +99,6 @@ S_BAR = "│"
 S_BAR_END = "└"
 S_RADIO_ACTIVE = "●"
 S_RADIO_INACTIVE = "○"
-S_CHECKBOX_ACTIVE = "◻"
-S_CHECKBOX_SELECTED = "◼"
-S_CHECKBOX_INACTIVE = "◻"
 S_PASSWORD_MASK = "▪"
 S_INFO = "●"
 S_SUCCESS = "◆"
@@ -742,183 +739,6 @@ class SelectPrompt(Prompt):
         return False
 
 
-class MultiSelectPrompt(SelectPrompt):
-    def __init__(
-        self,
-        message: str,
-        options: Options,
-        initial: Sequence[Any] | None = None,
-        max_items: float | None = None,
-        required: bool = True,
-        show_instructions: bool = True,
-    ) -> None:
-        super().__init__(message, options, None, max_items, show_instructions)
-        selected = list(initial or [])
-        self.selected = [item.get("value") for item in options if item.get("value") in selected]
-        self.required = required
-
-    def opt(self, option: dict[str, Any] | None, state: str) -> str:
-        if option is None:
-            return ""
-        label = option.get("label", str(option.get("value")))
-        hint = option.get("hint")
-        if state == "disabled":
-            hint_text = f"({hint})" if hint else "(disabled)"
-            text = f"{style('gray', S_CHECKBOX_INACTIVE)} {style(['strikethrough', 'gray'], label)}"
-            return text + (f" {style('dim', hint_text)}" if hint else "")
-        if state == "active":
-            text = f"{style('cyan', S_CHECKBOX_ACTIVE)} {label}"
-            return text + (f" {style('dim', f'({hint})')}" if hint else "")
-        if state == "selected":
-            text = f"{style('green', S_CHECKBOX_SELECTED)} {style('dim', label)}"
-            return text + (f" {style('dim', f'({hint})')}" if hint else "")
-        if state == "active-selected":
-            text = f"{style('green', S_CHECKBOX_SELECTED)} {label}"
-            return text + (f" {style('dim', f'({hint})')}" if hint else "")
-        if state == "cancelled" or state == "submitted":
-            return style("dim", label)
-        return f"{style('dim', S_CHECKBOX_INACTIVE)} {style('dim', label)}"
-
-    def style_option(self, option: dict[str, Any], active: bool) -> str:
-        if option.get("disabled"):
-            return self.opt(option, "disabled")
-        chosen = option.get("value") in self.selected
-        if active and chosen:
-            return self.opt(option, "active-selected")
-        if chosen:
-            return self.opt(option, "selected")
-        return self.opt(option, "active" if active else "inactive")
-
-    def footer(self) -> str:
-        lines = (
-            format_instruction_footer(MULTISELECT_INSTRUCTIONS)
-            if self.show_instructions
-            else [style("cyan", S_BAR_END)]
-        )
-        return "\n".join(lines)
-
-    def render(self) -> str:
-        if self.state == "submit":
-            labels = [self.opt(item, "submitted") for item in self.items if item.get("value") in self.selected]
-            body = style("dim", ", ").join(labels) if labels else style("dim", "none")
-            prefix = f"{style('gray', S_BAR)}  "
-            return f"{self.title()}{wrap_text_with_prefix(body, prefix)}"
-        if self.state == "cancel":
-            labels = [self.opt(item, "cancelled") for item in self.items if item.get("value") in self.selected]
-            body = style(["strikethrough", "dim"], ", ").join(labels)
-            prefix = f"{style('gray', S_BAR)}  "
-            return f"{self.title()}{prefix}{body}\n{style('gray', S_BAR)}"
-        prefix = f"{style('cyan', S_BAR)}  "
-        body = limit_options(
-            self.items,
-            self.index,
-            self.style_option,
-            max_items=self.max_items,
-            column_padding=width(prefix),
-            row_padding=len(self.title().split("\n")) + 2,
-        )
-        return f"{self.title()}{prefix}" + f"\n{prefix}".join(body) + f"\n{self.footer()}\n"
-
-    def handle(self, key: Key) -> bool:
-        name = ALIASES.get(key.name, key.name)
-        if key.name == "return":
-            if self.required and not self.selected:
-                self.error = "Please select at least one option"
-                self.state = "error"
-                return False
-            self.value = list(self.selected)
-            self.state = "submit"
-            return True
-        if name == "cancel":
-            self.state = "cancel"
-            return True
-        if name == "up":
-            self.index = self.index - 1 if self.index > 0 else len(self.items) - 1
-        elif name == "down":
-            self.index = self.index + 1 if self.index < len(self.items) - 1 else 0
-        elif key.name == "space" or (key.name == "char" and key.char == " "):
-            value = self.items[self.index].get("value")
-            if value in self.selected:
-                self.selected.remove(value)
-            else:
-                self.selected.append(value)
-        return False
-
-    def run(self) -> Any:
-        self.value = list(self.selected)
-        return super().run()
-
-
-class ConfirmPrompt(Prompt):
-    def __init__(
-        self,
-        message: str,
-        initial: bool = False,
-        active: str = "Yes",
-        inactive: str = "No",
-        vertical: bool = False,
-    ) -> None:
-        super().__init__(initial=initial)
-        self.message = message
-        self.active = active
-        self.inactive = inactive
-        self.vertical = vertical
-        self.value = initial
-
-    def title(self) -> str:
-        message = wrap_text_with_prefix(
-            self.message,
-            f"{style('gray', S_BAR)}  ",
-            f"{symbol(self.state)}  ",
-        )
-        return f"{style('gray', S_BAR)}\n{message}\n"
-
-    def render(self) -> str:
-        current = self.active if self.value else self.inactive
-        if self.state == "submit":
-            return f"{self.title()}{style('gray', S_BAR)}  {style('dim', current)}"
-        if self.state == "cancel":
-            return (
-                f"{self.title()}{style('gray', S_BAR)}  {style(['strikethrough', 'dim'], current)}\n"
-                f"{style('gray', S_BAR)}"
-            )
-        prefix = f"{style('cyan', S_BAR)}  "
-        if self.value:
-            left = f"{style('green', S_RADIO_ACTIVE)} {self.active}"
-            right = f"{style('dim', S_RADIO_INACTIVE)} {style('dim', self.inactive)}"
-        else:
-            left = f"{style('dim', S_RADIO_INACTIVE)} {style('dim', self.active)}"
-            right = f"{style('green', S_RADIO_ACTIVE)} {self.inactive}"
-        if self.vertical:
-            body = f"{left}\n{prefix}{right}"
-        else:
-            body = f"{left} {style('dim', '/')} {right}"
-        return f"{self.title()}{prefix}{body}\n{style('cyan', S_BAR_END)}\n"
-
-    def handle(self, key: Key) -> bool:
-        name = ALIASES.get(key.name, key.name)
-        if key.name == "return":
-            self.state = "submit"
-            return True
-        if name == "cancel":
-            self.state = "cancel"
-            return True
-        if key.name in ("up", "down", "left", "right"):
-            self.value = not self.value
-        elif key.name == "char" and key.char.lower() in ("y", "n"):
-            # clack submits on y/n without waiting for Enter (core ConfirmPrompt)
-            write("\x1b[1A")
-            self.value = key.char.lower() == "y"
-            self.state = "submit"
-            write("\n")  # clack closes the prompt inside the confirm handler, then again after render
-            self._resolve()
-            return True
-        return False
-
-
-# --------------------------------------------------------------------------- #
-# static output helpers
-# --------------------------------------------------------------------------- #
 def cancel_pressed(keys: Raw) -> bool:
     """True when Esc / Ctrl+C is waiting in the input buffer (clack block() cancel hook)."""
     while True:
@@ -935,10 +755,6 @@ def intro(title: str = "") -> None:
 
 def outro(message: str = "") -> None:
     write(f"{style('gray', S_BAR)}\n{style('gray', S_BAR_END)}  {message}\n\n")
-
-
-def cancel(message: str = "Operation cancelled.") -> None:
-    write(f"{style('gray', S_BAR_END)}  {style('red', message)}\n\n")
 
 
 def note(message: str = "", title: str = "") -> None:
@@ -1073,18 +889,6 @@ class Spinner:
 # --------------------------------------------------------------------------- #
 # the demo: examples/basic/index.ts, verbatim
 # --------------------------------------------------------------------------- #
-def group(steps: dict[str, Callable[[dict[str, Any]], Any]], on_cancel: Callable[[], None] | None = None) -> dict[str, Any]:
-    results: dict[str, Any] = {}
-    try:
-        for name, factory in steps.items():
-            results[name] = factory(results)
-    except Cancelled:
-        if on_cancel is not None:
-            on_cancel()
-        raise
-    return results
-
-
 def text(
     message: str,
     placeholder: str | None = None,
@@ -1101,85 +905,3 @@ def password(message: str, validate: Validate | None = None, mask: str = S_PASSW
 
 def select(message: str, options: Options, initial: Any = None, max_items: float | None = None, **kw: Any) -> Any:
     return SelectPrompt(message, options, initial, max_items).run()
-
-
-def multiselect(
-    message: str,
-    options: Options,
-    initial: Sequence[Any] | None = None,
-    max_items: float | None = None,
-    **kw: Any,
-) -> Any:
-    return MultiSelectPrompt(message, options, initial, max_items).run()
-
-
-def confirm(message: str, initial: bool = False, **kw: Any) -> Any:
-    return ConfirmPrompt(message, initial).run()
-
-
-def demo() -> None:
-    write("\x1b[1;1H\x1b[0J")
-    time.sleep(1)
-    intro(style("bgCyan", style("black", " create-app ")))
-    try:
-        project = group(
-            {
-                "path": lambda r: text(
-                    "Where should we create your project?",
-                    placeholder="./sparkling-solid",
-                    validate=lambda value: "Please enter a path."
-                    if not value
-                    else ("Please enter a relative path." if not value.startswith(".") else None),
-                ),
-                "password": lambda r: password(
-                    "Provide a password",
-                    validate=lambda value: "Please enter a password."
-                    if not value
-                    else ("Password should have at least 5 characters." if len(value) < 5 else None),
-                ),
-                "type": lambda r: select(
-                    f'Pick a project type within "{r["path"]}"',
-                    [
-                        {"value": "ts", "label": "TypeScript"},
-                        {"value": "js", "label": "JavaScript"},
-                        {"value": "rust", "label": "Rust"},
-                        {"value": "go", "label": "Go"},
-                        {"value": "python", "label": "Python"},
-                        {"value": "coffee", "label": "CoffeeScript", "hint": "oh no"},
-                    ],
-                    initial="ts",
-                    max_items=5,
-                ),
-                "tools": lambda r: multiselect(
-                    "Select additional tools.",
-                    [
-                        {"value": "prettier", "label": "Prettier", "hint": "recommended"},
-                        {"value": "eslint", "label": "ESLint", "hint": "recommended"},
-                        {"value": "stylelint", "label": "Stylelint"},
-                        {"value": "gh-action", "label": "GitHub Action"},
-                    ],
-                    initial=["prettier", "eslint"],
-                ),
-                "install": lambda r: confirm("Install dependencies?", initial=False),
-            },
-            on_cancel=lambda: cancel("Operation cancelled."),
-        )
-    except Cancelled:
-        return
-    if project["install"]:
-        spin = spinner()
-        spin.start("Installing via pnpm")
-        end = time.monotonic() + 2.5
-        with Raw() as raw:
-            while time.monotonic() < end:
-                raw.key(0.02)
-                spin.tick()
-        spin.stop("Installed via pnpm")
-    install_line = "" if project["install"] else "pnpm install\n"
-    next_steps = "cd " + project["path"] + "        \n" + install_line + "pnpm dev"
-    note(next_steps, "Next steps.")
-    outro(f"Problems? {style('underline', style('cyan', 'https://example.com/issues'))}")
-
-
-if __name__ == "__main__":
-    demo()
