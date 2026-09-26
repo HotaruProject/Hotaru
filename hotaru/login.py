@@ -5,11 +5,11 @@ import base64
 import io
 import importlib
 import logging
-import math
 import os
 import re
 import secrets
 import select as _select
+import signal
 import shutil
 import sys
 import termios
@@ -18,9 +18,6 @@ import unicodedata
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Dict, Sequence, TypedDict, cast
 
-from rich.align import Align
-from rich.console import Console
-from rich.text import Text
 from goygram.errors import RPCError
 
 
@@ -68,90 +65,35 @@ async def check_session(app: Any) -> bool:
     return True
 
 
-def _console() -> Console:
-    return Console(highlight=False)
+_CAPTION = "Hotaru Userbot"
+_ART_SIZES = (72, 52, 34)
+_ART_CACHE: dict[int, list[str]] = {}
 
 
-def _width(console: Console) -> int:
-    return max(20, min(int(console.size.width) - 2, 72))
+def _art_dir() -> Path:
+    bundled = Path(__file__).resolve().parent / "art"
+    return bundled if bundled.is_dir() else Path(__file__).resolve().parent.parent / "art"
 
 
-_QUASAR_RAMP = " .·:-=+*oO#%@"
-_QUASAR_STYLES = ["", "dim #8a4433", "#c05a3a", "#ff6b4a", "bold #ffb08a"]
+def _art(term: int) -> list[str]:
+    cols = min(term - 4, _ART_SIZES[0])
+    pick = next((size for size in _ART_SIZES if size <= cols), None)
+    if pick is None:
+        return []
+    if pick not in _ART_CACHE:
+        _ART_CACHE[pick] = (_art_dir() / f"quasar-{pick}.ans").read_text(encoding="utf-8").split("\n")
+    return _ART_CACHE[pick]
 
 
-def _quasar(columns: int) -> Text:
-    cols = max(24, columns)
-    rows = max(8, round(cols / 4.4))
-    cx = (cols - 1) / 2
-    cy = (rows - 1) / 2
-    half = cols / 2
-    shadow = max(0.13, 2.2 / half)
-    ring = max(0.05, 1.1 / half)
-    jet = max(0.030, 0.7 / half)
-    thick = max(0.14, 1.8 / half)
-    body = Text()
-    for row in range(rows):
-        dy = (row - cy) * 2
-        ny = (row - cy) / max(1.0, rows / 2)
-        cells: list[tuple[str, int]] = []
-        for col in range(cols):
-            dx = col - cx
-            nx = dx / half
-            r = math.hypot(dx, dy) / half
-            theta = math.atan2(dy, dx)
-            b = 0.0
-
-            warped = dy + 0.07 * nx
-            dl = math.hypot(dx, warped / thick) / half
-            in_disk = dl < 1.0
-            base = 0.0
-            if in_disk:
-                base = (1.0 - dl) ** 0.55
-                base *= 0.75 + 0.25 * math.cos(2 * theta + 5.0 * dl)
-                base *= 1.0 if dx > 0 else 0.82
-                if dl < 0.35:
-                    base *= 1.3
-                b = max(b, base)
-
-            if r < shadow:
-                b = max(b, base * 0.9) if (in_disk and warped > 0) else 0.0
-            elif r < shadow + ring:
-                b = max(b, 0.9 - 0.5 * (r - shadow) / ring)
-
-            if abs(ny) > 0.22:
-                wob = 0.02 * math.sin(6.0 * ny)
-                width = jet + 0.55 * jet * abs(ny)
-                if abs(nx - wob) < width:
-                    b = max(b, (0.95 - 0.6 * abs(ny)) * (1 - abs(nx - wob) / width))
-
-            dust = ((col * 7919 + row * 104729) % 997) / 997
-            if b < 0.13 and 0.3 < r < 1.05 and dust < 0.035 * (1.05 - r) * min(1.0, cols / 48):
-                b = max(b, 0.10)
-
-            if b <= 0.06:
-                cells.append((" ", 0))
-                continue
-            level = 1 if b < 0.22 else 2 if b < 0.42 else 3 if b < 0.68 else 4
-            cells.append((_QUASAR_RAMP[min(len(_QUASAR_RAMP) - 1, max(1, int(b * (len(_QUASAR_RAMP) - 1))))], level))
-
-        run, run_level = "", 0
-        for char, level in cells:
-            if level != run_level:
-                if run:
-                    body.append(run, style=_QUASAR_STYLES[run_level])
-                run, run_level = "", level
-            run += char
-        if run:
-            body.append(run, style=_QUASAR_STYLES[run_level])
-        if row < rows - 1:
-            body.append("\n")
-    return body
-
-
-def _banner(console: Console) -> None:
-    console.print(Align.center(_quasar(_width(console))))
-    console.print(Align.center(Text("Hotaru Userbot", style="dim")))
+def _banner_text() -> str:
+    term = columns()
+    art = _art(term)
+    if not art:
+        return style("dim", _CAPTION)
+    size = max(width(line) for line in art)
+    pad = " " * max(0, (term - size) // 2)
+    caption = pad + " " * max(0, (size - len(_CAPTION)) // 2) + style("dim", _CAPTION)
+    return "\n".join([*(pad + line for line in art), caption])
 
 
 # --------------------------------------------------------------------------- #
@@ -472,6 +414,56 @@ def write(text: str) -> None:
     sys.stdout.flush()
 
 
+_prelude: Callable[[], str] | None = None
+_prelude_rows = 0
+_block_rows = 0
+_WAKE_R, _WAKE_W = os.pipe()
+os.set_blocking(_WAKE_R, False)
+os.set_blocking(_WAKE_W, False)
+_resize_armed = False
+
+
+def set_prelude(render: Callable[[], str] | None) -> None:
+    global _prelude
+    _prelude = render
+
+
+def _block_write(text: str) -> None:
+    global _block_rows
+    _block_rows += text.count("\n")
+    write(text)
+
+
+def print_prelude() -> None:
+    """Draw the block above the prompts and remember how many rows it took on screen."""
+    global _prelude_rows, _block_rows
+    text = _prelude() if _prelude is not None else ""
+    _prelude_rows = text.count("\n") + 1 if text else 0
+    _block_rows = 0
+    if text:
+        _block_write(text + "\n")
+
+
+def _on_winch(*_args: object) -> None:
+    return None
+
+
+def _install_resize() -> None:
+    global _resize_armed
+    if _resize_armed:
+        return
+    _resize_armed = True
+    signal.set_wakeup_fd(_WAKE_W)
+    signal.signal(signal.SIGWINCH, _on_winch)
+
+
+def _resize_pending() -> bool:
+    try:
+        return os.read(_WAKE_R, 64) != b""
+    except (BlockingIOError, OSError):
+        return False
+
+
 class Raw:
     """Raw stdin, but output keeps ONLCR: upstream writes LF and the tty adds CR."""
 
@@ -482,6 +474,8 @@ class Raw:
     def __enter__(self) -> Raw:
         if not sys.stdin.isatty():
             return self
+        _install_resize()
+        _resize_pending()
         self.saved = termios.tcgetattr(self.fd)
         attrs = termios.tcgetattr(self.fd)
         attrs[0] &= ~(termios.IXON | termios.ICRNL | termios.INPCK | termios.ISTRIP | termios.BRKINT)
@@ -497,10 +491,11 @@ class Raw:
         return False
 
     def key(self, timeout: float | None = None) -> Key | None:
-        if timeout is not None:
-            ready, _, _ = _select.select([self.fd], [], [], timeout)
-            if not ready:
-                return None
+        ready, _, _ = _select.select([self.fd, _WAKE_R], [], [], timeout)
+        if _WAKE_R in ready and _resize_pending():
+            return Key("resize", "")
+        if self.fd not in ready:
+            return None
         data = os.read(self.fd, 1)
         if not data:
             return None
@@ -610,6 +605,17 @@ class Prompt:
     def close(self) -> None:
         write("\n")
 
+    def _on_resize(self) -> None:
+        rows_self = self._prev_frame.count("\n") + 1 if self._prev_frame else 0
+        total = rows_self + _prelude_rows + _block_rows
+        if rows_self and total <= rows():
+            if total > 1:
+                write(move(0, -(total - 1)))
+            write(ERASE_DOWN)
+            print_prelude()
+        self._prev_frame = ""
+        self.draw()
+
     def _resolve(self) -> None:
         """upstream's once('submit'/'cancel') handler: the cursor is shown exactly once."""
         if self._resolved:
@@ -630,6 +636,9 @@ class Prompt:
                 while True:
                     key = raw.key()
                     if key is None:
+                        continue
+                    if key.name == "resize":
+                        self._on_resize()
                         continue
                     done = self.handle(key)
                     self.draw()
@@ -891,15 +900,15 @@ def cancel_pressed(keys: Raw) -> bool:
 
 
 def intro(title: str = "") -> None:
-    write(f"{style('gray', S_BAR_START)}  {title}\n")
+    _block_write(f"{style('gray', S_BAR_START)}  {title}\n")
 
 
 def outro(message: str = "") -> None:
-    write(f"{style('gray', S_BAR)}\n{style('gray', S_BAR_END)}  {message}\n\n")
+    _block_write(f"{style('gray', S_BAR)}\n{style('gray', S_BAR_END)}  {message}\n\n")
 
 
 def cancel(message: str = "Operation cancelled.") -> None:
-    write(f"{style('gray', S_BAR_END)}  {style('red', message)}\n\n")
+    _block_write(f"{style('gray', S_BAR_END)}  {style('red', message)}\n\n")
 
 
 def note(message: str = "", title: str = "") -> None:
@@ -911,7 +920,7 @@ def note(message: str = "", title: str = "") -> None:
         f"{style('gray', S_BAR)}  {line}{' ' * (longest - width(line))}{style('gray', S_BAR)}" for line in lines
     )
     bar = S_BAR_H * max(longest - title_len - 1, 1) + S_CORNER_TOP_RIGHT
-    write(
+    _block_write(
         f"{style('gray', S_BAR)}\n{style('green', S_STEP_SUBMIT)}  {style('reset', title)} "
         f"{style('gray', bar)}\n{body}\n"
         f"{style('gray', S_CONNECT_LEFT + S_BAR_H * (longest + 2) + S_CORNER_BOTTOM_RIGHT)}\n"
@@ -926,7 +935,7 @@ def _log(message: str | list[str], symbol: str, spacing: int = 1) -> None:
         parts.append(f"{symbol}  {first}" if first else symbol)
         for line in rest:
             parts.append(f"{style('gray', S_BAR)}  {line}" if line else style("gray", S_BAR))
-    write("\n".join(parts) + "\n")
+    _block_write("\n".join(parts) + "\n")
 
 
 def log_info(message: str) -> None:
@@ -961,7 +970,7 @@ class Spinner:
         self.message = re.sub(r"\.+$", "", message)
         self._active = True
         write(CURSOR_HIDE)  # upstream block() hides the cursor while spinning
-        write(f"{style('gray', S_BAR)}\n")
+        _block_write(f"{style('gray', S_BAR)}\n")
         self._last = time.monotonic()  # first frame after DELAY, like upstream's setInterval
 
     def _clear(self) -> None:
@@ -996,7 +1005,7 @@ class Spinner:
         self._active = False
         self._clear()
         symbol_ = {"submit": style("green", S_STEP_SUBMIT), "cancel": style("red", S_STEP_CANCEL), "error": style("red", S_STEP_ERROR)}[state]
-        write(f"{symbol_}  {message or self.message}\n")
+        _block_write(f"{symbol_}  {message or self.message}\n")
         write(CURSOR_SHOW)  # upstream unblock() shows the cursor again
         self._prev = None
 
@@ -1119,7 +1128,8 @@ def collect_settings(state: Any) -> None:
 def _collect_settings(state: Any) -> None:
     if not sys.stdin.isatty() or not sys.stdout.isatty():
         raise ValueError("runtime settings are missing; run from an interactive TTY")
-    _banner(_console())
+    set_prelude(_banner_text)
+    print_prelude()
     intro(style("bgCyan", style("black", " hotaru setup ")))
     log_info("my.telegram.org → API ID / hash")
     api_id = int(_ask("API ID", placeholder="1234567", validate=_api_id_problem))
@@ -1328,7 +1338,8 @@ async def sign_in(runtime: Any) -> dict[str, str]:
 
 
 async def _sign_in(runtime: Any) -> dict[str, str]:
-    _banner(_console())
+    set_prelude(_banner_text)
+    print_prelude()
     intro(style("bgCyan", style("black", " hotaru login ")))
     app = runtime.app.core
     config = runtime.config
