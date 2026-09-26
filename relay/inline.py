@@ -775,6 +775,7 @@ class InlineManager:
             self.ready.set()
             if self.runtime.observatory is not None:
                 self.runtime.observatory.emit("inline", "ready_set", self_id=app.session.self_id, dc=app.session.dc)
+            asyncio.create_task(self._warm_owner_peer(app), name="hotaru:inline-warm")
             tasks.append(asyncio.create_task(self._watch_bot(app), name="hotaru:inline-health"))
             stop = asyncio.create_task(self._stop.wait(), name="hotaru:inline-stop")
             tasks.append(stop)
@@ -810,6 +811,58 @@ class InlineManager:
         while not self._stop.is_set():
             await asyncio.sleep(30.0)
             await self._check_bot(app)
+
+    async def _warm_owner_peer(self, app: Any) -> None:
+        runtime = self.runtime
+        owner = getattr(getattr(runtime, "kernel", None), "owner_id", None)
+        mt = getattr(app, "mt", None)
+        if not isinstance(owner, int) or owner <= 0 or mt is None:
+            return
+        username: str | None = None
+        for attempt in range(4):
+            if self._stop.is_set():
+                return
+            username = await self._owner_username()
+            if username is None:
+                await asyncio.sleep(1.0)
+                continue
+            try:
+                await mt.resolve_peer("@" + username)
+            except Exception as exc:
+                if runtime.observatory is not None:
+                    runtime.observatory.emit("inline", "warmup_error", attempt=attempt, error=type(exc).__name__)
+                await asyncio.sleep(2.0 * (attempt + 1))
+                continue
+            entity = mt.entities.get(("user", owner))
+            if entity is not None and entity.get("access_hash"):
+                if runtime.observatory is not None:
+                    runtime.observatory.emit("inline", "warmup_ok", username=username)
+                return
+            await asyncio.sleep(1.0)
+        if runtime.observatory is not None:
+            runtime.observatory.emit("inline", "warmup_missed", owner=owner, username=username)
+
+    async def _owner_username(self) -> str | None:
+        main = getattr(self.runtime, "app", None)
+        mt = getattr(main, "mt", None)
+        if mt is None:
+            return None
+        try:
+            result = await mt.call("users.getUsers", id=[{"_": "inputPeerSelf"}])
+        except Exception:
+            return None
+        users: list[Any] = []
+        if isinstance(result, list):
+            users = cast('list[Any]', result)
+        else:
+            body = _result_body(result)
+            raw = body.get("users", body)
+            if isinstance(raw, list):
+                users = cast('list[Any]', raw)
+        if not users or not isinstance(users[0], dict):
+            return None
+        username = cast('dict[str, Any]', users[0]).get("username")
+        return username if isinstance(username, str) and username else None
 
     @staticmethod
     def _is_auth_failure(exc: Exception) -> bool:
