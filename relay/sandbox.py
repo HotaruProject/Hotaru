@@ -9,6 +9,7 @@ import subprocess
 import sys
 import sysconfig
 import tempfile
+import time
 from pathlib import Path
 from typing import Any, cast
 
@@ -1278,6 +1279,7 @@ class ModuleSandbox:
         self.call_timeout = call_timeout
         self._workers: dict[str, subprocess.Popen[bytes]] = {}
         self._booted: dict[str, bool] = {}
+        self._last_use: dict[str, float] = {}
         self._module_defs: dict[str, tuple[str, list[str]]] = {}
         self._respond_sources: dict[str, Any] = {}
         self._respond_targets: dict[str, int] = {}
@@ -1500,6 +1502,7 @@ class ModuleSandbox:
             raise SandboxError(f"sandbox worker failed to boot: {payload.get('error', 'no output')}{location}: {detail} {stderr_tail}".strip())
         self._workers[module_id] = process
         self._booted[module_id] = True
+        self._last_use[module_id] = time.monotonic()
         return process
 
     def _spawn_worker(self, module_id: str, source: str, commands: list[str]) -> subprocess.Popen[bytes]:
@@ -1572,6 +1575,7 @@ class ModuleSandbox:
         return lock
 
     async def _roundtrip(self, module_id: str, request: dict[str, Any]) -> dict[str, Any] | None:
+        self._last_use[module_id] = time.monotonic()
         process = self._workers.get(module_id)
         if (process is None or process.poll() is not None) and module_id in self._module_defs:
             source, commands = self._module_defs[module_id]
@@ -1934,6 +1938,7 @@ class ModuleSandbox:
         self._module_defs.pop(module_id, None)
         process = self._workers.pop(module_id, None)
         self._booted.pop(module_id, None)
+        self._last_use.pop(module_id, None)
         if process is None:
             return False
         try:
@@ -1945,6 +1950,24 @@ class ModuleSandbox:
             except Exception:
                 pass
         return True
+
+    def reap_idle(self, idle_seconds: float) -> list[str]:
+        now = time.monotonic()
+        reaped: list[str] = []
+        for module_id, process in list(self._workers.items()):
+            if process.poll() is not None:
+                continue
+            if now - self._last_use.get(module_id, now) < idle_seconds:
+                continue
+            lock = self._roundtrip_locks.get(module_id)
+            if lock is not None and lock.locked():
+                continue
+            try:
+                process.kill()
+            except Exception:
+                continue
+            reaped.append(module_id)
+        return reaped
 
     def stop_all(self) -> None:
         for module_id in list(self._workers):

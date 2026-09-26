@@ -818,6 +818,9 @@ class InlineManager:
             session = getattr(app, "session", None)
             mt = getattr(app, "mt", None)
             if mt is not None and session is not None and session.is_bot:
+                if session.auth_key is None and getattr(mt, "auth_key", None) is None:
+                    await asyncio.sleep(0.05)
+                    continue
                 if self.runtime.observatory is not None:
                     self.runtime.observatory.emit("inline", "health_begin", session_key=session.auth_key is not None, mt_key=getattr(mt, "auth_key", None) is not None)
                 try:
