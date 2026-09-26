@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import gc
 import hashlib
 import json
 import logging
@@ -48,6 +49,8 @@ from .state import StateStore
 from .supervisor import ConnectionSupervisor
 from .tasks import TaskSupervisor
 from goygram.rich import rich_html
+
+IDLE_WORKER_SECONDS = 1800.0
 
 
 class InputContext:
@@ -622,6 +625,11 @@ class Runtime:
             try:
                 await asyncio.sleep(5.0)
                 self.purge_forms()
+                sandbox = getattr(self, "sandbox", None)
+                if sandbox is not None:
+                    for module_id in sandbox.reap_idle(IDLE_WORKER_SECONDS):
+                        if self.observatory is not None:
+                            self.observatory.emit("sandbox", "worker_reaped", module=module_id)
             except asyncio.CancelledError:
                 return
             except Exception:
@@ -2380,6 +2388,8 @@ class Runtime:
             await self.modules.end_boot()
         if self.supervisor is not None:
             self.supervisor.mark_ready(mt=self.app.mt is not None, bot=self.app.bot is not None)
+        gc.collect()
+        gc.freeze()
         self._app_task = asyncio.create_task(self.app.run(), name="hotaru:app")
         self._forum_setup_task = asyncio.create_task(self._forum_after_transport(), name="hotaru:forum-setup")
         try:
