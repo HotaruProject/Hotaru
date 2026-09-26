@@ -104,7 +104,7 @@ async def command_acca(ctx: Any, invocation: Any) -> Any:
         f"<b>Account #{number} registered</b><br>"
         f"session: <code>{_escape(profile.session_name)}</code><br>"
         f"vault: <code>{_escape(profile.vault_name)}</code><br>"
-        f"Запуск: <code>!acc {number} start</code>",
+        f"{'Запуск: <code>!acc ' + str(number) + ' start</code>' if ctx.accounts.vault_ready(number) else 'Vault missing — authorize this session first, then <code>!acc ' + str(number) + ' start</code>'}",
         parse_mode="HTML",
     )
 
