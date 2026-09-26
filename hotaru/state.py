@@ -16,6 +16,7 @@ from typing import Any
 log = logging.getLogger(__name__)
 
 SECRET_PREFIX = "enc:v1:"
+DEFAULT_KEY_PATH = Path(__file__).resolve().parent.parent / "sanctuary/hotaru-master.key"
 
 
 def apply_vault_key_env() -> None:
@@ -23,18 +24,33 @@ def apply_vault_key_env() -> None:
         return
     raw = os.environ.get("HOTARU_VAULT_KEY", "").strip()
     if not raw:
-        key_file = os.environ.get("HOTARU_VAULT_KEY_FILE", "").strip()
-        if key_file:
-            try:
-                raw = Path(key_file).read_text().strip()
-            except OSError as exc:
-                raise SystemExit(f"HOTARU_VAULT_KEY_FILE is unreadable: {exc}") from exc
+        raw = key_file_value()
     if not raw:
         return
     key = normalize_vault_key(raw)
     if key is None:
         raise SystemExit("HOTARU_VAULT_KEY must be 32 bytes as base64 or hex (generate: openssl rand -base64 32)")
     os.environ["GOYGRAM_VAULT_KEY"] = key
+
+
+def key_file_value() -> str:
+    path = Path(os.environ.get("HOTARU_VAULT_KEY_FILE", "").strip() or DEFAULT_KEY_PATH)
+    try:
+        if path.is_file():
+            return path.read_text(encoding="utf-8").strip()
+    except OSError as exc:
+        raise SystemExit(f"vault key file {path} is unreadable: {exc}") from exc
+    generated = base64.b64encode(secrets.token_bytes(32)).decode()
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        handle = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+        with os.fdopen(handle, "w", encoding="utf-8") as stream:
+            stream.write(generated + "\n")
+    except OSError as exc:
+        log.error("cannot create the vault key file %s (%s); falling back to the machine-derived key", path, exc)
+        return ""
+    log.warning("generated a vault key at %s: the vaults and the state databases are sealed with it, so keep a copy of this file", path)
+    return generated
 
 
 def normalize_vault_key(raw: str) -> str | None:

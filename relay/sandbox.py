@@ -53,6 +53,17 @@ SANDBOX_BASE_ROOT = "/run/hotaru-sandbox"
 SANDBOX_UID = 65534
 SANDBOX_GID = 65534
 
+
+def userns_supported() -> bool:
+    if not sys.platform.startswith("linux"):
+        return False
+    probe = "import ctypes,os;os._exit(0 if ctypes.CDLL(None,use_errno=True).unshare(0x10000000)==0 else 1)"
+    try:
+        done = subprocess.run([os.path.realpath(sys.executable), "-c", probe], capture_output=True, timeout=15)
+    except Exception:
+        return False
+    return done.returncode == 0
+
 WORKER_SOURCE = r'''
 import asyncio
 import __future__
@@ -61,7 +72,10 @@ import contextlib
 import io
 import json
 import os
-import resource
+try:
+    import resource
+except ImportError:
+    resource = None
 import socket
 import sys
 from pathlib import Path
@@ -187,6 +201,14 @@ def install_firewall(protected):
         if event in {"open", "os.open"} and args and isinstance(args[0], (str, bytes)):
             value = str(Path(os.fsdecode(args[0])).resolve())
             if value.endswith((".vault", ".session")) or any(value == root or value.startswith(root + os.sep) for root in roots):
+                raise PermissionError("module access to Telegram session storage is denied")
+        if event in {"os.remove", "os.rmdir", "os.truncate", "shutil.rmtree"} and args and isinstance(args[0], (str, bytes)):
+            value = str(Path(os.fsdecode(args[0])).resolve())
+            if any(value == root or value.startswith(root + os.sep) for root in roots):
+                raise PermissionError("module access to Telegram session storage is denied")
+        if event in {"os.rename", "os.link", "os.symlink"} and args and isinstance(args[0], (str, bytes)):
+            value = str(Path(os.fsdecode(args[0])).resolve())
+            if any(value == root or value.startswith(root + os.sep) for root in roots):
                 raise PermissionError("module access to Telegram session storage is denied")
         if event in {"subprocess.Popen", "os.system", "os.posix_spawn", "ctypes.dlopen", "multiprocessing.Process"}:
             raise PermissionError("module process escape is denied")
@@ -865,16 +887,23 @@ def main():
     SECCOMP_CFG["allow"] = set(policy.get("allow", []))
     SECCOMP_CFG["errno"] = set(policy.get("errno", []))
     SECCOMP_CFG["kill"] = set(policy.get("kill", []))
-    install_seccomp()
     import errno as _errno
     try:
-        os.splice(-1, -1, 0)
-        sys.stderr.write("seccomp self-test failed: splice succeeded\n")
-        sys.exit(1)
-    except OSError as _exc:
-        if _exc.errno != _errno.EPERM:
-            sys.stderr.write(f"seccomp self-test failed: splice errno={_exc.errno}\n")
+        install_seccomp()
+    except Exception as _seccomp_exc:
+        if cfg.get("seccomp_required", True):
+            sys.stderr.write(f"seccomp unavailable: {_seccomp_exc}\n")
             sys.exit(1)
+        sys.stderr.write(f"seccomp skipped: {_seccomp_exc}\n")
+    else:
+        try:
+            os.splice(-1, -1, 0)
+            sys.stderr.write("seccomp self-test failed: splice succeeded\n")
+            sys.exit(1)
+        except OSError as _exc:
+            if _exc.errno != _errno.EPERM:
+                sys.stderr.write(f"seccomp self-test failed: splice errno={_exc.errno}\n")
+                sys.exit(1)
     install_firewall(cfg.get("protected", []))
     apply_limits(
         cfg.get("mem_mb", 256),
@@ -1262,6 +1291,13 @@ class ModuleSandbox:
         self._stdlib = sysconfig.get_paths()["stdlib"]
         self._stdlib_dst = f"/opt/py/lib/python{sys.version_info.major}.{sys.version_info.minor}"
         self._rootless = os.geteuid() != 0
+        requested = str(getattr(runtime.config, "sandbox", "auto") or "auto").strip().lower()
+        if requested in {"portable", "none", "off", "inprocess"}:
+            self._namespaces = False
+        elif requested in {"namespaces", "ns", "strict"}:
+            self._namespaces = True
+        else:
+            self._namespaces = (not self._rootless) or userns_supported()
         if self._rootless:
             self._sandbox_base = os.path.join(tempfile.gettempdir(), f"hotaru-sandbox-{os.getuid()}")
         else:
@@ -1269,7 +1305,17 @@ class ModuleSandbox:
         os.makedirs(self._sandbox_base, exist_ok=True)
         os.chmod(self._sandbox_base, 0o700)
 
-    def _make_preexec(self) -> Any:
+    def _make_preexec(self, namespaces: bool = True) -> Any:
+        if not namespaces:
+            def portable() -> None:
+                import os as _os
+
+                try:
+                    _os.setsid()
+                except Exception:
+                    pass
+
+            return portable
         python_path = self._python
         stdlib_path = self._stdlib
         stdlib_dst = self._stdlib_dst
@@ -1390,7 +1436,9 @@ class ModuleSandbox:
 
         return preexec
 
-    def _spawn(self, module_id: str, source: str, commands: list[str]) -> subprocess.Popen[bytes]:
+    def _spawn(self, module_id: str, source: str, commands: list[str], *, namespaces: bool | None = None) -> subprocess.Popen[bytes]:
+        if namespaces is None:
+            namespaces = self._namespaces
         hello = {
             "module_id": module_id,
             "source": source,
@@ -1402,20 +1450,36 @@ class ModuleSandbox:
             "cpu_seconds": self.cpu_seconds,
             "net_blocked": True,
             "seccomp": SECCOMP_POLICY,
+            "seccomp_required": namespaces,
             "protected": [
                 str(self.runtime.config.session_dir),
                 str(self.runtime.config.session_dir / f"{self.runtime.config.session_name}.vault"),
                 str(self.runtime.config.session_dir / f"{self.runtime.config.session_name}.session"),
             ],
         }
+        if namespaces:
+            argv = ["/usr/bin/python3", "-s", "-c", WORKER_SOURCE]
+            env = {"PATH": "/usr/bin:/bin", "HOME": "/tmp", "PYTHONPATH": "", "PYTHONHOME": "/opt/py"}
+            cwd = "/"
+        else:
+            argv = [self._python, "-s", "-S", "-c", WORKER_SOURCE]
+            env = {
+                "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+                "HOME": self._sandbox_base,
+                "PYTHONPATH": "",
+                "PYTHONDONTWRITEBYTECODE": "1",
+                "TMPDIR": self._sandbox_base,
+                "LANG": "C.UTF-8",
+            }
+            cwd = self._sandbox_base
         process = subprocess.Popen(
-            ["/usr/bin/python3", "-s", "-c", WORKER_SOURCE],
+            argv,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            cwd="/",
-            env={"PATH": "/usr/bin:/bin", "HOME": "/tmp", "PYTHONPATH": "", "PYTHONHOME": "/opt/py"},
-            preexec_fn=self._make_preexec(),
+            cwd=cwd,
+            env=env,
+            preexec_fn=self._make_preexec(namespaces),
         )
         assert process.stdin is not None and process.stdout is not None
         process.stdin.write((_proto_dumps(hello) + "\n").encode("utf-8"))
@@ -1437,6 +1501,18 @@ class ModuleSandbox:
         self._workers[module_id] = process
         self._booted[module_id] = True
         return process
+
+    def _spawn_worker(self, module_id: str, source: str, commands: list[str]) -> subprocess.Popen[bytes]:
+        try:
+            return self._spawn(module_id, source, commands)
+        except SandboxError:
+            if not self._namespaces:
+                raise
+            self._namespaces = False
+            observatory = getattr(self.runtime, "observatory", None)
+            if observatory is not None:
+                observatory.emit("sandbox", "namespaces_unavailable", module=module_id)
+            return self._spawn(module_id, source, commands, namespaces=False)
 
     def _sink_worker_log(self, module_id: str, message: dict[str, Any]) -> None:
         observatory = getattr(self.runtime, "observatory", None)
@@ -1460,7 +1536,7 @@ class ModuleSandbox:
         if current is not None and current.poll() is None:
             return True
         loop = asyncio.get_running_loop()
-        await loop.run_in_executor(None, lambda: self._spawn(module_id, source, commands))
+        await loop.run_in_executor(None, lambda: self._spawn_worker(module_id, source, commands))
         return True
 
     async def call(self, module_id: str, command: str, args: list[str], payload: dict[str, Any], source: Any = None, target: str | None = None) -> Any:
@@ -1500,7 +1576,7 @@ class ModuleSandbox:
         if (process is None or process.poll() is not None) and module_id in self._module_defs:
             source, commands = self._module_defs[module_id]
             loop = asyncio.get_running_loop()
-            await loop.run_in_executor(None, lambda: self._spawn(module_id, source, commands))
+            await loop.run_in_executor(None, lambda: self._spawn_worker(module_id, source, commands))
             process = self._workers.get(module_id)
         if process is None or process.poll() is not None:
             raise SandboxError(f"sandbox worker is not running: {module_id}")
