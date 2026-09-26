@@ -699,6 +699,7 @@ _ENV_MAPPINGS: dict[str, tuple[str, ...]] = {
     "inline-enabled": ("HOTARU_INLINE_ENABLED", "INLINE_ENABLED"),
     "log-level": ("HOTARU_LOG_LEVEL", "LOG_LEVEL"),
     "environment": ("HOTARU_ENV", "ENVIRONMENT", "NODE_ENV"),
+    "sandbox": ("HOTARU_SANDBOX", "SANDBOX"),
 }
 
 
@@ -727,6 +728,7 @@ class RuntimeConfig:
     inline_enabled: bool = True
     log_level: str = "INFO"
     environment: str = "production"
+    sandbox: str = "auto"
 
     @classmethod
     def from_database(cls, path: str | Path = DEFAULT_STATE_PATH) -> "RuntimeConfig":
@@ -735,7 +737,7 @@ class RuntimeConfig:
         state = StateStore(path)
         try:
             values: dict[str, Any] = {}
-            for setting_key in ("api-id", "api-hash", "bot-token", "owner-id", "prefix", "session-name", "session-dir", "backup-keep", "command-timeout", "inline-enabled", "log-level", "environment"):
+            for setting_key in ("api-id", "api-hash", "bot-token", "owner-id", "prefix", "session-name", "session-dir", "backup-keep", "command-timeout", "inline-enabled", "log-level", "environment", "sandbox"):
                 raw_env = _resolve_env(setting_key, dotenv)
                 if raw_env is not None:
                     if setting_key == "api-id":
@@ -762,6 +764,8 @@ class RuntimeConfig:
                         val = raw_env.upper()
                     elif setting_key == "environment":
                         val = raw_env.lower()
+                    elif setting_key == "sandbox":
+                        val = raw_env.strip().lower()
                     else:
                         val = raw_env
                     values[setting_key] = val
@@ -790,6 +794,8 @@ class RuntimeConfig:
                 values["log-level"] = "INFO"
             if values.get("environment") is None:
                 values["environment"] = "production"
+            if values.get("sandbox") is None:
+                values["sandbox"] = "auto"
 
             if values.get("api-id") is None and values.get("bot-token") is None:
                 if sys.stdin.isatty() and sys.stdout.isatty():
@@ -818,6 +824,7 @@ class RuntimeConfig:
                 inline_enabled=bool(values["inline-enabled"]),
                 log_level=str(values["log-level"]),
                 environment=str(values["environment"]),
+                sandbox=str(values.get("sandbox") or "auto"),
             )
         finally:
             state.close()
