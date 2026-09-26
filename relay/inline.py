@@ -814,11 +814,12 @@ class InlineManager:
                     ready_task.cancel()
 
     async def _await_ready(self, app: Any) -> None:
+        deadline = time.monotonic() + 3.0
         while not self._stop.is_set():
             session = getattr(app, "session", None)
             mt = getattr(app, "mt", None)
             if mt is not None and session is not None and session.is_bot:
-                if session.auth_key is None and getattr(mt, "auth_key", None) is None:
+                if time.monotonic() < deadline and self._bot_transport_starting(mt, session):
                     await asyncio.sleep(0.05)
                     continue
                 if self.runtime.observatory is not None:
@@ -836,7 +837,7 @@ class InlineManager:
                         if self._reauth_task is None or self._reauth_task.done():
                             self._reauth_task = asyncio.create_task(self._restart_bot_session(app), name="hotaru:inline-reauth")
                         return
-                    await asyncio.sleep(0.5)
+                    await asyncio.sleep(0.05 if isinstance(exc, (ConnectionError, TimeoutError)) else 0.5)
                     continue
                 self.ready.set()
                 if self.runtime.observatory is not None:
@@ -844,6 +845,15 @@ class InlineManager:
                 asyncio.create_task(self._warm_owner_peer())
                 return
             await asyncio.sleep(0.2)
+
+    @staticmethod
+    def _bot_transport_starting(mt: Any, session: Any) -> bool:
+        if session.auth_key is None and getattr(mt, "auth_key", None) is None:
+            return True
+        if not hasattr(mt, "_reader_task"):
+            return False
+        reader = getattr(mt, "_reader_task", None)
+        return reader is None or reader.done()
 
     @staticmethod
     def _is_session_auth_failure(exc: Exception) -> bool:
