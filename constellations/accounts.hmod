@@ -1,6 +1,6 @@
 HOTARU = {
     "id": "accounts",
-    "version": "2.1.0",
+    "version": "2.0.0",
     "commands": ["acc", "acca", "accs"],
     "capabilities": ["mt"],
 }
@@ -16,36 +16,8 @@ def _escape(value: Any) -> Any:
 def _usage(ctx: Any) -> Any:
     return ctx.t(
         "accounts.usage",
-        "usage: !acc <#> <start|stop|on|off|del>\n!acca [user_id] — зарегистрировать аккаунт (номер выдаётся автоматически, можно реплаем)\n!accs — список",
+        "usage: !acc <#> <start|stop|on|off|del>\n!acca — зарегистрировать аккаунт (номер выдаётся автоматически)\n!accs — список",
     )
-
-async def _reply_sender_id(ctx: Any) -> Any:
-    reply = None
-    fetch = getattr(ctx, "reply", None)
-    if callable(fetch):
-        try:
-            reply = await fetch()
-        except Exception:
-            reply = None
-    if reply is None or not hasattr(reply, "get"):
-        return None
-    from_peer = reply.get("from_id")
-    if isinstance(from_peer, dict):
-        uid = from_peer.get("user_id")
-        if isinstance(uid, int):
-            return uid
-    if isinstance(from_peer, int):
-        return from_peer
-    return None
-
-async def _resolve_acca_target(ctx: Any, invocation: Any) -> Any:
-    for token in invocation.args:
-        if token.lstrip("-").isdigit():
-            return int(token)
-    sender = await _reply_sender_id(ctx)
-    if sender is not None:
-        return sender
-    return None
 
 async def command_accs(ctx: Any, invocation: Any) -> Any:
     items = ctx.accounts.items()
@@ -73,28 +45,17 @@ async def command_accs(ctx: Any, invocation: Any) -> Any:
     await ctx.respond("<b>Accounts</b><br>" + "<br>".join(rows), parse_mode="HTML")
 
 async def command_acca(ctx: Any, invocation: Any) -> Any:
-    if len(invocation.args) > 1 or (invocation.args and not invocation.args[0].lstrip("-").isdigit()):
+    if invocation.args:
         await ctx.respond(_usage(ctx), parse_mode="HTML")
         return
-    target_id = await _resolve_acca_target(ctx, invocation)
-    if target_id is None:
-        target_id = getattr(ctx.runtime, "session_self_id", None)
-        if target_id is None:
-            session = getattr(ctx.runtime.app, "session", None) if ctx.runtime is not None else None
-            target_id = getattr(session, "self_id", None) if session is not None else None
-    user_id = target_id
-    if user_id is None or user_id <= 0:
+    number = ctx.accounts.next_free_number()
+    user_id = getattr(ctx.runtime, "session_self_id", None)
+    if user_id is None:
+        session = getattr(ctx.runtime.app, "session", None) if ctx.runtime is not None else None
+        user_id = getattr(session, "self_id", None) if session is not None else None
+    if user_id is None:
         await ctx.respond(ctx.t("accounts.no_self", "Не удалось определить user id сессии."), parse_mode="HTML")
         return
-    for profile in ctx.accounts.items():
-        if profile.user_id == user_id or profile.session_name in (f"user-{user_id}", f"hotaru-{user_id}"):
-            await ctx.respond(
-                f"<b>Account #{profile.account_number} already registered</b><br>"
-                f"session: <code>{_escape(profile.session_name)}</code> user <code>{profile.user_id}</code>",
-                parse_mode="HTML",
-            )
-            return
-    number = ctx.accounts.next_free_number()
     try:
         profile = ctx.accounts.register(user_id, number)
     except Exception as exc:
@@ -104,7 +65,7 @@ async def command_acca(ctx: Any, invocation: Any) -> Any:
         f"<b>Account #{number} registered</b><br>"
         f"session: <code>{_escape(profile.session_name)}</code><br>"
         f"vault: <code>{_escape(profile.vault_name)}</code><br>"
-        f"{'Запуск: <code>!acc ' + str(number) + ' start</code>' if ctx.accounts.vault_ready(number) else 'Vault missing — authorize this session first, then <code>!acc ' + str(number) + ' start</code>'}",
+        f"Запуск: <code>!acc {number} start</code>",
         parse_mode="HTML",
     )
 
