@@ -2237,7 +2237,12 @@ class Runtime:
         with trusted_scope():
             vault = self.app.session.path
             missing = vault is None or not vault.exists() or vault.stat().st_size == 0
-            if missing and sys.stdin.isatty() and sys.stdout.isatty():
+            if not missing:
+                from .login import check_session
+                missing = not await check_session(self.app)
+            if missing:
+                if not sys.stdin.isatty() or not sys.stdout.isatty():
+                    raise SystemExit("Login required; run `uv run hotaru` in a terminal.")
                 from .login import sign_in
                 fresh = True
                 result = await sign_in(self)
