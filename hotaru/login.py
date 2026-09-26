@@ -5,6 +5,7 @@ import base64
 import io
 import importlib
 import logging
+import math
 import secrets
 import sys
 import time
@@ -13,10 +14,10 @@ from typing import Any, Awaitable, Callable, cast
 
 from rich.align import Align
 from rich.console import Console
-from rich.panel import Panel
-from rich.prompt import Prompt
 from rich.text import Text
 from goygram.errors import RPCError
+
+from . import clack
 
 
 AUTH_TIMEOUT = 30.0
@@ -68,37 +69,143 @@ def _console() -> Console:
 
 
 def _width(console: Console) -> int:
-    return max(40, min(int(console.size.width) - 2, 72))
+    return max(20, min(int(console.size.width) - 2, 72))
 
 
-_ASCII_WIDE = """\
-██╗  ██╗ ██████╗ ████████╗ █████╗ ██████╗ ██╗   ██╗
-██║  ██║██╔═══██╗╚══██╔══╝██╔══██╗██╔══██╗██║   ██║
-███████║██║   ██║   ██║   ███████║██████╔╝██║   ██║
-██╔══██║██║   ██║   ██║   ██╔══██║██╔══██╗██║   ██║
-██║  ██║╚██████╔╝   ██║   ██║  ██║██║  ██║╚██████╔╝
-╚═╝  ╚═╝ ╚═════╝    ╚═╝   ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝"""
+_QUASAR_RAMP = " .·:-=+*oO#%@"
+_QUASAR_STYLES = ["", "dim #8a4433", "#c05a3a", "#ff6b4a", "bold #ffb08a"]
 
-_ASCII_NARROW = r"""
- _   _  ___ _____ _   ___ _   _
-| |_| |/ _ \_   _/ \ | _ \ | | |
-|  _  | (_) || |/ _ \|   / |_| |
-|_| |_|\___/ |_/_/ \_\___/ \___/""".strip()
+
+def _quasar(columns: int) -> Text:
+    cols = max(24, columns)
+    rows = max(8, round(cols / 4.4))
+    cx = (cols - 1) / 2
+    cy = (rows - 1) / 2
+    half = cols / 2
+    shadow = max(0.13, 2.2 / half)
+    ring = max(0.05, 1.1 / half)
+    jet = max(0.030, 0.7 / half)
+    thick = max(0.14, 1.8 / half)
+    body = Text()
+    for row in range(rows):
+        dy = (row - cy) * 2
+        ny = (row - cy) / max(1.0, rows / 2)
+        cells: list[tuple[str, int]] = []
+        for col in range(cols):
+            dx = col - cx
+            nx = dx / half
+            r = math.hypot(dx, dy) / half
+            theta = math.atan2(dy, dx)
+            b = 0.0
+
+            warped = dy + 0.07 * nx
+            dl = math.hypot(dx, warped / thick) / half
+            in_disk = dl < 1.0
+            base = 0.0
+            if in_disk:
+                base = (1.0 - dl) ** 0.55
+                base *= 0.75 + 0.25 * math.cos(2 * theta + 5.0 * dl)
+                base *= 1.0 if dx > 0 else 0.82
+                if dl < 0.35:
+                    base *= 1.3
+                b = max(b, base)
+
+            if r < shadow:
+                b = max(b, base * 0.9) if (in_disk and warped > 0) else 0.0
+            elif r < shadow + ring:
+                b = max(b, 0.9 - 0.5 * (r - shadow) / ring)
+
+            if abs(ny) > 0.22:
+                wob = 0.02 * math.sin(6.0 * ny)
+                width = jet + 0.55 * jet * abs(ny)
+                if abs(nx - wob) < width:
+                    b = max(b, (0.95 - 0.6 * abs(ny)) * (1 - abs(nx - wob) / width))
+
+            dust = ((col * 7919 + row * 104729) % 997) / 997
+            if b < 0.13 and 0.3 < r < 1.05 and dust < 0.035 * (1.05 - r) * min(1.0, cols / 48):
+                b = max(b, 0.10)
+
+            if b <= 0.06:
+                cells.append((" ", 0))
+                continue
+            level = 1 if b < 0.22 else 2 if b < 0.42 else 3 if b < 0.68 else 4
+            cells.append((_QUASAR_RAMP[min(len(_QUASAR_RAMP) - 1, max(1, int(b * (len(_QUASAR_RAMP) - 1))))], level))
+
+        run, run_level = "", 0
+        for char, level in cells:
+            if level != run_level:
+                if run:
+                    body.append(run, style=_QUASAR_STYLES[run_level])
+                run, run_level = "", level
+            run += char
+        if run:
+            body.append(run, style=_QUASAR_STYLES[run_level])
+        if row < rows - 1:
+            body.append("\n")
+    return body
 
 
 def _banner(console: Console) -> None:
-    w = _width(console)
-    art = _ASCII_WIDE if w >= 54 else _ASCII_NARROW
-    body = Text(art, style="bold #ff6b4a")
-    body.append("\nsetup", style="dim")
-    console.print(Panel(Align.center(body), width=w, border_style="#ff6b4a", padding=(1, 1)))
+    console.print(Align.center(_quasar(_width(console))))
+    console.print(Align.center(Text("Hotaru Userbot", style="dim")))
 
 
-def _ask(console: Console, label: str, *, password: bool = False, default: str | None = None) -> str:
-    kwargs: dict[str, Any] = {"password": password, "show_default": default is not None}
-    if default is not None:
-        kwargs["default"] = default
-    return str(Prompt.ask(f"[#ff6b4a]{label}[/]", console=console, **kwargs)).strip()
+def _ask(
+    label: str,
+    *,
+    password: bool = False,
+    default: str | None = None,
+    placeholder: str | None = None,
+    validate: Callable[[str], str | None] | None = None,
+) -> str:
+    if password:
+        return str(clack.password(label, validate=validate)).strip()
+    return str(clack.text(label, placeholder=placeholder, default_value=default, validate=validate)).strip()
+
+
+async def _spin(message: str, awaitable: Awaitable[Any]) -> Any:
+    spin = clack.spinner()
+    spin.start(message)
+    task = asyncio.ensure_future(awaitable)
+    try:
+        with clack.Raw() as keys:
+            while not task.done():
+                spin.tick()
+                if clack.cancel_pressed(keys):
+                    spin.cancel("Cancelled.")
+                    task.cancel()
+                    raise clack.Cancelled
+                await asyncio.sleep(0.02)
+        result = task.result()
+    except BaseException:
+        spin.clear()
+        raise
+    spin.stop(message)
+    return result
+
+
+def _api_id_problem(raw: str) -> str | None:
+    return None if raw.strip().isdigit() else "API ID is a number, e.g. 1234567"
+
+
+def _api_hash_problem(raw: str) -> str | None:
+    return None if len(raw.strip()) >= 16 else "API hash looks too short"
+
+
+def _prefix_problem(raw: str) -> str | None:
+    return None if len(raw) <= 1 else "Prefix is a single character"
+
+
+def _code_problem(raw: str) -> str | None:
+    return None if raw.strip().isdigit() else "Telegram codes are digits"
+
+
+def _phone_problem(raw: str) -> str | None:
+    try:
+        _phone(raw)
+    except ValueError as exc:
+        return str(exc)
+    return None
 
 
 def _phone(raw: str) -> str:
@@ -113,13 +220,13 @@ def _phone(raw: str) -> str:
 def collect_settings(state: Any) -> None:
     if not sys.stdin.isatty() or not sys.stdout.isatty():
         raise ValueError("runtime settings are missing; run from an interactive TTY")
-    console = _console()
-    _banner(console)
-    console.print("[dim]my.telegram.org → API ID / hash[/]")
-    api_id = int(_ask(console, "API ID"))
-    api_hash = _ask(console, "API hash", password=True)
-    prefix = _ask(console, "Prefix", default="!") or "!"
-    bot = _ask(console, "Inline bot username (empty = auto)", default="")
+    _banner(_console())
+    clack.intro(clack.style("bgCyan", clack.style("black", " hotaru setup ")))
+    clack.log.info("my.telegram.org → API ID / hash")
+    api_id = int(_ask("API ID", placeholder="1234567", validate=_api_id_problem))
+    api_hash = _ask("API hash", password=True, validate=_api_hash_problem)
+    prefix = _ask("Prefix", placeholder="!", default="!", validate=_prefix_problem) or "!"
+    bot = _ask("Inline bot username", placeholder="empty = auto")
     import secrets
     values = {
         "api-id": api_id,
@@ -138,6 +245,11 @@ def collect_settings(state: Any) -> None:
         if not wanted.lower().endswith("bot"):
             wanted += "_bot" if "_" in wanted or wanted.isalnum() else "bot"
         state.set_setting("inline-bot-username-wanted", wanted)
+    clack.note(
+        f"API ID     {api_id}\nprefix     {prefix}\ninline bot {wanted or 'auto'}\nsession    {values['session-dir']}",
+        "settings saved",
+    )
+    clack.outro("Starting Hotaru.")
 
 
 def save_vault(app: Any, vault: Path, session_name: str, api_id: int, api_hash: str, user: dict[str, Any], extra: dict[str, Any] | None = None) -> None:
@@ -167,7 +279,7 @@ def save_vault(app: Any, vault: Path, session_name: str, api_id: int, api_hash: 
         app.session.data = payload
 
 
-async def _phone_login(console: Console, app: Any, api_id: int, api_hash: str) -> dict[str, Any]:
+async def _phone_login(app: Any, api_id: int, api_hash: str) -> dict[str, Any]:
     from goygram import ext as rx
     security = importlib.import_module("goygram.security")
     _extract_error = cast(Callable[[dict[str, Any]], str | None], getattr(security, "_extract_error"))
@@ -175,74 +287,68 @@ async def _phone_login(console: Console, app: Any, api_id: int, api_hash: str) -
     _extract_user = cast(Callable[[Any], dict[str, Any] | None], getattr(security, "_extract_user"))
     _mt_req_with_migrate = cast(Callable[..., Awaitable[dict[str, Any]]], getattr(security, "_mt_req_with_migrate"))
     while True:
-        raw = _ask(console, "Phone")
-        try:
-            phone = _phone(raw)
-        except ValueError as exc:
-            console.print(f"[red]{exc}[/]")
-            continue
+        phone = _phone(_ask("Phone number", placeholder="+1 555 000 1234", validate=_phone_problem))
         settings = rx.serialize_constructor("codeSettings", {"flags": 0})
-        sent = await _mt_req_with_migrate(app, "auth_send_code", phone_number=phone, api_id=api_id, api_hash=api_hash, settings=settings)
+        sent = await _spin("Sending the code", _mt_req_with_migrate(app, "auth_send_code", phone_number=phone, api_id=api_id, api_hash=api_hash, settings=settings))
         err = _extract_error(sent)
         if err and "SESSION_PASSWORD_NEEDED" not in err:
-            console.print(f"[red]{err}[/]")
+            clack.log.error(err)
             continue
         code_hash = _extract_phone_code_hash(sent)
         if not code_hash:
-            console.print("[red]no code hash[/]")
+            clack.log.error("no code hash")
             continue
         while True:
-            code = _ask(console, "Code")
+            code = _ask("Code", placeholder="12345", validate=_code_problem)
             try:
-                sign = await _mt_req_with_migrate(app, "auth_sign_in", phone_number=phone, phone_code=code, phone_code_hash=code_hash, api_id=api_id, api_hash=api_hash)
+                sign = await _spin("Signing in", _mt_req_with_migrate(app, "auth_sign_in", phone_number=phone, phone_code=code, phone_code_hash=code_hash, api_id=api_id, api_hash=api_hash))
                 sign_err = ""
             except Exception as exc:
                 sign, sign_err = None, str(exc)
             else:
                 sign_err = _extract_error(sign) or ""
             if "PHONE_CODE_INVALID" in sign_err or "CODE_INVALID" in sign_err:
-                console.print("[red]wrong code[/]")
+                clack.log.error("wrong code")
                 continue
             final = sign
             if "SESSION_PASSWORD_NEEDED" in sign_err:
                 while True:
-                    pwd = _ask(console, "2FA password", password=True)
+                    pwd = _ask("2FA password", password=True)
                     try:
-                        check = await _mt_req_with_migrate(app, "auth_check_password", password=pwd, api_id=api_id, api_hash=api_hash)
+                        check = await _spin("Checking the password", _mt_req_with_migrate(app, "auth_check_password", password=pwd, api_id=api_id, api_hash=api_hash))
                     except Exception as exc:
-                        console.print(f"[red]{exc}[/]")
+                        clack.log.error(str(exc))
                         continue
                     err2 = _extract_error(check)
                     if err2:
-                        console.print(f"[red]{err2}[/]")
+                        clack.log.error(err2)
                         continue
                     final = check
                     break
             elif sign_err:
-                console.print(f"[red]{sign_err}[/]")
+                clack.log.error(sign_err)
                 continue
             user = _extract_user(final)
             if not user:
-                console.print("[red]no user in session[/]")
+                clack.log.error("no user in session")
                 continue
             return {"user": user, "raw": final}
 
 
-async def _qr_login(console: Console, app: Any, api_id: int, api_hash: str) -> dict[str, Any] | None:
+async def _qr_login(app: Any, api_id: int, api_hash: str) -> dict[str, Any] | None:
     from goygram.errors import GoyGramError
     security = importlib.import_module("goygram.security")
     _extract_error = cast(Callable[[dict[str, Any]], str | None], getattr(security, "_extract_error"))
     _extract_user = cast(Callable[[Any], dict[str, Any] | None], getattr(security, "_extract_user"))
     _mt_req_with_migrate = cast(Callable[..., Awaitable[dict[str, Any]]], getattr(security, "_mt_req_with_migrate"))
-    w = _width(console)
     while True:
         try:
-            res = await _mt_req_with_migrate(app, "auth_export_login_token", api_id=api_id, api_hash=api_hash, except_ids=[])
+            res = await _spin("Requesting a login token", _mt_req_with_migrate(app, "auth_export_login_token", api_id=api_id, api_hash=api_hash, except_ids=[]))
         except Exception as exc:
-            console.print(f"[red]{exc}[/]")
+            clack.log.error(str(exc))
             return None
         if not res.get("ok"):
-            console.print(f"[red]{res}[/]")
+            clack.log.error(str(res))
             return None
         if res.get("type") == "loginToken":
             token = res["token"]
@@ -258,43 +364,54 @@ async def _qr_login(console: Console, app: Any, api_id: int, api_hash: str) -> d
                 art = buf.getvalue()
             except Exception:
                 pass
-            if w < 42 or "tg://login" in art:
-                console.print(Panel(url, width=w, border_style="#ff6b4a", title="scan in Telegram"))
-            else:
-                console.print(Panel(Align.center(art), width=w, border_style="#ff6b4a", title="scan in Telegram"))
+            clack.note(url if "tg://login" in art else art, "scan in Telegram")
             expires = float(res.get("expires") or (time.time() + 30))
             app.mt.qr_update_ev.clear()
-            while time.time() < expires:
+            spin = clack.spinner()
+            spin.start("Waiting for the scan")
+            with clack.Raw() as keys:
                 try:
-                    await asyncio.wait_for(app.mt.qr_update_ev.wait(), timeout=max(0.2, expires - time.time()))
-                except asyncio.TimeoutError:
-                    break
-                app.mt.qr_update_ev.clear()
-                try:
-                    poll = await _mt_req_with_migrate(app, "auth_export_login_token", api_id=api_id, api_hash=api_hash, except_ids=[])
-                except GoyGramError as exc:
-                    if "SESSION_PASSWORD_NEEDED" not in str(exc):
-                        continue
-                    while True:
-                        pwd = _ask(console, "2FA password", password=True)
+                    while time.time() < expires:
                         try:
-                            check = await _mt_req_with_migrate(app, "auth_check_password", password=pwd, api_id=api_id, api_hash=api_hash)
-                        except Exception as exc2:
-                            console.print(f"[red]{exc2}[/]")
+                            await asyncio.wait_for(app.mt.qr_update_ev.wait(), timeout=0.1)
+                        except asyncio.TimeoutError:
+                            spin.tick()
+                            if clack.cancel_pressed(keys):
+                                spin.cancel("Cancelled.")
+                                raise clack.Cancelled
                             continue
-                        err = _extract_error(check)
-                        if err:
-                            console.print(f"[red]{err}[/]")
-                            continue
-                        user = _extract_user(check)
-                        if not user:
-                            continue
-                        return {"user": user, "raw": check}
-                    break
-                if poll.get("type") == "loginTokenSuccess":
-                    user = _extract_user(poll)
-                    if user:
-                        return {"user": user, "raw": poll}
+                        spin.tick()
+                        app.mt.qr_update_ev.clear()
+                        try:
+                            poll = await _mt_req_with_migrate(app, "auth_export_login_token", api_id=api_id, api_hash=api_hash, except_ids=[])
+                        except GoyGramError as exc:
+                            if "SESSION_PASSWORD_NEEDED" not in str(exc):
+                                continue
+                            spin.stop("Scanned")
+                            while True:
+                                pwd = _ask("2FA password", password=True)
+                                try:
+                                    check = await _spin("Checking the password", _mt_req_with_migrate(app, "auth_check_password", password=pwd, api_id=api_id, api_hash=api_hash))
+                                except Exception as exc2:
+                                    clack.log.error(str(exc2))
+                                    continue
+                                err = _extract_error(check)
+                                if err:
+                                    clack.log.error(err)
+                                    continue
+                                user = _extract_user(check)
+                                if not user:
+                                    continue
+                                return {"user": user, "raw": check}
+                            break
+                        if poll.get("type") == "loginTokenSuccess":
+                            user = _extract_user(poll)
+                            if user:
+                                spin.stop("Scanned")
+                                return {"user": user, "raw": poll}
+                    spin.stop("Code expired, new one")
+                finally:
+                    spin.clear()
             continue
         if res.get("type") == "loginTokenSuccess":
             user = _extract_user(res)
@@ -304,8 +421,8 @@ async def _qr_login(console: Console, app: Any, api_id: int, api_hash: str) -> d
 
 
 async def sign_in(runtime: Any) -> dict[str, str]:
-    console = _console()
-    _banner(console)
+    _banner(_console())
+    clack.intro(clack.style("bgCyan", clack.style("black", " hotaru login ")))
     app = runtime.app.core
     config = runtime.config
     api_id = int(config.api_id)
@@ -314,15 +431,22 @@ async def sign_in(runtime: Any) -> dict[str, str]:
     session_name = runtime.app.core.session_name
     if vault is None:
         raise RuntimeError("session path is missing")
-    await app.mt.ensure_auth_key()
-    method = Prompt.ask("[#ff6b4a]Login[/]", console=console, choices=["qr", "phone"], default="qr")
+    await _spin("Connecting to Telegram", app.mt.ensure_auth_key())
+    method = clack.select(
+        "How do you want to sign in?",
+        [
+            {"value": "qr", "label": "QR code", "hint": "scan with the Telegram app"},
+            {"value": "phone", "label": "Phone number"},
+        ],
+        initial="qr",
+    )
     packed = None
     if method == "qr":
-        packed = await _qr_login(console, app, api_id, api_hash)
+        packed = await _qr_login(app, api_id, api_hash)
         if packed is None:
-            console.print("[yellow]QR failed, phone login[/]")
+            clack.log.warn("QR failed, phone login")
     if packed is None:
-        packed = await _phone_login(console, app, api_id, api_hash)
+        packed = await _phone_login(app, api_id, api_hash)
     from .accounts import parse_user_id
     uid = parse_user_id(config.session_name)
     if uid is not None and packed["user"].get("id") != uid:
@@ -335,5 +459,5 @@ async def sign_in(runtime: Any) -> dict[str, str]:
                 "user": packed["user"],
                 "auth_key": app.mt.auth_key.hex() if app.mt.auth_key else "",
             }
-    console.print("[bold #ff6b4a]ok[/]")
+    clack.outro("Signed in. Starting Hotaru.")
     return {"source": "hotaru"}
