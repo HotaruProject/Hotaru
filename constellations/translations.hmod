@@ -48,9 +48,9 @@ def _screen(ctx: Any) -> Any:
             )
         )
     rows = ctx.ui.grid(*buttons, columns=2)
-    rows.append([ctx.ui.close(ctx.t("common.close", "Close"))])
+    rows.append([ctx.ui.close(ctx.t('common.close'))])
     return {
-        "text": f"<b>{ctx.t('commands.lang.description', 'Language')}</b>\n<i>Current: {_escape(current)}</i>",
+        "text": f"<b>{ctx.t('commands.lang.description')}</b>\n<i>{ctx.t('commands.lang.current', language=_escape(NATIVE_LABELS[current]))}</i>",
         "buttons": rows,
     }
 
@@ -58,13 +58,13 @@ def _screen(ctx: Any) -> Any:
 async def _show(ctx: Any) -> Any:
     runtime = ctx.runtime
     if runtime is None:
-        await ctx.respond("Runtime unavailable")
+        await ctx.respond(ctx.t('commands.lang.unavailable'))
         return
     if not runtime.lexicon:
-        await ctx.respond("Translation lexicon unavailable")
+        await ctx.respond(ctx.t('commands.lang.lexicon_unavailable'))
         return
     if not runtime.lexicon.available_languages():
-        await ctx.respond("Translation languages unavailable")
+        await ctx.respond(ctx.t('commands.lang.languages_unavailable'))
         return
     if not runtime.lexicon._validate_language(runtime.language()):
         runtime.set_language("en")
@@ -79,13 +79,13 @@ async def _show(ctx: Any) -> Any:
 
 async def command_lang(ctx: Any, invocation: Any) -> Any:
     if len(invocation.args) > 1:
-        await ctx.respond(ctx.t("commands.lang.usage", "Usage: {prefix}lang [language]", prefix=ctx.runtime.config.prefix))
+        await ctx.respond(ctx.t('commands.lang.usage', prefix=ctx.runtime.config.prefix))
         return
     if len(invocation.args) == 1:
         try:
             ctx.runtime.set_language(invocation.args[0])
         except Exception:
-            await ctx.respond(ctx.t("commands.lang.invalid", "Unsupported language: {language}", language=invocation.args[0]))
+            await ctx.respond(ctx.t('commands.lang.invalid', language=invocation.args[0]))
             return
     await _show(ctx)
 

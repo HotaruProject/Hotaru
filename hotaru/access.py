@@ -129,6 +129,8 @@ class AccessStore:
         return entry
 
     def revoke(self, user_id: int, permissions: Permission) -> bool:
+        if user_id in self.state.get_setting('account-owners', []):
+            raise AccessError('No permission.')
         entry = self._cache.get(user_id)
         if entry is None or not (entry.permissions & permissions):
             return False
@@ -139,6 +141,8 @@ class AccessStore:
         return True
 
     def remove(self, user_id: int) -> bool:
+        if user_id in self.state.get_setting('account-owners', []):
+            raise AccessError('No permission.')
         if user_id not in self._cache:
             return False
         self._cache.pop(user_id, None)
@@ -170,21 +174,31 @@ class AccessManager:
     KEY_TSEC = "access:tsec"
 
     def __init__(self, owner_id: int | None, store: AccessStore) -> None:
+        self.accounts: Any = None
         self.owner_id = owner_id
         self.store = store
+        raw = cast(object, store.state.get_setting('account-owners', []))
+        self._protected = tuple(u for u in cast('list[object]', raw) if isinstance(u, int) and u > 0) if isinstance(raw, list) else ()
         self._groups_cache: dict[str, SecurityGroup] | None = None
         self._tsec_cache: list[TsecRule] | None = None
 
     def set_owner(self, owner_id: int | None) -> None:
+        if self.protected and owner_id != self.owner_id:
+            raise AccessError('No permission.')
         if owner_id is not None and owner_id <= 0:
             raise AccessError("owner id must be a positive integer")
         self.owner_id = owner_id
 
     @property
+    def protected(self) -> tuple[int, ...]:
+        return self._protected
+
+    @property
     def owners(self) -> tuple[int, ...]:
         raw = cast(object, self.store.state.get_setting(self.KEY_OWNERS, []))
         extra = tuple(sorted({u for u in cast('list[object]', raw) if isinstance(u, int) and u > 0})) if isinstance(raw, list) else ()
-        return (self.owner_id,) + tuple(u for u in extra if u != self.owner_id) if self.owner_id is not None else extra
+        users = tuple(dict.fromkeys(self.protected + extra))
+        return (self.owner_id,) + tuple(u for u in users if u != self.owner_id) if self.owner_id is not None else users
 
     def add_owner(self, user_id: int) -> bool:
         if user_id <= 0:
@@ -198,6 +212,8 @@ class AccessManager:
         return True
 
     def remove_owner(self, user_id: int) -> bool:
+        if user_id in self.protected:
+            raise AccessError('No permission.')
         if user_id == self.owner_id:
             raise AccessError("account owner cannot be removed")
         raw = cast(object, self.store.state.get_setting(self.KEY_OWNERS, []))
@@ -356,6 +372,8 @@ class AccessManager:
             self.save_tsec(kept)
 
     def check_tsec(self, user_id: int | None, module_id: str | None, command: str | None, chat_id: int | str | None) -> bool:
+        if module_id == 'accounts' and command in {'acc', 'accs', 'acca'} and self.accounts is not None:
+            return self.accounts.allows(user_id, 'view')
         if user_id is None:
             return False
         self._prune_expired()

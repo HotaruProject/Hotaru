@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import fcntl
 import hashlib
 import json
 import logging
@@ -20,37 +21,37 @@ DEFAULT_KEY_PATH = Path(__file__).resolve().parent.parent / "sanctuary/hotaru-ma
 
 
 def apply_vault_key_env() -> None:
-    if os.environ.get("GOYGRAM_VAULT_KEY", "").strip():
-        return
-    raw = os.environ.get("HOTARU_VAULT_KEY", "").strip()
+    raw = os.environ.get("GOYGRAM_VAULT_KEY", "").strip() or os.environ.get("HOTARU_VAULT_KEY", "").strip()
     if not raw:
         raw = key_file_value()
     if not raw:
         return
     key = normalize_vault_key(raw)
     if key is None:
-        raise SystemExit("HOTARU_VAULT_KEY must be 32 bytes as base64 or hex (generate: openssl rand -base64 32)")
+        raise SystemExit("Vault key must be 32 bytes as base64 or hex.")
     os.environ["GOYGRAM_VAULT_KEY"] = key
 
 
 def key_file_value() -> str:
     path = Path(os.environ.get("HOTARU_VAULT_KEY_FILE", "").strip() or DEFAULT_KEY_PATH)
     try:
-        if path.is_file():
-            return path.read_text(encoding="utf-8").strip()
-    except OSError as exc:
-        raise SystemExit(f"vault key file {path} is unreadable: {exc}") from exc
-    generated = base64.b64encode(secrets.token_bytes(32)).decode()
-    try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        handle = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
-        with os.fdopen(handle, "w", encoding="utf-8") as stream:
-            stream.write(generated + "\n")
+        handle = os.open(path, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+        with os.fdopen(handle, "r+", encoding="utf-8") as stream:
+            fcntl.flock(handle, fcntl.LOCK_EX)
+            raw = stream.read().strip()
+            if not raw:
+                raw = base64.b64encode(secrets.token_bytes(32)).decode()
+                stream.seek(0)
+                stream.write(raw + "\n")
+                stream.truncate()
+                stream.flush()
+                os.fsync(handle)
+                log.warning("Generated vault key: %s. Keep a backup.", path)
+            os.fchmod(handle, 0o600)
+            return raw
     except OSError as exc:
-        log.error("cannot create the vault key file %s (%s); falling back to the machine-derived key", path, exc)
-        return ""
-    log.warning("generated a vault key at %s: the vaults and the state databases are sealed with it, so keep a copy of this file", path)
-    return generated
+        raise SystemExit(f"Vault key file unavailable: {path} ({type(exc).__name__}).") from exc
 
 
 def normalize_vault_key(raw: str) -> str | None:
@@ -198,7 +199,7 @@ class StateStore:
         self._foreign = not self._claim_master()
         if self._foreign:
             log.error(
-                "state %s was sealed with a different vault key; reads return defaults and writes are refused. "
+                "state %s was sealed with a different vault key; settings cannot be read or changed. "
                 "Restore the previous HOTARU_VAULT_KEY or re-enter the credentials.",
                 self.path.name,
             )
@@ -259,18 +260,9 @@ class StateStore:
         return tuple(row[0] for row in rows)
 
     def register_account(self, user_id: int, account_number: int, session_dir: str | Path, session_name: str | None = None) -> Any:
-        from .accounts import AccountProfile
+        from .accounts import AccountManager
 
-        session_name = session_name or f"user-{user_id}"
-        profile = AccountProfile(user_id, account_number, session_name, Path(session_dir))
-        profile.validate()
-        with self.connection:
-            self.connection.execute(
-                "INSERT INTO accounts(user_id, account_number, vault_name, session_dir, enabled) VALUES (?, ?, ?, ?, 1) "
-                "ON CONFLICT(user_id, account_number) DO UPDATE SET vault_name=excluded.vault_name, session_dir=excluded.session_dir",
-                (profile.user_id, profile.account_number, profile.vault_name, str(profile.session_dir)),
-            )
-        return profile
+        return AccountManager(self, session_dir).register(user_id, account_number, session_name)
 
     def accounts(self) -> tuple[Any, ...]:
         from .accounts import AccountManager
@@ -294,6 +286,18 @@ class StateStore:
             raise StateError("setting key is invalid")
         if self._foreign:
             raise StateError("state was sealed with a different vault key; refusing to overwrite it")
+        pinned = self.get_setting('account-owners', [])
+        if key == 'account-root':
+            root = self.get_setting(key)
+            if root is not None and root != value:
+                raise StateError('No permission.')
+        if key in {'account-owners', 'access:owners'} and pinned:
+            if not isinstance(value, (list, tuple)) or any(uid not in value for uid in pinned):
+                raise StateError('No permission.')
+        if key == 'owner-id' and pinned:
+            owner = self.get_setting(key)
+            if owner is not None and value != owner:
+                raise StateError('No permission.')
         encoded = json.dumps(value, ensure_ascii=False, separators=(",", ":"))
         with self.connection:
             self.connection.execute(
@@ -331,11 +335,12 @@ class StateStore:
         self.connection.close()
         previous = self.path
         self.path = dest
-        for stale in (previous, Path(f"{previous}-wal"), Path(f"{previous}-shm")):
-            try:
-                stale.unlink(missing_ok=True)
-            except OSError:
-                pass
+        if previous.name != "state.sqlite3" or previous.parent.name != "sanctuary":
+            for stale in (previous, Path(f"{previous}-wal"), Path(f"{previous}-shm")):
+                try:
+                    stale.unlink(missing_ok=True)
+                except OSError:
+                    pass
         self.connection = sqlite3.connect(dest)
         self.connection.execute("PRAGMA foreign_keys = ON")
         self.connection.execute("PRAGMA journal_mode = WAL")

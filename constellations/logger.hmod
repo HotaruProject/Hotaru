@@ -191,25 +191,25 @@ async def command_logs(ctx: Any, invocation: Any) -> Any:
         enabled = args[0] == "on"
         ctx.state.set("enabled", enabled)
         key = "kernel.logger.mirror_on" if enabled else "kernel.logger.mirror_off"
-        await ctx.respond(f"<b>{ctx.t(key, 'Log mirror ' + args[0])}</b>", parse_mode="HTML")
+        await ctx.respond(f"<b>{ctx.t(key)}</b>", parse_mode="HTML")
         return
     if args and args[0].lower() in LEVELS and len(args) == 1:
         name = args[0].lower()
         ctx.state.set("level", name)
         _state["floor"] = LEVELS[name]
-        await ctx.respond(f"<code>{ctx.t('kernel.logger.level_set', 'Mirror level: ' + name, level=name)}</code>", parse_mode="HTML")
+        await ctx.respond(f"<code>{ctx.t('kernel.logger.level_set', level=name)}</code>", parse_mode="HTML")
         return
     if args and args[0] in ("status", "st"):
         failed = _state.get("failed", 0)
         err = _state.get("last_error", "")
-        text = ctx.t("kernel.logger.status", "Топик: {topic} • ошибок: {failed}", topic=_state.get("topic_id") or "pending", failed=failed)
+        text = ctx.t('kernel.logger.status', topic=_state.get('topic_id') or ctx.t('kernel.logger.pending'), failed=failed)
         if err:
-            text += ctx.t("kernel.logger.status_error", " • последняя: {error}", error=html.escape(err, quote=False))
+            text += ctx.t('kernel.logger.status_error', error=html.escape(err, quote=False))
         await ctx.respond(f"<code>{html.escape(text, quote=False)}</code>", parse_mode="HTML")
         return
     obs = _obs(ctx)
     if obs is None:
-        await ctx.respond(ctx.t("kernel.logger.no_observatory", "Обсерватория недоступна"), parse_mode="HTML")
+        await ctx.respond(ctx.t('kernel.logger.no_observatory'), parse_mode="HTML")
         return
     level = args[0].lower() if args and args[0].lower() in LEVELS else "debug"
     rest = args[1:] if args and args[0].lower() in LEVELS else args
@@ -222,7 +222,7 @@ async def command_logs(ctx: Any, invocation: Any) -> Any:
     if component is not None:
         entries = [entry for entry in entries if str(entry.get("component") or "").lower() == component]
     if not entries:
-        await ctx.respond(ctx.t("kernel.logger.no_entries", "Нет записей этого уровня"), parse_mode="HTML")
+        await ctx.respond(ctx.t('kernel.logger.no_entries'), parse_mode="HTML")
         return
     import os
     import tempfile
@@ -231,7 +231,7 @@ async def command_logs(ctx: Any, invocation: Any) -> Any:
     try:
         with open(raw_path, "w", encoding="utf-8") as stream:
             stream.write("\n".join(_fmt(entry) for entry in entries))
-        caption = ctx.t("kernel.logger.logs_caption", "Логи Hotaru: {count} записей (уровень {level})", count=len(entries), level=level)
+        caption = ctx.t('kernel.logger.logs_caption', count=len(entries), level=level)
         await ctx.respond_file(raw_path, caption, file_name="hotaru-logs.txt", mime_type="text/plain")
         _emit(ctx, "logs_delivered", count=len(entries))
     finally:

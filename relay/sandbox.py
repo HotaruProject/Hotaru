@@ -541,7 +541,7 @@ class SandboxContext:
 
     @property
     def ui(self):
-        return _UiProxy()
+        return _UiProxy(self.t)
 
     async def send_file(self, media, caption=None, **kwargs):
         kwargs["media"] = media
@@ -610,6 +610,9 @@ class _RichProxy:
 
 
 class _UiProxy:
+    def __init__(self, t):
+        self.t = t
+
     @staticmethod
     def button(text, action_id, payload=None, *, style=None):
         if callable(action_id):
@@ -646,8 +649,9 @@ class _UiProxy:
         _sandbox_callbacks[action_id] = callback
         return action_id
 
-    @staticmethod
-    def close(text="Close"):
+    def close(self, text=None):
+        if text is None:
+            text = self.t("common.close")
         return {"text": text, "action_id": "close", "style": "danger"}
 
     @staticmethod

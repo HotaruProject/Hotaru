@@ -6,17 +6,37 @@
   "commands": {
     "lang": {
       "description": "Показати або змінити мову",
-      "usage": "{prefix}lang [language]",
+      "usage": "{prefix}lang [мова]",
       "invalid": "Непідтримувана мова: {language}",
-      "changed": "Мову змінено на {language}"
+      "changed": "Мову змінено на {language}",
+      "unavailable": "Сервіс недоступний",
+      "lexicon_unavailable": "Словник перекладів недоступний",
+      "languages_unavailable": "Мови недоступні",
+      "current": "Поточна мова: {language}"
+    },
+    "help": {
+      "description": "Показати довідку",
+      "usage": "{prefix}help [модуль]"
+    },
+    "hlp": {
+      "description": "Показати довідку",
+      "usage": "{prefix}hlp [модуль]"
     }
   },
   "kernel": {
     "capabilities": {
-      "mt": "Прямий доступ до MTProto",
-      "state": "Постійне сховище стану",
-      "files": "Доступ до файлової системи",
-      "net": "Доступ до мережі"
+      "mt": "Доступ до MTProto",
+      "state": "Зберігання даних",
+      "files": "Доступ до файлів",
+      "net": "Доступ до мережі",
+      "bot": "Доступ до бота",
+      "modules": "Керування модулями",
+      "loader": "Завантаження модулів",
+      "fetch": "Завантаження файлів",
+      "inline": "Інлайн-боти",
+      "assets": "Сховище вкладень",
+      "shell": "Команди оболонки",
+      "logs": "Журнал"
     },
     "hotaru-kernel": {
       "description": "Системні команди ядра Hotaru",
@@ -80,7 +100,15 @@
           "description": "Відновити юзербота"
         }
       },
-      "restarted": "Юзербот успішно перезапущений за {took}"
+      "restarted": "Юзербот успішно перезапущений за {took}",
+      "already_stopped": "Юзербот уже зупинено.",
+      "stopped": "Юзербот зупинено.",
+      "stopped_details": "Звичайні модулі вимкнено. Команди ядра, наприклад {prefix}start, працюють.",
+      "already_started": "Юзербот уже запущено.",
+      "started": "Юзербот запущено. Усі команди знову працюють.",
+      "restarting": "Перезапускаю юзербот…",
+      "running": "Юзербот працює.",
+      "already_running": "Юзербот уже працює."
     },
     "updater": {
       "description": "Автооновлення Hotaru",
@@ -105,7 +133,18 @@
       "ignored_toast": "Проігноровано",
       "updating": "Оновлюю…",
       "notify_on": "Повідомлення про оновлення увімкнено",
-      "notify_off": "Повідомлення про оновлення вимкнено"
+      "notify_off": "Повідомлення про оновлення вимкнено",
+      "unavailable": "Середовище виконання недоступне",
+      "up_to_date": "Hotaru оновлено",
+      "update_available": "Доступне оновлення Hotaru",
+      "downloading": "Завантажую оновлення…",
+      "syncing": "Оновлюю залежності…",
+      "check_failed": "<b>Не вдалося перевірити оновлення:</b> <i>{error}</i>",
+      "failed": "<b>Не вдалося оновити:</b> <i>{error}</i>",
+      "conflicts": "<b>Локальні зміни з конфліктами збережено:</b> <code>{path}</code>",
+      "button_update": "Оновити",
+      "button_ignore": "Пропустити",
+      "confirm": "<br><br>Оновити зараз?"
     },
     "translations": {
       "description": "Керування перекладами",
@@ -122,7 +161,7 @@
       "description": "Тестовий модуль проксі та можливостей Hotaru",
       "commands": {
         "tfstatus": {
-          "description": "Пінг MTProto"
+          "description": "Перевірити з’єднання MTProto"
         },
         "tfhistory": {
           "description": "Тест отримання історії"
@@ -155,37 +194,205 @@
       "kernel_modules": "Модулі ядра",
       "user_modules": "Користувацькі модулі",
       "commands": "Команди",
-      "capabilities": "Можливості"
+      "capabilities": "Можливості",
+      "unavailable": "<b>Сервіс недоступний</b>",
+      "manager_unavailable": "<b>Менеджер модулів недоступний</b>",
+      "usage": "<b>Використання:</b> <code>{prefix}hlp</code> або <code>{prefix}hlp &lt;модуль&gt;</code>",
+      "disabled": "<b>Модуль вимкнено:</b> <code>{module}</code><br><i>Помилка: {error}</i>",
+      "missing": "<b>Модуль не знайдено:</b> <code>{module}</code>"
     },
     "accounts": {
-      "description": "Multi-account management: register, authorize, spawn, stop accounts",
+      "description": "Керування акаунтами",
       "commands": {
         "acc": {
-          "description": "Manage account: acc <#> <start|stop|on|off|del>"
+          "description": "Керування акаунтом"
         },
         "acca": {
-          "description": "Authorize a new account: acca <#>"
+          "description": "Додати акаунт або увійти"
         },
         "accs": {
-          "description": "List accounts"
+          "description": "Відкрити панель акаунтів"
         }
       },
-      "usage": "використання: !acc <#> <start|stop|on|off|del>\n!acca — зареєструвати акаунт (номер призначається автоматично)\n!accs — список",
+      "usage": "<b>Акаунти</b>\n<code>{prefix}acca [user_id]</code> · додати за QR / номером\n<code>{prefix}acca cancel</code> · скасувати вхід\n<code>{prefix}accs [#]</code> · панель акаунтів\n<code>{prefix}acc [#]</code> · панель акаунтів\n<code>{prefix}acc 2 start|stop|restart|on|off|del</code>",
       "empty": "Акаунти не зареєстровані.",
       "no_self": "Не вдалося визначити user id сесії.",
-      "not_registered": "Акаунт #{n} не зареєстрований."
+      "not_registered": "Акаунт #{n} не зареєстрований.",
+      "heading": "<b>Акаунти</b> · {count}",
+      "item": "#{n} · {status}",
+      "account": "Акаунт №{n}",
+      "detail": "<b>Акаунт №{n}</b>\n<code>{uid}</code> · {status}\nАвтозапуск: {enabled}",
+      "owner": "<b>Це акаунт власника.</b>",
+      "on": "увімк.",
+      "off": "вимк.",
+      "changed": "Список акаунтів змінився.",
+      "reopen": "Відкрий {prefix}accs знову.",
+      "remove_confirm": "<b>Видалити акаунт №{n}?</b>\nВін зупиниться. Файли сесії збережуться.",
+      "permissions": "<b>Права</b> · {account}\n<code>{uid}</code>\nЛише керування акаунтами.",
+      "access_off": "Доступ вимкнено.",
+      "cancelled": "скасовано.",
+      "cancel_denied": "Скасувати вхід може лише той, хто його почав.",
+      "no_login": "Вхід не розпочато.",
+      "already_added": "Акаунт №{n} вже додано.",
+      "result": "Акаунт №{n}: {status}.",
+      "button": {
+        "add": "Додати акаунт",
+        "refresh": "Оновити",
+        "close": "Закрити",
+        "permissions": "Права",
+        "start": "Запустити",
+        "stop": "Зупинити",
+        "restart": "Перезапустити",
+        "login": "Увійти",
+        "enable_start": "Увімкнути й запустити",
+        "autostart_on": "Увімк. автозапуск",
+        "autostart_off": "Вимк. автозапуск",
+        "remove": "Видалити",
+        "back": "Назад",
+        "accounts": "‹ Акаунти",
+        "grant_all": "Надати всі",
+        "revoke": "Відкликати все",
+        "cancel": "Скасувати",
+        "qr": "QR",
+        "phone": "Номер",
+        "submit": "Надіслати",
+        "enter_phone": "Ввести номер",
+        "enter_code": "Ввести код",
+        "enter_password": "Ввести пароль"
+      },
+      "right": {
+        "view": "Перегляд",
+        "add": "Додавання",
+        "start": "Запуск",
+        "stop": "Зупинка",
+        "restart": "Перезапуск",
+        "autostart": "Автозапуск",
+        "remove": "Видалення"
+      },
+      "status": {
+        "current": "поточний",
+        "running": "працює",
+        "starting": "запускається",
+        "login": "потрібен вхід",
+        "stopped": "зупинено",
+        "disabled": "вимкнено",
+        "enabled": "увімкнено",
+        "removed": "видалено"
+      },
+      "login": {
+        "saved": "<i>Для входу відкрий Збережені повідомлення.</i>",
+        "private": "<i>Для входу відкрий особисті повідомлення.</i>",
+        "choose": "<b>Додати акаунт</b>\nОбери спосіб входу.",
+        "timeout": "Час входу вичерпано.",
+        "retry_timeout": "Час входу вичерпано. Запусти {prefix}acca знову.",
+        "open_failed": "Не вдалося відкрити вхід. Спробуй ще раз.",
+        "added": "Акаунт №{n} додано. Запускається…",
+        "running": "Акаунт №{n} додано, він працює.",
+        "starting": "Акаунт №{n} додано. Ще запускається; перевір {prefix}accs.",
+        "start_failed": "Акаунт №{n} додано, але він не запустився. Відкрий {prefix}accs.",
+        "expired": "Цей вхід уже завершено.",
+        "busy": "Вхід уже розпочато.",
+        "submitted": "Надіслано.",
+        "input_expired": "Введення застаріло.",
+        "phone_format": "Потрібен номер у міжнародному форматі, наприклад +12345678901.",
+        "code_format": "Введи код із Telegram.",
+        "password_format": "Введи пароль 2FA.",
+        "check_form": "Відкрий форму входу.",
+        "edit_input": "Виправ введення та спробуй ще раз.",
+        "use_phone": "Використати {phone}",
+        "submit_code": "Надіслати код",
+        "submit_password": "Надіслати пароль",
+        "continue": "Натисни, щоб продовжити.",
+        "checking": "Перевіряю…",
+        "private_only": "Використовуй особистий чат для входу.",
+        "no_password": "Пароль зараз не потрібен.",
+        "scan": "Скануй з акаунта, який додаєш.\nНалаштування → Пристрої → Підключити пристрій.",
+        "password_prompt": "<b>Пароль 2FA</b>\nВведи пароль для завершення входу.",
+        "password_command": "Потрібен пароль 2FA. Надішли {prefix}acca password <пароль>.",
+        "wrong_password": "Неправильний пароль. Спробуй ще раз.",
+        "phone_prompt": "<b>Номер телефону</b>\nУ міжнародному форматі, наприклад +12345678901.",
+        "phone_invalid": "Неправильний номер телефону.",
+        "phone_banned": "Цей номер заблоковано.",
+        "code_prompt": "<b>Код входу</b>\nВведи код від Telegram.",
+        "wrong_code": "Неправильний код. Спробуй ще раз.",
+        "code_expired": "Код прострочено. Введи номер для отримання нового.",
+        "qr_prompt": "<b>Вхід за QR</b>\nСкануй QR нижче з акаунта, який додаєш.",
+        "flood": "Спробуй через {seconds} с.",
+        "failed": "Не вдалося увійти. Спробуй ще раз."
+      },
+      "error": {
+        "no_permission": "Немає прав.",
+        "owner_protected": "Акаунт власника захищено.",
+        "invalid_permission": "Неправильне право.",
+        "invalid_user": "Неправильний користувач.",
+        "not_found": "Акаунт №{n} не знайдено.",
+        "current": "Цей акаунт працює тут.",
+        "invalid_lock": "Не вдалося заблокувати сесію.",
+        "running": "Акаунт уже запущено.",
+        "invalid_owner": "Неправильний власник.",
+        "invalid_id": "ID і номер акаунта мають бути додатними.",
+        "wrong_session": "Сесія не відповідає акаунту.",
+        "number_taken": "Номер акаунта {n} вже зайнятий.",
+        "stop_first": "Спочатку зупини акаунт.",
+        "disabled": "Акаунт №{n} вимкнено.",
+        "login_first": "Спочатку увійди в цей акаунт.",
+        "stopping": "Акаунт №{n} ще зупиняється.",
+        "login_busy": "Вхід уже розпочато.",
+        "qr_failed": "Не вдалося надіслати QR.",
+        "phone_unavailable": "Вхід за номером недоступний; спробуй QR.",
+        "login_response": "Неочікувана відповідь під час входу.",
+        "no_user": "Під час входу не отримано користувача.",
+        "wrong_account": "Неправильний акаунт; потрібен користувач {uid}.",
+        "unknown": "Не вдалося виконати дію."
+      }
     },
     "acl": {
-      "description": "Access control administration: grant, revoke, list user permissions",
+      "description": "Керування правами",
       "commands": {
         "perms": {
-          "description": "List permissions of all users"
+          "description": "Список прав"
         },
         "perm": {
-          "description": "Grant/revoke: perm <user_id> <owner|admin|trusted|everyone> [remove]"
+          "description": "Надати або відкликати права"
         },
         "whois": {
-          "description": "User permissions: whois <user_id>"
+          "description": "Права користувача"
+        },
+        "owadd": {
+          "description": "Додати власника"
+        },
+        "owrm": {
+          "description": "Видалити власника"
+        },
+        "owls": {
+          "description": "Список власників"
+        },
+        "sgnew": {
+          "description": "Створити групу прав"
+        },
+        "sgls": {
+          "description": "Список груп"
+        },
+        "sg": {
+          "description": "Учасники та правила групи"
+        },
+        "sgdel": {
+          "description": "Видалити групу"
+        },
+        "sgadd": {
+          "description": "Додати учасника"
+        },
+        "sgrm": {
+          "description": "Видалити учасника"
+        },
+        "rule": {
+          "description": "Додати правило доступу"
+        },
+        "rulerm": {
+          "description": "Видалити правило"
+        },
+        "ruleclr": {
+          "description": "Очистити правила"
         }
       },
       "usage": "використання:\n!owadd <user_id|reply> — надати owner\n!owrm <user_id|reply> — зняти owner\n!owls — власники\n!sgnew <name> — створити групу прав\n!sgls — список груп\n!sg <name> — учасники та права групи\n!sgdel <name> — видалити групу\n!sgadd <name> <user_id|reply> — додати юзера в групу\n!sgrm <name> <user_id|reply> — прибрати юзера з групи\n!rule <user|chat|sgroup> <target> <command|module>/<name> [термін] — надати право\n!rulerm — прибрати правило\n!ruleclr — очистити всі правила цілі\n!perm <user_id> <admin|trusted|everyone> [remove] — надати/зняти право\n!perms — список прав\n!whois <user_id> — права користувача",
@@ -200,7 +407,7 @@
     },
     "lg": "хвіст логів:\n{lines}",
     "commands": {
-      "lg": "view recent observatory log entries"
+      "lg": "Показати останні записи журналу"
     },
     "config": {
       "description": "Модуль конфігурації Hotaru",
@@ -216,32 +423,300 @@
     "settings": {
       "description": "Керування аліасами та префіксом",
       "commands": {
-        "alias": "Створити аліас",
-        "rmalias": "Видалити аліас",
-        "prefix": "Змінити префікс"
+        "alias": {
+          "description": "Створити аліас команди"
+        },
+        "rmalias": {
+          "description": "Видалити аліас команди"
+        },
+        "prefix": {
+          "description": "Змінити префікс команд"
+        }
       }
+    },
+    "kernel": {
+      "runtime_unavailable": "Сервіс недоступний",
+      "modules_unavailable": "Модулі недоступні",
+      "modules_none": "Модулів немає",
+      "usage": "Використання: {usage}",
+      "alias_set": "Псевдонім встановлено: {alias} → {command}",
+      "alias_removed": "Псевдонім видалено: {alias}",
+      "alias_not_found": "Псевдонім не знайдено: {alias}"
+    },
+    "logger": {
+      "description": "Дублювання логів у тему",
+      "mirror_on": "Дублювання логів увімкнено",
+      "mirror_off": "Дублювання логів вимкнено",
+      "level_set": "Рівень дублювання: {level}",
+      "status": "Тема: {topic} • помилок: {failed}",
+      "status_error": " • остання: {error}",
+      "no_observatory": "Обсерваторія недоступна",
+      "no_entries": "Немає записів цього рівня",
+      "topic_unavailable": "Тема недоступна: {error}",
+      "logs_caption": "Логи Hotaru: {count} записів (рівень {level})",
+      "logs_sent": "Логи надіслано: {count} записів",
+      "commands": {
+        "logs": {
+          "description": "Логи юзербота з файлом"
+        }
+      },
+      "pending": "очікування"
+    },
+    "executor": {
+      "heading": "<b>Виконавець</b> | <code>{elapsed:.1f} мс</code>",
+      "exit_code": "Код завершення: {returncode}",
+      "running": "Виконується…",
+      "usage_sh": "<b>Використання:</b> <code>{prefix}sh &lt;команда&gt;</code>",
+      "usage_py": "<b>Використання:</b> <code>{prefix}py &lt;код&gt;</code> або відповідь на код; -so — без виводу",
+      "cancelled": "Виконання скасовано",
+      "done": "Готово ✓",
+      "kill_reply": "<b>Дай відповідь на повідомлення активної py/sh, щоб зупинити процес.</b>",
+      "killed": "<b>Процес зупинено.</b>",
+      "no_process": "<b>Це повідомлення не має активного процесу.</b>",
+      "section": {
+        "code": "Код",
+        "command": "Команда",
+        "output": "Вивід",
+        "result": "Результат",
+        "return": "Повернене значення",
+        "traceback": "Трасування"
+      },
+      "description": "Виконання Python і команд оболонки",
+      "commands": {
+        "py": {
+          "description": "Виконати код Python"
+        },
+        "sh": {
+          "description": "Виконати команду оболонки"
+        },
+        "kill": {
+          "description": "Зупинити активну команду"
+        }
+      }
+    },
+    "catalyst": {
+      "description": "Керування модулями",
+      "commands": {
+        "ld": {
+          "description": "Завантажити модуль"
+        },
+        "ul": {
+          "description": "Вивантажити модуль"
+        },
+        "rl": {
+          "description": "Перезавантажити модуль"
+        },
+        "ex": {
+          "description": "Експортувати модуль"
+        },
+        "rs": {
+          "description": "Очистити дані модуля"
+        },
+        "resetdb": {
+          "description": "Очистити дані модуля"
+        }
+      }
+    },
+    "capability_details": {
+      "mt": "доступ до MTProto: повідомлення, медіа, діалоги, чати, канали й контакти; операції безпеки акаунта та платежі заблоковано",
+      "files": "читання й запис файлів у робочій теці модуля",
+      "net": "вихідні HTTP(S)-запити до інтернету; локальні, внутрішні й заборонені адреси заблоковано",
+      "state": "постійне зберігання даних у просторі модуля",
+      "inline": "запити до інлайн-ботів і взаємодія з ними",
+      "modules": "завантаження, вивантаження, перезавантаження та перегляд модулів, їхніх хешів і описів",
+      "assets": "доступ до прихованого сховища вкладень",
+      "shell": "команди оболонки в робочій теці модуля з обмеженням часу й обсягу виводу",
+      "logs": "запис структурованих подій до журналу; дозволено завжди",
+      "fetch": "читання повідомлень, даних користувачів і чатів, отримання відповідей; дозволено завжди"
     }
   },
   "inline_commands_hint": "Обери команду — введи @<бот> і її назву в будь-якому чаті",
   "settings": {
-    "runtime_unavailable": "Runtime недоступен",
-    "usage_alias": "Использование: !alias <алиас> <команда>",
-    "alias_invalid": "Алиас: 1-32 символа, только a-z, 0-9 и _",
-    "alias_exists": "Такая команда уже существует: {alias}",
-    "command_not_found": "Команда не найдена: {command}\nДоступные: {known}",
-    "alias_taken": "Алиас уже занят: {alias} -> {command}. Сначала удали его через !rmalias {alias}",
-    "alias_set": "Алиас установлен: {alias} → {command}",
-    "usage_rmalias": "Использование: !rmalias <алиас>",
-    "alias_removed": "Алиас удалён: {alias}",
-    "alias_not_found": "Алиас не найден: {alias}",
-    "prefix_current": "Текущий префикс: {prefix}. Смена: !prefix <символ>",
-    "prefix_invalid": "Префикс должен быть одним не-пробельным символом",
+    "runtime_unavailable": "Сервіс недоступний",
+    "usage_alias": "Використання: {prefix}alias <аліас> <команда>",
+    "alias_invalid": "Аліас: 1–32 символи, лише a-z, 0-9 та _.",
+    "alias_exists": "Команда вже існує: {alias}",
+    "command_not_found": "Команду не знайдено: {command}\nДоступні: {known}",
+    "alias_taken": "Аліас зайнято: {alias} → {command}. Видали через {prefix}rmalias {alias}.",
+    "alias_set": "Аліас встановлено: {alias} → {command}",
+    "usage_rmalias": "Використання: {prefix}rmalias <аліас>",
+    "alias_removed": "Аліас видалено: {alias}",
+    "alias_not_found": "Аліас не знайдено: {alias}",
+    "prefix_current": "Поточний префікс: {prefix}. Змінити: {prefix}prefix <символ>",
+    "prefix_invalid": "Префікс — один символ, крім пробільних.",
     "prefix_set": "Префікс змінено на {prefix}",
     "description": "Керування аліасами та префіксом",
     "commands": {
-      "alias": "Створити аліас",
-      "rmalias": "Видалити аліас",
-      "prefix": "Змінити префікс"
+      "alias": "Створити аліас команди",
+      "rmalias": "Видалити аліас команди",
+      "prefix": "Змінити префікс команд"
+    }
+  },
+  "common": {
+    "ok": "ОК",
+    "cancel": "Скасувати",
+    "close": "Закрити",
+    "back": "Назад",
+    "unknown_error": "Невідома помилка",
+    "confirm": "Підтвердити",
+    "none": "Немає",
+    "unknown": "Невідомо",
+    "yes": "Так",
+    "no": "Ні",
+    "seconds": "{n} с",
+    "invalid_value": "Некоректне значення"
+  },
+  "languages": {
+    "ru": "Російська",
+    "en": "Англійська",
+    "kz": "Казахська",
+    "uk": "Українська",
+    "ja": "Японська"
+  },
+  "runtime": {
+    "modules_unavailable": "Модулі недоступні",
+    "modules_empty": "Модулів немає",
+    "modules": "Модулі:\n",
+    "module_unavailable": "Модуль недоступний",
+    "module_missing": "Модуль не знайдено: {module_id}",
+    "module_info": "Модуль: {module}\nВерсія: {version}\nКоманди: {commands}\nМожливості: {capabilities}\nОпис: {description}",
+    "help_unavailable": "Довідка недоступна",
+    "page_unavailable": "Сторінка довідки недоступна",
+    "catalog": "Каталог: ",
+    "next": "Далі",
+    "bot_unavailable": "Інлайн-бот недоступний",
+    "bot_failed": "Не вдалося створити інлайн-бота: {error}",
+    "protected": "Системний модуль захищено: {module_id}",
+    "unload_failed": "Не вдалося вивантажити модуль: {error}",
+    "not_ready": "Сервіси ще не готові",
+    "purged": "Модуль видалено: {module} (дані очищено)",
+    "unloaded": "Модуль вивантажено: {module} (дані збережено)",
+    "reset_failed": "Дані очищено, але перезавантаження не вдалося: {error}",
+    "reset": "Дані очищено: {module_id}",
+    "id_mismatch": "Ідентифікатор модуля не збігається: {module_id}",
+    "downgrade": "Зниження версії заборонено: {old} → {new}",
+    "rollback_failed": "Перезавантаження не вдалося: {error}; відкат також не вдався",
+    "rolled_back": "Перезавантаження не вдалося: {error}; попередню версію відновлено",
+    "reloaded": "Перезавантажено: {module_id}",
+    "exported": "Експортовано: {file_name}",
+    "invalid_request": "Некоректний запит",
+    "cancelled": "Скасовано",
+    "module_cancelled": "Скасовано: {module_id}",
+    "source_missing": "Вихідний код відсутній",
+    "activation_failed": "Не вдалося завантажити модуль",
+    "module_loaded": "Модуль завантажено",
+    "loaded": "Завантажено: {module_id} {version}",
+    "backup_failed": "Не вдалося створити копію: {error}",
+    "backup_created": "Копію створено: {name}",
+    "backups_empty": "Резервних копій немає",
+    "backups": "Резервні копії:\n",
+    "backup_unavailable": "Резервна копія недоступна",
+    "backup_invalid": "Некоректна резервна копія: {error}",
+    "backup_valid": "Копія справна. Файлів: {count}",
+    "restore_confirm": "Підтвердити відновлення?",
+    "invalid_module": "Некоректний модуль",
+    "invalid_page": "Некоректна сторінка довідки",
+    "invalid_restore": "Некоректний запит на відновлення",
+    "restore_failed": "Не вдалося відновити",
+    "restore_error": "Не вдалося відновити: {error}",
+    "restore_done": "Відновлено",
+    "callback_failed": "Не вдалося виконати дію",
+    "callback_denied": "Кнопка застаріла або недоступна.",
+    "load_error": "Не вдалося завантажити: {error}: {detail}",
+    "load_failed": "Не вдалося завантажити: {error}",
+    "load_screen": "Не вдалося завантажити: {module_id} {version}\n{screen}",
+    "updated": "Оновлено: {module_id} {version}",
+    "caps_request": "Модуль {module_id} v{version} запитує можливості:",
+    "caps_retry": "Повтори команду завантаження для підтвердження",
+    "usage_mi": "Використання: {prefix}mi <module>",
+    "usage_help": "Використання: {prefix}hlp [page] | {prefix}hlp <module>",
+    "usage_reload": "Використання: {prefix}rl <module> [force]",
+    "usage_unload": "Використання: {prefix}ul [-c] <module>",
+    "usage_reset": "Використання: {prefix}rs <module>",
+    "usage_export": "Використання: {prefix}ex <module>",
+    "usage_backup": "Використання: {prefix}bk | {prefix}bk list | {prefix}bk test <archive> | {prefix}bk restore <archive>",
+    "usage_load": "Використання: {prefix}ld <raw-url> або відповідь на файл .hmod",
+    "bot_status": "Інлайн-бот: @{name} ({status})",
+    "health": "Стан: {status}",
+    "last_error": "Остання помилка: {error}",
+    "running_commands": "Виконуються команди: {count}",
+    "connection": "З’єднання: {status}; перепідключень: {count}; MTProto: {mt}; бот: {bot}",
+    "health_ready": "готовий",
+    "health_degraded": "є збої",
+    "health_stopped": "зупинений",
+    "health_closed": "закритий",
+    "health_new": "запускається",
+    "service": {
+      "runtime": "Сервіс",
+      "kernel": "Ядро",
+      "state": "Сховище",
+      "capabilities": "Можливості",
+      "modules": "Модулі",
+      "responses": "Відповіді",
+      "callbacks": "Кнопки",
+      "observatory": "Журнал",
+      "backups": "Резервні копії",
+      "tasks": "Завдання",
+      "event_router": "Події"
+    },
+    "file_missing": "Файл модуля не знайдено",
+    "file_document": "Надішли модуль файлом",
+    "timeout": "Команда {command} не завершилася за {seconds} с.",
+    "unknown_capability": "невідома можливість (заборонена)"
+  },
+  "acl": {
+    "owners": "<b>Власники</b><br>",
+    "account": " · акаунт",
+    "protected": " · захищено",
+    "failed": "<b>Помилка:</b> <i>{error}</i>",
+    "owner_added": "<code>{user_id}</code> <b>додано до власників</b>",
+    "owner_exists": "<code>{user_id}</code> уже власник",
+    "owner_removed": "У <code>{user_id}</code> <b>знято права власника</b>",
+    "owner_missing": "<code>{user_id}</code> не призначено власником",
+    "group_created": "<b>Створено групу</b> <code>{name}</code>",
+    "group_deleted": "<b>Видалено групу</b> <code>{name}</code>",
+    "group_missing": "Групу <code>{name}</code> не знайдено",
+    "group_item": "<b>{name}</b> — учасників: {users}, правил: {rules}",
+    "groups": "<b>Групи прав</b><br>",
+    "group_detail": "<b>Група {name}</b><br><b>Учасники</b><br>{users}<br><b>Правила</b><br>{rules}",
+    "member_exists": "<code>{user_id}</code> уже в групі <code>{name}</code>",
+    "member_missing": "<code>{user_id}</code> немає в групі <code>{name}</code>",
+    "member_added": "<code>{user_id}</code> <b>додано до</b> <code>{name}</code>",
+    "member_removed": "<code>{user_id}</code> <b>видалено з</b> <code>{name}</code>",
+    "duration": " на {duration}",
+    "group_rule": "<b>Правило додано:</b> sgroup <code>{target}</code> → {kind}/{rule}{until}",
+    "rule_added": "<b>Правило додано:</b> {kind} <code>{target}</code> → {type}/{rule}{until}",
+    "rule_removed": "<b>Правило видалено</b>",
+    "nothing_remove": "Видаляти нічого",
+    "rules_cleared": "<b>Правила очищено</b>",
+    "nothing_clear": "Очищати нічого",
+    "permissions": "<b>Права</b><br>",
+    "user_groups": "<br>Групи: <code>{groups}</code>",
+    "user_detail": "<b>Користувач <code>{user_id}</code></b><br>Права: <b>{permissions}</b><br>Ранг: <code>{rank}</code>{groups}",
+    "no_permission": "Немає прав.",
+    "revoked": "У <code>{user_id}</code> <b>відкликано</b> <code>{label}</code>",
+    "nothing_revoke": "Відкликати нічого",
+    "grant_failed": "<b>Не вдалося надати права:</b> <i>{error}</i>",
+    "granted": "<code>{user_id}</code> <b>надано</b> <code>{label}</code>",
+    "self_owner": "Цей користувач уже володіє акаунтом.",
+    "bad_group": "Назва групи: літери й цифри, до 32 символів.",
+    "no_groups": "Груп прав немає. Створити: {prefix}sgnew <назва>",
+    "bad_duration": "Термін: число + s/m/h/d/w або forever.",
+    "bad_rule": "Правило: command/назва або module/назва.",
+    "empty": "Наданих прав немає. Використай {prefix}perm <user_id> <роль>.",
+    "bad_label": "Невідоме право: {label}",
+    "no_owner_grant": "Права власника надаються через {prefix}owadd.",
+    "usage": "<code>{prefix}owadd &lt;user_id|reply&gt;</code> — Додати власника\n<code>{prefix}owrm &lt;user_id|reply&gt;</code> — Видалити власника\n<code>{prefix}owls</code> — Список власників\n<code>{prefix}sgnew &lt;name&gt;</code> — Створити групу прав\n<code>{prefix}sgls</code> — Список груп\n<code>{prefix}sg &lt;name&gt;</code> — Учасники та правила групи\n<code>{prefix}sgdel &lt;name&gt;</code> — Видалити групу\n<code>{prefix}sgadd &lt;name&gt; &lt;user_id|reply&gt;</code> — Додати учасника\n<code>{prefix}sgrm &lt;name&gt; &lt;user_id|reply&gt;</code> — Видалити учасника\n<code>{prefix}rule &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;command|module&gt;/&lt;name&gt; [expiry]</code> — Додати правило доступу\n<code>{prefix}rulerm &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;rule&gt;</code> — Видалити правило\n<code>{prefix}ruleclr &lt;user|chat|sgroup&gt; [target]</code> — Очистити правила\n<code>{prefix}perm &lt;user_id&gt; &lt;admin|trusted|everyone&gt; [remove]</code> — Надати або відкликати права\n<code>{prefix}perms</code> — Список прав\n<code>{prefix}whois &lt;user_id&gt;</code> — Права користувача",
+    "account_owner": "Власника акаунта не можна видалити."
+  },
+  "inline": {
+    "form": "Форма Hotaru",
+    "error": {
+      "title": "Помилка {code}",
+      "400": "Некоректний запит",
+      "403": "Немає доступу",
+      "404": "Не знайдено",
+      "500": "Внутрішня помилка"
     }
   }
 }

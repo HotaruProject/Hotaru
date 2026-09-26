@@ -64,9 +64,9 @@ class SecurityGate:
     def set_owner(self, owner_id: object) -> None:
         if owner_id is not None and not isinstance(owner_id, int):
             raise ValueError("owner id must be an integer")
-        self.owner_id = owner_id
         if self.access is not None:
             self.access.set_owner(owner_id)
+        self.owner_id = owner_id
 
     def set_access(self, access: AccessManager | None) -> None:
         self.access = access
@@ -118,6 +118,9 @@ class SecurityGate:
     def check(self, event: Any, *, transport: str, module_id: str | None = None, is_group: bool = False) -> AccessVerdict:
         principal = self.principal_of(event, transport=transport)
         policy = self._policies.get(module_id) if module_id else None
+        if module_id == 'accounts' and self.access is not None and self.access.accounts is not None:
+            if self.access.accounts.allows(principal.user_id, 'view') and self._rate_ok(principal, policy):
+                return AccessVerdict.ALLOW
         if self._privileged(principal):
             if not self._rate_ok(principal, policy, privileged=True):
                 return AccessVerdict.SILENT

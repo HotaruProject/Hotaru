@@ -8,7 +8,14 @@
     "cancel": "Cancel",
     "close": "Close",
     "back": "Back",
-    "unknown_error": "Unknown error"
+    "unknown_error": "Unknown error",
+    "confirm": "Confirm",
+    "none": "None",
+    "unknown": "Unknown",
+    "yes": "Yes",
+    "no": "No",
+    "seconds": "{n}s",
+    "invalid_value": "Invalid value"
   },
   "kernel": {
     "config": {
@@ -41,7 +48,9 @@
           "description": "Resume userbot"
         }
       },
-      "restarted": "Userbot successfully restarted in {took}"
+      "restarted": "Userbot successfully restarted in {took}",
+      "running": "Userbot is running.",
+      "already_running": "Userbot is already running."
     },
     "updater": {
       "unavailable": "Runtime unavailable",
@@ -71,10 +80,16 @@
       "ignored_toast": "Ignored",
       "updating": "Updating…",
       "notify_on": "Update notifications enabled",
-      "notify_off": "Update notifications disabled"
+      "notify_off": "Update notifications disabled",
+      "check_failed": "<b>Update check failed:</b> <i>{error}</i>",
+      "failed": "<b>Update failed:</b> <i>{error}</i>",
+      "conflicts": "<b>Local conflicts preserved:</b> <code>{path}</code>",
+      "button_update": "Update",
+      "button_ignore": "Ignore",
+      "confirm": "<br><br>Update now?"
     },
     "kernel": {
-      "runtime_unavailable": "Runtime unavailable",
+      "runtime_unavailable": "runtime unavailable",
       "modules_unavailable": "Modules unavailable",
       "modules_none": "Modules: none",
       "usage": "Usage: {usage}",
@@ -83,10 +98,18 @@
       "alias_not_found": "Alias not found: {alias}"
     },
     "capabilities": {
-      "mt": "Direct MTProto access",
-      "state": "Persistent state storage",
-      "files": "File system access",
-      "net": "Network access"
+      "mt": "MTProto access",
+      "state": "Persistent storage",
+      "files": "File access",
+      "net": "Network access",
+      "bot": "Bot access",
+      "modules": "Module management",
+      "loader": "Module loading",
+      "fetch": "File downloads",
+      "inline": "Inline bots",
+      "assets": "Assets storage",
+      "shell": "Shell commands",
+      "logs": "Logs"
     },
     "hotaru-kernel": {
       "description": "Hotaru kernel — system commands",
@@ -152,7 +175,7 @@
       "description": "Hotaru proxy and capability test module",
       "commands": {
         "tfstatus": {
-          "description": "MTProto ping"
+          "description": "Check MTProto connection"
         },
         "tfhistory": {
           "description": "History fetch test"
@@ -185,37 +208,205 @@
       "kernel_modules": "Kernel Modules",
       "user_modules": "User Modules",
       "commands": "Commands",
-      "capabilities": "Capabilities"
+      "capabilities": "Capabilities",
+      "unavailable": "<b>Runtime unavailable</b>",
+      "manager_unavailable": "<b>Module manager unavailable</b>",
+      "usage": "<b>Usage:</b> <code>{prefix}hlp</code> or <code>{prefix}hlp &lt;module&gt;</code>",
+      "disabled": "<b>Module disabled:</b> <code>{module}</code><br><i>Error: {error}</i>",
+      "missing": "<b>Module not found:</b> <code>{module}</code>"
     },
     "accounts": {
-      "description": "Multi-account management: register, authorize, spawn, stop accounts",
+      "description": "Account management",
       "commands": {
         "acc": {
-          "description": "Manage account: acc <#> <start|stop|on|off|del>"
+          "description": "Manage an account"
         },
         "acca": {
-          "description": "Authorize a new account: acca <#>"
+          "description": "Add or log in to an account"
         },
         "accs": {
-          "description": "List accounts"
+          "description": "Open account panel"
         }
       },
-      "usage": "usage: !acc <#> <start|stop|on|off|del>\n!acca — register this session as an account (number is assigned automatically)\n!accs — list accounts",
+      "usage": "<b>Accounts</b>\n<code>{prefix}acca [user_id]</code> · add via QR / Phone\n<code>{prefix}acca cancel</code> · cancel login\n<code>{prefix}accs [#]</code> · account panel\n<code>{prefix}acc [#]</code> · account panel\n<code>{prefix}acc 2 start|stop|restart|on|off|del</code>",
       "empty": "No accounts registered.",
       "no_self": "Failed to determine session user id.",
-      "not_registered": "Account #{n} is not registered."
+      "not_registered": "Account #{n} is not registered.",
+      "heading": "<b>Accounts</b> · {count}",
+      "item": "#{n} · {status}",
+      "account": "Account #{n}",
+      "detail": "<b>Account #{n}</b>\n<code>{uid}</code> · {status}\nAutostart: {enabled}",
+      "owner": "<b>This Owner account.</b>",
+      "on": "on",
+      "off": "off",
+      "changed": "Account list changed.",
+      "reopen": "Open {prefix}accs again.",
+      "remove_confirm": "<b>Remove account #{n}?</b>\nIt will stop. Session files are kept.",
+      "permissions": "<b>Permissions</b> · {account}\n<code>{uid}</code>\nAccount management only.",
+      "access_off": "Access is off.",
+      "cancelled": "cancelled.",
+      "cancel_denied": "Only the account owner can cancel login.",
+      "no_login": "No login in progress.",
+      "already_added": "Account #{n} already added.",
+      "result": "Account #{n} {status}.",
+      "button": {
+        "add": "Add account",
+        "refresh": "Refresh",
+        "close": "Close",
+        "permissions": "Permissions",
+        "start": "Start",
+        "stop": "Stop",
+        "restart": "Restart",
+        "login": "Log in",
+        "enable_start": "Enable & start",
+        "autostart_on": "Autostart on",
+        "autostart_off": "Autostart off",
+        "remove": "Remove",
+        "back": "Back",
+        "accounts": "‹ Accounts",
+        "grant_all": "Grant all",
+        "revoke": "Revoke all",
+        "cancel": "Cancel",
+        "qr": "QR",
+        "phone": "Phone",
+        "submit": "Submit",
+        "enter_phone": "Enter phone",
+        "enter_code": "Enter code",
+        "enter_password": "Enter password"
+      },
+      "right": {
+        "view": "View accounts",
+        "add": "Add accounts",
+        "start": "Start",
+        "stop": "Stop",
+        "restart": "Restart",
+        "autostart": "Autostart",
+        "remove": "Remove"
+      },
+      "status": {
+        "current": "current",
+        "running": "running",
+        "starting": "starting",
+        "login": "login needed",
+        "stopped": "stopped",
+        "disabled": "disabled",
+        "enabled": "enabled",
+        "removed": "removed"
+      },
+      "login": {
+        "saved": "<i>Check Saved Messages to log in.</i>",
+        "private": "<i>Check your private chat to log in.</i>",
+        "choose": "<b>Add account</b>\nChoose how to log in.",
+        "timeout": "Login timed out.",
+        "retry_timeout": "Login timed out. Run {prefix}acca again.",
+        "open_failed": "Could not open login. Try again.",
+        "added": "Account #{n} added. Starting…",
+        "running": "Account #{n} added and running.",
+        "starting": "Account #{n} added. Still starting; check {prefix}accs.",
+        "start_failed": "Account #{n} added. Could not start; open {prefix}accs.",
+        "expired": "This login has expired.",
+        "busy": "Login already in progress.",
+        "submitted": "Submitted.",
+        "input_expired": "This input has expired.",
+        "phone_format": "Use an international number, e.g. +12345678901.",
+        "code_format": "Enter the code from Telegram.",
+        "password_format": "Enter your 2FA password.",
+        "check_form": "Check the login form.",
+        "edit_input": "Edit the input and try again.",
+        "use_phone": "Use {phone}",
+        "submit_code": "Submit code",
+        "submit_password": "Submit password",
+        "continue": "Tap to continue.",
+        "checking": "Checking…",
+        "private_only": "Use your private login chat.",
+        "no_password": "No password requested.",
+        "scan": "Scan with the account you want to add.\nSettings → Devices → Link Desktop Device.",
+        "password_prompt": "<b>2FA password</b>\nEnter your password to finish login.",
+        "password_command": "2FA password needed. Send {prefix}acca password <password>.",
+        "wrong_password": "Wrong password. Try again.",
+        "phone_prompt": "<b>Phone number</b>\nUse international format, e.g. +12345678901.",
+        "phone_invalid": "Invalid phone number.",
+        "phone_banned": "This phone number is banned.",
+        "code_prompt": "<b>Login code</b>\nEnter the code sent by Telegram.",
+        "wrong_code": "Wrong code. Try again.",
+        "code_expired": "Code expired. Enter your phone number for a new code.",
+        "qr_prompt": "<b>QR login</b>\nScan the QR below with the account you want to add.",
+        "flood": "Try again in {seconds}s.",
+        "failed": "Login failed. Try again."
+      },
+      "error": {
+        "no_permission": "No permission.",
+        "owner_protected": "Owner is protected.",
+        "invalid_permission": "Invalid permission.",
+        "invalid_user": "Invalid user.",
+        "not_found": "Account #{n} not found.",
+        "current": "This account is running here.",
+        "invalid_lock": "Invalid account lock.",
+        "running": "Account is already running.",
+        "invalid_owner": "Invalid owner.",
+        "invalid_id": "Account ID and number must be positive.",
+        "wrong_session": "Session does not match the account.",
+        "number_taken": "Account #{n} is already taken.",
+        "stop_first": "Stop the account first.",
+        "disabled": "Account #{n} is disabled.",
+        "login_first": "Log in to this account first.",
+        "stopping": "Account #{n} is still stopping.",
+        "login_busy": "Login already in progress.",
+        "qr_failed": "Could not send QR.",
+        "phone_unavailable": "Phone login is unavailable for this number; try QR.",
+        "login_response": "Unexpected login response.",
+        "no_user": "Login returned no user.",
+        "wrong_account": "Wrong account; expected user {uid}.",
+        "unknown": "Could not complete this action."
+      }
     },
     "acl": {
-      "description": "Access control administration: grant, revoke, list user permissions",
+      "description": "Access control",
       "commands": {
         "perms": {
-          "description": "List permissions of all users"
+          "description": "List permissions"
         },
         "perm": {
-          "description": "Grant/revoke: perm <user_id> <owner|admin|trusted|everyone> [remove]"
+          "description": "Grant or revoke permission"
         },
         "whois": {
-          "description": "User permissions: whois <user_id>"
+          "description": "Show user permissions"
+        },
+        "owadd": {
+          "description": "Add owner"
+        },
+        "owrm": {
+          "description": "Remove owner"
+        },
+        "owls": {
+          "description": "List owners"
+        },
+        "sgnew": {
+          "description": "Create permission group"
+        },
+        "sgls": {
+          "description": "List groups"
+        },
+        "sg": {
+          "description": "Show group members and rules"
+        },
+        "sgdel": {
+          "description": "Delete group"
+        },
+        "sgadd": {
+          "description": "Add group member"
+        },
+        "sgrm": {
+          "description": "Remove group member"
+        },
+        "rule": {
+          "description": "Add access rule"
+        },
+        "rulerm": {
+          "description": "Remove rule"
+        },
+        "ruleclr": {
+          "description": "Clear rules"
         }
       },
       "usage": "usage:\n!owadd <user_id|reply> — grant owner\n!owrm <user_id|reply> — revoke owner\n!owls — list owners\n!sgnew <name> — create a security group\n!sgls — list groups\n!sg <name> — show group users and rules\n!sgdel <name> — delete a group\n!sgadd <name> <user_id|reply> — add a user to a group\n!sgrm <name> <user_id|reply> — remove a user from a group\n!rule <user|chat|sgroup> <target> <command|module>/<name> [expiry] — add a rule\n!rulerm — remove a rule\n!ruleclr — clear rules for a target\n!perm <user_id> <admin|trusted|everyone> [remove] — grant/revoke a permission\n!perms — list permissions\n!whois <user_id> — user permissions",
@@ -230,15 +421,107 @@
     },
     "lg": "log tail:\n{lines}",
     "commands": {
-      "lg": "view recent observatory log entries"
+      "lg": "Show recent log entries"
     },
     "settings": {
       "description": "Alias and prefix management",
       "commands": {
-        "alias": "Create alias",
-        "rmalias": "Remove alias",
-        "prefix": "Change prefix"
+        "alias": {
+          "description": "Create a command alias"
+        },
+        "rmalias": {
+          "description": "Remove a command alias"
+        },
+        "prefix": {
+          "description": "Change command prefix"
+        }
       }
+    },
+    "logger": {
+      "description": "Mirror logs to a topic",
+      "mirror_on": "Log mirroring enabled",
+      "mirror_off": "Log mirroring disabled",
+      "level_set": "Mirror level: {level}",
+      "status": "Topic: {topic} • errors: {failed}",
+      "status_error": " • last: {error}",
+      "no_observatory": "Observatory unavailable",
+      "no_entries": "No entries at this level",
+      "topic_unavailable": "Topic unavailable: {error}",
+      "logs_caption": "Hotaru logs: {count} entries (level {level})",
+      "logs_sent": "Logs sent: {count} entries",
+      "commands": {
+        "logs": {
+          "description": "Userbot logs with a file"
+        }
+      },
+      "pending": "pending"
+    },
+    "executor": {
+      "heading": "<b>Executor</b> | <code>{elapsed:.1f}ms</code>",
+      "exit_code": "Exit code: {returncode}",
+      "running": "Running...",
+      "usage_sh": "<b>Usage:</b> <code>{prefix}sh &lt;command&gt;</code>",
+      "usage_py": "<b>Usage:</b> <code>{prefix}py &lt;code&gt;</code> or reply to code; -so hides output",
+      "cancelled": "Execution cancelled",
+      "done": "Done ✓",
+      "kill_reply": "<b>Reply to a running py/sh output message to kill it.</b>",
+      "killed": "<b>Process killed!</b>",
+      "no_process": "<b>No active process found for this message.</b>",
+      "section": {
+        "code": "Code",
+        "command": "Command",
+        "output": "Output",
+        "result": "Result",
+        "return": "Return value",
+        "traceback": "Traceback"
+      },
+      "description": "Run Python and shell commands",
+      "commands": {
+        "py": {
+          "description": "Run Python code"
+        },
+        "sh": {
+          "description": "Run a shell command"
+        },
+        "kill": {
+          "description": "Stop a running command"
+        }
+      }
+    },
+    "catalyst": {
+      "description": "Module management",
+      "commands": {
+        "ld": {
+          "description": "Load a module"
+        },
+        "ul": {
+          "description": "Unload a module"
+        },
+        "rl": {
+          "description": "Reload a module"
+        },
+        "ex": {
+          "description": "Export a module"
+        },
+        "rs": {
+          "description": "Reset module data"
+        },
+        "resetdb": {
+          "description": "Reset module data"
+        }
+      }
+    },
+    "capability_details": {
+      "mt": "full userbot MTProto access (messages, media, dialogs, chats, channels, contacts) with account security and payment operations blocked",
+      "files": "read and write files inside the module workspace",
+      "net": "outbound HTTP(S) requests to the internet; private/internal targets and denied hosts are blocked",
+      "state": "persistent key-value state in the module namespace",
+      "inline": "query and interact with inline bots",
+      "modules": "load, unload, reload, list, and inspect installed modules; hashes and manifest info",
+      "assets": "access to hidden assets storage",
+      "shell": "developer shell commands in the module workspace with timeout and output limits",
+      "logs": "write structured entries to the observatory log; always granted",
+      "fetch": "read-only access to messages, entities and reply resolution; always granted"
     }
   },
   "commands": {
@@ -254,7 +537,11 @@
       "description": "Show or change language",
       "usage": "{prefix}lang [language]",
       "invalid": "Unsupported language: {language}",
-      "changed": "Language changed to {language}"
+      "changed": "Language changed to {language}",
+      "unavailable": "Runtime unavailable",
+      "lexicon_unavailable": "Translation lexicon unavailable",
+      "languages_unavailable": "Translation languages unavailable",
+      "current": "Current: {language}"
     }
   },
   "languages": {
@@ -267,23 +554,169 @@
   "inline_commands_hint": "Pick a command — type @<bot> and its name in any chat",
   "settings": {
     "runtime_unavailable": "Runtime unavailable",
-    "usage_alias": "Usage: !alias <alias> <command>",
-    "alias_invalid": "Alias: 1-32 chars, a-z, 0-9 and _ only",
-    "alias_exists": "Such command already exists: {alias}",
+    "usage_alias": "Usage: {prefix}alias <alias> <command>",
+    "alias_invalid": "Alias: 1–32 characters, a-z, 0-9 and _ only.",
+    "alias_exists": "Command already exists: {alias}",
     "command_not_found": "Command not found: {command}\nAvailable: {known}",
-    "alias_taken": "Alias already taken: {alias} -> {command}. Remove it first via !rmalias {alias}",
+    "alias_taken": "Alias is taken: {alias} → {command}. Remove it with {prefix}rmalias {alias}.",
     "alias_set": "Alias set: {alias} → {command}",
-    "usage_rmalias": "Usage: !rmalias <alias>",
+    "usage_rmalias": "Usage: {prefix}rmalias <alias>",
     "alias_removed": "Alias removed: {alias}",
     "alias_not_found": "Alias not found: {alias}",
-    "prefix_current": "Current prefix: {prefix}. Change: !prefix <char>",
-    "prefix_invalid": "Prefix must be a single non-whitespace character",
+    "prefix_current": "Current prefix: {prefix}. Change: {prefix}prefix <character>",
+    "prefix_invalid": "Prefix must be one non-whitespace character.",
     "prefix_set": "Prefix changed to {prefix}",
     "description": "Alias and prefix management",
     "commands": {
-      "alias": "Create alias",
-      "rmalias": "Remove alias",
-      "prefix": "Change prefix"
+      "alias": "Create a command alias",
+      "rmalias": "Remove a command alias",
+      "prefix": "Change command prefix"
+    }
+  },
+  "runtime": {
+    "modules_unavailable": "modules: unavailable",
+    "modules_empty": "modules: none",
+    "modules": "modules:\n",
+    "module_unavailable": "module unavailable",
+    "module_missing": "module not found: {module_id}",
+    "module_info": "module: {module}\nversion: {version}\ncommands: {commands}\ncapabilities: {capabilities}\ndescription: {description}",
+    "help_unavailable": "help unavailable",
+    "page_unavailable": "help page unavailable",
+    "catalog": "catalog: ",
+    "next": "Next",
+    "bot_unavailable": "inline bot: unavailable",
+    "bot_failed": "inline bot provisioning failed: {error}",
+    "protected": "kernel module is protected: {module_id}",
+    "unload_failed": "unload failed: {error}",
+    "not_ready": "runtime services are not ready",
+    "purged": "unloaded permanently: {module} (database purged)",
+    "unloaded": "unloaded: {module} (database preserved)",
+    "reset_failed": "database reset, but reload failed: {error}",
+    "reset": "database reset: {module_id}",
+    "id_mismatch": "module id mismatch: {module_id}",
+    "downgrade": "reload blocked: version downgrade {old} to {new}",
+    "rollback_failed": "reload failed: {error}; rollback failed",
+    "rolled_back": "reload failed: {error}; previous version restored",
+    "reloaded": "reloaded: {module_id}",
+    "exported": "exported: {file_name}",
+    "invalid_request": "Invalid request",
+    "cancelled": "Cancelled",
+    "module_cancelled": "cancelled: {module_id}",
+    "source_missing": "Source missing",
+    "activation_failed": "Activation failed",
+    "module_loaded": "Module loaded",
+    "loaded": "loaded: {module_id} {version}",
+    "backup_failed": "backup failed: {error}",
+    "backup_created": "backup created: {name}",
+    "backups_empty": "backups: none",
+    "backups": "backups:\n",
+    "backup_unavailable": "backup unavailable",
+    "backup_invalid": "backup invalid: {error}",
+    "backup_valid": "backup valid: {count} files",
+    "restore_confirm": "confirm restore",
+    "invalid_module": "Invalid module",
+    "invalid_page": "Invalid help page",
+    "invalid_restore": "Invalid restore request",
+    "restore_failed": "Restore failed",
+    "restore_error": "restore failed: {error}",
+    "restore_done": "Restore completed",
+    "callback_failed": "Callback failed",
+    "callback_denied": "Button expired or unavailable.",
+    "load_error": "load failed: {error}: {detail}",
+    "load_failed": "load failed: {error}",
+    "load_screen": "load failed: {module_id} {version}\n{screen}",
+    "updated": "updated: {module_id} {version}",
+    "caps_request": "module {module_id} v{version} requests capabilities:",
+    "caps_retry": "re-run the load command to confirm",
+    "usage_mi": "Usage: {prefix}mi <module>",
+    "usage_help": "Usage: {prefix}hlp [page] | {prefix}hlp <module>",
+    "usage_reload": "Usage: {prefix}rl <module> [force]",
+    "usage_unload": "Usage: {prefix}ul [-c] <module>",
+    "usage_reset": "Usage: {prefix}rs <module>",
+    "usage_export": "Usage: {prefix}ex <module>",
+    "usage_backup": "Usage: {prefix}bk | {prefix}bk list | {prefix}bk test <archive> | {prefix}bk restore <archive>",
+    "usage_load": "Usage: {prefix}ld <raw-url> or reply to a .hmod file",
+    "bot_status": "Inline bot: @{name} ({status})",
+    "health": "health: {status}",
+    "last_error": "last_error: {error}",
+    "running_commands": "running_commands: {count}",
+    "connection": "connection: {status} reconnects={count} mt={mt} bot={bot}",
+    "health_ready": "ready",
+    "health_degraded": "degraded",
+    "health_stopped": "stopped",
+    "health_closed": "closed",
+    "health_new": "starting",
+    "service": {
+      "runtime": "Runtime",
+      "kernel": "Kernel",
+      "state": "Storage",
+      "capabilities": "Capabilities",
+      "modules": "Modules",
+      "responses": "Responses",
+      "callbacks": "Buttons",
+      "observatory": "Logs",
+      "backups": "Backups",
+      "tasks": "Tasks",
+      "event_router": "Events"
+    },
+    "file_missing": "module file is missing",
+    "file_document": "module file must be a document",
+    "timeout": "Command {command} timed out after {seconds}s.",
+    "unknown_capability": "unknown capability (denied)"
+  },
+  "acl": {
+    "owners": "<b>Owners</b><br>",
+    "account": " · account",
+    "protected": " · protected",
+    "failed": "<b>Failed:</b> <i>{error}</i>",
+    "owner_added": "<b>Granted</b> owner to <code>{user_id}</code>",
+    "owner_exists": "<code>{user_id}</code> is already an owner",
+    "owner_removed": "<b>Revoked</b> owner from <code>{user_id}</code>",
+    "owner_missing": "<code>{user_id}</code> is not an extra owner",
+    "group_created": "<b>Created group</b> <code>{name}</code>",
+    "group_deleted": "<b>Deleted group</b> <code>{name}</code>",
+    "group_missing": "Group <code>{name}</code> not found",
+    "group_item": "<b>{name}</b> — {users} users, {rules} rules",
+    "groups": "<b>Security groups</b><br>",
+    "group_detail": "<b>Group {name}</b><br><b>Users</b><br>{users}<br><b>Rules</b><br>{rules}",
+    "member_exists": "<code>{user_id}</code> is already in <code>{name}</code>",
+    "member_missing": "<code>{user_id}</code> is not in <code>{name}</code>",
+    "member_added": "<b>Added</b> <code>{user_id}</code> to <code>{name}</code>",
+    "member_removed": "<b>Removed</b> <code>{user_id}</code> from <code>{name}</code>",
+    "duration": " for {duration}",
+    "group_rule": "<b>Rule added:</b> sgroup <code>{target}</code> → {kind}/{rule}{until}",
+    "rule_added": "<b>Rule added:</b> {kind} <code>{target}</code> → {type}/{rule}{until}",
+    "rule_removed": "<b>Rule removed</b>",
+    "nothing_remove": "nothing to remove",
+    "rules_cleared": "<b>Rules cleared</b>",
+    "nothing_clear": "nothing to clear",
+    "permissions": "<b>Permissions</b><br>",
+    "user_groups": "<br>groups: <code>{groups}</code>",
+    "user_detail": "<b>User <code>{user_id}</code></b><br>permissions: <b>{permissions}</b><br>rank: <code>{rank}</code>{groups}",
+    "no_permission": "No permission.",
+    "revoked": "<b>Revoked</b> <code>{label}</code> from <code>{user_id}</code>",
+    "nothing_revoke": "nothing to revoke",
+    "grant_failed": "<b>Grant failed:</b> <i>{error}</i>",
+    "granted": "<b>Granted</b> <code>{label}</code> to <code>{user_id}</code>",
+    "self_owner": "This user already owns the account.",
+    "bad_group": "Group name: letters and digits, up to 32 characters.",
+    "no_groups": "No permission groups. Create one: {prefix}sgnew <name>",
+    "bad_duration": "Duration: a number + s/m/h/d/w, or forever.",
+    "bad_rule": "Rule: command/name or module/name.",
+    "empty": "No granted permissions. Use {prefix}perm <user_id> <role>.",
+    "bad_label": "Unknown permission: {label}",
+    "no_owner_grant": "Use {prefix}owadd to grant owner access.",
+    "usage": "<code>{prefix}owadd &lt;user_id|reply&gt;</code> — Add owner\n<code>{prefix}owrm &lt;user_id|reply&gt;</code> — Remove owner\n<code>{prefix}owls</code> — List owners\n<code>{prefix}sgnew &lt;name&gt;</code> — Create permission group\n<code>{prefix}sgls</code> — List groups\n<code>{prefix}sg &lt;name&gt;</code> — Show group members and rules\n<code>{prefix}sgdel &lt;name&gt;</code> — Delete group\n<code>{prefix}sgadd &lt;name&gt; &lt;user_id|reply&gt;</code> — Add group member\n<code>{prefix}sgrm &lt;name&gt; &lt;user_id|reply&gt;</code> — Remove group member\n<code>{prefix}rule &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;command|module&gt;/&lt;name&gt; [expiry]</code> — Add access rule\n<code>{prefix}rulerm &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;rule&gt;</code> — Remove rule\n<code>{prefix}ruleclr &lt;user|chat|sgroup&gt; [target]</code> — Clear rules\n<code>{prefix}perm &lt;user_id&gt; &lt;admin|trusted|everyone&gt; [remove]</code> — Grant or revoke permission\n<code>{prefix}perms</code> — List permissions\n<code>{prefix}whois &lt;user_id&gt;</code> — Show user permissions",
+    "account_owner": "The account owner cannot be removed."
+  },
+  "inline": {
+    "form": "Hotaru form",
+    "error": {
+      "title": "Error {code}",
+      "400": "Bad request",
+      "403": "Forbidden",
+      "404": "Not found",
+      "500": "Internal error"
     }
   }
 }

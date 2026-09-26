@@ -3,119 +3,1114 @@ HOTARU = {
     "version": "2.0.0",
     "commands": ["acc", "acca", "accs"],
     "capabilities": ["mt"],
+    "rise": "sunrise",
+    "fade": "sundown",
 }
 
-from typing import Any, List
+import asyncio
+import base64
+import html
+import importlib
+import io
+import logging
+import os
+import re
+import secrets
+import struct
+import tempfile
+import time
+import zlib
+from functools import partial
+from pathlib import Path
+from types import SimpleNamespace
+from typing import Any, Awaitable, Callable, Dict, Optional, cast
+
+from relay.firewall import trusted_scope
+
+with trusted_scope():
+    from goygram import GoyGram, Session
+    from goygram.errors import FloodWaitError, RPCError, rpc_error
+    from goygram.sugar import extract_sent_message
+    from goygram.types import InlineObj
+    from hotaru.accounts import AccountError, AccountLock, AccountManager, AccountProfile, account_config, user_vault_path
+    from hotaru.callbacks import CallbackBinding, CallbackDenied
+    from hotaru.login import save_vault
+    from relay.files import document, put
+    from relay.inline_tl import answer_tl
+    from relay.rpc import delete_chat_msg
 
 
-import html as _html
+RIGHTS = ('view', 'add', 'start', 'stop', 'restart', 'autostart', 'remove')
+ACTIONS = {'list': 'view', 'close': 'view', 'login': 'add', 'toggle': 'autostart', 'on': 'autostart', 'off': 'autostart', 'delete': 'remove', 'del': 'remove'}
 
-def _escape(value: Any) -> Any:
-    return _html.escape(str(value), quote=False)
 
-def _usage(ctx: Any) -> Any:
-    return ctx.t(
-        "accounts.usage",
-        "usage: !acc <#> <start|stop|on|off|del>\n!acca — зарегистрировать аккаунт (номер выдаётся автоматически)\n!accs — список",
-    )
+class AccountAccess:
+    def __init__(self, manager: AccountManager, owner: int) -> None:
+        self.manager = manager
+        self.owner = owner
+        with manager.state.connection:
+            manager.state.connection.execute('CREATE TABLE IF NOT EXISTS account_access (user_id INTEGER NOT NULL, action TEXT NOT NULL, allowed INTEGER NOT NULL, PRIMARY KEY (user_id, action))')
+
+    @property
+    def root(self) -> int:
+        return int(self.manager.state.get_setting('account-root') or self.owner)
+
+    def admin(self, uid: int | None) -> bool:
+        return uid is not None and uid > 0 and uid == self.root
+
+    def rights(self, uid: int) -> set[str]:
+        if self.admin(uid):
+            return set(RIGHTS)
+        rights: set[str] = {'view'} if self.manager.find_by_user(uid) is not None else set()
+        for action, allowed in self.manager.state.connection.execute('SELECT action, allowed FROM account_access WHERE user_id = ?', (uid,)):
+            if allowed:
+                rights.add(action)
+            else:
+                rights.discard(action)
+        return rights
+
+    def allows(self, uid: int | None, action: str) -> bool:
+        if uid is None or uid <= 0:
+            return False
+        rights = self.rights(uid)
+        return 'view' in rights and ACTIONS.get(action, action) in rights
+
+    def check(self, uid: int, action: str, target: int | None = None) -> None:
+        if not self.allows(uid, action):
+            raise AccountError('no_permission')
+        if target is not None and (target == self.root or target in self.manager.owners(uid)):
+            raise AccountError('owner_protected')
+
+    def users(self) -> list[int]:
+        users = {profile.user_id for profile in self.manager.items()}
+        users.update(int(row[0]) for row in self.manager.state.connection.execute('SELECT DISTINCT user_id FROM account_access'))
+        return sorted(users - {self.root})
+
+    def set(self, actor: int, uid: int, action: str, allowed: bool) -> None:
+        if not self.admin(actor) or uid == self.root:
+            raise AccountError('no_permission')
+        if not 0 < uid < 1 << 63 or action not in RIGHTS:
+            raise AccountError('invalid_permission')
+        with self.manager.state.connection:
+            self.manager.state.connection.execute('INSERT INTO account_access VALUES (?, ?, ?) ON CONFLICT(user_id, action) DO UPDATE SET allowed = excluded.allowed', (uid, action, int(allowed)))
+            if allowed and action != 'view':
+                self.manager.state.connection.execute("INSERT INTO account_access VALUES (?, 'view', 1) ON CONFLICT(user_id, action) DO UPDATE SET allowed = 1", (uid,))
+
+    def set_all(self, actor: int, uid: int, allowed: bool) -> None:
+        if not self.admin(actor) or uid == self.root:
+            raise AccountError('no_permission')
+        if not 0 < uid < 1 << 63:
+            raise AccountError('invalid_permission')
+        with self.manager.state.connection:
+            self.manager.state.connection.executemany('INSERT INTO account_access VALUES (?, ?, ?) ON CONFLICT(user_id, action) DO UPDATE SET allowed = excluded.allowed', ((uid, action, int(allowed)) for action in RIGHTS))
+
+    def revoke(self, actor: int, uid: int) -> None:
+        self.set_all(actor, uid, False)
+
+
+PAGE_SIZE = 8
+
+
+def columns(buttons: list[Any]) -> list[Any]:
+    return [buttons[i:i + 2] for i in range(0, len(buttons), 2)]
+
+
+class AccountForm:
+    def __init__(self, runtime: Any, actor: int | None = None) -> None:
+        self.runtime = runtime
+        uid = actor or runtime.app.session.self_id
+        self.source = SimpleNamespace(id=0, message_id=0, chat_id=uid, from_id=uid, src='mt')
+        self.nonce: str | None = None
+        self.mid: Any = None
+
+    async def send(self, text: str, buttons: Any) -> None:
+        with trusted_scope():
+            sent = await self.runtime._send_form(self.source, text, buttons, {'delete_source': False})
+        self.nonce = self.source._hotaru_inline_form_id[7:]
+        self.source.id = sent['id']
+        if self.mid is not None:
+            self.runtime._form_inline_ids[self.nonce] = self.mid
+
+    async def edit(self, text: str, buttons: Any = None) -> None:
+        from hotaru.runtime import InputContext
+        ctx = InputContext(self.runtime, self.source, None, '', None)
+        ctx.form_nonce = self.nonce
+        with trusted_scope():
+            await ctx.edit(text, buttons=buttons or [])
+
+    def bind(self, ctx: Any) -> None:
+        mid = getattr(ctx, 'inline_message_id', None)
+        if mid is not None:
+            self.mid = mid
+            if self.nonce is not None:
+                self.runtime._form_inline_ids[self.nonce] = mid
+
+    async def delete(self) -> None:
+        if self.source.id:
+            with trusted_scope():
+                await delete_chat_msg(self.runtime.app, self.source.chat_id, self.source.id)
+        for name in ('_inline_forms', '_form_inline_ids', '_form_module_ids', '_form_chosen'):
+            values = getattr(self.runtime, name, None)
+            if values is not None:
+                values.pop(self.nonce, None)
+
+
+class AccountUI:
+    def __init__(self, runtime: Any) -> None:
+        self.runtime = runtime
+        self.access = AccountAccess(runtime.account_manager, int(runtime.app.session.self_id or 0))
+        self.gate = asyncio.Lock()
+        self.key = secrets.token_urlsafe(8)
+        self.views: dict[str, str] = {}
+        self.forms: dict[str, AccountForm] = {}
+
+    def t(self, key: str, **params: Any) -> str:
+        return self.runtime.t('kernel.accounts.' + key, **params)
+
+    def error(self, exc: Exception) -> str:
+        if isinstance(exc, AccountError):
+            key = 'error.' + exc.code
+            text = self.t(key, **exc.params)
+            if text != 'kernel.accounts.' + key:
+                return text
+        return self.t('error.unknown')
+
+    def button(self, text: str, action: str, *, actor: int | None = None, **data: Any) -> dict[str, Any]:
+        actor = actor or int(self.runtime.app.session.self_id)
+        handle = self.runtime.callbacks.issue_module(
+            'accounts', 'panel', CallbackBinding(actor, None, 0),
+            {'action': action, 'key': self.key, 'actor': actor, **data},
+        )
+        return {'text': text, 'callback_data': handle}
+
+    def status(self, profile: Any) -> str:
+        manager = self.runtime.account_manager
+        number = profile.account_number
+        if profile.user_id == self.runtime.app.session.self_id:
+            return 'current'
+        if manager.running_pid(number) is not None:
+            return 'running' if manager.ready(number) else 'starting'
+        if not manager.vault_ready(number):
+            return 'login'
+        return 'stopped' if profile.enabled else 'disabled'
+
+    def page(self, page: int = 0, *, actor: int | None = None) -> tuple[str, list[Any]]:
+        actor = actor or int(self.runtime.app.session.self_id)
+        button = partial(self.button, actor=actor)
+        items = self.runtime.account_manager.items()
+        last = max(0, (len(items) - 1) // PAGE_SIZE)
+        page = min(max(page, 0), last)
+        buttons: list[Any] = []
+        for profile in items[page * PAGE_SIZE:(page + 1) * PAGE_SIZE]:
+            label = self.t('item', n=profile.account_number, status=self.t('status.' + self.status(profile)))
+            buttons.append(button(label, 'view', number=profile.account_number, uid=profile.user_id, page=page))
+        rows = columns(buttons)
+        nav: list[Any] = []
+        if page:
+            nav.append(button('‹', 'list', page=page - 1))
+        if page < last:
+            nav.append(button('›', 'list', page=page + 1))
+        if nav:
+            rows.append(nav)
+        actions: list[Any] = []
+        if self.access.allows(actor, 'add'):
+            actions.append(button(self.t('button.add'), 'add', page=page))
+        actions.extend([button(self.t('button.refresh'), 'list', page=page), button(self.t('button.close'), 'close')])
+        rows.extend(columns(actions))
+        return self.t('heading', count=len(items)), rows
+
+    def detail(self, number: int, page: int = 0, note: str = '', *, actor: int | None = None) -> tuple[str, list[Any]]:
+        actor = actor or int(self.runtime.app.session.self_id)
+        button = partial(self.button, actor=actor)
+        profile = self.runtime.account_manager.profile(number)
+        if profile is None:
+            return self.page(page, actor=actor)
+        status = self.status(profile)
+        text = self.t('detail', n=number, uid=profile.user_id, status=self.t('status.' + status), enabled=self.t('on' if profile.enabled else 'off'))
+        if note:
+            text += '\n\n' + note
+        data = {'number': number, 'uid': profile.user_id, 'page': page}
+        buttons: list[Any] = []
+        if profile.user_id == self.access.root or not self.runtime.account_manager.manageable(profile.user_id):
+            text += '\n' + self.t('owner')
+        elif status != 'current':
+            actions: list[tuple[str, str]] = []
+            if status in {'running', 'starting'}:
+                actions = [('stop', 'stop'), ('restart', 'restart')]
+            elif status == 'login':
+                actions = [('login', 'login')]
+            elif profile.enabled or self.access.allows(actor, 'autostart'):
+                actions = [('start' if profile.enabled else 'enable_start', 'start')]
+            buttons.extend(button(self.t('button.' + label), action, **data) for label, action in actions if self.access.allows(actor, action))
+            if self.access.allows(actor, 'autostart'):
+                buttons.append(button(self.t('button.autostart_off' if profile.enabled else 'button.autostart_on'), 'toggle', enabled=not profile.enabled, **data))
+            if self.access.allows(actor, 'remove'):
+                buttons.append(button(self.t('button.remove'), 'remove', **data))
+        if self.access.admin(actor) and profile.user_id != self.access.root:
+            buttons.append(button(self.t('button.permissions'), 'rights', user=profile.user_id, **data))
+        buttons.append(button(self.t('button.refresh'), 'view', **data))
+        rows = columns(buttons)
+        rows.append([button(self.t('button.accounts'), 'list', page=page), button(self.t('button.close'), 'close')])
+        return text, rows
+
+    def rights(self, actor: int, uid: int, page: int = 0) -> tuple[str, list[Any]]:
+        rights = self.access.rights(uid)
+        profile = self.runtime.account_manager.find_by_user(uid)
+        if profile is None:
+            return self.page(page, actor=actor)
+        data = {'number': profile.account_number, 'uid': uid, 'page': page}
+        button = partial(self.button, actor=actor, user=uid, **data)
+        buttons = [button(('✓ ' if action in rights else '· ') + self.t('right.' + action), 'grant', right=action, enabled=action not in rights) for action in RIGHTS]
+        rows = columns(buttons)
+        rows.append([button(self.t('button.grant_all'), 'grant_all'), button(self.t('button.revoke'), 'revoke')])
+        back = self.button(self.t('button.back'), 'view', actor=actor, **data)
+        rows.append([back, self.button(self.t('button.close'), 'close', actor=actor)])
+        account = self.t('account', n=profile.account_number)
+        text = self.t('permissions', account=account, uid=uid)
+        if 'view' not in rights:
+            text += '\n' + self.t('access_off')
+        return text, rows
+
+    def accepts(self, ctx: Any) -> bool:
+        data = getattr(ctx, 'data', '')
+        if isinstance(data, bytes):
+            data = data.decode('utf-8', 'replace')
+        if not isinstance(data, str):
+            return False
+        actor = getattr(ctx, 'from_id', None)
+        if not isinstance(actor, int) or not self.access.allows(actor, 'view'):
+            return False
+        try:
+            value = self.runtime.callbacks.store.peek(data, CallbackBinding(actor, getattr(ctx, 'chat_id', None), None))
+        except CallbackDenied:
+            return False
+        return value.get('module') == 'accounts' and value.get('action_id') == 'panel'
+
+    async def open(self, ctx: Any, number: int | None = None) -> None:
+        actor = ctx.message.from_id
+        if not self.access.allows(actor, 'view'):
+            await ctx.respond(self.t('error.no_permission'))
+            return
+        text, rows = self.page(actor=actor) if number is None else self.detail(number, actor=actor)
+        form = AccountForm(self.runtime, actor)
+        form.source.chat_id = ctx.message.chat_id
+        await form.send(text, rows)
+        assert form.nonce is not None
+        self.forms[form.nonce] = form
+        while len(self.forms) > 128:
+            self.forms.pop(next(iter(self.forms)))
+        if actor == self.runtime.app.session.self_id:
+            await ctx._delete_source()
+
+    def find_form(self, ctx: Any) -> AccountForm | None:
+        mid = getattr(ctx, 'inline_message_id', None)
+        data = getattr(ctx, 'data', '')
+        if isinstance(data, bytes):
+            data = data.decode('utf-8', 'replace')
+        ids: dict[str, Any] = getattr(self.runtime, '_form_inline_ids', None) or {}
+        forms: dict[str, tuple[str, list[list[dict[str, Any]]], bool]] = getattr(self.runtime, '_inline_forms', None) or {}
+        for nonce, form in self.forms.items():
+            if mid is not None and mid == ids.get(nonce):
+                form.bind(ctx)
+                return form
+            rows = forms.get(nonce, ('', [], False))[1]
+            if any(button.get('callback_data') == data for row in rows for button in row):
+                form.bind(ctx)
+                return form
+        return None
+
+    async def edit(self, ctx: Any, text: str, rows: list[Any]) -> None:
+        form = self.find_form(ctx)
+        if form is None:
+            await ctx.edit(text, buttons=rows)
+        else:
+            await form.edit(text, rows)
+
+    async def callback(self, ctx: Any, data: dict[str, Any]) -> None:
+        if ctx.from_id != data.get('actor', self.runtime.app.session.self_id) or not self.access.allows(ctx.from_id, 'view'):
+            await ctx.answer(self.t('error.no_permission'), alert=True)
+            return
+        if data.get('key') != self.key:
+            await ctx.answer(self.t('reopen', prefix=self.runtime.config.prefix), alert=True)
+            return
+        action = data.get('action')
+        if action in {'method', 'back', 'cancel', 'submit'}:
+            await self.runtime.account_login.callback(ctx, data)
+            return
+        key = str(getattr(ctx, 'inline_message_id', None) or (getattr(ctx, 'chat_id', None), getattr(ctx, 'msg_id', None)))
+        self.views[key] = secrets.token_urlsafe(8)
+        ctx.account_view = (key, self.views[key])
+        while len(self.views) > 128:
+            self.views.pop(next(iter(self.views)))
+        await ctx.answer()
+        async with self.gate:
+            with trusted_scope():
+                try:
+                    await self.change(ctx, data)
+                except AccountError as exc:
+                    await ctx.answer(self.error(exc), alert=True)
+
+    async def watch(self, ctx: Any, number: int, uid: int, pid: int, page: int) -> None:
+        key, version = ctx.account_view
+        try:
+            await self.runtime.account_manager.wait_ready(number, pid)
+            profile = self.runtime.account_manager.profile(number)
+            if self.views.get(key) == version and profile is not None and profile.user_id == uid:
+                text, rows = self.detail(number, page, actor=ctx.from_id)
+                if not self.access.allows(ctx.from_id, 'view'):
+                    return
+                await self.edit(ctx, text, rows)
+        except Exception:
+            return
+
+    async def change(self, ctx: Any, data: dict[str, Any]) -> None:
+        action = str(data.get('action', ''))
+        actor = ctx.from_id
+        button = partial(self.button, actor=actor)
+        number, page = int(data.get('number', 0)), int(data.get('page', 0))
+        manager = self.runtime.account_manager
+        if number and data.get('uid') is not None:
+            profile = manager.profile(number)
+            if profile is None or profile.user_id != data['uid']:
+                text, rows = self.page(page, actor=actor)
+                await self.edit(ctx, self.t('changed') + '\n\n' + text, rows)
+                return
+        if action in {'rights', 'grant', 'grant_all', 'revoke'}:
+            if not self.access.admin(actor):
+                raise AccountError('no_permission')
+            uid = int(data.get('user', 0))
+            if not 0 < uid < 1 << 63 or uid == self.access.root or manager.find_by_user(uid) is None:
+                raise AccountError('invalid_user')
+            if action == 'grant':
+                self.access.set(actor, uid, str(data.get('right', '')), bool(data.get('enabled')))
+            elif action == 'grant_all':
+                self.access.set_all(actor, uid, True)
+            elif action == 'revoke':
+                self.access.revoke(actor, uid)
+            if uid == self.runtime.account_login.actor and not self.access.allows(uid, 'add'):
+                await self.runtime.account_login.cancel()
+            text, rows = self.rights(actor, uid, page)
+            await self.edit(ctx, text, rows)
+            return
+        self.access.check(actor, action)
+        if action == 'close':
+            form = self.find_form(ctx)
+            if form is None:
+                await ctx.delete()
+            else:
+                await form.delete()
+                if form.nonce is not None:
+                    self.forms.pop(form.nonce, None)
+            return
+        if action in {'add', 'login'}:
+            profile = manager.profile(number) if action == 'login' else None
+            if profile is not None:
+                self.access.check(actor, 'add', profile.user_id)
+                manager.check(number)
+            if action == 'login' and profile is None:
+                raise AccountError('not_found', n=number)
+            form = self.find_form(ctx)
+            if form is not None and form.source.chat_id == actor:
+                await self.runtime.account_login.begin(profile.user_id if profile else None, actor=actor, form=form, page=page)
+            else:
+                await self.runtime.account_login.begin(profile.user_id if profile else None, actor=actor)
+                await self.edit(ctx, self.runtime.account_login.hint(actor), [])
+            return
+        if action == 'list':
+            text, rows = self.page(page, actor=actor)
+        elif action == 'view':
+            text, rows = self.detail(number, page, actor=actor)
+        else:
+            profile = manager.profile(number)
+            note = ''
+            try:
+                if profile is None:
+                    raise AccountError('not_found', n=number)
+                self.access.check(actor, action, profile.user_id)
+                manager.check(number)
+                if profile.user_id == self.runtime.app.session.self_id:
+                    raise AccountError('current')
+                if action == 'remove':
+                    await self.edit(ctx, self.t('remove_confirm', n=number), [[
+                        button(self.t('button.remove'), 'delete', number=number, uid=profile.user_id, page=page),
+                        button(self.t('button.back'), 'view', number=number, uid=profile.user_id, page=page),
+                    ]])
+                    return
+                if action in {'stop', 'restart', 'delete'}:
+                    await manager.halt(number)
+                    manager.check(number, profile.user_id)
+                    self.access.check(actor, action, profile.user_id)
+                if action in {'start', 'restart'}:
+                    if not profile.enabled:
+                        self.access.check(actor, 'autostart', profile.user_id)
+                        manager.set_enabled(number, True)
+                    pid = manager.spawn(number)
+                    self.runtime.tasks.spawn('accounts', self.watch(ctx, number, profile.user_id, pid, page), name=f'hotaru:account-panel:{number}')
+                elif action == 'toggle':
+                    manager.set_enabled(number, bool(data['enabled']))
+                elif action == 'delete':
+                    manager.unregister(number)
+            except AccountError as exc:
+                note = self.error(exc)
+            text, rows = self.detail(number, page, note, actor=actor)
+        await self.edit(ctx, text, rows)
+
+
+LOGIN_TIMEOUT = 300.0
+RPC_TIMEOUT = 30.0
+log = logging.getLogger(__name__)
+
+
+def qr_png(token: bytes) -> bytes:
+    qr = importlib.import_module('qrcode').QRCode(border=4)
+    qr.add_data('tg://login?token=' + base64.urlsafe_b64encode(token).decode().rstrip('='))
+    rows = cast('list[list[bool]]', qr.get_matrix())
+    size = len(rows) * 8
+    data = b''.join((b'\x00' + b''.join((b'\x00' if cell else b'\xff') * 8 for cell in row)) * 8 for row in rows)
+
+    def chunk(name: bytes, value: bytes) -> bytes:
+        return struct.pack('!I', len(value)) + name + value + struct.pack('!I', zlib.crc32(name + value))
+
+    return (b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('!IIBBBBB', size, size, 8, 0, 0, 0, 0))
+            + chunk(b'IDAT', zlib.compress(data)) + chunk(b'IEND', b''))
+
+
+class AccountLogin:
+    def __init__(self, runtime: Any) -> None:
+        self.runtime = runtime
+        self.task: asyncio.Task[None] | None = None
+        self.password: asyncio.Future[str] | None = None
+        self.qr: int | None = None
+        self.gate = asyncio.Lock()
+        self.ui = AccountUI(runtime)
+        self.actor = int(runtime.app.session.self_id or 0)
+        self.form: AccountForm | None = None
+        self.choice: asyncio.Future[str] | None = None
+        self.value: asyncio.Future[str] | None = None
+        self.step = ''
+        self.ticket = ''
+        self.entries: dict[str, tuple[str, str]] = {}
+        self.method = 'qr'
+        self.sid = ''
+
+    def t(self, key: str, **params: Any) -> str:
+        return self.ui.t(key, **params)
+
+    def owner(self, ctx: Any) -> bool:
+        return ctx.message.from_id == self.actor
+
+    def private(self, ctx: Any) -> bool:
+        return self.owner(ctx) and ctx.message.chat_id == self.actor
+
+    @property
+    def peer(self) -> int | str:
+        return 'me' if self.actor == self.runtime.app.session.self_id else self.actor
+
+    def hint(self, actor: int) -> str:
+        return self.t('login.saved' if actor == self.runtime.app.session.self_id else 'login.private')
+
+    async def notify(self, text: str) -> int | None:
+        result = await asyncio.wait_for(self.runtime.app.mt_messages_send_message(
+            peer=self.peer, message=text, random_id=secrets.randbits(63),
+        ), RPC_TIMEOUT)
+        sent = extract_sent_message(result)
+        return sent['id'] if sent is not None and isinstance(sent.get('id'), int) else None
+
+    async def start(self, ctx: Any, uid: int | None = None) -> None:
+        actor = ctx.message.from_id
+        if not self.ui.access.allows(actor, 'add'):
+            await ctx.respond(self.t('error.no_permission'))
+            return
+        try:
+            await self.begin(uid, actor=actor)
+        except AccountError as exc:
+            await ctx.respond(self.ui.error(exc))
+            return
+        await ctx.respond(self.hint(actor), parse_mode='HTML')
+
+    async def begin(self, uid: int | None = None, *, actor: int | None = None, form: AccountForm | None = None, page: int = 0) -> None:
+        async with self.gate:
+            actor = actor or int(self.runtime.app.session.self_id)
+            self.ui.access.check(actor, 'add', uid)
+            if self.task is not None and not self.task.done():
+                raise AccountError('login_busy')
+            self.actor = actor
+            self.sid = secrets.token_urlsafe(12)
+            self.choice = asyncio.get_running_loop().create_future()
+            self.form = form or AccountForm(self.runtime, actor)
+            try:
+                self.task = self.runtime.tasks.spawn('accounts', self.choose(uid, page), name='hotaru:account-login')
+            except Exception:
+                self.clear()
+                raise
+
+    def clear(self) -> None:
+        for future in (self.choice, self.value, self.password):
+            if future is not None and not future.done():
+                future.cancel()
+        self.entries.clear()
+        self.step = self.ticket = self.sid = ''
+        self.choice = self.value = self.password = None
+
+    def button(self, text: str, action: str, **data: Any) -> dict[str, Any]:
+        return self.ui.button(text, action, actor=self.actor, sid=self.sid, **data)
+
+    async def choose(self, uid: int | None, page: int = 0) -> None:
+        try:
+            assert self.form is not None and self.choice is not None
+            show = self.form.edit if self.form.nonce is not None else self.form.send
+            action = 'back' if self.form.nonce is not None else 'cancel'
+            await asyncio.wait_for(show(self.t('login.choose'), [
+                [self.button(self.t('button.qr'), 'method', method='qr'), self.button(self.t('button.phone'), 'method', method='phone')],
+                [self.button(self.t('button.' + action), action)],
+            ]), RPC_TIMEOUT)
+            self.method = await asyncio.wait_for(self.choice, LOGIN_TIMEOUT)
+            if self.method == 'back':
+                profile = self.runtime.account_manager.find_by_user(uid) if uid is not None else None
+                text, rows = self.ui.detail(profile.account_number, page, actor=self.actor) if profile is not None else self.ui.page(page, actor=self.actor)
+                await self.form.edit(text, rows)
+                self.form = None
+                return
+            await self.run(uid)
+        except asyncio.TimeoutError:
+            await self.finish(self.t('login.timeout'))
+        except asyncio.CancelledError:
+            await self.dismiss()
+            raise
+        except Exception as exc:
+            log.warning('Account login UI failed: %s', type(exc).__name__)
+            await self.finish(self.t('login.open_failed'))
+        finally:
+            self.clear()
+
+    async def finish(self, text: str) -> int | None:
+        if self.form is not None:
+            try:
+                await asyncio.wait_for(self.form.delete(), RPC_TIMEOUT)
+            except Exception:
+                log.warning('Could not remove login form.')
+            self.form = None
+        return await self.notify(text)
+
+    async def dismiss(self) -> None:
+        form = self.form
+        if form is not None and form.source.id:
+            await asyncio.wait_for(form.edit(self.t('cancelled'), []), RPC_TIMEOUT)
+        self.form = None
+
+    async def status(self, mid: int, text: str, peer: int | str | None = None) -> None:
+        with trusted_scope():
+            await asyncio.wait_for(self.runtime.app.mt_messages_edit_message(peer=self.peer if peer is None else peer, id=mid, message=text), RPC_TIMEOUT)
+
+    async def watch(self, number: int, pid: int, mid: int, peer: int | str | None = None) -> None:
+        try:
+            state = await self.runtime.account_manager.wait_ready(number, pid)
+            if state == 'running':
+                text = self.t('login.running', n=number)
+            elif state == 'starting':
+                text = self.t('login.starting', n=number, prefix=self.runtime.config.prefix)
+            else:
+                text = self.t('login.start_failed', n=number, prefix=self.runtime.config.prefix)
+            await self.status(mid, text, peer)
+        except Exception as exc:
+            log.warning('Could not update account status: %s', type(exc).__name__)
+
+    async def callback(self, ctx: Any, data: dict[str, Any]) -> None:
+        if ctx.from_id != self.actor:
+            await ctx.answer(self.t('error.no_permission'), alert=True)
+            return
+        if not self.sid or data.get('sid') != self.sid:
+            await ctx.answer(self.t('login.expired'), alert=True)
+            return
+        if data['action'] not in {'cancel', 'back'} and not self.ui.access.allows(self.actor, 'add'):
+            await ctx.answer(self.t('error.no_permission'), alert=True)
+            await self.cancel()
+            return
+        if self.form is not None and data['action'] != 'submit':
+            self.form.bind(ctx)
+        if data['action'] in {'method', 'back'}:
+            if self.choice is None or self.choice.done():
+                await ctx.answer(self.t('login.busy'))
+                return
+            method = 'back' if data['action'] == 'back' else data.get('method')
+            if method not in {'qr', 'phone', 'back'}:
+                return
+            self.choice.set_result(method)
+            await ctx.answer()
+            if method == 'back' and self.task is not None:
+                await self.task
+        elif data['action'] == 'cancel':
+            await ctx.answer()
+            await self.cancel()
+        else:
+            accepted = self.accept(str(data.get('entry', '')))
+            await ctx.answer(self.t('login.submitted') if accepted else self.t('login.input_expired'))
+            if accepted:
+                await ctx.edit(self.t('login.submitted'), buttons=[])
+
+    def validate(self, value: str) -> tuple[str, str]:
+        if self.step == 'phone':
+            value = re.sub(r'[\s()-]', '', value)
+            if not re.fullmatch(r'\+?[1-9][0-9]{6,14}', value):
+                return '', self.t('login.phone_format')
+            return '+' + value.lstrip('+'), ''
+        if self.step == 'code':
+            value = re.sub(r'[\s-]', '', value)
+            if not re.fullmatch(r'[0-9]{4,8}', value):
+                return '', self.t('login.code_format')
+        elif self.step == 'password' and not value:
+            return '', self.t('login.password_format')
+        return value, ''
+
+    async def inline(self, query: Any) -> None:
+        key, _, raw = str(query.query or '').partition(' ')
+        if (query.from_id != self.actor or not self.ui.access.allows(self.actor, 'add') or key != 'hotaru-login:' + self.ticket
+                or not self.ticket or self.value is None or self.value.done()):
+            await answer_tl(query, results=[], cache_time=0, is_personal=True)
+            return
+        value, error = self.validate(raw)
+        entry = secrets.token_urlsafe(12)
+        if error:
+            result = InlineObj.article(entry, error, self.t('login.check_form'), description=self.t('login.edit_input'))
+        else:
+            self.entries[entry] = (self.ticket, value)
+            while len(self.entries) > 32:
+                self.entries.pop(next(iter(self.entries)))
+            title = self.t('login.use_phone', phone=value) if self.step == 'phone' else self.t('login.submit_' + self.step)
+            result = InlineObj.article(entry, title, '🔄', description=self.t('login.continue'))
+            result['reply_markup'] = {'inline_keyboard': [[self.button(self.t('button.submit'), 'submit', entry=entry)]]}
+        await answer_tl(query, results=[result], cache_time=0, is_personal=True)
+
+    def accept(self, entry: str) -> bool:
+        item = self.entries.pop(entry, None)
+        if item is None or item[0] != self.ticket or self.value is None or self.value.done():
+            return False
+        self.value.set_result(item[1])
+        self.entries.clear()
+        self.ticket = ''
+        return True
+
+    async def chosen(self, chosen: Any) -> None:
+        if chosen.from_id != self.actor or not self.ui.access.allows(self.actor, 'add'):
+            return
+        entry = str(getattr(chosen, 'result_id', ''))
+        if self.accept(entry) and self.form is not None:
+            await self.runtime._drop_transfer(self.form.source, getattr(chosen, 'msg_id', None))
+
+    async def ask(self, step: str, text: str) -> str:
+        self.ui.access.check(self.actor, 'add')
+        self.step = step
+        self.ticket = secrets.token_urlsafe(12)
+        self.entries.clear()
+        self.value = asyncio.get_running_loop().create_future()
+        if step == 'password':
+            self.password = self.value
+        try:
+            assert self.form is not None
+            await self.form.edit(text, [[{'text': self.t('button.enter_' + step), 'switch_inline_query_current_chat': 'hotaru-login:' + self.ticket + ' '}], [self.button(self.t('button.cancel'), 'cancel')]])
+            value = await self.value
+            await self.form.edit(self.t('login.checking'), [[self.button(self.t('button.cancel'), 'cancel')]])
+            return value
+        finally:
+            self.password = self.value = None
+            self.ticket = ''
+            self.entries.clear()
+
+    async def cancel(self) -> bool:
+        if self.task is None or self.task.done():
+            return False
+        self.task.cancel()
+        await asyncio.gather(self.task, return_exceptions=True)
+        if self.sid:
+            self.clear()
+            await self.dismiss()
+        return True
+
+    async def submit(self, ctx: Any, value: str) -> None:
+        if not self.private(ctx):
+            await ctx.respond(self.t('login.private_only'))
+            return
+        await ctx._delete_source()
+        if self.password is None or self.password.done():
+            await self.notify(self.t('login.no_password'))
+            return
+        self.password.set_result(value)
+
+    async def hide(self) -> None:
+        if self.qr is None:
+            return
+        mid = self.qr
+        self.qr = None
+        try:
+            await asyncio.wait_for(self.runtime.app.mt_messages_delete_messages(id=[mid], revoke=True), RPC_TIMEOUT)
+        except Exception:
+            log.warning('Could not remove login QR.')
+
+    async def show(self, token: bytes) -> None:
+        with io.BytesIO(qr_png(token)) as stream:
+            up = await put(self.runtime.app, stream, file_name='login.png')
+        media = {'_': 'inputMediaUploadedPhoto', 'file': document(up)['file']}
+        await self.hide()
+        result = await self.runtime.app.mt_messages_send_media(
+            peer=self.peer, media=media, random_id=secrets.randbits(63),
+            message=self.t('login.scan'),
+        )
+        sent = extract_sent_message(result)
+        if sent is None or not isinstance(sent.get('id'), int):
+            raise AccountError('qr_failed')
+        self.qr = sent['id']
+
+    async def request(self, app: Any, act: str, **kwargs: Any) -> dict[str, Any]:
+        security = importlib.import_module('goygram.security')
+        request = cast(Callable[..., Awaitable[dict[str, Any]]], getattr(security, '_mt_req_with_migrate'))
+        result = await asyncio.wait_for(request(app.core, act, retry=0, **kwargs), RPC_TIMEOUT)
+        if result.get('ok') is False or result.get('error'):
+            raise rpc_error(int(result.get('error_code') or 400), str(result.get('error_message') or result.get('error') or 'LOGIN_FAILED'))
+        return result
+
+    async def twofa(self, app: Any) -> dict[str, Any]:
+        await self.hide()
+        text = self.t('login.password_prompt')
+        while True:
+            try:
+                if self.form is None:
+                    self.password = asyncio.get_running_loop().create_future()
+                    await self.notify(self.t('login.password_command', prefix=self.runtime.config.prefix))
+                    value = await self.password
+                else:
+                    value = await self.ask('password', text)
+                try:
+                    result = await self.request(app, 'auth_check_password', password=value, api_id=self.runtime.config.api_id)
+                finally:
+                    value = ''
+            except RPCError as exc:
+                if exc.message != 'PASSWORD_HASH_INVALID':
+                    raise
+                text = self.t('login.wrong_password')
+                continue
+            finally:
+                self.password = None
+            result['type'] = 'loginTokenSuccess'
+            return result
+
+    async def phone(self, app: Any) -> dict[str, Any]:
+        from goygram import ext
+        security = importlib.import_module('goygram.security')
+        text = self.t('login.phone_prompt')
+        while True:
+            raw = await self.ask('phone', text)
+            self.step = 'phone'
+            number, error = self.validate(raw)
+            if error:
+                text = error
+                continue
+            try:
+                sent = await self.request(app, 'auth_send_code', phone_number=number,
+                    api_id=self.runtime.config.api_id, api_hash=self.runtime.config.api_hash,
+                    settings=ext.serialize_constructor('codeSettings', {'flags': 0}))
+            except RPCError as exc:
+                if exc.message == 'SESSION_PASSWORD_NEEDED':
+                    return await self.twofa(app)
+                if exc.message not in {'PHONE_NUMBER_INVALID', 'PHONE_NUMBER_BANNED'}:
+                    raise
+                text = self.t('login.phone_invalid') if exc.message == 'PHONE_NUMBER_INVALID' else self.t('login.phone_banned')
+                continue
+            extract = cast(Callable[[Any], dict[str, Any] | None], getattr(security, '_extract_user'))
+            if extract(sent):
+                return sent
+            code_hash = getattr(security, '_extract_phone_code_hash')(sent)
+            if not code_hash:
+                raise AccountError('phone_unavailable')
+            text = self.t('login.code_prompt')
+            while True:
+                code = await self.ask('code', text)
+                try:
+                    return await self.request(app, 'auth_sign_in', phone_number=number,
+                        phone_code=code, phone_code_hash=code_hash, api_id=self.runtime.config.api_id,
+                        api_hash=self.runtime.config.api_hash)
+                except RPCError as exc:
+                    if exc.message == 'SESSION_PASSWORD_NEEDED':
+                        return await self.twofa(app)
+                    if exc.message in {'PHONE_CODE_INVALID', 'PHONE_CODE_EMPTY'}:
+                        text = self.t('login.wrong_code')
+                        continue
+                    if exc.message in {'PHONE_CODE_EXPIRED', 'PHONE_CODE_HASH_EMPTY'}:
+                        text = self.t('login.code_expired')
+                        break
+                    raise
+
+    async def authenticate(self, app: Any) -> dict[str, Any]:
+        if self.method == 'phone':
+            return await self.phone(app)
+        from goygram.dc_fetcher import get_dynamic_dc_config, pick_dc_endpoint
+        if self.form is not None:
+            await self.form.edit(self.t('login.qr_prompt'), [[self.button(self.t('button.cancel'), 'cancel')]])
+        config = self.runtime.config
+        blocked = [p.user_id for p in self.runtime.account_manager.items() if self.runtime.account_manager.vault_ready(p.account_number)]
+        act = 'auth_export_login_token'
+        args: dict[str, Any] = {'api_id': config.api_id, 'api_hash': config.api_hash, 'except_ids': blocked}
+        while True:
+            app.mt.qr_update_ev.clear()
+            try:
+                res = await self.request(app, act, **args)
+            except RPCError as exc:
+                if exc.message == 'AUTH_TOKEN_EXPIRED':
+                    act = 'auth_export_login_token'
+                    args = {'api_id': config.api_id, 'api_hash': config.api_hash, 'except_ids': blocked}
+                    continue
+                if exc.message != 'SESSION_PASSWORD_NEEDED':
+                    raise
+                return await self.twofa(app)
+            kind = res.get('type')
+            if kind == 'loginTokenSuccess':
+                return res
+            if kind == 'loginTokenMigrateTo':
+                endpoint = pick_dc_endpoint(get_dynamic_dc_config(), preferred_dc=int(res['dc_id']))
+                mt = app.mt
+                await asyncio.wait_for(mt.close(), RPC_TIMEOUT)
+                mt.host, mt.port = endpoint.host, endpoint.port
+                mt._preferred_dc = int(res['dc_id'])
+                mt.auth_key = None
+                mt.auth_ready.clear()
+                mt.server_salt = b'\x00' * 8
+                mt.session_id = secrets.token_bytes(8)
+                mt.seq = 0
+                mt._init_done = False
+                mt.buf.clear()
+                act, args = 'auth_import_login_token', {'token': res['token'], 'api_id': config.api_id}
+                continue
+            if kind != 'loginToken' or not isinstance(res.get('token'), bytes):
+                raise AccountError('login_response')
+            await self.show(res['token'])
+            expires = max(0.1, float(res.get('expires') or time.time() + 30) - time.time())
+            try:
+                await asyncio.wait_for(app.mt.qr_update_ev.wait(), min(expires, 30.0))
+            except asyncio.TimeoutError:
+                pass
+            act = 'auth_export_login_token'
+            args = {'api_id': config.api_id, 'api_hash': config.api_hash, 'except_ids': blocked}
+
+    def save(self, app: Any, result: dict[str, Any], expected: int | None) -> tuple[AccountProfile, bool]:
+        security = importlib.import_module('goygram.security')
+        extract = cast(Callable[[Any], dict[str, Any] | None], getattr(security, '_extract_user'))
+        user = extract(result)
+        uid = user.get('id') if user else None
+        if not isinstance(uid, int) or uid <= 0 or user is None or user.get('bot'):
+            raise AccountError('no_user')
+        if expected is not None and expected != uid:
+            raise AccountError('wrong_account', uid=expected)
+        manager = self.runtime.account_manager
+        self.ui.access.check(self.actor, 'add', uid)
+        profile = manager.find_by_user(uid)
+        if profile is not None:
+            manager.check(profile.account_number)
+        if profile is not None and manager.vault_ready(profile.account_number):
+            return profile, False
+        root = self.runtime.config.session_dir
+        lock = AccountLock(root, uid)
+        try:
+            profile = manager.find_by_user(uid)
+            if profile is not None and manager.vault_ready(profile.account_number):
+                return profile, False
+            vault = user_vault_path(root, uid)
+            save_vault(app.core, vault, vault.stem, self.runtime.config.api_id, self.runtime.config.api_hash, user, result)
+            owner = manager.parent(uid) or int(self.runtime.app.session.self_id)
+            profile = manager.register(uid, owner_id=owner)
+            account_config(self.runtime.config, profile)
+            return profile, True
+        finally:
+            lock.close()
+
+    async def flow(self, uid: int | None) -> tuple[AccountProfile, bool]:
+        root = self.runtime.config.session_dir / 'sanctuary'
+        root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix='login-', dir=root) as tmp:
+            path = Path(tmp) / 'login.vault'
+            app = GoyGram(api_id=self.runtime.config.api_id, api_hash=self.runtime.config.api_hash,
+                          session_name=str(path.with_suffix('')), session=Session(name=str(path.with_suffix('')), path=path),
+                          default_transport='mtproto')
+            try:
+                result = await self.authenticate(app)
+                return self.save(app, result, uid)
+            finally:
+                await asyncio.wait_for(app.close(), RPC_TIMEOUT)
+
+    async def run(self, uid: int | None) -> None:
+        with trusted_scope():
+            try:
+                profile, added = await asyncio.wait_for(self.flow(uid), LOGIN_TIMEOUT)
+                await self.hide()
+                if added:
+                    number = profile.account_number
+                    self.runtime.account_manager.set_enabled(profile.account_number, True)
+                    mid = await self.finish(self.t('login.added', n=number))
+                    try:
+                        pid = self.runtime.account_manager.spawn(number)
+                    except (AccountError, OSError):
+                        text = self.t('login.start_failed', n=number, prefix=self.runtime.config.prefix)
+                        if mid is not None:
+                            await self.status(mid, text)
+                        else:
+                            await self.notify(text)
+                        return
+                    if mid is not None:
+                        self.runtime.tasks.spawn('accounts', self.watch(number, pid, mid, self.peer), name=f'hotaru:account-ready:{number}')
+                else:
+                    await self.finish(self.t('already_added', n=profile.account_number))
+            except asyncio.TimeoutError:
+                await self.finish(self.t('login.retry_timeout', prefix=self.runtime.config.prefix))
+            except FloodWaitError as exc:
+                await self.finish(self.t('login.flood', seconds=exc.seconds))
+            except AccountError as exc:
+                await self.finish(self.ui.error(exc))
+            except Exception as exc:
+                tb = exc.__traceback__
+                while tb is not None and tb.tb_next is not None:
+                    tb = tb.tb_next
+                where = f'{Path(tb.tb_frame.f_code.co_filename).name}:{tb.tb_lineno}' if tb is not None else 'unknown'
+                log.warning('Account login failed: %s at %s', type(exc).__name__, where)
+                await self.finish(self.t('login.failed'))
+            finally:
+                if self.password is not None and not self.password.done():
+                    self.password.cancel()
+                self.password = None
+                await self.hide()
+
+
+MAX_ID = (1 << 63) - 1
+
+
+def _number(value: str) -> Optional[int]:
+    if not value.isascii() or not value.isdigit() or len(value) > 19:
+        return None
+    number = int(value)
+    return number if 0 < number <= MAX_ID else None
+
+
+def _usage(ctx: Any) -> str:
+    return ctx.runtime.account_login.ui.t('usage', prefix=html.escape(ctx.runtime.config.prefix))
+
+
+async def _reply_sender_id(ctx: Any) -> Any:
+    reply = await ctx.reply()
+    if reply is None:
+        return None
+    sender = reply.get('from_id') if hasattr(reply, 'get') else getattr(reply, 'from_id', None)
+    if isinstance(sender, dict):
+        sender = cast(Dict[str, Any], sender).get('user_id')
+    return sender if isinstance(sender, int) and sender > 0 else None
+
 
 async def command_accs(ctx: Any, invocation: Any) -> Any:
-    items = ctx.accounts.items()
-    self_name = None
-    session = getattr(ctx.runtime.app, "session", None) if ctx.runtime is not None else None
-    if session is not None:
-        self_name = getattr(session, "name", None)
-        if self_name is not None:
-            self_name = str(self_name).rsplit("/", 1)[-1]
-    primary_id = getattr(ctx.runtime.kernel, "owner_id", None) if ctx.runtime is not None else None
-    if not items:
-        await ctx.respond(ctx.t("accounts.empty", "Аккаунты не зарегистрированы."), parse_mode="HTML")
+    args = invocation.args
+    number = _number(args[0]) if args else None
+    if len(args) > 1 or (args and number is None):
+        await ctx.respond(_usage(ctx), parse_mode='HTML')
         return
-    rows: List[str] = []
-    for profile in items:
-        vault_ok = ctx.accounts.vault_ready(profile.account_number)
-        vault_state = "✓" if vault_ok else "✗"
-        state = "on" if profile.enabled else "off"
-        marker = " · this session" if self_name is not None and profile.session_name == self_name else ""
-        primary = " · primary" if profile.user_id == primary_id else ""
-        rows.append(
-            f"<b>#{profile.account_number}</b> <code>{_escape(profile.session_name)}</code> "
-            f"user <code>{profile.user_id}</code> vault {vault_state} {state}{marker}{primary}"
-        )
-    await ctx.respond("<b>Accounts</b><br>" + "<br>".join(rows), parse_mode="HTML")
+    await ctx.runtime.account_login.ui.open(ctx, number)
+
 
 async def command_acca(ctx: Any, invocation: Any) -> Any:
-    if invocation.args:
-        await ctx.respond(_usage(ctx), parse_mode="HTML")
+    args = invocation.args
+    login = ctx.runtime.account_login
+    if args and args[0] == 'password':
+        parts = str(ctx.message.text or '').split(maxsplit=2)
+        if len(parts) != 3:
+            await ctx.respond(_usage(ctx), parse_mode='HTML')
+            return
+        await login.submit(ctx, parts[2])
         return
-    number = ctx.accounts.next_free_number()
-    user_id = getattr(ctx.runtime, "session_self_id", None)
-    if user_id is None:
-        session = getattr(ctx.runtime.app, "session", None) if ctx.runtime is not None else None
-        user_id = getattr(session, "self_id", None) if session is not None else None
-    if user_id is None:
-        await ctx.respond(ctx.t("accounts.no_self", "Не удалось определить user id сессии."), parse_mode="HTML")
+    if args == ('cancel',):
+        if not login.owner(ctx):
+            await ctx.respond(login.ui.t('cancel_denied'))
+            return
+        cancelled = await login.cancel()
+        await ctx.respond(login.ui.t('cancelled' if cancelled else 'no_login'))
         return
-    try:
-        profile = ctx.accounts.register(user_id, number)
-    except Exception as exc:
-        await ctx.respond(f"<b>Register failed:</b> <i>{_escape(exc)}</i>", parse_mode="HTML")
+    if not login.ui.access.allows(ctx.message.from_id, 'add'):
+        await ctx.respond(login.ui.t('error.no_permission'))
         return
-    await ctx.respond(
-        f"<b>Account #{number} registered</b><br>"
-        f"session: <code>{_escape(profile.session_name)}</code><br>"
-        f"vault: <code>{_escape(profile.vault_name)}</code><br>"
-        f"Запуск: <code>!acc {number} start</code>",
-        parse_mode="HTML",
-    )
+    if len(args) > 1 or (args and _number(args[0]) is None):
+        await ctx.respond(_usage(ctx), parse_mode='HTML')
+        return
+    uid = _number(args[0]) if args else await _reply_sender_id(ctx)
+    if uid is not None:
+        profile = ctx.accounts.find_by_user(uid)
+        if profile is not None and ctx.accounts.vault_ready(profile.account_number):
+            await ctx.respond(login.ui.t('already_added', n=profile.account_number))
+            return
+    await login.start(ctx, uid)
+
 
 async def command_acc(ctx: Any, invocation: Any) -> Any:
-    if len(invocation.args) < 2 or not invocation.args[0].isdigit():
-        await ctx.respond(_usage(ctx), parse_mode="HTML")
+    args = invocation.args
+    number = _number(args[0]) if args else None
+    if not args or (len(args) == 1 and number is not None):
+        await ctx.runtime.account_login.ui.open(ctx, number)
         return
-    number = int(invocation.args[0])
-    action = invocation.args[1].casefold()
-
-    if ctx.accounts.profile(number) is None:
-        await ctx.respond(ctx.t("accounts.not_registered", f"Аккаунт #{number} не зарегистрирован."), parse_mode="HTML")
+    if len(args) != 2 or number is None:
+        await ctx.respond(_usage(ctx), parse_mode='HTML')
         return
-
-    if action == "start":
-        try:
+    action = args[1].casefold()
+    if action not in {'start', 'stop', 'restart', 'on', 'off', 'del'}:
+        await ctx.respond(_usage(ctx), parse_mode='HTML')
+        return
+    profile = ctx.accounts.profile(number)
+    if profile is None:
+        await ctx.respond(ctx.runtime.account_login.ui.t('error.not_found', n=number))
+        return
+    if profile.user_id == ctx.runtime.app.session.self_id and action in {'stop', 'restart', 'off', 'del'}:
+        await ctx.respond(ctx.runtime.account_login.ui.t('error.current'))
+        return
+    try:
+        access = ctx.runtime.account_login.ui.access
+        actor = ctx.message.from_id
+        access.check(actor, action, profile.user_id)
+        if action == 'off':
+            access.check(actor, 'stop', profile.user_id)
+        if action in {'stop', 'restart', 'off', 'del'}:
+            await ctx.accounts.halt(number)
+            ctx.accounts.check(number, profile.user_id)
+            access.check(actor, action, profile.user_id)
+            if action == 'off':
+                access.check(actor, 'stop', profile.user_id)
+        if action in {'start', 'restart'}:
+            if not profile.enabled:
+                access.check(actor, 'autostart', profile.user_id)
+                ctx.accounts.set_enabled(number, True)
             pid = ctx.accounts.spawn(number)
-        except Exception as exc:
-            await ctx.respond(f"<b>Start failed:</b> <i>{_escape(exc)}</i>", parse_mode="HTML")
-            return
-        await ctx.respond(f"<b>Account #{number} started</b> (pid {pid})", parse_mode="HTML")
+            status = 'running' if pid == os.getpid() or ctx.accounts.ready(number) else 'starting'
+        elif action == 'stop':
+            status = 'stopped'
+        elif action == 'on':
+            ctx.accounts.set_enabled(number, True)
+            status = 'enabled'
+        elif action == 'off':
+            ctx.accounts.set_enabled(number, False)
+            status = 'disabled'
+        else:
+            ctx.accounts.unregister(number)
+            status = 'removed'
+    except Exception as exc:
+        await ctx.respond(ctx.runtime.account_login.ui.error(exc), parse_mode='HTML')
         return
+    await ctx.respond(ctx.runtime.account_login.ui.t('result', n=number, status=ctx.runtime.account_login.ui.t('status.' + status)))
 
-    if action == "stop":
-        ok = ctx.accounts.stop(number)
-        await ctx.respond(
-            f"<b>Account #{number} stopped</b>" if ok else f"Account #{number} not running",
-            parse_mode="HTML",
-        )
-        return
 
-    if action in ("on", "off"):
-        enabled = action == "on"
-        ok = ctx.accounts.set_enabled(number, enabled)
-        await ctx.respond(
-            f"<b>Account #{number} {'enabled' if enabled else 'disabled'}</b>" if ok else "failed",
-            parse_mode="HTML",
-        )
-        return
+async def sunrise(ctx: Any) -> None:
+    runtime = ctx.runtime
+    login = AccountLogin(runtime)
+    runtime.callbacks.register_module_action_id('accounts', 'panel', login.ui.callback)
+    runtime.account_login = login
+    runtime.access.accounts = login.ui.access
 
-    if action == "del":
-        try:
-            ctx.accounts.stop(number)
-        except Exception:
-            pass
-        ok = ctx.accounts.unregister(number)
-        await ctx.respond(
-            f"<b>Account #{number} removed</b>" if ok else f"Account #{number} not registered",
-            parse_mode="HTML",
-        )
-        return
 
-    await ctx.respond(_usage(ctx), parse_mode="HTML")
+async def sundown(ctx: Any) -> None:
+    runtime = ctx.runtime
+    try:
+        if runtime.account_login is not None:
+            await runtime.account_login.cancel()
+    finally:
+        runtime.callbacks.unregister_module('accounts')
+        runtime.access.accounts = None
+        runtime.account_login = None

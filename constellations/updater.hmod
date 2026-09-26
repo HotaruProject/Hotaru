@@ -140,17 +140,6 @@ def _pending_from_callback(ctx: Any, callback: Any) -> None:
     elif isinstance(msg_id, int) and isinstance(chat_id, int):
         _add_surface(ctx, {"chat_id": chat_id, "message_id": msg_id, "own": False})
 
-def _t(ctx: Any, key: Any, fallback: Any, **params: Any) -> Any:
-    try:
-        value = ctx.t("kernel.updater." + key, fallback, **params)
-    except Exception:
-        value = None
-    if not isinstance(value, str) or not value:
-        try:
-            value = fallback.format(**params) if params else fallback
-        except Exception:
-            value = fallback
-    return value
 
 def _rich(text: Any) -> Any:
     return {"_": "inputRichMessageHTML", "html": text}
@@ -294,8 +283,8 @@ async def _finalize_restart(ctx: Any, pending: dict[str, Any]) -> None:
     except Exception:
         pass
     took_raw = round(time.time() - float(pending["restarting"])) if isinstance(pending.get("restarting"), (int, float)) else None
-    took = f"{took_raw}s" if took_raw is not None else "n/a"
-    text = _t(ctx, "restarted", "Hotaru updated and successfully restarted in {took}", took=took)
+    took = ctx.t("common.seconds", n=took_raw) if took_raw is not None else ctx.t("common.unknown")
+    text = ctx.t('kernel.updater.restarted', took=took)
     html = f"<b>{text}</b>"
     surfaces = _surfaces(pending)
     done: dict[int, str] = {}
@@ -339,9 +328,9 @@ def _emit(ctx: Any, event: Any, **fields: Any) -> Any:
         except Exception:
             pass
 
-def _notify_text(current: str, latest: str, changelog: list[str]) -> str:
+def _notify_text(ctx: Any, current: str, latest: str, changelog: list[str]) -> str:
     link = f'<a href="{REPO_URL}/compare/{current[:12]}...{latest[:12]}">{latest[:6]}</a>'
-    lines = [f"<b>Hotaru update available</b> → <code>{link}</code>"]
+    lines = [f"<b>{ctx.t('kernel.updater.update_available')}</b> → <code>{link}</code>"]
     for entry in (changelog or [])[:10]:
         lines.append(f"• {_escape(entry)}")
     return "<br>".join(lines)
@@ -349,7 +338,7 @@ def _notify_text(current: str, latest: str, changelog: list[str]) -> str:
 async def command_updlog(ctx: Any, invocation: Any) -> Any:
     runtime = ctx.runtime
     if runtime is None:
-        await ctx.respond(f"<b>{_t(ctx, 'unavailable', 'Runtime unavailable')}</b>", parse_mode="HTML")
+        await ctx.respond(f"<b>{ctx.t('kernel.updater.unavailable')}</b>", parse_mode="HTML")
         return
     try:
         _fetch_origin(runtime)
@@ -357,36 +346,36 @@ async def command_updlog(ctx: Any, invocation: Any) -> Any:
         latest = _latest_commit(runtime)
         changelog = _changelog(runtime)
     except Exception as exc:
-        await ctx.respond(f"<b>Update check failed:</b> <i>{_escape(exc)}</i>", parse_mode="HTML")
+        await ctx.respond(ctx.t('kernel.updater.check_failed', error=_escape(exc)), parse_mode="HTML")
         return
     if current == latest:
-        await ctx.respond(f"<b>{_t(ctx, 'up_to_date', 'Hotaru is up to date')}</b>", parse_mode="HTML")
+        await ctx.respond(f"<b>{ctx.t('kernel.updater.up_to_date')}</b>", parse_mode="HTML")
         return
-    await ctx.respond(_notify_text(current, latest, changelog), parse_mode="HTML")
+    await ctx.respond(_notify_text(ctx, current, latest, changelog), parse_mode="HTML")
 
 async def command_updoff(ctx: Any, invocation: Any) -> Any:
     ctx.state.set("notify", False)
-    await ctx.respond(f"<b>{_t(ctx, 'notify_off', 'Update notifications disabled')}</b>", parse_mode="HTML")
+    await ctx.respond(f"<b>{ctx.t('kernel.updater.notify_off')}</b>", parse_mode="HTML")
 
 async def command_updon(ctx: Any, invocation: Any) -> Any:
     ctx.state.set("notify", True)
-    await ctx.respond(f"<b>{_t(ctx, 'notify_on', 'Update notifications enabled')}</b>", parse_mode="HTML")
+    await ctx.respond(f"<b>{ctx.t('kernel.updater.notify_on')}</b>", parse_mode="HTML")
 
 async def _run_update(ctx: Any) -> Any:
     async def say(text: Any) -> Any:
         await _status(ctx, text)
-    await say(f"<b>{_t(ctx, 'downloading', 'Downloading update…')}</b>")
+    await say(f"<b>{ctx.t('kernel.updater.downloading')}</b>")
     try:
         update = _pull(ctx.runtime)
     except Exception as exc:
-        await say(f"<b>Update failed:</b> <i>{_escape(exc)}</i>")
+        await say(ctx.t('kernel.updater.failed', error=_escape(exc)))
         return
     if update.before == update.after:
-        await say(f"<b>{_t(ctx, 'up_to_date', 'Hotaru is up to date')}</b>")
+        await say(f"<b>{ctx.t('kernel.updater.up_to_date')}</b>")
         return
     if update.conflicts:
-        await say(f"<b>Local conflicts preserved:</b> <code>{_escape(str(update.recovery))}</code>")
-    await say(f"<b>{_t(ctx, 'restarting', 'Updated to {commit}. Restarting…', commit=_escape(update.after[:7]))}</b>")
+        await say(ctx.t('kernel.updater.conflicts', path=_escape(str(update.recovery))))
+    await say(f"<b>{ctx.t('kernel.updater.restarting', commit=_escape(update.after[:7]))}</b>")
     pending = ctx.state.get("update_pending")
     if isinstance(pending, dict):
         pending = dict(cast('dict[str, Any]', pending))
@@ -425,7 +414,7 @@ async def _restart_service(ctx: Any) -> Any:
 async def command_upd(ctx: Any, invocation: Any) -> Any:
     runtime = ctx.runtime
     if runtime is None:
-        await ctx.respond(f"<b>{_t(ctx, 'unavailable', 'Runtime unavailable')}</b>", parse_mode="HTML")
+        await ctx.respond(f"<b>{ctx.t('kernel.updater.unavailable')}</b>", parse_mode="HTML")
         return
     force = "force" in invocation.args or "-f" in invocation.args
     try:
@@ -436,11 +425,11 @@ async def command_upd(ctx: Any, invocation: Any) -> Any:
     except Exception as exc:
         if force:
             raise
-        await ctx.respond(f"<b>Update check failed:</b> <i>{_escape(exc)}</i>", parse_mode="HTML")
+        await ctx.respond(ctx.t('kernel.updater.check_failed', error=_escape(exc)), parse_mode="HTML")
         return
 
     if current == latest:
-        await ctx.respond(f"<b>{_t(ctx, 'up_to_date', 'Hotaru is up to date')}</b>", parse_mode="HTML")
+        await ctx.respond(f"<b>{ctx.t('kernel.updater.up_to_date')}</b>", parse_mode="HTML")
         return
 
     if force:
@@ -448,27 +437,27 @@ async def command_upd(ctx: Any, invocation: Any) -> Any:
         return
 
     async def update_handler(callback: Any, payload: Any) -> Any:
-        await callback.answer(_t(ctx, "updating", "Updating…"))
+        await callback.answer(ctx.t('kernel.updater.updating'))
         _pending_from_callback(ctx, callback)
         await _run_update(ctx)
 
     async def ignore_handler(callback: Any, payload: Any) -> Any:
         ctx.state.set("notified_commit", latest)
-        await callback.answer(_t(ctx, "ignored_toast", "Ignored"))
+        await callback.answer(ctx.t('kernel.updater.ignored_toast'))
         try:
-            await callback.edit(f"<b>{_t(ctx, 'ignored', 'Update ignored.')}</b>")
+            await callback.edit(f"<b>{ctx.t('kernel.updater.ignored')}</b>")
         except Exception:
             pass
         _drop_surface(ctx, callback)
 
     buttons = [
         [
-            ctx.ui.button("Update", update_handler, style="primary"),
-            ctx.ui.button("Ignore", ignore_handler, style="danger"),
+            ctx.ui.button(ctx.t('kernel.updater.button_update'), update_handler, style="primary"),
+            ctx.ui.button(ctx.t('kernel.updater.button_ignore'), ignore_handler, style="danger"),
         ]
     ]
     message = await ctx.respond(
-        _notify_text(current, latest, changelog) + "<br><br>Update now?",
+        _notify_text(ctx, current, latest, changelog) + ctx.t('kernel.updater.confirm'),
         buttons=buttons,
         inline=True,
         parse_mode="HTML",
@@ -525,26 +514,26 @@ async def task_poller(ctx: Any) -> Any:
         return
 
     async def update_handler(callback: Any, payload: Any) -> Any:
-        await callback.answer(_t(ctx, "updating", "Updating…"))
+        await callback.answer(ctx.t('kernel.updater.updating'))
         _pending_from_callback(ctx, callback)
         await _run_update(ctx)
 
     async def ignore_handler(callback: Any, payload: Any) -> Any:
         ctx.state.set("notified_commit", latest)
-        await callback.answer(_t(ctx, "ignored_toast", "Ignored"))
+        await callback.answer(ctx.t('kernel.updater.ignored_toast'))
         try:
-            await callback.edit(f"<b>{_t(ctx, 'ignored', 'Update ignored.')}</b>")
+            await callback.edit(f"<b>{ctx.t('kernel.updater.ignored')}</b>")
         except Exception:
             pass
         _drop_surface(ctx, callback)
 
     buttons = [
         [
-            ctx.ui.button("Update", update_handler, style="primary"),
-            ctx.ui.button("Ignore", ignore_handler, style="danger"),
+            ctx.ui.button(ctx.t('kernel.updater.button_update'), update_handler, style="primary"),
+            ctx.ui.button(ctx.t('kernel.updater.button_ignore'), ignore_handler, style="danger"),
         ]
     ]
-    text = _notify_text(current, latest, changelog)
+    text = _notify_text(ctx, current, latest, changelog)
     try:
         message = await ctx.bot.send_message(owner, text, buttons=buttons)
     except Exception as exc:
