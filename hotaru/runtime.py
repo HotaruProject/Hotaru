@@ -155,9 +155,7 @@ class Runtime:
 
     @classmethod
     def from_database(cls, path: str | Path | None = None) -> "Runtime":
-        from .config import DEFAULT_STATE_PATH
-
-        return cls(RuntimeConfig.from_database(path or DEFAULT_STATE_PATH))
+        return cls(RuntimeConfig.from_database(path))
 
     def update_checkout(self) -> Any:
         from .update import update_repository
