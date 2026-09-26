@@ -50,6 +50,9 @@ def _ensure_types() -> None:
 
 
 def main() -> None:
+    from .state import apply_vault_key_env
+
+    apply_vault_key_env()
     parser = argparse.ArgumentParser(prog="hotaru")
     parser.add_argument("--check", action="store_true")
     parser.add_argument("--account", type=int, default=None)
