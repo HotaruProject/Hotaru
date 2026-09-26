@@ -383,7 +383,7 @@ class InlineManager:
             except Exception:
                 if self.runtime.observatory is not None:
                     self.runtime.observatory.emit("inline", "configure_failed", username=info.username)
-        await self._start_bot_chat(info.username)
+        asyncio.create_task(self._start_bot_chat(info.username), name="hotaru:bot-chat")
         return info
 
     async def _tune_bot(self, info: InlineBotInfo) -> None:
@@ -413,10 +413,15 @@ class InlineManager:
             except Exception:
                 pass
 
-    async def _start_bot_chat(self, username: str) -> bool:
+    async def _start_bot_chat(self, username: str, *, force: bool = False) -> bool:
         app = self.runtime.app
         if app is None or app.mt is None:
             return False
+        if self._chat_hold() > time.time():
+            return False
+        state = self.runtime.state
+        if not force and state is not None and state.get_setting("inline-chat-ok") is True:
+            return True
         peer = None
         try:
             with trusted_scope():
@@ -432,21 +437,44 @@ class InlineManager:
                     with trusted_scope():
                         await app.mt_contacts_unblock(id=peer)
                         await app.mt_messages_send_message(peer=peer, message="/start", random_id=secrets.randbits(63))
+                    self._mark_chat_started()
                     if self.runtime.observatory is not None:
                         self.runtime.observatory.emit("inline", "chat_unblocked", username=username)
                     return True
                 except Exception as retry_exc:
                     exc = retry_exc
+            wait = getattr(exc, "seconds", None)
+            if isinstance(wait, int) and wait > 0:
+                self._mark_chat_hold(float(wait))
             if self.runtime.observatory is not None:
                 self.runtime.observatory.emit("inline", "start_chat_skipped", error=type(exc).__name__, detail=str(exc)[:160])
             return False
+        self._mark_chat_started()
         return True
+
+    def _chat_hold(self) -> float:
+        state = self.runtime.state
+        if state is None:
+            return 0.0
+        hold = state.get_setting("inline-chat-hold-until")
+        return float(hold) if isinstance(hold, (int, float)) else 0.0
+
+    def _mark_chat_hold(self, wait: float) -> None:
+        state = self.runtime.state
+        if state is not None:
+            state.set_setting("inline-chat-hold-until", time.time() + wait)
+
+    def _mark_chat_started(self) -> None:
+        state = self.runtime.state
+        if state is not None:
+            state.set_setting("inline-chat-ok", True)
+            state.set_setting("inline-chat-hold-until", 0)
 
     async def reopen_owner_chat(self, chat_id: int | str | None) -> bool:
         if not isinstance(chat_id, int) or self.info is None:
             return False
         try:
-            return await self._start_bot_chat(self.info.username)
+            return await self._start_bot_chat(self.info.username, force=True)
         except Exception:
             return False
 
