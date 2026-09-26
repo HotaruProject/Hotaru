@@ -1,0 +1,1185 @@
+"""Faithful Python port of @clack/prompts 1.8.1 (bombshell-dev/clack).
+
+Same glyphs, same ANSI colours, same frame layout as the upstream TypeScript
+implementation; stdlib only (termios + ANSI), no dependency on Rich.
+"""
+from __future__ import annotations
+
+import os
+import re
+import select as _select
+import shutil
+import sys
+import termios
+import time
+import unicodedata
+from typing import Any, Callable, Dict, Sequence, TypedDict
+
+
+class Diff(TypedDict):
+    lines: list[int]
+    numLinesBefore: int
+    numLinesAfter: int
+
+
+Options = Sequence[Dict[str, Any]]
+Validate = Callable[[str], Any]
+
+# --------------------------------------------------------------------------- #
+# styles: node:util styleText semantics (each style closes with its own code)
+# --------------------------------------------------------------------------- #
+_CODES = {
+    "reset": (0, 0),
+    "bold": (1, 22),
+    "dim": (2, 22),
+    "italic": (3, 23),
+    "underline": (4, 24),
+    "inverse": (7, 27),
+    "hidden": (8, 28),
+    "strikethrough": (9, 29),
+    "black": (30, 39),
+    "red": (31, 39),
+    "green": (32, 39),
+    "yellow": (33, 39),
+    "blue": (34, 39),
+    "magenta": (35, 39),
+    "cyan": (36, 39),
+    "white": (37, 39),
+    "gray": (90, 39),
+    "bgBlack": (40, 49),
+    "bgRed": (41, 49),
+    "bgGreen": (42, 49),
+    "bgYellow": (43, 49),
+    "bgBlue": (44, 49),
+    "bgMagenta": (45, 49),
+    "bgCyan": (46, 49),
+    "bgWhite": (47, 49),
+}
+
+ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def style(spec: str | Sequence[str], text: str) -> str:
+    names = [spec] if isinstance(spec, str) else list(spec)
+    left, right = "", ""
+    for name in names:
+        open_code, close = _CODES[name]
+        left += f"\x1b[{open_code}m"
+        right = f"\x1b[{close}m" + right
+    return f"{left}{text}{right}"
+
+
+def width(text: str) -> int:
+    plain = ANSI_RE.sub("", text)
+    total = 0
+    for ch in plain:
+        if unicodedata.combining(ch):
+            continue
+        total += 2 if unicodedata.east_asian_width(ch) in ("W", "F") else 1
+    return total
+
+
+def columns() -> int:
+    return shutil.get_terminal_size((80, 24)).columns
+
+
+def rows() -> int:
+    return shutil.get_terminal_size((80, 24)).lines
+
+
+# --------------------------------------------------------------------------- #
+# guide symbols (packages/prompts/src/common.ts)
+# --------------------------------------------------------------------------- #
+S_STEP_ACTIVE = "◆"
+S_STEP_CANCEL = "■"
+S_STEP_ERROR = "▲"
+S_STEP_SUBMIT = "◇"
+S_BAR_START = "┌"
+S_BAR = "│"
+S_BAR_END = "└"
+S_RADIO_ACTIVE = "●"
+S_RADIO_INACTIVE = "○"
+S_CHECKBOX_ACTIVE = "◻"
+S_CHECKBOX_SELECTED = "◼"
+S_CHECKBOX_INACTIVE = "◻"
+S_PASSWORD_MASK = "▪"
+S_INFO = "●"
+S_SUCCESS = "◆"
+S_WARN = "▲"
+S_ERROR = "■"
+S_BAR_H = "─"
+S_CORNER_TOP_RIGHT = "╮"
+S_CONNECT_LEFT = "├"
+S_CORNER_BOTTOM_RIGHT = "╯"
+S_CORNER_BOTTOM_LEFT = "╰"
+S_CORNER_TOP_LEFT = "╭"
+
+SELECT_INSTRUCTIONS = [f"{style('dim', '↑/↓')} to navigate", f"{style('dim', 'Enter:')} confirm"]
+MULTISELECT_INSTRUCTIONS = [
+    f"{style('dim', '↑/↓')} to navigate",
+    f"{style('dim', 'Space:')} select",
+    f"{style('dim', 'Enter:')} confirm",
+]
+
+ALIASES = {"k": "up", "j": "down", "h": "left", "l": "right", "\x03": "cancel", "escape": "cancel"}
+
+CURSOR_HIDE = "\x1b[?25l"
+CURSOR_SHOW = "\x1b[?25h"
+ERASE_DOWN = "\x1b[J"
+
+
+def move(x: int = 0, y: int = 0) -> str:
+    out = ""
+    if x < 0:
+        out += f"\x1b[{-x}D"
+    elif x > 0:
+        out += f"\x1b[{x}C"
+    if y < 0:
+        out += f"\x1b[{-y}A"
+    elif y > 0:
+        out += f"\x1b[{y}B"
+    return out
+
+
+def erase_lines(count: int) -> str:
+    clear = ""
+    for index in range(count):
+        clear += "\x1b[2K" + ("\x1b[1A" if index < count - 1 else "")
+    if count:
+        clear += "\x1b[G"
+    return clear
+
+
+def diff_lines(before: str, after: str) -> Diff | None:
+    if before == after:
+        return None
+    old, new = before.split("\n"), after.split("\n")
+    lines = [
+        index
+        for index in range(max(len(old), len(new)))
+        if (old[index] if index < len(old) else None) != (new[index] if index < len(new) else None)
+    ]
+    return {"lines": lines, "numLinesBefore": len(old), "numLinesAfter": len(new)}
+
+
+def symbol(state: str) -> str:
+    if state in ("initial", "active"):
+        return style("cyan", S_STEP_ACTIVE)
+    if state == "cancel":
+        return style("red", S_STEP_CANCEL)
+    if state == "error":
+        return style("yellow", S_STEP_ERROR)
+    if state == "submit":
+        return style("green", S_STEP_SUBMIT)
+    if state == "validating":
+        return style("dim", S_STEP_ACTIVE)
+    return ""
+
+
+def symbol_bar(state: str) -> str:
+    colour = {"initial": "cyan", "active": "cyan", "cancel": "red", "error": "yellow", "submit": "green"}.get(state)
+    return style(colour, S_BAR) if colour else ""
+
+
+def wrap_ansi(text: str, limit: int) -> list[str]:
+    """Wrap to `limit` visible columns; escape sequences are carried along (wrapAnsi hard/trim=false)."""
+    lines: list[str] = []
+    for raw in text.split("\n"):
+        current: list[str] = []
+        size = 0
+        for token in re.split(r"(\x1b\[[0-9;]*m)", raw):
+            if token.startswith("\x1b["):
+                current.append(token)
+                continue
+            for ch in token:
+                step = 2 if unicodedata.east_asian_width(ch) in ("W", "F") else 1
+                if size + step > limit:
+                    lines.append("".join(current))
+                    current, size = [], 0
+                current.append(ch)
+                size += step
+        lines.append("".join(current))
+    return lines
+
+
+def wrap_text_with_prefix(
+    text: str,
+    prefix: str,
+    start_prefix: str | None = None,
+    end_prefix: str | None = None,
+    columns_limit: int | None = None,
+) -> str:
+    limit = (columns_limit or columns()) - width(prefix)
+    lines = wrap_ansi(text, limit)
+    start_prefix = prefix if start_prefix is None else start_prefix
+    end_prefix = prefix if end_prefix is None else end_prefix
+    out: list[str] = []
+    for index, line in enumerate(lines):
+        if index == 0:
+            out.append(f"{start_prefix}{line}")
+        elif index == len(lines) - 1:
+            out.append(f"{end_prefix}{line}")
+        else:
+            out.append(f"{prefix}{line}")
+    return "\n".join(out)
+
+
+def format_instruction_footer(instructions: Sequence[str]) -> list[str]:
+    return [
+        f"{style('cyan', S_BAR)}  " + " • ".join(instructions),
+        style("cyan", S_BAR_END),
+    ]
+
+
+def limit_options(
+    options: Sequence[Any],
+    cursor: int,
+    styler: Callable[[Any, bool], str],
+    max_items: float = float("inf"),
+    column_padding: int = 0,
+    row_padding: int = 4,
+) -> list[str]:
+    """Port of packages/prompts/src/limit-options.ts (sliding window + ellipsis)."""
+    available_columns = columns() - column_padding
+    output_max_items = max(rows() - row_padding, 0)
+    computed = int(max(min(max_items, output_max_items), 5))
+    location = 0
+    if cursor >= computed - 3:
+        location = max(min(cursor - computed + 3, len(options) - computed), 0)
+    top_ellipsis = computed < len(options) and location > 0
+    bottom_ellipsis = computed < len(options) and location + computed < len(options)
+    end = min(location + computed, len(options))
+    window_start = location + (1 if top_ellipsis else 0)
+    window_end = end - (1 if bottom_ellipsis else 0)
+
+    groups: list[list[str]] = []
+    line_count = 0
+    if top_ellipsis:
+        line_count += 1
+    if bottom_ellipsis:
+        line_count += 1
+    for index in range(window_start, window_end):
+        item = options[index]
+        styled = styler(item, index == cursor) if item is not None else ""
+        wrapped = wrap_ansi(styled, available_columns)
+        groups.append(wrapped)
+        line_count += len(wrapped)
+
+    if line_count > output_max_items:
+        adjusted = output_max_items
+        cursor_group = cursor - window_start
+
+        def trim(start: int, stop: int, from_end: bool = False) -> tuple[int, int]:
+            kept = line_count
+            removed = 0
+            indexes = range(stop - 1, start - 1, -1) if from_end else range(start, stop)
+            for index in indexes:
+                group = groups[index]
+                if group:
+                    kept -= len(group)
+                removed += 1
+                if kept <= adjusted:
+                    break
+            return kept, removed
+
+        if top_ellipsis:
+            kept, preceding = trim(0, cursor_group)
+            if kept > adjusted:
+                if not bottom_ellipsis:
+                    adjusted -= 1
+                kept, following = trim(cursor_group + 1, len(groups), True)
+            else:
+                following = 0
+        else:
+            if not bottom_ellipsis:
+                adjusted -= 1
+            kept, following = trim(cursor_group + 1, len(groups), True)
+            preceding = 0
+            if kept > adjusted:
+                adjusted -= 1
+                kept, preceding = trim(0, cursor_group)
+        if preceding > 0:
+            top_ellipsis = True
+            del groups[:preceding]
+        if following > 0:
+            bottom_ellipsis = True
+            del groups[len(groups) - following:]
+
+    result: list[str] = []
+    if top_ellipsis:
+        result.append(style("dim", "..."))
+    for group in groups:
+        result.extend(group)
+    if bottom_ellipsis:
+        result.append(style("dim", "..."))
+    return result
+
+
+# --------------------------------------------------------------------------- #
+# raw terminal input
+# --------------------------------------------------------------------------- #
+class Key:
+    __slots__ = ("name", "char")
+
+    def __init__(self, name: str, char: str = ""):
+        self.name = name
+        self.char = char
+
+
+_ESCAPES = {"\x1b[A": "up", "\x1b[B": "down", "\x1b[C": "right", "\x1b[D": "left", "\x1b[Z": "tab"}
+
+
+def write(text: str) -> None:
+    sys.stdout.write(text)
+    sys.stdout.flush()
+
+
+class Raw:
+    """Raw stdin, but output keeps ONLCR: clack writes LF and the tty adds CR."""
+
+    def __init__(self) -> None:
+        self.fd = sys.stdin.fileno()
+        self.saved = None
+
+    def __enter__(self) -> Raw:
+        if not sys.stdin.isatty():
+            return self
+        self.saved = termios.tcgetattr(self.fd)
+        attrs = termios.tcgetattr(self.fd)
+        attrs[0] &= ~(termios.IXON | termios.ICRNL | termios.INPCK | termios.ISTRIP | termios.BRKINT)
+        attrs[3] &= ~(termios.ECHO | termios.ICANON | termios.ISIG | termios.IEXTEN)
+        attrs[6][termios.VMIN] = 1
+        attrs[6][termios.VTIME] = 0
+        termios.tcsetattr(self.fd, termios.TCSADRAIN, attrs)
+        return self
+
+    def __exit__(self, *exc: object) -> bool:
+        if self.saved is not None:
+            termios.tcsetattr(self.fd, termios.TCSADRAIN, self.saved)
+        return False
+
+    def key(self, timeout: float | None = None) -> Key | None:
+        if timeout is not None:
+            ready, _, _ = _select.select([self.fd], [], [], timeout)
+            if not ready:
+                return None
+        data = os.read(self.fd, 1)
+        if not data:
+            return None
+        char = data.decode("utf-8", "replace")
+        if char == "\x1b":
+            while True:
+                ready, _, _ = _select.select([self.fd], [], [], 0.05)
+                if not ready:
+                    break
+                more = os.read(self.fd, 1).decode("utf-8", "replace")
+                char += more
+                if char in _ESCAPES:
+                    break
+            name = _ESCAPES.get(char, "escape" if len(char) == 1 else char)
+            return Key(name, "")
+        if char in ("\r", "\n"):
+            return Key("return", char)
+        if char in ("\x7f", "\x08"):
+            return Key("backspace", char)
+        if char == "\t":
+            return Key("tab", char)
+        if char == "\x03":
+            return Key("cancel", char)
+        if char == " ":
+            return Key("space", char)
+        return Key("char", char)
+
+
+# --------------------------------------------------------------------------- #
+# prompt base (packages/core/src/prompts/prompt.ts)
+# --------------------------------------------------------------------------- #
+class Cancelled(KeyboardInterrupt):
+    pass
+
+
+class Prompt:
+    state: str
+    error: str
+    value: Any
+    user_input: str
+    cursor: int
+    _prev_frame: str
+    _resolved: bool
+
+    def __init__(self, validate: Validate | None = None, track: bool = True, initial: Any = None) -> None:
+        self.state = "initial"
+        self.error = ""
+        self.value = initial
+        self.user_input = ""
+        self.cursor = 0
+        self._track = track
+        self._validate = validate
+        self._prev_frame = ""
+        self._raw = None
+        self._resolved = False
+
+    # ---- frame plumbing (clack core Prompt.render) ------------------------ #
+    def render(self) -> str:
+        raise NotImplementedError
+
+    def restore_cursor(self) -> None:
+        lines = self._prev_frame.count("\n")
+        write(move(-999, lines * -1))
+
+    def draw(self) -> None:
+        frame = self.render()
+        if frame == self._prev_frame:
+            return
+        if self.state == "initial":
+            write(CURSOR_HIDE)
+        else:
+            diff = diff_lines(self._prev_frame, frame)
+            total_rows = rows()
+            self.restore_cursor()
+            if diff is not None:
+                offset_after = max(0, diff["numLinesAfter"] - total_rows)
+                offset_before = max(0, diff["numLinesBefore"] - total_rows)
+                line = next((item for item in diff["lines"] if item >= offset_after), None)
+                if line is None:
+                    self._prev_frame = frame
+                    return
+                if len(diff["lines"]) == 1:
+                    write(move(0, line - offset_before))
+                    write(erase_lines(1))
+                    lines = frame.split("\n")
+                    write(lines[line])
+                    self._prev_frame = frame
+                    write(move(0, len(lines) - line - 1))
+                    return
+                if len(diff["lines"]) > 1:
+                    if offset_after < offset_before:
+                        line = offset_after
+                    else:
+                        adjusted = line - offset_before
+                        if adjusted > 0:
+                            write(move(0, adjusted))
+                    write(ERASE_DOWN)
+                    write("\n".join(frame.split("\n")[line:]))
+                    self._prev_frame = frame
+                    return
+            write(ERASE_DOWN)
+        write(frame)
+        if self.state == "initial":
+            self.state = "active"
+        self._prev_frame = frame
+
+    def close(self) -> None:
+        write("\n")
+
+    def _resolve(self) -> None:
+        """clack's once('submit'/'cancel') handler: the cursor is shown exactly once."""
+        if self._resolved:
+            return
+        self._resolved = True
+        write(CURSOR_SHOW)
+
+    # ---- interaction ----------------------------------------------------- #
+    def handle(self, key: Key) -> bool:
+        """Override; returns True when the prompt is finished."""
+        raise NotImplementedError
+
+    def run(self) -> Any:
+        try:
+            with Raw() as raw:
+                self._raw = raw
+                self.draw()
+                while True:
+                    key = raw.key()
+                    if key is None:
+                        continue
+                    done = self.handle(key)
+                    self.draw()
+                    if done:
+                        break
+        finally:
+            self.close()
+            self._resolve()
+        if self.state == "cancel":
+            raise Cancelled
+        return self.value
+
+    # ---- helpers --------------------------------------------------------- #
+    def _submit(self) -> bool:
+        if self._validate is not None:
+            problem = self._validate(self.value)
+            if problem:
+                self.error = str(problem)
+                self.state = "error"
+                return False
+        self.state = "submit"
+        return True
+
+    def user_input_with_cursor(self) -> str:
+        return ""
+
+    def _move(self, action: str) -> None:
+        if action == "left" and self.cursor > 0:
+            self.cursor -= 1
+        elif action == "right" and self.cursor < len(self.user_input):
+            self.cursor += 1
+
+    def _type(self, char: str) -> None:
+        self.user_input = self.user_input[: self.cursor] + char + self.user_input[self.cursor:]
+        self.cursor += 1
+
+
+class InputPrompt(Prompt):
+    """text + password share their key handling."""
+
+    def __init__(
+        self,
+        message: str,
+        placeholder: str | None = None,
+        validate: Validate | None = None,
+        mask: str | None = None,
+        initial: Any = None,
+        default_value: str | None = None,
+    ) -> None:
+        super().__init__(validate=validate, initial=initial)
+        self.message = message
+        self.placeholder = placeholder
+        self.mask = mask
+        self.default_value = default_value
+
+    def user_input_with_cursor(self) -> str:
+        if not self.user_input:
+            return style(["inverse", "hidden"], "_")
+        if self.cursor >= len(self.user_input):
+            return f"{self.user_input}█"
+        head = self.user_input[: self.cursor]
+        char = self.user_input[self.cursor]
+        tail = self.user_input[self.cursor + 1:]
+        return f"{head}{style('inverse', char)}{tail}"
+
+    def _masked(self) -> str:
+        return re.sub(".", self.mask, self.user_input) if self.mask else ""
+
+    def placeholder_text(self) -> str:
+        if self.placeholder:
+            return style("inverse", self.placeholder[0]) + style("dim", self.placeholder[1:])
+        return style(["inverse", "hidden"], "_")
+
+    def title(self) -> str:
+        return f"{style('gray', S_BAR)}\n{symbol(self.state)}  {self.message}\n"
+
+    def render(self) -> str:
+        raise NotImplementedError
+
+    def handle(self, key: Key) -> bool:
+        if self.state == "error":
+            self.state = "active"
+        if key.name == "return":
+            if self.state == "error" and not self.user_input:
+                return False
+            if self._submit():
+                return True
+            return False
+        if ALIASES.get(key.name, key.name) == "cancel":
+            self.state = "cancel"
+            return True
+        if key.name == "backspace":
+            if self.cursor > 0:
+                self.user_input = self.user_input[: self.cursor - 1] + self.user_input[self.cursor:]
+                self.cursor -= 1
+            return False
+        if key.name in ("left", "right"):
+            self._move(key.name)
+            return False
+        if key.name == "up" or key.name == "down":
+            return False
+        if key.name == "char" or key.name == "space":
+            self._type(key.char)
+            return False
+        return False
+
+
+class TextPrompt(InputPrompt):
+    def render(self) -> str:
+        user_input = self.user_input_with_cursor() if self.user_input else self.placeholder_text()
+        value = self.value or ""
+        if self.state == "error":
+            error_text = f"  {style('yellow', self.error)}" if self.error else ""
+            prefix = style("yellow", S_BAR)
+            return f"{self.title().rstrip()}\n{prefix}  {user_input}\n{style('yellow', S_BAR_END)}{error_text}\n"
+        if self.state == "submit":
+            value_text = f"  {style('dim', value)}" if value else ""
+            return f"{self.title()}{style('gray', S_BAR)}{value_text}"
+        if self.state == "cancel":
+            value_text = f"  {style(['strikethrough', 'dim'], value)}" if value else ""
+            prefix = style("gray", S_BAR)
+            tail = f"\n{prefix}" if value.strip() else ""
+            return f"{self.title()}{prefix}{value_text}{tail}"
+        return (
+            f"{self.title()}{style('cyan', S_BAR)}  {user_input}\n{style('cyan', S_BAR_END)}\n"
+        )
+
+    def handle(self, key: Key) -> bool:
+        if key.name == "return" and self.state != "error":
+            self.value = self.user_input or self.default_value or ""
+        return super().handle(key)
+
+
+class PasswordPrompt(InputPrompt):
+    def user_input_with_cursor(self) -> str:
+        if self.state in ("submit", "cancel"):
+            return self._masked()
+        if self.cursor >= len(self.user_input):
+            return f"{self._masked()}{style(['inverse', 'hidden'], '_')}"
+        head = self._masked()[: self.cursor]
+        char = self._masked()[self.cursor]
+        tail = self._masked()[self.cursor + 1:]
+        return f"{head}{style('inverse', char)}{tail}"
+
+    def render(self) -> str:
+        user_input = self.user_input_with_cursor()
+        masked = self._masked()
+        if self.state == "error":
+            prefix = style("yellow", S_BAR)
+            prefix_end = style("yellow", S_BAR_END)
+            return f"{self.title().rstrip()}\n{prefix}  {masked}\n{prefix_end}  {style('yellow', self.error)}\n"
+        if self.state == "submit":
+            masked_text = style("dim", masked) if masked else ""
+            return f"{self.title()}{style('gray', S_BAR)}  {masked_text}"
+        if self.state == "cancel":
+            masked_text = style(["strikethrough", "dim"], masked) if masked else ""
+            tail = f"\n{style('gray', S_BAR)}" if masked else ""
+            return f"{self.title()}{style('gray', S_BAR)}  {masked_text}{tail}"
+        return f"{self.title()}{style('cyan', S_BAR)}  {user_input}\n{style('cyan', S_BAR_END)}\n"
+
+    def handle(self, key: Key) -> bool:
+        if key.name == "return" and self.state != "error":
+            self.value = self.user_input
+        return super().handle(key)
+
+
+# --------------------------------------------------------------------------- #
+# select / multiselect / confirm
+# --------------------------------------------------------------------------- #
+class SelectPrompt(Prompt):
+    def __init__(
+        self,
+        message: str,
+        options: Options,
+        initial: Any = None,
+        max_items: float | None = None,
+        show_instructions: bool = True,
+    ) -> None:
+        super().__init__()
+        self.message = message
+        self.items = options
+        self.max_items = max_items if max_items is not None else float("inf")
+        self.show_instructions = show_instructions
+        self.index = 0
+        if initial is not None:
+            for position, item in enumerate(options):
+                if item.get("value") == initial:
+                    self.index = position
+        self.value = options[self.index].get("value") if options else None
+
+    def opt(self, option: dict[str, Any] | None, state: str) -> str:
+        if option is None:
+            return ""
+        label = option.get("label", str(option.get("value")))
+        hint = option.get("hint")
+        if state == "disabled":
+            hint_text = f"({hint})" if hint else "(disabled)"
+            text = f"{style('gray', S_RADIO_INACTIVE)} {style('gray', label)}"
+            return text + (f" {style('dim', hint_text)}" if hint else "")
+        if state == "selected":
+            return style("dim", label)
+        if state == "cancelled":
+            return style(["strikethrough", "dim"], label)
+        if state == "active":
+            text = f"{style('green', S_RADIO_ACTIVE)} {label}"
+            return text + (f" {style('dim', f'({hint})')}" if hint else "")
+        return f"{style('dim', S_RADIO_INACTIVE)} {style('dim', label)}"
+
+    def title(self) -> str:
+        message = wrap_text_with_prefix(self.message, f"{symbol_bar(self.state)}  ", f"{symbol(self.state)}  ")
+        return f"{style('gray', S_BAR)}\n{message}\n"
+
+    def footer(self) -> str:
+        lines = format_instruction_footer(SELECT_INSTRUCTIONS) if self.show_instructions else [style("cyan", S_BAR_END)]
+        return "\n".join(lines)
+
+    def render(self) -> str:
+        if self.state == "submit":
+            selected = self.opt(self.items[self.index], "selected")
+            return f"{self.title()}{style('gray', S_BAR)}  {selected}"
+        if self.state == "cancel":
+            cancelled = self.opt(self.items[self.index], "cancelled")
+            return f"{self.title()}{style('gray', S_BAR)}  {cancelled}\n{style('gray', S_BAR)}"
+        prefix = f"{style('cyan', S_BAR)}  "
+        body = limit_options(
+            self.items,
+            self.index,
+            lambda item, active: self.opt(item, "active" if active else "inactive"),
+            max_items=self.max_items,
+            column_padding=width(prefix),
+            row_padding=len(self.title().split("\n")) + 2,
+        )
+        return f"{self.title()}{prefix}" + f"\n{prefix}".join(body) + f"\n{self.footer()}\n"
+
+    def handle(self, key: Key) -> bool:
+        name = ALIASES.get(key.name, key.name)
+        if key.name == "return":
+            self.value = self.items[self.index].get("value")
+            self.state = "submit"
+            return True
+        if name == "cancel":
+            self.state = "cancel"
+            return True
+        if name == "up":
+            self.index = self.index - 1 if self.index > 0 else len(self.items) - 1
+        elif name == "down":
+            self.index = self.index + 1 if self.index < len(self.items) - 1 else 0
+        return False
+
+
+class MultiSelectPrompt(SelectPrompt):
+    def __init__(
+        self,
+        message: str,
+        options: Options,
+        initial: Sequence[Any] | None = None,
+        max_items: float | None = None,
+        required: bool = True,
+        show_instructions: bool = True,
+    ) -> None:
+        super().__init__(message, options, None, max_items, show_instructions)
+        selected = list(initial or [])
+        self.selected = [item.get("value") for item in options if item.get("value") in selected]
+        self.required = required
+
+    def opt(self, option: dict[str, Any] | None, state: str) -> str:
+        if option is None:
+            return ""
+        label = option.get("label", str(option.get("value")))
+        hint = option.get("hint")
+        if state == "disabled":
+            hint_text = f"({hint})" if hint else "(disabled)"
+            text = f"{style('gray', S_CHECKBOX_INACTIVE)} {style(['strikethrough', 'gray'], label)}"
+            return text + (f" {style('dim', hint_text)}" if hint else "")
+        if state == "active":
+            text = f"{style('cyan', S_CHECKBOX_ACTIVE)} {label}"
+            return text + (f" {style('dim', f'({hint})')}" if hint else "")
+        if state == "selected":
+            text = f"{style('green', S_CHECKBOX_SELECTED)} {style('dim', label)}"
+            return text + (f" {style('dim', f'({hint})')}" if hint else "")
+        if state == "active-selected":
+            text = f"{style('green', S_CHECKBOX_SELECTED)} {label}"
+            return text + (f" {style('dim', f'({hint})')}" if hint else "")
+        if state == "cancelled" or state == "submitted":
+            return style("dim", label)
+        return f"{style('dim', S_CHECKBOX_INACTIVE)} {style('dim', label)}"
+
+    def style_option(self, option: dict[str, Any], active: bool) -> str:
+        if option.get("disabled"):
+            return self.opt(option, "disabled")
+        chosen = option.get("value") in self.selected
+        if active and chosen:
+            return self.opt(option, "active-selected")
+        if chosen:
+            return self.opt(option, "selected")
+        return self.opt(option, "active" if active else "inactive")
+
+    def footer(self) -> str:
+        lines = (
+            format_instruction_footer(MULTISELECT_INSTRUCTIONS)
+            if self.show_instructions
+            else [style("cyan", S_BAR_END)]
+        )
+        return "\n".join(lines)
+
+    def render(self) -> str:
+        if self.state == "submit":
+            labels = [self.opt(item, "submitted") for item in self.items if item.get("value") in self.selected]
+            body = style("dim", ", ").join(labels) if labels else style("dim", "none")
+            prefix = f"{style('gray', S_BAR)}  "
+            return f"{self.title()}{wrap_text_with_prefix(body, prefix)}"
+        if self.state == "cancel":
+            labels = [self.opt(item, "cancelled") for item in self.items if item.get("value") in self.selected]
+            body = style(["strikethrough", "dim"], ", ").join(labels)
+            prefix = f"{style('gray', S_BAR)}  "
+            return f"{self.title()}{prefix}{body}\n{style('gray', S_BAR)}"
+        prefix = f"{style('cyan', S_BAR)}  "
+        body = limit_options(
+            self.items,
+            self.index,
+            self.style_option,
+            max_items=self.max_items,
+            column_padding=width(prefix),
+            row_padding=len(self.title().split("\n")) + 2,
+        )
+        return f"{self.title()}{prefix}" + f"\n{prefix}".join(body) + f"\n{self.footer()}\n"
+
+    def handle(self, key: Key) -> bool:
+        name = ALIASES.get(key.name, key.name)
+        if key.name == "return":
+            if self.required and not self.selected:
+                self.error = "Please select at least one option"
+                self.state = "error"
+                return False
+            self.value = list(self.selected)
+            self.state = "submit"
+            return True
+        if name == "cancel":
+            self.state = "cancel"
+            return True
+        if name == "up":
+            self.index = self.index - 1 if self.index > 0 else len(self.items) - 1
+        elif name == "down":
+            self.index = self.index + 1 if self.index < len(self.items) - 1 else 0
+        elif key.name == "space" or (key.name == "char" and key.char == " "):
+            value = self.items[self.index].get("value")
+            if value in self.selected:
+                self.selected.remove(value)
+            else:
+                self.selected.append(value)
+        return False
+
+    def run(self) -> Any:
+        self.value = list(self.selected)
+        return super().run()
+
+
+class ConfirmPrompt(Prompt):
+    def __init__(
+        self,
+        message: str,
+        initial: bool = False,
+        active: str = "Yes",
+        inactive: str = "No",
+        vertical: bool = False,
+    ) -> None:
+        super().__init__(initial=initial)
+        self.message = message
+        self.active = active
+        self.inactive = inactive
+        self.vertical = vertical
+        self.value = initial
+
+    def title(self) -> str:
+        message = wrap_text_with_prefix(
+            self.message,
+            f"{style('gray', S_BAR)}  ",
+            f"{symbol(self.state)}  ",
+        )
+        return f"{style('gray', S_BAR)}\n{message}\n"
+
+    def render(self) -> str:
+        current = self.active if self.value else self.inactive
+        if self.state == "submit":
+            return f"{self.title()}{style('gray', S_BAR)}  {style('dim', current)}"
+        if self.state == "cancel":
+            return (
+                f"{self.title()}{style('gray', S_BAR)}  {style(['strikethrough', 'dim'], current)}\n"
+                f"{style('gray', S_BAR)}"
+            )
+        prefix = f"{style('cyan', S_BAR)}  "
+        if self.value:
+            left = f"{style('green', S_RADIO_ACTIVE)} {self.active}"
+            right = f"{style('dim', S_RADIO_INACTIVE)} {style('dim', self.inactive)}"
+        else:
+            left = f"{style('dim', S_RADIO_INACTIVE)} {style('dim', self.active)}"
+            right = f"{style('green', S_RADIO_ACTIVE)} {self.inactive}"
+        if self.vertical:
+            body = f"{left}\n{prefix}{right}"
+        else:
+            body = f"{left} {style('dim', '/')} {right}"
+        return f"{self.title()}{prefix}{body}\n{style('cyan', S_BAR_END)}\n"
+
+    def handle(self, key: Key) -> bool:
+        name = ALIASES.get(key.name, key.name)
+        if key.name == "return":
+            self.state = "submit"
+            return True
+        if name == "cancel":
+            self.state = "cancel"
+            return True
+        if key.name in ("up", "down", "left", "right"):
+            self.value = not self.value
+        elif key.name == "char" and key.char.lower() in ("y", "n"):
+            # clack submits on y/n without waiting for Enter (core ConfirmPrompt)
+            write("\x1b[1A")
+            self.value = key.char.lower() == "y"
+            self.state = "submit"
+            write("\n")  # clack closes the prompt inside the confirm handler, then again after render
+            self._resolve()
+            return True
+        return False
+
+
+# --------------------------------------------------------------------------- #
+# static output helpers
+# --------------------------------------------------------------------------- #
+def cancel_pressed(keys: Raw) -> bool:
+    """True when Esc / Ctrl+C is waiting in the input buffer (clack block() cancel hook)."""
+    while True:
+        key = keys.key(timeout=0)
+        if key is None:
+            return False
+        if ALIASES.get(key.name, key.name) == "cancel":
+            return True
+
+
+def intro(title: str = "") -> None:
+    write(f"{style('gray', S_BAR_START)}  {title}\n")
+
+
+def outro(message: str = "") -> None:
+    write(f"{style('gray', S_BAR)}\n{style('gray', S_BAR_END)}  {message}\n\n")
+
+
+def cancel(message: str = "Operation cancelled.") -> None:
+    write(f"{style('gray', S_BAR_END)}  {style('red', message)}\n\n")
+
+
+def note(message: str = "", title: str = "") -> None:
+    limit = columns() - 6
+    lines = ["", *wrap_ansi(message, limit), ""]
+    title_len = width(title)
+    longest = max([width(line) for line in lines] + [title_len]) + 2
+    body = "\n".join(
+        f"{style('gray', S_BAR)}  {line}{' ' * (longest - width(line))}{style('gray', S_BAR)}" for line in lines
+    )
+    bar = S_BAR_H * max(longest - title_len - 1, 1) + S_CORNER_TOP_RIGHT
+    write(
+        f"{style('gray', S_BAR)}\n{style('green', S_STEP_SUBMIT)}  {style('reset', title)} "
+        f"{style('gray', bar)}\n{body}\n"
+        f"{style('gray', S_CONNECT_LEFT + S_BAR_H * (longest + 2) + S_CORNER_BOTTOM_RIGHT)}\n"
+    )
+
+
+def _log(message: str | list[str], symbol: str, spacing: int = 1) -> None:
+    parts = [style("gray", S_BAR)] * spacing
+    lines = message if isinstance(message, list) else str(message).split("\n")
+    if lines:
+        first, rest = lines[0], lines[1:]
+        parts.append(f"{symbol}  {first}" if first else symbol)
+        for line in rest:
+            parts.append(f"{style('gray', S_BAR)}  {line}" if line else style("gray", S_BAR))
+    write("\n".join(parts) + "\n")
+
+
+class _Log:
+    def message(self, message: str | list[str], symbol: str | None = None, spacing: int = 1) -> None:
+        _log(message, symbol if symbol is not None else style("gray", S_BAR), spacing)
+
+    def info(self, message: str) -> None:
+        _log(message, style("blue", S_INFO))
+
+    def success(self, message: str) -> None:
+        _log(message, style("green", S_SUCCESS))
+
+    def step(self, message: str) -> None:
+        _log(message, style("green", S_STEP_SUBMIT))
+
+    def warn(self, message: str) -> None:
+        _log(message, style("yellow", S_WARN))
+
+    def error(self, message: str) -> None:
+        _log(message, style("red", S_ERROR))
+
+
+log = _Log()
+
+
+def spinner() -> Spinner:
+    return Spinner()
+
+
+class Spinner:
+    FRAMES = ["◒", "◐", "◓", "◑"]
+    DELAY = 0.08
+
+    def __init__(self) -> None:
+        self.message = ""
+        self._index = 0
+        self._dots = 0.0
+        self._active = False
+        self._prev = None
+        self._last = 0.0
+
+    def start(self, message: str = "") -> None:
+        self.message = re.sub(r"\.+$", "", message)
+        self._active = True
+        write(CURSOR_HIDE)  # clack's block() hides the cursor while spinning
+        write(f"{style('gray', S_BAR)}\n")
+        self._last = time.monotonic()  # first frame after DELAY, like clack's setInterval
+
+    def _clear(self) -> None:
+        if self._prev is None:
+            return
+        lines = self._prev.count("\n") + 1
+        if lines > 1:
+            write(f"\x1b[{lines - 1}A")
+        write("\x1b[1G" + ERASE_DOWN)
+
+    def _paint(self) -> None:
+        frame = style("magenta", self.FRAMES[self._index])
+        dots = "." * int(self._dots)
+        line = f"{frame}  {self.message}{dots}"
+        self._clear()
+        write(line)
+        self._prev = line
+        self._index = self._index + 1 if self._index + 1 < len(self.FRAMES) else 0
+        self._dots = self._dots + 0.125 if self._dots < 4 else 0
+        self._last = time.monotonic()
+
+    def tick(self) -> None:
+        if not self._active:
+            return
+        now = time.monotonic()
+        if now - self._last >= self.DELAY:
+            self._paint()
+
+    def _stop(self, message: str, state: str) -> None:
+        if not self._active:
+            return
+        self._active = False
+        self._clear()
+        symbol_ = {"submit": style("green", S_STEP_SUBMIT), "cancel": style("red", S_STEP_CANCEL), "error": style("red", S_STEP_ERROR)}[state]
+        write(f"{symbol_}  {message or self.message}\n")
+        write(CURSOR_SHOW)  # clack's unblock() shows the cursor again
+        self._prev = None
+
+    def stop(self, message: str = "") -> None:
+        self._stop(message, "submit")
+
+    def cancel(self, message: str = "") -> None:
+        self._stop(message or "Canceled", "cancel")
+
+    def error(self, message: str = "") -> None:
+        self._stop(message or "Something went wrong", "error")
+
+    def clear(self) -> None:
+        if not self._active:
+            return
+        self._active = False
+        self._clear()
+        self._prev = None
+
+    def message_(self, message: str = "") -> None:
+        self.message = re.sub(r"\.+$", "", message)
+
+
+# --------------------------------------------------------------------------- #
+# the demo: examples/basic/index.ts, verbatim
+# --------------------------------------------------------------------------- #
+def group(steps: dict[str, Callable[[dict[str, Any]], Any]], on_cancel: Callable[[], None] | None = None) -> dict[str, Any]:
+    results: dict[str, Any] = {}
+    try:
+        for name, factory in steps.items():
+            results[name] = factory(results)
+    except Cancelled:
+        if on_cancel is not None:
+            on_cancel()
+        raise
+    return results
+
+
+def text(
+    message: str,
+    placeholder: str | None = None,
+    validate: Validate | None = None,
+    default_value: str | None = None,
+    **kw: Any,
+) -> Any:
+    return TextPrompt(message, placeholder=placeholder, validate=validate, default_value=default_value).run()
+
+
+def password(message: str, validate: Validate | None = None, mask: str = S_PASSWORD_MASK, **kw: Any) -> Any:
+    return PasswordPrompt(message, validate=validate, mask=mask).run()
+
+
+def select(message: str, options: Options, initial: Any = None, max_items: float | None = None, **kw: Any) -> Any:
+    return SelectPrompt(message, options, initial, max_items).run()
+
+
+def multiselect(
+    message: str,
+    options: Options,
+    initial: Sequence[Any] | None = None,
+    max_items: float | None = None,
+    **kw: Any,
+) -> Any:
+    return MultiSelectPrompt(message, options, initial, max_items).run()
+
+
+def confirm(message: str, initial: bool = False, **kw: Any) -> Any:
+    return ConfirmPrompt(message, initial).run()
+
+
+def demo() -> None:
+    write("\x1b[1;1H\x1b[0J")
+    time.sleep(1)
+    intro(style("bgCyan", style("black", " create-app ")))
+    try:
+        project = group(
+            {
+                "path": lambda r: text(
+                    "Where should we create your project?",
+                    placeholder="./sparkling-solid",
+                    validate=lambda value: "Please enter a path."
+                    if not value
+                    else ("Please enter a relative path." if not value.startswith(".") else None),
+                ),
+                "password": lambda r: password(
+                    "Provide a password",
+                    validate=lambda value: "Please enter a password."
+                    if not value
+                    else ("Password should have at least 5 characters." if len(value) < 5 else None),
+                ),
+                "type": lambda r: select(
+                    f'Pick a project type within "{r["path"]}"',
+                    [
+                        {"value": "ts", "label": "TypeScript"},
+                        {"value": "js", "label": "JavaScript"},
+                        {"value": "rust", "label": "Rust"},
+                        {"value": "go", "label": "Go"},
+                        {"value": "python", "label": "Python"},
+                        {"value": "coffee", "label": "CoffeeScript", "hint": "oh no"},
+                    ],
+                    initial="ts",
+                    max_items=5,
+                ),
+                "tools": lambda r: multiselect(
+                    "Select additional tools.",
+                    [
+                        {"value": "prettier", "label": "Prettier", "hint": "recommended"},
+                        {"value": "eslint", "label": "ESLint", "hint": "recommended"},
+                        {"value": "stylelint", "label": "Stylelint"},
+                        {"value": "gh-action", "label": "GitHub Action"},
+                    ],
+                    initial=["prettier", "eslint"],
+                ),
+                "install": lambda r: confirm("Install dependencies?", initial=False),
+            },
+            on_cancel=lambda: cancel("Operation cancelled."),
+        )
+    except Cancelled:
+        return
+    if project["install"]:
+        spin = spinner()
+        spin.start("Installing via pnpm")
+        end = time.monotonic() + 2.5
+        with Raw() as raw:
+            while time.monotonic() < end:
+                raw.key(0.02)
+                spin.tick()
+        spin.stop("Installed via pnpm")
+    install_line = "" if project["install"] else "pnpm install\n"
+    next_steps = "cd " + project["path"] + "        \n" + install_line + "pnpm dev"
+    note(next_steps, "Next steps.")
+    outro(f"Problems? {style('underline', style('cyan', 'https://example.com/issues'))}")
+
+
+if __name__ == "__main__":
+    demo()
