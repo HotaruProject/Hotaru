@@ -898,6 +898,10 @@ def outro(message: str = "") -> None:
     write(f"{style('gray', S_BAR)}\n{style('gray', S_BAR_END)}  {message}\n\n")
 
 
+def cancel(message: str = "Operation cancelled.") -> None:
+    write(f"{style('gray', S_BAR_END)}  {style('red', message)}\n\n")
+
+
 def note(message: str = "", title: str = "") -> None:
     limit = columns() - 6
     lines = ["", *wrap_ansi(message, limit), ""]
@@ -1105,6 +1109,14 @@ def _phone(raw: str) -> str:
 
 
 def collect_settings(state: Any) -> None:
+    try:
+        _collect_settings(state)
+    except KeyboardInterrupt:
+        cancel("Setup cancelled.")
+        raise SystemExit(1) from None
+
+
+def _collect_settings(state: Any) -> None:
     if not sys.stdin.isatty() or not sys.stdout.isatty():
         raise ValueError("runtime settings are missing; run from an interactive TTY")
     _banner(_console())
@@ -1308,6 +1320,14 @@ async def _qr_login(app: Any, api_id: int, api_hash: str) -> dict[str, Any] | No
 
 
 async def sign_in(runtime: Any) -> dict[str, str]:
+    try:
+        return await _sign_in(runtime)
+    except KeyboardInterrupt:
+        cancel("Login cancelled.")
+        raise SystemExit(1) from None
+
+
+async def _sign_in(runtime: Any) -> dict[str, str]:
     _banner(_console())
     intro(style("bgCyan", style("black", " hotaru login ")))
     app = runtime.app.core
