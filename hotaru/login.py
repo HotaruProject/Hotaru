@@ -4,6 +4,8 @@ import asyncio
 import base64
 import io
 import importlib
+import logging
+import secrets
 import sys
 import time
 from pathlib import Path
@@ -14,6 +16,51 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.prompt import Prompt
 from rich.text import Text
+from goygram.errors import RPCError
+
+
+AUTH_TIMEOUT = 30.0
+SESSION_ERRORS = frozenset({
+    "AUTH_KEY_UNREGISTERED",
+    "AUTH_KEY_INVALID",
+    "AUTH_KEY_PERM_EMPTY",
+    "AUTH_KEY_DUPLICATED",
+    "SESSION_REVOKED",
+    "SESSION_EXPIRED",
+})
+
+log = logging.getLogger(__name__)
+
+
+async def check_session(app: Any) -> bool:
+    try:
+        await asyncio.wait_for(
+            app.mt_users_get_users(id=[{"_": "inputUserSelf"}], retry=0),
+            timeout=AUTH_TIMEOUT,
+        )
+    except RPCError as exc:
+        if exc.message not in SESSION_ERRORS:
+            raise
+        mt = app.mt
+        await asyncio.wait_for(mt.close(), timeout=AUTH_TIMEOUT)
+        if app.session.path is not None:
+            app.session.path.unlink(missing_ok=True)
+        app.session.data.clear()
+        app.core.self_id = 0
+        mt.self_id = 0
+        mt.auth_key = None
+        mt.auth_ready.clear()
+        mt.server_salt = b"\x00" * 8
+        mt.session_id = secrets.token_bytes(8)
+        mt.seq = 0
+        mt._init_done = False
+        mt.buf.clear()
+        mt.dc_auth_keys.clear()
+        mt.entities.clear()
+        mt.entity_usernames.clear()
+        log.warning("Session invalid; deleted. Log in again.")
+        return False
+    return True
 
 
 def _console() -> Console:
