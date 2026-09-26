@@ -705,64 +705,9 @@ class InlineManager:
         self.bot_app.on_cb(self._dispatch_callback)
         self.bot_app.on_msg(self._dispatch_bot_pm)
         self.bot_app.on_update(self._dispatch_chosen)
-        await self._auth_bot()
         self._task = asyncio.create_task(self._run(), name="hotaru:inline-bot")
         if self.runtime.observatory is not None:
             self.runtime.observatory.emit("inline", "run_scheduled", username=self.info.username)
-
-    async def _auth_bot(self) -> None:
-        from goygram.security import bootstrap_session
-
-        app = self.bot_app
-        info = self.info
-        if app is None or info is None:
-            raise InlineError("inline bot client is missing")
-        last: Exception | None = None
-        for attempt in range(6):
-            if self.runtime.observatory is not None:
-                self.runtime.observatory.emit("inline", "auth_begin", attempt=attempt + 1, username=info.username)
-            try:
-                result = await bootstrap_session(
-                    app.core,
-                    api_id=self.runtime.config.api_id,
-                    api_hash=self.runtime.config.api_hash,
-                    session_name=app.core.session_name,
-                    bot_token=info.token,
-                    session=app.session,
-                )
-            except Exception as exc:
-                last = exc
-                if self.runtime.observatory is not None:
-                    self.runtime.observatory.emit("inline", "auth_error", attempt=attempt + 1, error=type(exc).__name__, detail=str(exc)[:240])
-                msg = str(exc).lower()
-                if "no response" in msg or "timeout" in msg:
-                    mt = getattr(app, "mt", None)
-                    if mt is not None:
-                        try:
-                            await mt.reconnect()
-                        except Exception:
-                            pass
-                await asyncio.sleep(2.0 * (attempt + 1))
-                continue
-
-            source = result.get("source") if isinstance(result, dict) else None
-            if self.runtime.observatory is not None:
-                self.runtime.observatory.emit("inline", "auth_result", attempt=attempt + 1, source=source or "none", result=bool(result))
-            if source == "vault":
-                return
-
-            key = getattr(app.session, "auth_key", None)
-            mt_key = getattr(getattr(app, "mt", None), "auth_key", None)
-            if key is None and isinstance(mt_key, (bytes, bytearray)) and mt_key:
-                app.session.data["auth_key"] = bytes(mt_key).hex()
-                key = app.session.auth_key
-            if result and key is not None:
-                return
-            last = InlineError("inline bot authorization did not complete")
-            if self.runtime.observatory is not None:
-                self.runtime.observatory.emit("inline", "auth_incomplete", attempt=attempt + 1, source=source or "none", session_key=key is not None, mt_key=mt_key is not None)
-            await asyncio.sleep(2.0 * (attempt + 1))
-        raise InlineError(f"inline bot authorization failed: {last}")
 
     async def _warm_owner_peer(self) -> None:
         app = self.bot_app
