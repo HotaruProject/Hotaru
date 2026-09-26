@@ -2295,19 +2295,29 @@ class Runtime:
         if self.inline is None:
             raise RuntimeError("inline bot is required")
         with trusted_scope():
-            await self.inline.start()
+            try:
+                await self.inline.start()
+            except Exception as exc:
+                self._inline_degraded(exc)
+                return
             if self.inline.info is None:
-                raise RuntimeError("inline bot did not start")
+                self._inline_degraded(RuntimeError("inline bot did not start"))
+                return
             try:
                 await asyncio.wait_for(self.inline.ready.wait(), timeout=30.0)
             except asyncio.TimeoutError as exc:
-                raise RuntimeError("inline bot polling is not ready") from exc
+                self._inline_degraded(exc)
+                return
             if self.observatory is not None:
                 self.observatory.emit("inline", "started", username=self.inline.info.username)
             try:
                 await self.is_premium(refresh=True)
             except Exception:
                 pass
+
+    def _inline_degraded(self, exc: BaseException) -> None:
+        if self.observatory is not None:
+            self.observatory.emit("inline", "degraded", error=type(exc).__name__, detail=str(exc)[:240])
 
     async def _ensure_forum(self) -> None:
         from relay.proxies import ForumHelper
