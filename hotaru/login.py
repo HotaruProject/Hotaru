@@ -5,6 +5,7 @@ import base64
 import io
 import importlib
 import logging
+import math
 import os
 import re
 import secrets
@@ -66,34 +67,95 @@ async def check_session(app: Any) -> bool:
 
 
 _CAPTION = "Hotaru Userbot"
-_ART_SIZES = (72, 52, 34)
-_ART_CACHE: dict[int, list[str]] = {}
+_ART_INK = (255, 214, 188)
+_ART_HOT = (255, 118, 68)
+_ART_DIM = (150, 58, 32)
+_ART_NONE = (0, 0, 0)
 
 
-def _art_dir() -> Path:
-    bundled = Path(__file__).resolve().parent / "art"
-    return bundled if bundled.is_dir() else Path(__file__).resolve().parent.parent / "art"
+def _art_tone(value: float) -> tuple[int, int, int]:
+    """Flat brand bands: crisp shapes instead of a gradient."""
+    if value < 0.12:
+        return _ART_NONE
+    if value < 0.46:
+        return _ART_DIM
+    if value < 0.78:
+        return _ART_HOT
+    return _ART_INK
 
 
-def _art(term: int) -> list[str]:
-    cols = min(term - 4, _ART_SIZES[0])
-    pick = next((size for size in _ART_SIZES if size <= cols), None)
-    if pick is None:
-        return []
-    if pick not in _ART_CACHE:
-        _ART_CACHE[pick] = (_art_dir() / f"quasar-{pick}.ans").read_text(encoding="utf-8").split("\n")
-    return _ART_CACHE[pick]
+def _art_field(x: float, y: float, w: int, h: int) -> float:
+    """Round shadow, flat accretion disk, near-side stripe, photon ring, twin jets."""
+    cx, cy = (w - 1) / 2.0, (h - 1) / 2.0
+    dx, dy = x - cx, y - cy
+    shadow = 0.145 * w
+    radius = math.hypot(dx, dy / 0.34)
+    inner, outer = shadow * 1.05, shadow * 1.95
+    doppler = 1.0 + 0.22 * dx / outer
+    value = 0.0
+    if radius >= inner:
+        value = max(0.0, 1.0 - (radius - inner) / (outer - inner)) ** 1.7 * doppler
+    if math.hypot(dx, dy) < shadow:
+        value = 0.0
+    stripe = abs(dy - 0.050 * h) / (0.034 * h)
+    if stripe < 1.0 and abs(dx) < outer:
+        value = max(value, (1.0 - stripe) ** 0.6 * max(0.0, 1.0 - (abs(dx) / outer) ** 3.4) * doppler)
+    value = max(value, math.exp(-(((math.hypot(dx, dy) - shadow * 1.06) / (0.017 * w)) ** 2)))
+    reach = 0.50 * h
+    for sign in (-1, 1):
+        distance = dy * sign
+        if shadow * 1.05 <= distance <= reach:
+            part = (distance - shadow * 1.05) / (reach - shadow * 1.05)
+            half = 0.008 * w + 0.022 * w * part
+            value = max(value, (1.0 - part) ** 1.1 * max(0.0, 1.0 - (abs(dx) / half) ** 2.0) * 0.85)
+    return max(0.0, min(1.0, value))
+
+
+def _art(cols: int, rows: int) -> list[str]:
+    """One half-block glyph per cell from two subpixels; empty halves keep the terminal background."""
+    height = rows * 2
+    lines: list[str] = []
+    for row in range(rows):
+        line: list[str] = []
+        current: tuple[tuple[int, int, int], tuple[int, int, int] | None] | None = None
+        for col in range(cols):
+            top = _art_tone(_art_field(col, row * 2, cols, height))
+            bottom = _art_tone(_art_field(col, row * 2 + 1, cols, height))
+            if top == _ART_NONE and bottom == _ART_NONE:
+                line.append(" ")
+                current = None
+                continue
+            if top == bottom:
+                ink, under, glyph = top, None, "\u2588"
+            elif bottom == _ART_NONE:
+                ink, under, glyph = top, None, "\u2580"
+            elif top == _ART_NONE:
+                ink, under, glyph = bottom, None, "\u2584"
+            else:
+                ink, under, glyph = top, bottom, "\u2580"
+            if current != (ink, under):
+                line.append(f"\x1b[38;2;{ink[0]};{ink[1]};{ink[2]}m")
+                line.append("\x1b[49m" if under is None else f"\x1b[48;2;{under[0]};{under[1]};{under[2]}m")
+                current = (ink, under)
+            line.append(glyph)
+        line.append("\x1b[0m")
+        lines.append("".join(line).rstrip())
+    return lines
+
+
+def _art_size() -> tuple[int, int]:
+    """Banner size for the current terminal: use the width, leave room for the header and the prompt."""
+    available = max(8, rows() - 9)
+    cols = min(columns() - 2, 96, max(32, available * 5))
+    return cols, max(8, min(available, round(cols / 3.3)))
 
 
 def _banner_text() -> str:
+    cols, art_rows = _art_size()
     term = columns()
-    art = _art(term)
-    if not art:
-        return style("dim", _CAPTION)
-    size = max(width(line) for line in art)
-    pad = " " * max(0, (term - size) // 2)
-    caption = pad + " " * max(0, (size - len(_CAPTION)) // 2) + style("dim", _CAPTION)
-    return "\n".join([*(pad + line for line in art), caption])
+    pad = " " * max(0, (term - cols) // 2)
+    caption = pad + " " * max(0, (cols - len(_CAPTION)) // 2) + style("dim", _CAPTION)
+    return "\n".join([*(pad + line for line in _art(cols, art_rows)), caption])
 
 
 # --------------------------------------------------------------------------- #
