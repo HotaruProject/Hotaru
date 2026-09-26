@@ -6,17 +6,37 @@
   "commands": {
     "lang": {
       "description": "言語を表示または変更",
-      "usage": "{prefix}lang [language]",
+      "usage": "{prefix}lang [言語]",
       "invalid": "サポートされていない言語: {language}",
-      "changed": "言語を {language} に変更しました"
+      "changed": "言語を {language} に変更しました",
+      "unavailable": "サービスを利用できません",
+      "lexicon_unavailable": "翻訳辞書を利用できません",
+      "languages_unavailable": "言語を利用できません",
+      "current": "現在の言語: {language}"
+    },
+    "help": {
+      "description": "ヘルプを表示",
+      "usage": "{prefix}help [モジュール]"
+    },
+    "hlp": {
+      "description": "ヘルプを表示",
+      "usage": "{prefix}hlp [モジュール]"
     }
   },
   "kernel": {
     "capabilities": {
-      "mt": "MTProto直接アクセス",
-      "state": "永続状態ストレージ",
-      "files": "ファイルシステムアクセス",
-      "net": "ネットワークアクセス"
+      "mt": "MTProtoへのアクセス",
+      "state": "データの保存",
+      "files": "ファイルへのアクセス",
+      "net": "ネットワークへのアクセス",
+      "bot": "ボットへのアクセス",
+      "modules": "モジュールの管理",
+      "loader": "モジュールの読み込み",
+      "fetch": "ファイルのダウンロード",
+      "inline": "インラインボット",
+      "assets": "添付ファイルの保存領域",
+      "shell": "シェルコマンド",
+      "logs": "ログ"
     },
     "hotaru-kernel": {
       "description": "Hotaru カーネルのシステムコマンド",
@@ -80,7 +100,15 @@
           "description": "ユーザーボット再開"
         }
       },
-      "restarted": "ユーザーボットは{took}で正常に再起動されました"
+      "restarted": "ユーザーボットは{took}で正常に再起動されました",
+      "already_stopped": "ユーザーボットはすでに停止しています。",
+      "stopped": "ユーザーボットを停止しました。",
+      "stopped_details": "通常のモジュールは無効です。{prefix}start などのカーネルコマンドは動作します。",
+      "already_started": "ユーザーボットはすでに稼働中です。",
+      "started": "ユーザーボットを起動しました。すべてのコマンドが再開されました。",
+      "restarting": "ユーザーボットを再起動中…",
+      "running": "ユーザーボットは動作中です。",
+      "already_running": "ユーザーボットはすでに動作中です。"
     },
     "updater": {
       "description": "Hotaru 自動更新",
@@ -105,7 +133,18 @@
       "ignored_toast": "無視しました",
       "updating": "更新中…",
       "notify_on": "更新通知を有効にしました",
-      "notify_off": "更新通知を無効にしました"
+      "notify_off": "更新通知を無効にしました",
+      "unavailable": "実行環境を利用できません",
+      "up_to_date": "Hotaru は最新です",
+      "update_available": "Hotaru の更新があります",
+      "downloading": "更新をダウンロード中…",
+      "syncing": "依存関係を同期中…",
+      "check_failed": "<b>更新の確認に失敗しました:</b> <i>{error}</i>",
+      "failed": "<b>更新に失敗しました:</b> <i>{error}</i>",
+      "conflicts": "<b>競合したローカル変更を保存しました:</b> <code>{path}</code>",
+      "button_update": "更新",
+      "button_ignore": "スキップ",
+      "confirm": "<br><br>今すぐ更新しますか？"
     },
     "translations": {
       "description": "翻訳設定",
@@ -122,7 +161,7 @@
       "description": "Hotaru プロキシと機能のテストモジュール",
       "commands": {
         "tfstatus": {
-          "description": "MTProto ping"
+          "description": "MTProto接続を確認"
         },
         "tfhistory": {
           "description": "履歴取得テスト"
@@ -155,37 +194,205 @@
       "kernel_modules": "カーネルモジュール",
       "user_modules": "ユーザーモジュール",
       "commands": "コマンド",
-      "capabilities": "機能"
+      "capabilities": "機能",
+      "unavailable": "<b>サービスを利用できません</b>",
+      "manager_unavailable": "<b>モジュール管理を利用できません</b>",
+      "usage": "<b>使い方:</b> <code>{prefix}hlp</code> または <code>{prefix}hlp &lt;モジュール&gt;</code>",
+      "disabled": "<b>モジュールは無効です:</b> <code>{module}</code><br><i>エラー: {error}</i>",
+      "missing": "<b>モジュールが見つかりません:</b> <code>{module}</code>"
     },
     "accounts": {
-      "description": "Multi-account management: register, authorize, spawn, stop accounts",
+      "description": "アカウント管理",
       "commands": {
         "acc": {
-          "description": "Manage account: acc <#> <start|stop|on|off|del>"
+          "description": "アカウントの管理"
         },
         "acca": {
-          "description": "Authorize a new account: acca <#>"
+          "description": "アカウントの追加・ログイン"
         },
         "accs": {
-          "description": "List accounts"
+          "description": "アカウント一覧を開く"
         }
       },
-      "usage": "使い方: !acc <#> <start|stop|on|off|del>\n!acca — アカウントを登録（番号は自動採番）\n!accs — 一覧",
+      "usage": "<b>アカウント</b>\n<code>{prefix}acca [user_id]</code> · QR / 電話番号で追加\n<code>{prefix}acca cancel</code> · ログインをキャンセル\n<code>{prefix}accs [#]</code> · アカウントパネル\n<code>{prefix}acc [#]</code> · アカウントパネル\n<code>{prefix}acc 2 start|stop|restart|on|off|del</code>",
       "empty": "登録されたアカウントはありません。",
       "no_self": "セッションの user id を特定できませんでした。",
-      "not_registered": "アカウント #{n} は未登録です。"
+      "not_registered": "アカウント #{n} は未登録です。",
+      "heading": "<b>アカウント</b> · {count}",
+      "item": "#{n} · {status}",
+      "account": "アカウント #{n}",
+      "detail": "<b>アカウント #{n}</b>\n<code>{uid}</code> · {status}\n自動起動: {enabled}",
+      "owner": "<b>これはオーナーのアカウントです。</b>",
+      "on": "オン",
+      "off": "オフ",
+      "changed": "アカウント一覧が変更されました。",
+      "reopen": "{prefix}accs を開き直してください。",
+      "remove_confirm": "<b>アカウント #{n} を削除しますか？</b>\n動作を停止します。セッションファイルは保持されます。",
+      "permissions": "<b>権限</b> · {account}\n<code>{uid}</code>\nアカウント管理の権限のみ。",
+      "access_off": "アクセスは無効です。",
+      "cancelled": "キャンセルしました。",
+      "cancel_denied": "ログインを開始したユーザーのみキャンセルできます。",
+      "no_login": "ログインは開始されていません。",
+      "already_added": "アカウント #{n} は追加済みです。",
+      "result": "アカウント #{n}: {status}。",
+      "button": {
+        "add": "アカウント追加",
+        "refresh": "更新",
+        "close": "閉じる",
+        "permissions": "権限",
+        "start": "起動",
+        "stop": "停止",
+        "restart": "再起動",
+        "login": "ログイン",
+        "enable_start": "有効化して起動",
+        "autostart_on": "自動起動オン",
+        "autostart_off": "自動起動オフ",
+        "remove": "削除",
+        "back": "戻る",
+        "accounts": "‹ アカウント",
+        "grant_all": "すべて許可",
+        "revoke": "すべて解除",
+        "cancel": "キャンセル",
+        "qr": "QR",
+        "phone": "電話番号",
+        "submit": "送信",
+        "enter_phone": "電話番号を入力",
+        "enter_code": "コードを入力",
+        "enter_password": "パスワードを入力"
+      },
+      "right": {
+        "view": "閲覧",
+        "add": "追加",
+        "start": "起動",
+        "stop": "停止",
+        "restart": "再起動",
+        "autostart": "自動起動",
+        "remove": "削除"
+      },
+      "status": {
+        "current": "使用中",
+        "running": "稼働中",
+        "starting": "起動中",
+        "login": "ログインが必要",
+        "stopped": "停止中",
+        "disabled": "無効",
+        "enabled": "有効",
+        "removed": "削除済み"
+      },
+      "login": {
+        "saved": "<i>ログインするには「保存したメッセージ」を開いてください。</i>",
+        "private": "<i>ログインするにはプライベートチャットを開いてください。</i>",
+        "choose": "<b>アカウント追加</b>\nログイン方法を選択してください。",
+        "timeout": "ログインの時間が切れました。",
+        "retry_timeout": "ログインの時間が切れました。{prefix}acca をもう一度実行してください。",
+        "open_failed": "ログインを開けませんでした。もう一度お試しください。",
+        "added": "アカウント #{n} を追加しました。起動中…",
+        "running": "アカウント #{n} を追加し、起動しました。",
+        "starting": "アカウント #{n} を追加しました。起動中です。{prefix}accs で確認してください。",
+        "start_failed": "アカウント #{n} を追加しましたが、起動できませんでした。{prefix}accs を開いてください。",
+        "expired": "このログインは期限切れです。",
+        "busy": "ログインはすでに進行中です。",
+        "submitted": "送信しました。",
+        "input_expired": "この入力は期限切れです。",
+        "phone_format": "国際形式の電話番号を入力してください。例: +12345678901。",
+        "code_format": "Telegram のコードを入力してください。",
+        "password_format": "2FA パスワードを入力してください。",
+        "check_form": "ログイン画面を確認してください。",
+        "edit_input": "入力を修正してもう一度お試しください。",
+        "use_phone": "{phone} を使用",
+        "submit_code": "コードを送信",
+        "submit_password": "パスワードを送信",
+        "continue": "タップして続行。",
+        "checking": "確認中…",
+        "private_only": "ログイン用のプライベートチャットを使ってください。",
+        "no_password": "パスワードは要求されていません。",
+        "scan": "追加するアカウントでスキャンしてください。\n設定 → デバイス → デスクトップデバイスを接続。",
+        "password_prompt": "<b>2FA パスワード</b>\nパスワードを入力してログインを完了してください。",
+        "password_command": "2FA パスワードが必要です。{prefix}acca password <パスワード> を送信してください。",
+        "wrong_password": "パスワードが違います。もう一度お試しください。",
+        "phone_prompt": "<b>電話番号</b>\n国際形式で入力してください。例: +12345678901。",
+        "phone_invalid": "電話番号が無効です。",
+        "phone_banned": "この電話番号はブロックされています。",
+        "code_prompt": "<b>ログインコード</b>\nTelegram から届いたコードを入力してください。",
+        "wrong_code": "コードが違います。もう一度お試しください。",
+        "code_expired": "コードの期限が切れました。電話番号を入力して新しいコードを取得してください。",
+        "qr_prompt": "<b>QR ログイン</b>\n追加するアカウントで下の QR コードをスキャンしてください。",
+        "flood": "{seconds} 秒後にお試しください。",
+        "failed": "ログインに失敗しました。もう一度お試しください。"
+      },
+      "error": {
+        "no_permission": "権限がありません。",
+        "owner_protected": "オーナーのアカウントは保護されています。",
+        "invalid_permission": "無効な権限です。",
+        "invalid_user": "無効なユーザーです。",
+        "not_found": "アカウント #{n} が見つかりません。",
+        "current": "このアカウントはここで稼働中です。",
+        "invalid_lock": "セッションをロックできません。",
+        "running": "アカウントはすでに稼働中です。",
+        "invalid_owner": "無効なオーナーです。",
+        "invalid_id": "アカウントID と番号には正の数が必要です。",
+        "wrong_session": "セッションがアカウントと一致しません。",
+        "number_taken": "アカウント番号 #{n} は使用中です。",
+        "stop_first": "先にアカウントを停止してください。",
+        "disabled": "アカウント #{n} は無効です。",
+        "login_first": "先にこのアカウントにログインしてください。",
+        "stopping": "アカウント #{n} は停止処理中です。",
+        "login_busy": "ログインはすでに進行中です。",
+        "qr_failed": "QR コードを送信できませんでした。",
+        "phone_unavailable": "この番号ではログインできません。QR をお試しください。",
+        "login_response": "ログイン時に予期しない応答がありました。",
+        "no_user": "ログインでユーザーを取得できませんでした。",
+        "wrong_account": "アカウントが違います。ユーザー {uid} が必要です。",
+        "unknown": "操作を完了できませんでした。"
+      }
     },
     "acl": {
-      "description": "Access control administration: grant, revoke, list user permissions",
+      "description": "権限管理",
       "commands": {
         "perms": {
-          "description": "List permissions of all users"
+          "description": "権限一覧"
         },
         "perm": {
-          "description": "Grant/revoke: perm <user_id> <owner|admin|trusted|everyone> [remove]"
+          "description": "権限を付与・取り消し"
         },
         "whois": {
-          "description": "User permissions: whois <user_id>"
+          "description": "ユーザーの権限"
+        },
+        "owadd": {
+          "description": "オーナーを追加"
+        },
+        "owrm": {
+          "description": "オーナーを削除"
+        },
+        "owls": {
+          "description": "オーナー一覧"
+        },
+        "sgnew": {
+          "description": "権限グループを作成"
+        },
+        "sgls": {
+          "description": "グループ一覧"
+        },
+        "sg": {
+          "description": "グループのメンバーとルール"
+        },
+        "sgdel": {
+          "description": "グループを削除"
+        },
+        "sgadd": {
+          "description": "メンバーを追加"
+        },
+        "sgrm": {
+          "description": "メンバーを削除"
+        },
+        "rule": {
+          "description": "アクセスルールを追加"
+        },
+        "rulerm": {
+          "description": "ルールを削除"
+        },
+        "ruleclr": {
+          "description": "ルールを消去"
         }
       },
       "usage": "使い方:\n!owadd <user_id|reply> — owner を付与\n!owrm <user_id|reply> — owner を取り消す\n!owls — オーナー一覧\n!sgnew <name> — 権限グループを作成\n!sgls — グループ一覧\n!sg <name> — グループのメンバーと権限\n!sgdel <name> — グループを削除\n!sgadd <name> <user_id|reply> — グループに追加\n!sgrm <name> <user_id|reply> — グループから除外\n!rule <user|chat|sgroup> <target> <command|module>/<name> [期限] — ルールを追加\n!rulerm — ルールを削除\n!ruleclr — 対象のルールを全消去\n!perm <user_id> <admin|trusted|everyone> [remove] — 権限の付与/取り消し\n!perms — 権限一覧\n!whois <user_id> — ユーザーの権限",
@@ -200,7 +407,7 @@
     },
     "lg": "ログ末尾:\n{lines}",
     "commands": {
-      "lg": "view recent observatory log entries"
+      "lg": "最近のログを表示"
     },
     "config": {
       "description": "Hotaru 設定モジュール",
@@ -214,34 +421,302 @@
       }
     },
     "settings": {
-      "description": "エイリアスとプレフィックス管理",
+      "description": "別名とプレフィックスの管理",
       "commands": {
-        "alias": "エイリアス作成",
-        "rmalias": "エイリアス削除",
-        "prefix": "プレフィックス変更"
+        "alias": {
+          "description": "コマンドの別名を作成"
+        },
+        "rmalias": {
+          "description": "コマンドの別名を削除"
+        },
+        "prefix": {
+          "description": "コマンドのプレフィックスを変更"
+        }
       }
+    },
+    "kernel": {
+      "runtime_unavailable": "サービスを利用できません",
+      "modules_unavailable": "モジュールを利用できません",
+      "modules_none": "モジュールはありません",
+      "usage": "使い方: {usage}",
+      "alias_set": "エイリアスを設定しました: {alias} → {command}",
+      "alias_removed": "エイリアスを削除しました: {alias}",
+      "alias_not_found": "エイリアスが見つかりません: {alias}"
+    },
+    "logger": {
+      "description": "ログをトピックに転送",
+      "mirror_on": "ログ転送を有効にしました",
+      "mirror_off": "ログ転送を無効にしました",
+      "level_set": "転送レベル: {level}",
+      "status": "トピック: {topic} • エラー: {failed}",
+      "status_error": " • 最新: {error}",
+      "no_observatory": "Observatory を利用できません",
+      "no_entries": "このレベルのログはありません",
+      "topic_unavailable": "トピックを利用できません: {error}",
+      "logs_caption": "Hotaru ログ: {count} 件（レベル {level}）",
+      "logs_sent": "ログを送信しました: {count} 件",
+      "commands": {
+        "logs": {
+          "description": "ユーザーボットのログとファイル"
+        }
+      },
+      "pending": "待機中"
+    },
+    "executor": {
+      "heading": "<b>実行</b> | <code>{elapsed:.1f} ミリ秒</code>",
+      "exit_code": "終了コード: {returncode}",
+      "running": "実行中…",
+      "usage_sh": "<b>使い方:</b> <code>{prefix}sh &lt;コマンド&gt;</code>",
+      "usage_py": "<b>使い方:</b> <code>{prefix}py &lt;コード&gt;</code> またはコードに返信。-so で出力を非表示",
+      "cancelled": "実行をキャンセルしました",
+      "done": "完了 ✓",
+      "kill_reply": "<b>実行中の py/sh の出力メッセージに返信して停止してください。</b>",
+      "killed": "<b>プロセスを停止しました。</b>",
+      "no_process": "<b>このメッセージに対応する実行中のプロセスはありません。</b>",
+      "section": {
+        "code": "コード",
+        "command": "コマンド",
+        "output": "出力",
+        "result": "結果",
+        "return": "戻り値",
+        "traceback": "トレースバック"
+      },
+      "description": "Pythonとシェルコマンドの実行",
+      "commands": {
+        "py": {
+          "description": "Pythonコードを実行"
+        },
+        "sh": {
+          "description": "シェルコマンドを実行"
+        },
+        "kill": {
+          "description": "実行中のコマンドを停止"
+        }
+      }
+    },
+    "catalyst": {
+      "description": "モジュール管理",
+      "commands": {
+        "ld": {
+          "description": "モジュールを読み込む"
+        },
+        "ul": {
+          "description": "モジュールを停止"
+        },
+        "rl": {
+          "description": "モジュールを再読み込み"
+        },
+        "ex": {
+          "description": "モジュールをエクスポート"
+        },
+        "rs": {
+          "description": "モジュールのデータをリセット"
+        },
+        "resetdb": {
+          "description": "モジュールのデータをリセット"
+        }
+      }
+    },
+    "capability_details": {
+      "mt": "MTProtoでメッセージ、メディア、会話、チャット、チャンネル、連絡先にアクセス。アカウントのセキュリティ操作と支払いはブロックされます",
+      "files": "モジュールの作業フォルダー内のファイルを読み書きします",
+      "net": "外部へのHTTP(S)リクエスト。ローカル・内部ネットワークと禁止されたホストへのアクセスはブロックされます",
+      "state": "モジュール専用領域にキーと値のデータを永続保存します",
+      "inline": "インラインボットへの問い合わせと操作を行います",
+      "modules": "モジュールの読み込み、停止、再読み込み、一覧表示と、ハッシュ・マニフェスト情報の確認を行います",
+      "assets": "非公開の添付ファイル保存領域にアクセスします",
+      "shell": "モジュールの作業フォルダーでシェルコマンドを実行します。時間と出力量に制限があります",
+      "logs": "構造化されたイベントをログに記録します。常に許可されます",
+      "fetch": "メッセージ、ユーザー・チャット情報、返信元を読み取ります。読み取り専用で常に許可されます"
     }
   },
   "inline_commands_hint": "コマンドを選択 — 任意のチャットで @<bot> とコマンド名を入力",
   "settings": {
-    "runtime_unavailable": "Runtime unavailable",
-    "usage_alias": "Usage: !alias <alias> <command>",
-    "alias_invalid": "Alias: 1-32 chars, a-z, 0-9 and _ only",
-    "alias_exists": "Such command already exists: {alias}",
-    "command_not_found": "Command not found: {command}\nAvailable: {known}",
-    "alias_taken": "Alias already taken: {alias} -> {command}. Remove it first via !rmalias {alias}",
-    "alias_set": "Alias set: {alias} → {command}",
-    "usage_rmalias": "Usage: !rmalias <alias>",
-    "alias_removed": "Alias removed: {alias}",
-    "alias_not_found": "Alias not found: {alias}",
-    "prefix_current": "Current prefix: {prefix}. Change: !prefix <char>",
-    "prefix_invalid": "Prefix must be a single non-whitespace character",
+    "runtime_unavailable": "サービスを利用できません",
+    "usage_alias": "使い方: {prefix}alias <別名> <コマンド>",
+    "alias_invalid": "別名は1～32文字で、a-z、0-9、_ のみ使用できます。",
+    "alias_exists": "コマンドはすでに存在します: {alias}",
+    "command_not_found": "コマンドが見つかりません: {command}\n使用可能: {known}",
+    "alias_taken": "別名は使用中です: {alias} → {command}。{prefix}rmalias {alias} で削除できます。",
+    "alias_set": "別名を設定しました: {alias} → {command}",
+    "usage_rmalias": "使い方: {prefix}rmalias <別名>",
+    "alias_removed": "別名を削除しました: {alias}",
+    "alias_not_found": "別名が見つかりません: {alias}",
+    "prefix_current": "現在のプレフィックス: {prefix}。変更: {prefix}prefix <文字>",
+    "prefix_invalid": "プレフィックスは空白以外の1文字にしてください。",
     "prefix_set": "プレフィックスを {prefix} に変更しました",
-    "description": "エイリアスとプレフィックス管理",
+    "description": "別名とプレフィックスの管理",
     "commands": {
-      "alias": "エイリアス作成",
-      "rmalias": "エイリアス削除",
-      "prefix": "プレフィックス変更"
+      "alias": "コマンドの別名を作成",
+      "rmalias": "コマンドの別名を削除",
+      "prefix": "コマンドのプレフィックスを変更"
+    }
+  },
+  "common": {
+    "ok": "OK",
+    "cancel": "キャンセル",
+    "close": "閉じる",
+    "back": "戻る",
+    "unknown_error": "不明なエラー",
+    "confirm": "確認",
+    "none": "なし",
+    "unknown": "不明",
+    "yes": "はい",
+    "no": "いいえ",
+    "seconds": "{n}秒",
+    "invalid_value": "無効な値です"
+  },
+  "languages": {
+    "ru": "ロシア語",
+    "en": "英語",
+    "kz": "カザフ語",
+    "uk": "ウクライナ語",
+    "ja": "日本語"
+  },
+  "runtime": {
+    "modules_unavailable": "モジュールを利用できません",
+    "modules_empty": "モジュールがありません",
+    "modules": "モジュール:\n",
+    "module_unavailable": "モジュールを利用できません",
+    "module_missing": "モジュールが見つかりません: {module_id}",
+    "module_info": "モジュール: {module}\nバージョン: {version}\nコマンド: {commands}\n機能: {capabilities}\n説明: {description}",
+    "help_unavailable": "ヘルプを利用できません",
+    "page_unavailable": "ヘルプページを利用できません",
+    "catalog": "一覧: ",
+    "next": "次へ",
+    "bot_unavailable": "インラインボットを利用できません",
+    "bot_failed": "インラインボットの作成に失敗しました: {error}",
+    "protected": "システムモジュールは保護されています: {module_id}",
+    "unload_failed": "モジュールの停止に失敗しました: {error}",
+    "not_ready": "サービスの準備ができていません",
+    "purged": "モジュールを削除しました: {module}（データも削除）",
+    "unloaded": "モジュールを停止しました: {module}（データは保持）",
+    "reset_failed": "データをリセットしましたが、再読み込みに失敗しました: {error}",
+    "reset": "データをリセットしました: {module_id}",
+    "id_mismatch": "モジュールIDが一致しません: {module_id}",
+    "downgrade": "バージョンの引き下げは許可されていません: {old} → {new}",
+    "rollback_failed": "再読み込みに失敗しました: {error}。元のバージョンの復元にも失敗しました",
+    "rolled_back": "再読み込みに失敗しました: {error}。元のバージョンを復元しました",
+    "reloaded": "再読み込みしました: {module_id}",
+    "exported": "エクスポートしました: {file_name}",
+    "invalid_request": "無効なリクエストです",
+    "cancelled": "キャンセルしました",
+    "module_cancelled": "キャンセルしました: {module_id}",
+    "source_missing": "ソースコードがありません",
+    "activation_failed": "モジュールの読み込みに失敗しました",
+    "module_loaded": "モジュールを読み込みました",
+    "loaded": "読み込みました: {module_id} {version}",
+    "backup_failed": "バックアップに失敗しました: {error}",
+    "backup_created": "バックアップを作成しました: {name}",
+    "backups_empty": "バックアップがありません",
+    "backups": "バックアップ:\n",
+    "backup_unavailable": "バックアップを利用できません",
+    "backup_invalid": "無効なバックアップです: {error}",
+    "backup_valid": "バックアップは正常です。ファイル数: {count}",
+    "restore_confirm": "復元しますか？",
+    "invalid_module": "無効なモジュールです",
+    "invalid_page": "無効なヘルプページです",
+    "invalid_restore": "無効な復元リクエストです",
+    "restore_failed": "復元に失敗しました",
+    "restore_error": "復元に失敗しました: {error}",
+    "restore_done": "復元しました",
+    "callback_failed": "操作に失敗しました",
+    "callback_denied": "ボタンの有効期限が切れているか、利用できません。",
+    "load_error": "読み込みに失敗しました: {error}: {detail}",
+    "load_failed": "読み込みに失敗しました: {error}",
+    "load_screen": "読み込みに失敗しました: {module_id} {version}\n{screen}",
+    "updated": "更新しました: {module_id} {version}",
+    "caps_request": "モジュール {module_id} v{version} が次の機能を要求しています:",
+    "caps_retry": "確認するには読み込みコマンドを再実行してください",
+    "usage_mi": "使い方: {prefix}mi <module>",
+    "usage_help": "使い方: {prefix}hlp [page] | {prefix}hlp <module>",
+    "usage_reload": "使い方: {prefix}rl <module> [force]",
+    "usage_unload": "使い方: {prefix}ul [-c] <module>",
+    "usage_reset": "使い方: {prefix}rs <module>",
+    "usage_export": "使い方: {prefix}ex <module>",
+    "usage_backup": "使い方: {prefix}bk | {prefix}bk list | {prefix}bk test <archive> | {prefix}bk restore <archive>",
+    "usage_load": "使い方: {prefix}ld <raw-url> または .hmod ファイルに返信",
+    "bot_status": "インラインボット: @{name}（{status}）",
+    "health": "状態: {status}",
+    "last_error": "最後のエラー: {error}",
+    "running_commands": "実行中のコマンド: {count}",
+    "connection": "接続: {status}; 再接続回数: {count}; MTProto: {mt}; ボット: {bot}",
+    "health_ready": "準備完了",
+    "health_degraded": "一部に問題あり",
+    "health_stopped": "停止中",
+    "health_closed": "終了済み",
+    "health_new": "起動中",
+    "service": {
+      "runtime": "サービス",
+      "kernel": "カーネル",
+      "state": "ストレージ",
+      "capabilities": "機能",
+      "modules": "モジュール",
+      "responses": "応答",
+      "callbacks": "ボタン",
+      "observatory": "ログ",
+      "backups": "バックアップ",
+      "tasks": "タスク",
+      "event_router": "イベント"
+    },
+    "file_missing": "モジュールファイルが見つかりません",
+    "file_document": "モジュールをファイルとして送信してください",
+    "timeout": "コマンド {command} が {seconds}秒でタイムアウトしました。",
+    "unknown_capability": "不明な機能（拒否）"
+  },
+  "acl": {
+    "owners": "<b>オーナー</b><br>",
+    "account": " · アカウント",
+    "protected": " · 保護済み",
+    "failed": "<b>エラー:</b> <i>{error}</i>",
+    "owner_added": "<code>{user_id}</code> <b>にオーナー権限を付与しました</b>",
+    "owner_exists": "<code>{user_id}</code> はすでにオーナーです",
+    "owner_removed": "<code>{user_id}</code> <b>のオーナー権限を取り消しました</b>",
+    "owner_missing": "<code>{user_id}</code> は追加のオーナーではありません",
+    "group_created": "<b>グループを作成しました:</b> <code>{name}</code>",
+    "group_deleted": "<b>グループを削除しました:</b> <code>{name}</code>",
+    "group_missing": "グループ <code>{name}</code> が見つかりません",
+    "group_item": "<b>{name}</b> — ユーザー: {users}、ルール: {rules}",
+    "groups": "<b>権限グループ</b><br>",
+    "group_detail": "<b>グループ {name}</b><br><b>ユーザー</b><br>{users}<br><b>ルール</b><br>{rules}",
+    "member_exists": "<code>{user_id}</code> はすでに <code>{name}</code> に所属しています",
+    "member_missing": "<code>{user_id}</code> は <code>{name}</code> に所属していません",
+    "member_added": "<code>{user_id}</code> を <code>{name}</code> <b>に追加しました</b>",
+    "member_removed": "<code>{user_id}</code> を <code>{name}</code> <b>から削除しました</b>",
+    "duration": "（期間: {duration}）",
+    "group_rule": "<b>ルールを追加しました:</b> sgroup <code>{target}</code> → {kind}/{rule}{until}",
+    "rule_added": "<b>ルールを追加しました:</b> {kind} <code>{target}</code> → {type}/{rule}{until}",
+    "rule_removed": "<b>ルールを削除しました</b>",
+    "nothing_remove": "削除するものがありません",
+    "rules_cleared": "<b>ルールを消去しました</b>",
+    "nothing_clear": "消去するものがありません",
+    "permissions": "<b>権限</b><br>",
+    "user_groups": "<br>グループ: <code>{groups}</code>",
+    "user_detail": "<b>ユーザー <code>{user_id}</code></b><br>権限: <b>{permissions}</b><br>ランク: <code>{rank}</code>{groups}",
+    "no_permission": "権限がありません。",
+    "revoked": "<code>{user_id}</code> の <code>{label}</code> <b>権限を取り消しました</b>",
+    "nothing_revoke": "取り消す権限がありません",
+    "grant_failed": "<b>権限の付与に失敗しました:</b> <i>{error}</i>",
+    "granted": "<code>{user_id}</code> に <code>{label}</code> <b>権限を付与しました</b>",
+    "self_owner": "このユーザーはすでにアカウントの所有者です。",
+    "bad_group": "グループ名は32文字以内の英数字で入力してください。",
+    "no_groups": "権限グループがありません。作成: {prefix}sgnew <名前>",
+    "bad_duration": "期間は数値 + s/m/h/d/w、または forever を指定してください。",
+    "bad_rule": "ルールは command/名前 または module/名前 を指定してください。",
+    "empty": "付与された権限がありません。{prefix}perm <user_id> <ロール> を使ってください。",
+    "bad_label": "不明な権限: {label}",
+    "no_owner_grant": "オーナー権限の付与には {prefix}owadd を使ってください。",
+    "usage": "<code>{prefix}owadd &lt;user_id|reply&gt;</code> — オーナーを追加\n<code>{prefix}owrm &lt;user_id|reply&gt;</code> — オーナーを削除\n<code>{prefix}owls</code> — オーナー一覧\n<code>{prefix}sgnew &lt;name&gt;</code> — 権限グループを作成\n<code>{prefix}sgls</code> — グループ一覧\n<code>{prefix}sg &lt;name&gt;</code> — グループのメンバーとルール\n<code>{prefix}sgdel &lt;name&gt;</code> — グループを削除\n<code>{prefix}sgadd &lt;name&gt; &lt;user_id|reply&gt;</code> — メンバーを追加\n<code>{prefix}sgrm &lt;name&gt; &lt;user_id|reply&gt;</code> — メンバーを削除\n<code>{prefix}rule &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;command|module&gt;/&lt;name&gt; [expiry]</code> — アクセスルールを追加\n<code>{prefix}rulerm &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;rule&gt;</code> — ルールを削除\n<code>{prefix}ruleclr &lt;user|chat|sgroup&gt; [target]</code> — ルールを消去\n<code>{prefix}perm &lt;user_id&gt; &lt;admin|trusted|everyone&gt; [remove]</code> — 権限を付与・取り消し\n<code>{prefix}perms</code> — 権限一覧\n<code>{prefix}whois &lt;user_id&gt;</code> — ユーザーの権限",
+    "account_owner": "アカウントの所有者は削除できません。"
+  },
+  "inline": {
+    "form": "Hotaruフォーム",
+    "error": {
+      "title": "エラー {code}",
+      "400": "無効なリクエストです",
+      "403": "アクセスが拒否されました",
+      "404": "見つかりません",
+      "500": "内部エラーです"
     }
   }
 }

@@ -18,15 +18,15 @@ import time
 
 
 def _text_running(ctx: Any) -> Any:
-    return f"<b>{ctx.t('kernel.power.running', 'Юзербот работает')}</b>"
+    return f"<b>{ctx.t('kernel.power.running')}</b>"
 
 def _text_stopped(ctx: Any) -> Any:
-    return f"<b>{ctx.t('kernel.power.stopped', 'Юзербот приостановлен')}</b>"
+    return f"<b>{ctx.t('kernel.power.stopped')}</b>"
 
 async def command_stop(ctx: Any, invocation: Any) -> Any:
     runtime = ctx.runtime
     if runtime.kernel.suspended:
-        await ctx.respond(ctx.t("kernel.power.already_stopped", "Юзербот уже остановлен (приостановлен)."))
+        await ctx.respond(ctx.t('kernel.power.already_stopped'))
         return
     runtime.kernel.suspended = True
     if runtime.state is not None:
@@ -36,7 +36,7 @@ async def command_stop(ctx: Any, invocation: Any) -> Any:
 async def command_start(ctx: Any, invocation: Any) -> Any:
     runtime = ctx.runtime
     if not runtime.kernel.suspended:
-        await ctx.respond(ctx.t("kernel.power.already_running", "Юзербот уже запущен."))
+        await ctx.respond(ctx.t('kernel.power.already_running'))
         return
     runtime.kernel.suspended = False
     if runtime.state is not None:
@@ -55,7 +55,7 @@ async def command_restart(ctx: Any, invocation: Any) -> Any:
                 peer_hex = (await mt.resolve_peer(chat_id)).hex()
         except Exception:
             peer_hex = None
-    await ctx.respond(ctx.t("kernel.power.restarting", "Перезапускаю юзербот..."), parse_mode="HTML")
+    await ctx.respond(ctx.t('kernel.power.restarting'), parse_mode="HTML")
     target_id = ctx.response_message_id
     if isinstance(target_id, int):
         message_id = target_id
@@ -103,8 +103,8 @@ async def sunrise(ctx: Any) -> Any:
     if not (isinstance(chat_id, int) and isinstance(message_id, int)):
         return
     took = max(1, round(time.time() - float(ts))) if isinstance(ts, (int, float)) else None
-    took = f"{took}s" if took is not None else "n/a"
-    text = ctx.t("kernel.power.restarted", "Юзербот успешно перезапущен за {took}", took=took)
+    took = ctx.t("common.seconds", n=took) if took is not None else ctx.t("common.unknown")
+    text = ctx.t('kernel.power.restarted', took=took)
     html = f"<b>{text}</b>"
     rich = {"_": "inputRichMessageHTML", "html": html}
     try:

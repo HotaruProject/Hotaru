@@ -63,8 +63,8 @@ class InputContext:
         self.form_nonce: str | None = None
         self.inline_message_id = getattr(query, "msg_id", None)
 
-    async def reject(self, text: str = "Invalid value") -> Any:
-        return await self.answer(text, alert=True)
+    async def reject(self, text: str | None = None) -> Any:
+        return await self.answer(self.runtime.t("common.invalid_value") if text is None else text, alert=True)
 
     async def submit(self, text: str | None = None, **kwargs: Any) -> Any:
         return await self.answer(text, **kwargs)
@@ -121,6 +121,8 @@ class Runtime:
     state: StateStore | None = None
     access: Any = None
     account_manager: Any = None
+    account_login: Any = None
+    _account_lock: Any = None
     capabilities: CapabilityBroker | None = None
     modules: ModuleManager | None = None
     stager: ModuleStager | None = None
@@ -174,6 +176,9 @@ class Runtime:
         from .accounts import parse_user_id, user_vault_path, account_home
         uid = parse_user_id(self.config.session_name)
         if uid is not None:
+            from .accounts import AccountLock
+            fd = os.environ.pop("HOTARU_ACCOUNT_LOCK", None)
+            self._account_lock = AccountLock(session_dir, uid, int(fd) if fd is not None else None)
             home = account_home(session_dir, uid)
             home.mkdir(parents=True, exist_ok=True)
             try:
@@ -221,12 +226,13 @@ class Runtime:
         self.kernel.security = self.security
         self.state = StateStore(self.config.state_path)
         self.lexicon = Lexicon(self.lexicon_dir)
+        from .accounts import AccountManager
+        self.account_manager = AccountManager.open(self.state, self.config.session_dir)
+        self.account_manager.protect(self.state, self.config.owner_id)
         from .access import AccessManager, AccessStore
         self.access = AccessManager(self.config.owner_id, AccessStore(self.state))
         self.security.set_access(self.access)
         self.kernel.access = self.access
-        from .accounts import AccountManager
-        self.account_manager = AccountManager(self.state, self.config.session_dir)
         
         user_aliases = self.state.get_setting("user_aliases", {})
         for alias, command in user_aliases.items():
@@ -298,9 +304,9 @@ class Runtime:
             pass
         try:
             return await self.callbacks.dispatch(callback)
-        except CallbackDenied as exc:
+        except CallbackDenied:
             try:
-                await callback.answer(str(exc) if str(exc) else "Callback denied", alert=True)
+                await callback.answer(self.t("runtime.callback_denied"), alert=True)
             except Exception:
                 pass
             return None
@@ -311,15 +317,14 @@ class Runtime:
         if self.inline.info is None:
             with trusted_scope():
                 await self.inline.ensure_bot(allow_create=False)
-        if self.inline.bot_app is None:
-            with trusted_scope():
-                await self.inline.start()
-        if self.inline.info is None or self.inline.bot_app is None:
-            raise RuntimeError("inline bot form transport is not ready")
+        with trusted_scope():
+            await self.inline.start()
         try:
             await asyncio.wait_for(self.inline.ready.wait(), timeout=15.0)
         except asyncio.TimeoutError as exc:
             raise RuntimeError("inline bot polling is not ready") from exc
+        if self.inline.info is None or self.inline.bot_app is None:
+            raise RuntimeError("inline bot form transport is not ready")
         owner = self.kernel.owner_id if self.kernel is not None else None
         if owner is None:
             raise RuntimeError("form owner is missing")
@@ -870,6 +875,10 @@ class Runtime:
         await delete_chat_msg(self.app, chat_id, message_id)
 
     async def _on_inline_query(self, query: Any) -> None:
+        text = (query.query or "").strip()
+        if text.startswith('hotaru-login:') and self.account_login is not None:
+            await self.account_login.inline(query)
+            return
         if self.security is not None:
             from .security import AccessVerdict
 
@@ -901,7 +910,7 @@ class Runtime:
                 await answer_tl(query, results=[], cache_time=0, is_personal=True)
                 return
             form_text, buttons, rich = form
-            result = InlineObj.article("hotaru-form", "Hotaru form", form_text, parse_mode="HTML")
+            result = InlineObj.article("hotaru-form", self.t("inline.form"), form_text, parse_mode="HTML")
             if rich:
                 result["input_message_content"] = {"rich_message": {"_": "inputRichMessageHTML", **rich_html(form_text)}}
             if buttons:
@@ -915,6 +924,9 @@ class Runtime:
 
     async def _on_chosen_input(self, chosen: Any) -> None:
         text = str(getattr(chosen, "query", "") or "").strip()
+        if text.startswith("hotaru-login:") and self.account_login is not None:
+            await self.account_login.chosen(chosen)
+            return
         if text.startswith("hotaru-form:"):
             nonce = text.split(":", 1)[1]
             if self._form_inline_ids is None:
@@ -1028,7 +1040,7 @@ class Runtime:
             if self._form_module_ids is None:
                 self._form_module_ids = {}
             self._form_module_ids[nonce] = module_id
-        markup = kbd_to_tl({"inline_keyboard": layout})
+        markup = kbd_to_tl({"inline_keyboard": layout}) if layout else None
         if inline_id is None:
             chat_id = getattr(command, "chat_id", None)
             msg_id = getattr(command, "id", None) or getattr(command, "msg_id", None)
@@ -1246,7 +1258,7 @@ class Runtime:
             await query.answer(results=[], cache_time=0, is_personal=True)
             return
         body, buttons, rich = form
-        result = InlineObj.article("hotaru-form", "Hotaru form", body, parse_mode="HTML", kbd={"inline_keyboard": [buttons]})
+        result = InlineObj.article("hotaru-form", self.t("inline.form"), body, parse_mode="HTML", kbd={"inline_keyboard": [buttons]})
         if rich:
             result["input_message_content"] = {"rich_message": {"_": "inputRichMessageHTML", **rich_html(body)}}
         await answer_tl(query, results=[result], cache_time=0, is_personal=True)
@@ -1257,7 +1269,7 @@ class Runtime:
         from .security import AccessVerdict
 
         verdict = self.security.check_callback(callback, transport="inline")
-        if verdict is not AccessVerdict.ALLOW:
+        if verdict is not AccessVerdict.ALLOW and not (self.account_login is not None and self.account_login.ui.accepts(callback)):
             try:
                 await callback.answer()
             except Exception:
@@ -1271,7 +1283,7 @@ class Runtime:
             return await self.callbacks.dispatch(callback)
         except CallbackDenied as exc:
             try:
-                await callback.answer(str(exc) if str(exc) else "Callback denied", alert=True)
+                await callback.answer(self.t("runtime.callback_denied"), alert=True)
             except Exception:
                 pass
             if self.observatory is not None:
@@ -1279,7 +1291,7 @@ class Runtime:
             return None
         except Exception as exc:
             try:
-                await callback.answer("Callback failed", alert=True)
+                await callback.answer(self.t('runtime.callback_failed'), alert=True)
             except Exception:
                 pass
             if self.observatory is not None:
@@ -1306,40 +1318,44 @@ class Runtime:
             import goygram
             goygram_version = goygram.__version__
         except Exception:
-            goygram_version = "unknown"
+            goygram_version = self.t("common.unknown")
         return f"Hotaru {__version__} · goygram {goygram_version}"
 
     def _command_st(self, invocation: Any) -> str:
         status = self.status()
-        flags = ", ".join(f"{key}={value}" for key, value in status.items())
-        lines = [f"health: {self.health()}", flags]
+        flags = ", ".join(
+            f"{self.t('runtime.service.' + key)}: "
+            + (self.t("common.yes" if value else "common.no") if isinstance(value, bool) else self.t("runtime.health_" + value))
+            for key, value in status.items()
+        )
+        lines = [self.t('runtime.health', status=self.t("runtime.health_ready" if self.health() else "runtime.health_degraded")), flags]
         if self.supervisor is not None:
             state = self.supervisor.state
-            lines.append(f"connection: {state.health.value} reconnects={state.reconnects} mt={state.mt_ready} bot={state.bot_ready}")
+            lines.append(self.t('runtime.connection', status=self.t("runtime.health_" + state.health.value, state.health.value), count=state.reconnects, mt=self.t("common.yes" if state.mt_ready else "common.no"), bot=self.t("common.yes" if state.bot_ready else "common.no")))
             if state.last_error:
-                lines.append(f"last_error: {state.last_error}")
+                lines.append(self.t('runtime.last_error', error=state.last_error))
         if self.kernel is not None:
-            lines.append(f"running_commands: {self.kernel.running()}")
+            lines.append(self.t('runtime.running_commands', count=self.kernel.running()))
         if self.inline is not None and self.inline.info is not None:
             inline_task = cast(asyncio.Task[Any] | None, getattr(self.inline, "_task"))
             running = inline_task is not None and not inline_task.done()
-            lines.append(f"inline: @{self.inline.info.username} ({'running' if running else 'stopped'})")
+            lines.append(self.t("runtime.bot_status", name=self.inline.info.username, status=self.t("kernel.accounts.status.running" if running else "kernel.accounts.status.stopped")))
         return "\n".join(lines)
 
     def _command_ls(self, invocation: Any) -> str:
         if self.modules is None:
-            return "modules: unavailable"
+            return self.t('runtime.modules_unavailable')
         items = self.modules.items()
         if not items:
-            return "modules: none"
-        return "modules:\n" + "\n".join(sorted(item.loaded.manifest.module_id for item in items))
+            return self.t('runtime.modules_empty')
+        return self.t('runtime.modules') + "\n".join(sorted(item.loaded.manifest.module_id for item in items))
 
     def _module_detail_text(self, module_id: str) -> str:
         if self.modules is None:
-            return "module unavailable"
+            return self.t('runtime.module_unavailable')
         active = self.modules.get(module_id)
         if active is None:
-            return f"module not found: {module_id}"
+            return self.t('runtime.module_missing', module_id=module_id)
         manifest = active.loaded.manifest
         language = self.language()
         localized = manifest.localized(language, manifest.description)
@@ -1347,22 +1363,22 @@ class Runtime:
         commands = ", ".join(
             f"{command}: {manifest.command_details(command, language).get('description', '')}".rstrip(": ")
             for command in manifest.commands
-        ) or "none"
+        ) or self.t("common.none")
         capabilities = ", ".join(
             self.t(f"kernel.capabilities.{item}", item) for item in manifest.capabilities
-        ) if manifest.capabilities else "none"
-        return f"module: {manifest.module_id}\nversion: {manifest.version}\ncommands: {commands}\ncapabilities: {capabilities}\ndescription: {description}"
+        ) if manifest.capabilities else self.t("common.none")
+        return self.t('runtime.module_info', module=manifest.module_id, version=manifest.version, commands=commands, capabilities=capabilities, description=description)
 
     def _command_mi(self, invocation: Any) -> str:
         if len(invocation.args) != 1:
-            return "usage: !mi <module-id>"
+            return self.t('runtime.usage_mi', prefix=self.config.prefix)
         return self._module_detail_text(invocation.args[0].casefold())
 
     async def _command_hlp(self, invocation: Any) -> tuple[str, list[dict[str, str]]] | str:
         page = 0
         if invocation.args:
             if len(invocation.args) != 1:
-                return "usage: !hlp [page] | !hlp <module-id>"
+                return self.t('runtime.usage_help', prefix=self.config.prefix)
             if not invocation.args[0].isdigit():
                 return self._command_mi(invocation)
             page = int(invocation.args[0])
@@ -1370,7 +1386,7 @@ class Runtime:
 
     def _help_render(self, page: int, chat_id: int | str | None, message_id: int) -> tuple[str, list[dict[str, str]]] | str:
         if self.kernel is None or self.callbacks is None or page < 0:
-            return "help unavailable"
+            return self.t('runtime.help_unavailable')
         names = sorted(self.kernel.registry.names())
         entries: list[str] = []
         entry_ids: list[str | None] = []
@@ -1385,9 +1401,9 @@ class Runtime:
         page_size = 24
         start = page * page_size
         if start >= len(entries) and entries:
-            return "help page unavailable"
+            return self.t('runtime.page_unavailable')
         current = entries[start : start + page_size]
-        text = "catalog: " + (", ".join(current) or "none")
+        text = self.t('runtime.catalog') + (", ".join(current) or self.t("common.none"))
         if self.kernel.owner_id is None or chat_id is None:
             return text
         buttons: list[dict[str, str]] = []
@@ -1404,24 +1420,24 @@ class Runtime:
                 CallbackBinding(self.kernel.owner_id, chat_id, message_id),
                 {"action": "help_page", "payload": page + 1},
             )
-            buttons.append({"text": "Next", "callback_data": handle})
+            buttons.append({"text": self.t('runtime.next'), "callback_data": handle})
         return text, buttons
 
     async def _command_bot(self, invocation: Any) -> str:
         if self.inline is None:
-            return "inline bot: unavailable"
+            return self.t('runtime.bot_unavailable')
         info = self.inline.info
         if info is None:
             try:
                 info = await self.inline.ensure_bot()
             except Exception as exc:
-                return f"inline bot provisioning failed: {type(exc).__name__}"
+                return self.t('runtime.bot_failed', error=type(exc).__name__)
         inline_task = cast(asyncio.Task[Any] | None, getattr(self.inline, "_task"))
         if inline_task is None or inline_task.done():
             await self.inline.start()
         inline_task = cast(asyncio.Task[Any] | None, getattr(self.inline, "_task"))
         running = inline_task is not None and not inline_task.done()
-        return f"inline bot: @{info.username} ({'running' if running else 'starting'})"
+        return self.t("runtime.bot_status", name=info.username, status=self.t("kernel.accounts.status.running" if running else "kernel.accounts.status.starting"))
 
     @property
     def constellations_dir(self) -> Path:
@@ -1520,12 +1536,12 @@ class Runtime:
                     with trusted_scope():
                         source = await cap_host.call("loader", "fetch", {"op": "message", "peer": message.chat_id, "id": reply_id})
         if source is None or not hasattr(source, "get"):
-            raise ValueError("module file is missing")
+            raise ValueError(self.t('runtime.file_missing'))
         media = source.get("document") if isinstance(source.get("document"), dict) else source.get("media")
         if media is None and isinstance(source.get("media"), dict):
             media = source["media"].get("document")
         if not isinstance(media, dict):
-            raise ValueError("module file must be a document")
+            raise ValueError(self.t('runtime.file_document'))
         from relay.files import take
         app = self.app
         if getattr(source, "src", None) == "bot":
@@ -1535,7 +1551,7 @@ class Runtime:
 
     async def load_module(self, source: str | Path, *, consent_screen: Any = None) -> tuple[Any, str]:
         if self.stager is None or self.state is None:
-            raise RuntimeError("runtime services are not ready")
+            raise RuntimeError(self.t('runtime.not_ready'))
         with trusted_scope():
             with tempfile.TemporaryDirectory(prefix=".hotaru-candidate-") as candidate_dir:
                 if isinstance(source, str) and source.startswith("https://"):
@@ -1555,7 +1571,7 @@ class Runtime:
                 self._mark_caps_consent(module_id, fingerprint)
             if self.modules is not None and self.modules.get(module_id) is not None:
                 result = await self._command_rl(SimpleNamespace(args=(module_id,)))
-                if result.startswith("reloaded:"):
+                if result == self.t("runtime.reloaded", module_id=module_id):
                     return loaded, "updated"
                 return loaded, result
             try:
@@ -1565,21 +1581,21 @@ class Runtime:
                 self.state.delete_module(module_id)
                 if self.observatory is not None:
                     self.observatory.emit("modules", "load_error", module=module_id, error=type(exc).__name__, detail=str(exc)[:240])
-                return loaded, f"load failed: {type(exc).__name__}"
+                return loaded, self.t('runtime.load_failed', error=type(exc).__name__)
             if self.observatory is not None:
                 self.observatory.emit("modules", "loaded", module=module_id, version=loaded.manifest.version)
             return loaded, "loaded"
 
     async def _command_ld(self, invocation: Any) -> str | tuple[str, list[Any]]:
         if len(invocation.args) > 1:
-            return "usage: .ld <raw-url> | reply to a .hmod file | .hmod caption"
+            return self.t('runtime.usage_load', prefix=self.config.prefix)
         temporary: Path | None = None
         try:
             if invocation.args:
                 source: str | Path = invocation.args[0]
             else:
                 if invocation.message is None:
-                    return "usage: .ld <raw-url> | reply to a .hmod file | .hmod caption"
+                    return self.t('runtime.usage_load', prefix=self.config.prefix)
                 fd, raw_path = tempfile.mkstemp(prefix=".hotaru-download-", suffix=".hmod")
                 os.close(fd)
                 temporary = Path(raw_path)
@@ -1589,13 +1605,13 @@ class Runtime:
         except Exception as exc:
             if self.observatory is not None:
                 self.observatory.emit("modules", "load_error", error=type(exc).__name__, detail=str(exc)[:240])
-            return f"load failed: {type(exc).__name__}: {str(exc)[:3500]}"
+            return self.t('runtime.load_error', error=type(exc).__name__, detail=str(exc)[:3500])
         finally:
             if temporary is not None:
                 temporary.unlink(missing_ok=True)
         module_id = loaded.manifest.module_id
         if action in {"loaded", "updated"}:
-            return f"{action}: {module_id} {loaded.manifest.version}"
+            return self.t("runtime." + action, module_id=module_id, version=loaded.manifest.version)
         if action != "confirm":
             return action
         screen = await self._render_caps_screen(
@@ -1607,7 +1623,7 @@ class Runtime:
         )
         if isinstance(screen, tuple):
             return screen
-        return f"load failed: {module_id} {loaded.manifest.version}\n{screen}"
+        return self.t('runtime.load_screen', module_id=module_id, version=loaded.manifest.version, screen=screen)
 
     def purge_module_data(self, module_id: str) -> None:
         module_id = module_id.casefold()
@@ -1620,16 +1636,16 @@ class Runtime:
 
     async def unload_module(self, module_id: str, *, purge: bool = False) -> str | None:
         if self.modules is None or self.state is None:
-            raise RuntimeError("runtime services are not ready")
+            raise RuntimeError(self.t('runtime.not_ready'))
         with trusted_scope():
             module_id = module_id.casefold()
             if self._is_kernel_module(module_id):
-                return f"kernel module is protected: {module_id}"
+                return self.t('runtime.protected', module_id=module_id)
             active = self.modules.get(module_id)
             namespace = self.state.namespace(module_id)
             source_path = active.loaded.path if active is not None else Path(namespace.get("sourcepath", self.relay_dir / f"{module_id}.hmod"))
             if not source_path.is_file():
-                return f"module not found: {module_id}"
+                return self.t('runtime.module_missing', module_id=module_id)
             try:
                 self._backup_before_activation(source_path)
                 if active is not None:
@@ -1643,7 +1659,7 @@ class Runtime:
                         pass
                 if self.observatory is not None:
                     self.observatory.emit("modules", "unload_error", module=module_id, error=type(exc).__name__, detail=str(exc)[:240])
-                return f"unload failed: {type(exc).__name__}"
+                return self.t('runtime.unload_failed', error=type(exc).__name__)
             if purge:
                 self.purge_module_data(module_id)
             if self.observatory is not None:
@@ -1652,7 +1668,7 @@ class Runtime:
 
     async def _command_ul(self, invocation: Any) -> str:
         if self.modules is None or self.state is None:
-            return "runtime services are not ready"
+            return self.t('runtime.not_ready')
         flags = {"-c", "--clean", "-p", "--purge", "-r", "--reset", "-d", "--drop"}
         purge = False
         target_args: list[str] = []
@@ -1661,20 +1677,19 @@ class Runtime:
                 purge = True
             else:
                 target_args.append(arg)
-        prefix = getattr(getattr(self, "config", None), "prefix", ".")
         if len(target_args) != 1:
-            return f"usage: {prefix}ul [-c] <module-id>"
+            return self.t('runtime.usage_unload', prefix=self.config.prefix)
         module_id = target_args[0]
         result = await self.unload_module(module_id, purge=purge)
         if result:
             return result
         if purge:
-            return f"unloaded permanently: {module_id.casefold()} (database purged)"
-        return f"unloaded: {module_id.casefold()} (database preserved)"
+            return self.t('runtime.purged', module=module_id.casefold())
+        return self.t('runtime.unloaded', module=module_id.casefold())
 
     async def reset_module_database(self, module_id: str) -> str:
         if self.state is None or self.modules is None:
-            raise RuntimeError("runtime services are not ready")
+            raise RuntimeError(self.t('runtime.not_ready'))
         with trusted_scope():
             module_id = module_id.casefold()
             active = self.modules.get(module_id)
@@ -1683,7 +1698,7 @@ class Runtime:
             has_file = relay_path.is_file() or const_path.is_file() or (active is not None and active.loaded.path.is_file())
             has_state = module_id in self.state.module_ids()
             if active is None and not has_file and not has_state:
-                return f"module not found: {module_id}"
+                return self.t('runtime.module_missing', module_id=module_id)
 
             self.purge_module_data(module_id)
 
@@ -1696,18 +1711,17 @@ class Runtime:
                     except Exception as exc:
                         if self.observatory is not None:
                             self.observatory.emit("modules", "reset_reload_error", module=module_id, error=type(exc).__name__)
-                        return f"database reset, but reload failed: {type(exc).__name__}"
+                        return self.t('runtime.reset_failed', error=type(exc).__name__)
 
             if self.observatory is not None:
                 self.observatory.emit("modules", "database_reset", module=module_id)
-            return f"database reset: {module_id}"
+            return self.t('runtime.reset', module_id=module_id)
 
     async def _command_rs(self, invocation: Any) -> str:
         if self.modules is None or self.state is None:
-            return "runtime services are not ready"
-        prefix = getattr(getattr(self, "config", None), "prefix", ".")
+            return self.t('runtime.not_ready')
         if len(invocation.args) != 1:
-            return f"usage: {prefix}rs <module-id>"
+            return self.t('runtime.usage_reset', prefix=self.config.prefix)
         return await self.reset_module_database(invocation.args[0])
 
     @staticmethod
@@ -1719,15 +1733,15 @@ class Runtime:
 
     async def _command_rl(self, invocation: Any) -> str:
         if len(invocation.args) not in (1, 2) or self.modules is None:
-            return "usage: !rl <module-id> [force]"
+            return self.t('runtime.usage_reload', prefix=self.config.prefix)
         force = len(invocation.args) == 2 and invocation.args[1].casefold() == "force"
         if len(invocation.args) == 2 and not force:
-            return "usage: !rl <module-id> [force]"
+            return self.t('runtime.usage_reload', prefix=self.config.prefix)
         with trusted_scope():
             module_id = invocation.args[0].casefold()
             active = self.modules.get(module_id)
             if active is None:
-                return f"module not found: {module_id}"
+                return self.t('runtime.module_missing', module_id=module_id)
             old_path = active.loaded.path
             old_source = active.loaded.source
             candidate = self.relay_dir / f"{module_id}.hmod"
@@ -1735,13 +1749,13 @@ class Runtime:
             if reload_path == candidate:
                 candidate_loaded = self.modules.loader.load(candidate)
                 if candidate_loaded.manifest.module_id != module_id:
-                    return f"module id mismatch: {module_id}"
+                    return self.t('runtime.id_mismatch', module_id=module_id)
                 current_version = self._version_key(active.loaded.manifest.version)
                 candidate_version = self._version_key(candidate_loaded.manifest.version)
                 if not force and current_version is not None and candidate_version is not None and candidate_version < current_version:
                     if self.observatory is not None:
                         self.observatory.emit("modules", "update_blocked", module=module_id, old_version=active.loaded.manifest.version, new_version=candidate_loaded.manifest.version, reason="downgrade")
-                    return f"reload blocked: version downgrade {active.loaded.manifest.version} to {candidate_loaded.manifest.version}"
+                    return self.t('runtime.downgrade', old=active.loaded.manifest.version, new=candidate_loaded.manifest.version)
             await self.deactivate_module(module_id)
             try:
                 await self.activate_module(str(reload_path))
@@ -1754,20 +1768,19 @@ class Runtime:
                     self.stager.stage_text(old_source, old_path.parent)
                     await self.modules.activate_source(old_path, self.kernel, sandbox=self.sandbox)
                 except Exception:
-                    return f"reload failed: {type(exc).__name__}; rollback failed"
+                    return self.t('runtime.rollback_failed', error=type(exc).__name__)
                 if self.observatory is not None:
                     self.observatory.emit("modules", "rollback_restored", module=module_id, version=active.loaded.manifest.version)
-                return f"reload failed: {type(exc).__name__}; previous version restored"
+                return self.t('runtime.rolled_back', error=type(exc).__name__)
             if self.observatory is not None:
                 current = self.modules.get(module_id)
                 version = current.loaded.manifest.version if current is not None else ""
                 self.observatory.emit("modules", "update_applied", module=module_id, version=version)
-            return f"reloaded: {module_id}"
+            return self.t('runtime.reloaded', module_id=module_id)
 
     async def _command_ex(self, invocation: Any, ctx: Any = None) -> Any:
         if len(invocation.args) != 1 or self.modules is None:
-            prefix = getattr(getattr(self, "config", None), "prefix", ".")
-            return f"usage: {prefix}ex <module-id>"
+            return self.t('runtime.usage_export', prefix=self.config.prefix)
         with trusted_scope():
             module_id = str(invocation.args[0]).casefold()
             active = self.modules.get(module_id)
@@ -1787,7 +1800,7 @@ class Runtime:
                         target_path = cand
                         break
             if target_path is None and source_bytes is None:
-                return f"module not found: {module_id}"
+                return self.t('runtime.module_missing', module_id=module_id)
             file_name = f"{module_id}.hmod"
             caption = f"📦 <b>{module_id}</b> (v{version})"
             import tempfile
@@ -1813,7 +1826,7 @@ class Runtime:
                         os.unlink(temp_path)
                     except OSError:
                         pass
-            return f"exported: {file_name}"
+            return self.t('runtime.exported', file_name=file_name)
 
 
 
@@ -1836,11 +1849,11 @@ class Runtime:
 
     async def _render_caps_screen(self, module_id: str, manifest: Any, source: str, chat_id: int | str | None, message_id: int) -> tuple[str, list[list[dict[str, str]]]] | str:
         if self.callbacks is None or self.kernel is None or self.kernel.owner_id is None or chat_id is None:
-            lines = [f"module {module_id} v{manifest.version} requests capabilities:"]
-            lines.append(describe_caps(manifest.capabilities) or "none")
-            lines.append("re-run the load command to confirm")
+            lines = [self.t('runtime.caps_request', module_id=module_id, version=manifest.version)]
+            lines.append(describe_caps(manifest.capabilities, self.t) or self.t("common.none"))
+            lines.append(self.t('runtime.caps_retry'))
             return "\n".join(lines)
-        text = f"module {module_id} v{manifest.version} requests capabilities:\n" + (describe_caps(manifest.capabilities) or "none")
+        text = self.t("runtime.caps_request", module_id=module_id, version=manifest.version) + "\n" + (describe_caps(manifest.capabilities, self.t) or self.t("common.none"))
         confirm_handle = self.callbacks.store.issue(
             CallbackBinding(self.kernel.owner_id, chat_id, 0),
             {"action": "caps_confirm", "payload": {"module": module_id, "source": source}},
@@ -1853,29 +1866,29 @@ class Runtime:
             text,
             [
                 [
-                    {"text": "Confirm", "callback_data": confirm_handle},
-                    {"text": "Cancel", "callback_data": cancel_handle},
+                    {"text": self.t('common.confirm'), "callback_data": confirm_handle},
+                    {"text": self.t('common.cancel'), "callback_data": cancel_handle},
                 ],
             ],
         )
 
     async def _caps_cancel(self, callback: Any, payload: Any) -> object:
         if not isinstance(payload, dict):
-            await callback.answer("Invalid request", alert=True)
+            await callback.answer(self.t('runtime.invalid_request'), alert=True)
             return None
         module_id = str(cast('dict[str, Any]', payload).get("module", "")).casefold()
-        await callback.answer("Cancelled")
-        return await callback.edit(f"cancelled: {module_id}")
+        await callback.answer(self.t('runtime.cancelled'))
+        return await callback.edit(self.t('runtime.module_cancelled', module_id=module_id))
 
     async def _caps_confirm(self, callback: Any, payload: Any) -> object:
         if not isinstance(payload, dict) or self.modules is None or self.state is None or self.stager is None:
-            await callback.answer("Invalid request", alert=True)
+            await callback.answer(self.t('runtime.invalid_request'), alert=True)
             return None
         module_id = str(cast('dict[str, Any]', payload).get("module", "")).casefold()
         source = cast('dict[str, Any]', payload).get("source")
         if not isinstance(source, str):
-            await callback.answer("Source missing", alert=True)
-            return await callback.edit(f"module not found: {module_id}")
+            await callback.answer(self.t('runtime.source_missing'), alert=True)
+            return await callback.edit(self.t('runtime.module_missing', module_id=module_id))
         try:
             loaded, action = await self.load_module(source)
             if action == "confirm":
@@ -1886,10 +1899,10 @@ class Runtime:
         except Exception as exc:
             if self.observatory is not None:
                 self.observatory.emit("modules", "activation_error", module=module_id, error=type(exc).__name__, detail=str(exc)[:240])
-            await callback.answer("Activation failed", alert=True)
-            return await callback.edit(f"load failed: {type(exc).__name__}: {str(exc)[:120]}")
-        await callback.answer("Module loaded")
-        text = f"loaded: {module_id} {loaded.manifest.version}"
+            await callback.answer(self.t('runtime.activation_failed'), alert=True)
+            return await callback.edit(self.t('runtime.load_error', error=type(exc).__name__, detail=str(exc)[:120]))
+        await callback.answer(self.t('runtime.module_loaded'))
+        text = self.t('runtime.loaded', module_id=module_id, version=loaded.manifest.version)
         if getattr(callback, "inline_message_id", None) and getattr(callback, "app", None) is not None:
             inline_mid = callback.inline_message_id
             id_field: dict[str, Any] = cast('dict[str, Any]', inline_mid) if isinstance(inline_mid, dict) else {"_": "inputBotInlineMessageID", "raw": inline_mid}
@@ -1913,44 +1926,44 @@ class Runtime:
             try:
                 archive = self.create_backup()
             except Exception as exc:
-                return f"backup failed: {type(exc).__name__}"
-            return f"backup created: {archive.name}"
+                return self.t('runtime.backup_failed', error=type(exc).__name__)
+            return self.t('runtime.backup_created', name=archive.name)
         action = invocation.args[0].casefold()
         if action == "list" and len(invocation.args) == 1:
             directory = self.config.state_path.parent / "backups"
             names = sorted(path.name for path in directory.glob("*.hbk") if path.is_file())
-            return "backups: none" if not names else "backups:\n" + "\n".join(names)
+            return self.t('runtime.backups_empty') if not names else self.t('runtime.backups') + "\n".join(names)
         if action == "test" and len(invocation.args) == 2:
             if self.backups is None:
-                return "backup unavailable"
+                return self.t('runtime.backup_unavailable')
             try:
                 plan = self.backups.plan(invocation.args[1])
             except Exception as exc:
-                return f"backup invalid: {type(exc).__name__}"
-            return f"backup valid: {len(plan.files)} files"
+                return self.t('runtime.backup_invalid', error=type(exc).__name__)
+            return self.t('runtime.backup_valid', count=len(plan.files))
         if action == "restore" and len(invocation.args) == 2 and self.callbacks is not None and self.kernel is not None and self.kernel.owner_id is not None:
             if self.backups is None:
-                return "backup unavailable"
+                return self.t('runtime.backup_unavailable')
             try:
                 self.backups.plan(invocation.args[1])
             except Exception as exc:
-                return f"backup invalid: {type(exc).__name__}"
+                return self.t('runtime.backup_invalid', error=type(exc).__name__)
             handle = self.callbacks.store.issue(
                 CallbackBinding(self.kernel.owner_id, invocation.chat_id, invocation.message_id),
                 {"action": "restore_confirm", "payload": invocation.args[1]},
             )
-            return ("confirm restore", [{"text": "Confirm", "callback_data": handle}])
-        return "usage: !bk | !bk list | !bk test <archive> | !bk restore <archive>"
+            return (self.t('runtime.restore_confirm'), [{"text": self.t('common.confirm'), "callback_data": handle}])
+        return self.t('runtime.usage_backup', prefix=self.config.prefix)
 
     async def _module_detail(self, callback: Any, payload: Any) -> object:
         if not isinstance(payload, str):
-            await callback.answer("Invalid module", alert=True)
+            await callback.answer(self.t('runtime.invalid_module'), alert=True)
             return None
         return await callback.edit(self._module_detail_text(payload))
 
     async def _help_page(self, callback: Any, payload: Any) -> object:
         if not isinstance(payload, int) or payload < 0:
-            await callback.answer("Invalid help page", alert=True)
+            await callback.answer(self.t('runtime.invalid_page'), alert=True)
             return None
         result = self._help_render(payload, callback.chat_id, callback.msg_id)
         if isinstance(result, tuple):
@@ -1960,16 +1973,16 @@ class Runtime:
 
     async def _restore_confirm(self, callback: Any, payload: Any) -> object:
         if not isinstance(payload, str) or self.backups is None:
-            await callback.answer("Invalid restore request", alert=True)
+            await callback.answer(self.t('runtime.invalid_restore'), alert=True)
             return None
         try:
             plan = self.backups.plan(payload)
             await self.restore_filesystem(plan, self.relay_dir)
         except Exception as exc:
-            await callback.answer("Restore failed", alert=True)
-            return await callback.edit(f"restore failed: {type(exc).__name__}")
-        await callback.answer("Restore completed", alert=True)
-        return await callback.edit("restore completed")
+            await callback.answer(self.t('runtime.restore_failed'), alert=True)
+            return await callback.edit(self.t('runtime.restore_error', error=type(exc).__name__))
+        await callback.answer(self.t('runtime.restore_done'), alert=True)
+        return await callback.edit(self.t("runtime.restore_done"))
 
     def _event_error(self, error: Exception) -> None:
         if self.observatory is not None:
@@ -2070,7 +2083,7 @@ class Runtime:
     async def restore_filesystem(self, plan: Any, modules_path: str | Path) -> None:
         backups = self.backups
         if backups is None or self.state is None or self.modules is None:
-            raise RuntimeError("runtime services are not ready")
+            raise RuntimeError(self.t('runtime.not_ready'))
         if self.modules.items():
             raise RuntimeError("unload modules before filesystem restore")
         state = self.state
@@ -2152,7 +2165,7 @@ class Runtime:
         if timeout <= 0:
             raise ValueError("timeout must be positive")
         if self.state is None or self.modules is None or self.kernel is None:
-            raise RuntimeError("runtime services are not ready")
+            raise RuntimeError(self.t('runtime.not_ready'))
         state = self.state
         modules = self.modules
         restored: list[str] = []
@@ -2198,6 +2211,12 @@ class Runtime:
         if self.state is None or session.path is None:
             raise RuntimeError("session storage is not ready")
         root = self.config.session_dir.expanduser().resolve()
+        if self._account_lock is None:
+            from .accounts import AccountLock
+            self._account_lock = AccountLock(root, userid)
+        dest_db = account_state_path(root, userid)
+        if self.state.path.resolve() != dest_db.resolve() and dest_db.exists():
+            raise RuntimeError("Account already exists; select it with --account.")
         home = account_home(root, userid)
         home.mkdir(parents=True, exist_ok=True)
         try:
@@ -2223,7 +2242,6 @@ class Runtime:
         session.name = str(target.with_suffix(""))
         session.path = target
         self.app.core.session_name = session.name
-        dest_db = account_state_path(root, userid)
         if self.state.path.resolve() != dest_db.resolve():
             self.state.relocate(dest_db)
             self.state.set_setting("session-name", name)
@@ -2248,6 +2266,10 @@ class Runtime:
                 missing = not await check_session(self.app)
             if missing:
                 if not sys.stdin.isatty() or not sys.stdout.isatty():
+                    if os.environ.get("HOTARU_ACCOUNT_SESSION"):
+                        from .accounts import parse_user_id
+                        uid = parse_user_id(self.config.session_name)
+                        raise SystemExit(f"Login required; run {self.config.prefix}acca {uid} in Saved Messages.")
                     raise SystemExit("Login required; run `uv run hotaru` in a terminal.")
                 from .login import sign_in
                 fresh = True
@@ -2269,6 +2291,10 @@ class Runtime:
             raise RuntimeError("GoyGram user authorization did not complete")
         if session.is_bot:
             raise RuntimeError("the primary MTProto session must belong to a user, not a bot")
+        from .accounts import parse_user_id
+        uid = parse_user_id(self.config.session_name)
+        if uid is not None and session.self_id != uid:
+            raise RuntimeError(f"Wrong account; log in as user {uid}.")
         if (fresh and result.get("source") in {"interactive", "qr", "hotaru"}) or self.config.session_name.startswith("hotaru-pending-") or (
             session.self_id is not None and session.path is not None
         ):
@@ -2283,17 +2309,26 @@ class Runtime:
             if self.state is not None:
                 self.state.set_setting("owner-id", session.self_id)
         if self.account_manager is not None and session.self_id is not None and self.state is not None:
+            with trusted_scope():
+                self._ensure_primary_account(session.self_id)
             try:
                 with trusted_scope():
                     self.account_manager.sync_vaults()
-                    self._ensure_primary_account(session.self_id)
             except Exception as exc:
                 if self.observatory is not None:
-                    self.observatory.emit("accounts", "primary_register_error", error=type(exc).__name__)
+                    self.observatory.emit("accounts", "sync_error", error=type(exc).__name__)
 
     def _ensure_primary_account(self, user_id: int) -> None:
         manager = self.account_manager
-        manager.ensure_primary(user_id, self.config.session_name)
+        profile = manager.ensure_primary(user_id, self.config.session_name)
+        manager.actor = user_id
+        if manager.state.get_setting('account-root') is None:
+            manager.set_root(user_id)
+        if self._account_lock is None:
+            from .accounts import AccountLock
+            self._account_lock = AccountLock(self.config.session_dir, user_id)
+        manager.set_pid(profile.account_number, os.getpid())
+        manager.state.set_setting(f"account-ready:{profile.account_number}", None)
         if self.observatory is not None:
             self.observatory.emit("accounts", "primary_registered", user_id=user_id)
 
@@ -2388,6 +2423,19 @@ class Runtime:
             await self.modules.end_boot()
         if self.supervisor is not None:
             self.supervisor.mark_ready(mt=self.app.mt is not None, bot=self.app.bot is not None)
+        if self.account_manager is not None and self.app.session.self_id is not None:
+            profile = self.account_manager.find_by_user(self.app.session.self_id)
+            if profile is not None:
+                self.account_manager.state.set_setting(f"account-ready:{profile.account_number}", os.getpid())
+            if not os.environ.get("HOTARU_ACCOUNT_SESSION"):
+                for profile in self.account_manager.items():
+                    if profile.user_id == self.app.session.self_id or not profile.enabled:
+                        continue
+                    if self.account_manager.vault_ready(profile.account_number):
+                        try:
+                            self.account_manager.spawn(profile.account_number)
+                        except Exception as exc:
+                            log.warning("Account #%s could not start: %s", profile.account_number, type(exc).__name__)
         gc.collect()
         gc.freeze()
         self._app_task = asyncio.create_task(self.app.run(), name="hotaru:app")
@@ -2406,31 +2454,39 @@ class Runtime:
         if self.closed:
             return
         self.closed = True
-        if self._form_gc_task is not None and not self._form_gc_task.done():
-            self._form_gc_task.cancel()
-            await asyncio.gather(self._form_gc_task, return_exceptions=True)
-        if self._forum_setup_task is not None and not self._forum_setup_task.done():
-            self._forum_setup_task.cancel()
-            await asyncio.gather(self._forum_setup_task, return_exceptions=True)
-        if self.inline is not None:
-            await self.inline.stop()
-        if self._forms is not None:
-            self._forms.clear()
-        if self._inline_forms is not None:
-            self._inline_forms.clear()
-        if self._form_expiry is not None:
-            self._form_expiry.clear()
-        if self.kernel is not None:
-            await self.kernel.cancel_all()
-        if self.modules is not None:
-            for active in tuple(self.modules.items()):
-                await self.modules.deactivate(active.loaded.manifest.module_id)
-        if self.tasks is not None:
-            await self.tasks.close()
-        if self.sandbox is not None:
-            self.sandbox.stop_all()
-        if self.app is not None:
-            await self.app.close()
-        if self.state is not None:
-            self.state.close()
-        self.closed = True
+        try:
+            if self._form_gc_task is not None and not self._form_gc_task.done():
+                self._form_gc_task.cancel()
+                await asyncio.gather(self._form_gc_task, return_exceptions=True)
+            if self._forum_setup_task is not None and not self._forum_setup_task.done():
+                self._forum_setup_task.cancel()
+                await asyncio.gather(self._forum_setup_task, return_exceptions=True)
+            if self.inline is not None:
+                await self.inline.stop()
+            if self._forms is not None:
+                self._forms.clear()
+            if self._inline_forms is not None:
+                self._inline_forms.clear()
+            if self._form_expiry is not None:
+                self._form_expiry.clear()
+            if self.kernel is not None:
+                await self.kernel.cancel_all()
+            if self.modules is not None:
+                for active in tuple(self.modules.items()):
+                    await self.modules.deactivate(active.loaded.manifest.module_id)
+            if self.tasks is not None:
+                await self.tasks.close()
+            if self.sandbox is not None:
+                self.sandbox.stop_all()
+            if self.app is not None:
+                await self.app.close()
+            if self.state is not None:
+                self.state.close()
+            self.closed = True
+
+        finally:
+            if self.account_manager is not None:
+                self.account_manager.close()
+            if self._account_lock is not None:
+                self._account_lock.close()
+                self._account_lock = None

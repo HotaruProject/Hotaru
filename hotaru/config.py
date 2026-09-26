@@ -14,12 +14,19 @@ from .state import StateNamespace, StateStore
 def discover_state(path: str | Path | None = None) -> Path:
     if path is not None:
         return Path(path)
-    root = Path.cwd()
-    configured = os.environ.get("HOTARU_SESSION_DIR") or os.environ.get("SESSION_DIR")
-    if configured:
-        candidate = Path(configured).expanduser()
-        root = candidate if candidate.is_absolute() else Path.cwd() / candidate
-    root = root.resolve()
+    from .accounts import account_db_path
+    root = Path(os.environ.get("HOTARU_SESSION_DIR") or os.environ.get("SESSION_DIR") or ".").expanduser().resolve()
+    registry = root / "sanctuary/state.sqlite3"
+    if registry.is_file():
+        state = StateStore(registry)
+        try:
+            uid = state.get_setting("account-root") or state.get_setting("owner-id")
+            if isinstance(uid, int) and uid > 0:
+                candidate = account_db_path(root, uid)
+                return candidate if candidate.is_file() else registry
+        finally:
+            state.close()
+        return registry
     for pattern in (
         "sanctuary/account-*/hotaru-*.sqlite3",
         "account-*/hotaru-*.sqlite3",
@@ -719,14 +726,16 @@ class RuntimeConfig:
     sandbox: str = "auto"
 
     @classmethod
-    def from_database(cls, path: str | Path | None = None) -> "RuntimeConfig":
+    def from_database(cls, path: str | Path | None = None, *, discover: bool = True) -> "RuntimeConfig":
+        if not discover and path is None:
+            raise ConfigError("account database path is required")
         path = discover_state(path)
         dotenv = load_dotenv()
         state = StateStore(path)
         try:
             values: dict[str, Any] = {}
             for setting_key in ("api-id", "api-hash", "bot-token", "owner-id", "prefix", "session-name", "session-dir", "backup-keep", "command-timeout", "inline-enabled", "log-level", "environment", "sandbox"):
-                raw_env = _resolve_env(setting_key, dotenv)
+                raw_env = _resolve_env(setting_key, dotenv) if discover else None
                 if raw_env is not None:
                     if setting_key == "api-id":
                         try:

@@ -6,17 +6,37 @@
   "commands": {
     "lang": {
       "description": "Тілді көрсету немесе өзгерту",
-      "usage": "{prefix}lang [language]",
+      "usage": "{prefix}lang [тіл]",
       "invalid": "Қолдау көрсетілмейтін тіл: {language}",
-      "changed": "Тіл {language} болып өзгертілді"
+      "changed": "Тіл {language} болып өзгертілді",
+      "unavailable": "Қызмет қолжетімсіз",
+      "lexicon_unavailable": "Аударма сөздігі қолжетімсіз",
+      "languages_unavailable": "Тілдер қолжетімсіз",
+      "current": "Қазіргі тіл: {language}"
+    },
+    "help": {
+      "description": "Анықтаманы көрсету",
+      "usage": "{prefix}help [модуль]"
+    },
+    "hlp": {
+      "description": "Анықтаманы көрсету",
+      "usage": "{prefix}hlp [модуль]"
     }
   },
   "kernel": {
     "capabilities": {
-      "mt": "MTProto тікелей қол жеткізу",
-      "state": "Тұрақты күй сақтауы",
-      "files": "Файлдық жүйеге қол жеткізу",
-      "net": "Желіге қол жеткізу"
+      "mt": "MTProto қатынасы",
+      "state": "Деректерді сақтау",
+      "files": "Файлдарға қатынас",
+      "net": "Желіге қатынас",
+      "bot": "Ботқа қатынас",
+      "modules": "Модульдерді басқару",
+      "loader": "Модульдерді жүктеу",
+      "fetch": "Файлдарды жүктеу",
+      "inline": "Инлайн-боттар",
+      "assets": "Тіркемелер қоймасы",
+      "shell": "Қабықша командалары",
+      "logs": "Журнал"
     },
     "hotaru-kernel": {
       "description": "Hotaru ядросының жүйелік командалары",
@@ -80,7 +100,15 @@
           "description": "Юзерботты жалғастыру"
         }
       },
-      "restarted": "Юзербот сәтті қайта қосылды ({took})"
+      "restarted": "Юзербот сәтті қайта қосылды ({took})",
+      "already_stopped": "Юзербот тоқтатылған.",
+      "stopped": "Юзербот тоқтатылды.",
+      "stopped_details": "Қалыпты модульдер өшірілген. {prefix}start сияқты ядро пәрмендері жұмыс істейді.",
+      "already_started": "Юзербот қосылған.",
+      "started": "Юзербот қосылды. Барлық пәрмендер қайта жұмыс істейді.",
+      "restarting": "Юзербот қайта қосылуда…",
+      "running": "Юзербот жұмыс істеп тұр.",
+      "already_running": "Юзербот әлдеқашан жұмыс істеп тұр."
     },
     "updater": {
       "description": "Hotaru жаңарту",
@@ -105,7 +133,18 @@
       "ignored_toast": "Еленбеді",
       "updating": "Жаңартылуда…",
       "notify_on": "Жаңарту хабарламалары қосылды",
-      "notify_off": "Жаңарту хабарламалары өшірілді"
+      "notify_off": "Жаңарту хабарламалары өшірілді",
+      "unavailable": "Орындау ортасы қолжетімсіз",
+      "up_to_date": "Hotaru жаңартылған",
+      "update_available": "Hotaru жаңартуы қолжетімді",
+      "downloading": "Жаңарту жүктелуде…",
+      "syncing": "Тәуелділіктер жаңартылуда…",
+      "check_failed": "<b>Жаңартуларды тексеру орындалмады:</b> <i>{error}</i>",
+      "failed": "<b>Жаңарту орындалмады:</b> <i>{error}</i>",
+      "conflicts": "<b>Қайшылықтары бар жергілікті өзгерістер сақталды:</b> <code>{path}</code>",
+      "button_update": "Жаңарту",
+      "button_ignore": "Өткізу",
+      "confirm": "<br><br>Қазір жаңарту керек пе?"
     },
     "translations": {
       "description": "Аудармаларды басқару",
@@ -122,7 +161,7 @@
       "description": "Hotaru прокси және мүмкіндік тесті",
       "commands": {
         "tfstatus": {
-          "description": "MTProto пингі"
+          "description": "MTProto байланысын тексеру"
         },
         "tfhistory": {
           "description": "Тарих алу тесті"
@@ -155,37 +194,205 @@
       "kernel_modules": "Ядро модульдері",
       "user_modules": "Пайдаланушы модульдері",
       "commands": "Командалар",
-      "capabilities": "Мүмкіндіктер"
+      "capabilities": "Мүмкіндіктер",
+      "unavailable": "<b>Қызмет қолжетімсіз</b>",
+      "manager_unavailable": "<b>Модуль менеджері қолжетімсіз</b>",
+      "usage": "<b>Қолдану:</b> <code>{prefix}hlp</code> немесе <code>{prefix}hlp &lt;модуль&gt;</code>",
+      "disabled": "<b>Модуль өшірілген:</b> <code>{module}</code><br><i>Қате: {error}</i>",
+      "missing": "<b>Модуль табылмады:</b> <code>{module}</code>"
     },
     "accounts": {
-      "description": "Multi-account management: register, authorize, spawn, stop accounts",
+      "description": "Аккаунттарды басқару",
       "commands": {
         "acc": {
-          "description": "Manage account: acc <#> <start|stop|on|off|del>"
+          "description": "Аккаунтты басқару"
         },
         "acca": {
-          "description": "Authorize a new account: acca <#>"
+          "description": "Аккаунт қосу немесе кіру"
         },
         "accs": {
-          "description": "List accounts"
+          "description": "Аккаунттар тақтасын ашу"
         }
       },
-      "usage": "колданылуы: !acc <#> <start|stop|on|off|del>\n!acca — аккаунтты тіркеу (нөмірі автоматты түрде беріледі)\n!accs — тізім",
+      "usage": "<b>Аккаунттар</b>\n<code>{prefix}acca [user_id]</code> · QR / нөмір арқылы қосу\n<code>{prefix}acca cancel</code> · кіруден бас тарту\n<code>{prefix}accs [#]</code> · аккаунттар панелі\n<code>{prefix}acc [#]</code> · аккаунттар панелі\n<code>{prefix}acc 2 start|stop|restart|on|off|del</code>",
       "empty": "Тіркелген аккаунттар жоқ.",
       "no_self": "Сессия user id анықталмады.",
-      "not_registered": "#{n} аккаунты тіркелмеген."
+      "not_registered": "#{n} аккаунты тіркелмеген.",
+      "heading": "<b>Аккаунттар</b> · {count}",
+      "item": "#{n} · {status}",
+      "account": "№{n} аккаунт",
+      "detail": "<b>№{n} аккаунт</b>\n<code>{uid}</code> · {status}\nАвтоқосу: {enabled}",
+      "owner": "<b>Бұл иесінің аккаунты.</b>",
+      "on": "қосулы",
+      "off": "өшірулі",
+      "changed": "Аккаунттар тізімі өзгерді.",
+      "reopen": "{prefix}accs пәрменін қайта аш.",
+      "remove_confirm": "<b>№{n} аккаунт жойылсын ба?</b>\nОл тоқтайды. Сессия файлдары сақталады.",
+      "permissions": "<b>Рұқсаттар</b> · {account}\n<code>{uid}</code>\nТек аккаунттарды басқару.",
+      "access_off": "Қолжетімділік өшірулі.",
+      "cancelled": "бас тартылды.",
+      "cancel_denied": "Кіруді тек оны бастаған адам тоқтата алады.",
+      "no_login": "Кіру басталмаған.",
+      "already_added": "№{n} аккаунт қосылған.",
+      "result": "№{n} аккаунт: {status}.",
+      "button": {
+        "add": "Аккаунт қосу",
+        "refresh": "Жаңарту",
+        "close": "Жабу",
+        "permissions": "Рұқсаттар",
+        "start": "Қосу",
+        "stop": "Тоқтату",
+        "restart": "Қайта қосу",
+        "login": "Кіру",
+        "enable_start": "Белсендіру және қосу",
+        "autostart_on": "Автоқосуды қосу",
+        "autostart_off": "Автоқосуды өшіру",
+        "remove": "Жою",
+        "back": "Артқа",
+        "accounts": "‹ Аккаунттар",
+        "grant_all": "Бәрін беру",
+        "revoke": "Бәрін қайтарып алу",
+        "cancel": "Бас тарту",
+        "qr": "QR",
+        "phone": "Нөмір",
+        "submit": "Жіберу",
+        "enter_phone": "Нөмірді енгізу",
+        "enter_code": "Кодты енгізу",
+        "enter_password": "Құпиясөзді енгізу"
+      },
+      "right": {
+        "view": "Көру",
+        "add": "Қосу",
+        "start": "Іске қосу",
+        "stop": "Тоқтату",
+        "restart": "Қайта қосу",
+        "autostart": "Автоқосу",
+        "remove": "Жою"
+      },
+      "status": {
+        "current": "ағымдағы",
+        "running": "жұмыс істеп тұр",
+        "starting": "қосылып жатыр",
+        "login": "кіру қажет",
+        "stopped": "тоқтатылды",
+        "disabled": "өшірулі",
+        "enabled": "қосулы",
+        "removed": "жойылды"
+      },
+      "login": {
+        "saved": "<i>Кіру үшін Сақталған хабарламаларды аш.</i>",
+        "private": "<i>Кіру үшін жеке хабарламаларды аш.</i>",
+        "choose": "<b>Аккаунт қосу</b>\nКіру тәсілін таңда.",
+        "timeout": "Кіру уақыты аяқталды.",
+        "retry_timeout": "Кіру уақыты аяқталды. {prefix}acca пәрменін қайта орында.",
+        "open_failed": "Кіруді ашу мүмкін болмады. Қайталап көр.",
+        "added": "№{n} аккаунт қосылды. Іске қосылып жатыр…",
+        "running": "№{n} аккаунт қосылды және жұмыс істеп тұр.",
+        "starting": "№{n} аккаунт қосылды. Әлі қосылып жатыр; {prefix}accs арқылы тексер.",
+        "start_failed": "№{n} аккаунт қосылды, бірақ іске қосылмады. {prefix}accs аш.",
+        "expired": "Бұл кіру аяқталған.",
+        "busy": "Кіру басталып қойған.",
+        "submitted": "Жіберілді.",
+        "input_expired": "Енгізу мерзімі өтті.",
+        "phone_format": "Халықаралық нөмірді енгіз, мысалы +12345678901.",
+        "code_format": "Telegram кодын енгіз.",
+        "password_format": "2FA құпиясөзін енгіз.",
+        "check_form": "Кіру пішінін аш.",
+        "edit_input": "Енгізілгенді түзетіп, қайталап көр.",
+        "use_phone": "{phone} пайдалану",
+        "submit_code": "Кодты жіберу",
+        "submit_password": "Құпиясөзді жіберу",
+        "continue": "Жалғастыру үшін бас.",
+        "checking": "Тексерілуде…",
+        "private_only": "Кіру үшін жеке чатты пайдалан.",
+        "no_password": "Қазір құпиясөз қажет емес.",
+        "scan": "Қосылатын аккаунттан сканерле.\nБаптаулар → Құрылғылар → Құрылғы қосу.",
+        "password_prompt": "<b>2FA құпиясөзі</b>\nКіруді аяқтау үшін құпиясөзді енгіз.",
+        "password_command": "2FA құпиясөзі қажет. {prefix}acca password <құпиясөз> жібер.",
+        "wrong_password": "Құпиясөз қате. Қайталап көр.",
+        "phone_prompt": "<b>Телефон нөмірі</b>\nХалықаралық форматта, мысалы +12345678901.",
+        "phone_invalid": "Телефон нөмірі қате.",
+        "phone_banned": "Бұл нөмір бұғатталған.",
+        "code_prompt": "<b>Кіру коды</b>\nTelegram жіберген кодты енгіз.",
+        "wrong_code": "Код қате. Қайталап көр.",
+        "code_expired": "Кодтың мерзімі өтті. Жаңа код алу үшін нөмірді енгіз.",
+        "qr_prompt": "<b>QR арқылы кіру</b>\nТөмендегі QR кодын қосылатын аккаунттан сканерле.",
+        "flood": "{seconds} секундтан кейін қайтала.",
+        "failed": "Кіру мүмкін болмады. Қайталап көр."
+      },
+      "error": {
+        "no_permission": "Рұқсат жоқ.",
+        "owner_protected": "Иесінің аккаунты қорғалған.",
+        "invalid_permission": "Рұқсат жарамсыз.",
+        "invalid_user": "Пайдаланушы жарамсыз.",
+        "not_found": "№{n} аккаунт табылмады.",
+        "current": "Бұл аккаунт осында жұмыс істеп тұр.",
+        "invalid_lock": "Сессияны құлыптау мүмкін болмады.",
+        "running": "Аккаунт қосылып қойған.",
+        "invalid_owner": "Иесі жарамсыз.",
+        "invalid_id": "Аккаунттың ID және нөмірі оң сан болуы керек.",
+        "wrong_session": "Сессия аккаунтқа сәйкес келмейді.",
+        "number_taken": "Аккаунттың {n} нөмірі бос емес.",
+        "stop_first": "Алдымен аккаунтты тоқтат.",
+        "disabled": "№{n} аккаунт өшірулі.",
+        "login_first": "Алдымен осы аккаунтқа кір.",
+        "stopping": "№{n} аккаунт әлі тоқтап жатыр.",
+        "login_busy": "Кіру басталып қойған.",
+        "qr_failed": "QR жіберу мүмкін болмады.",
+        "phone_unavailable": "Нөмір арқылы кіру қолжетімсіз; QR қолданып көр.",
+        "login_response": "Кіру кезінде күтпеген жауап келді.",
+        "no_user": "Кіру кезінде пайдаланушы алынбады.",
+        "wrong_account": "Аккаунт қате; {uid} пайдаланушысы қажет.",
+        "unknown": "Әрекетті орындау мүмкін болмады."
+      }
     },
     "acl": {
-      "description": "Access control administration: grant, revoke, list user permissions",
+      "description": "Құқықтарды басқару",
       "commands": {
         "perms": {
-          "description": "List permissions of all users"
+          "description": "Құқықтар тізімі"
         },
         "perm": {
-          "description": "Grant/revoke: perm <user_id> <owner|admin|trusted|everyone> [remove]"
+          "description": "Құқық беру немесе қайтару"
         },
         "whois": {
-          "description": "User permissions: whois <user_id>"
+          "description": "Пайдаланушы құқықтары"
+        },
+        "owadd": {
+          "description": "Ие қосу"
+        },
+        "owrm": {
+          "description": "Иені жою"
+        },
+        "owls": {
+          "description": "Иелер тізімі"
+        },
+        "sgnew": {
+          "description": "Құқық тобын құру"
+        },
+        "sgls": {
+          "description": "Топтар тізімі"
+        },
+        "sg": {
+          "description": "Топ мүшелері мен ережелері"
+        },
+        "sgdel": {
+          "description": "Топты жою"
+        },
+        "sgadd": {
+          "description": "Қатысушы қосу"
+        },
+        "sgrm": {
+          "description": "Қатысушыны жою"
+        },
+        "rule": {
+          "description": "Рұқсат ережесін қосу"
+        },
+        "rulerm": {
+          "description": "Ережені жою"
+        },
+        "ruleclr": {
+          "description": "Ережелерді тазарту"
         }
       },
       "usage": "колданылуы:\n!owadd <user_id|reply> — owner беру\n!owrm <user_id|reply> — owner алу\n!owls — иелер\n!sgnew <name> — құқықтар тобын құру\n!sgls — топтар тізімі\n!sg <name> — топ қатысушылары мен ережелері\n!sgdel <name> — топты жою\n!sgadd <name> <user_id|reply> — топқа қосу\n!sgrm <name> <user_id|reply> — топтан шығару\n!rule <user|chat|sgroup> <target> <command|module>/<name> [мерзім] — ереже беру\n!rulerm — ережені жою\n!ruleclr — барлық ережелерді тазарту\n!perm <user_id> <admin|trusted|everyone> [remove] — құқық беру/алу\n!perms — құқықтар тізімі\n!whois <user_id> — пайдаланушы құқықтары",
@@ -200,7 +407,7 @@
     },
     "lg": "лог төменгі бөлігі:\n{lines}",
     "commands": {
-      "lg": "view recent observatory log entries"
+      "lg": "Соңғы журнал жазбаларын көрсету"
     },
     "config": {
       "description": "Hotaru конфигурация модулі",
@@ -214,34 +421,302 @@
       }
     },
     "settings": {
-      "description": "Управление алиасами и префиксом",
+      "description": "Бүркеншік аттар мен префиксті басқару",
       "commands": {
-        "alias": "Создать алиас",
-        "rmalias": "Удалить алиас",
-        "prefix": "Сменить префикс"
+        "alias": {
+          "description": "Командаға бүркеншік ат беру"
+        },
+        "rmalias": {
+          "description": "Команданың бүркеншік атын жою"
+        },
+        "prefix": {
+          "description": "Команда префиксін өзгерту"
+        }
       }
+    },
+    "kernel": {
+      "runtime_unavailable": "Қызмет қолжетімсіз",
+      "modules_unavailable": "Модульдер қолжетімсіз",
+      "modules_none": "Модульдер жоқ",
+      "usage": "Қолданылуы: {usage}",
+      "alias_set": "Бүркеншік ат орнатылды: {alias} → {command}",
+      "alias_removed": "Бүркеншік ат жойылды: {alias}",
+      "alias_not_found": "Бүркеншік ат табылмады: {alias}"
+    },
+    "logger": {
+      "description": "Логтарды тақырыпқа көшіру",
+      "mirror_on": "Логтарды көшіру қосылды",
+      "mirror_off": "Логтарды көшіру өшірілді",
+      "level_set": "Көшіру деңгейі: {level}",
+      "status": "Тақырып: {topic} • қателер: {failed}",
+      "status_error": " • соңғысы: {error}",
+      "no_observatory": "Обсерватория қолжетімсіз",
+      "no_entries": "Бұл деңгейде жазбалар жоқ",
+      "topic_unavailable": "Тақырып қолжетімсіз: {error}",
+      "logs_caption": "Hotaru логтары: {count} жазба ({level} деңгейі)",
+      "logs_sent": "Логтар жіберілді: {count} жазба",
+      "commands": {
+        "logs": {
+          "description": "Юзербот логтары файлмен бірге"
+        }
+      },
+      "pending": "күтілуде"
+    },
+    "executor": {
+      "heading": "<b>Орындаушы</b> | <code>{elapsed:.1f} мс</code>",
+      "exit_code": "Аяқталу коды: {returncode}",
+      "running": "Орындалуда…",
+      "usage_sh": "<b>Қолдану:</b> <code>{prefix}sh &lt;команда&gt;</code>",
+      "usage_py": "<b>Қолдану:</b> <code>{prefix}py &lt;код&gt;</code> немесе кодқа жауап; -so — нәтижені көрсетпеу",
+      "cancelled": "Орындау тоқтатылды",
+      "done": "Дайын ✓",
+      "kill_reply": "<b>Процесті тоқтату үшін орындалып жатқан py/sh хабарламасына жауап бер.</b>",
+      "killed": "<b>Процесс тоқтатылды.</b>",
+      "no_process": "<b>Бұл хабарламаның белсенді процесі жоқ.</b>",
+      "section": {
+        "code": "Код",
+        "command": "Команда",
+        "output": "Шығыс",
+        "result": "Нәтиже",
+        "return": "Қайтарылған мән",
+        "traceback": "Қате ізі"
+      },
+      "description": "Python және қабықша командаларын орындау",
+      "commands": {
+        "py": {
+          "description": "Python кодын орындау"
+        },
+        "sh": {
+          "description": "Қабықша командасын орындау"
+        },
+        "kill": {
+          "description": "Орындалып жатқан команданы тоқтату"
+        }
+      }
+    },
+    "catalyst": {
+      "description": "Модульдерді басқару",
+      "commands": {
+        "ld": {
+          "description": "Модульді жүктеу"
+        },
+        "ul": {
+          "description": "Модульді тоқтату"
+        },
+        "rl": {
+          "description": "Модульді қайта жүктеу"
+        },
+        "ex": {
+          "description": "Модульді экспорттау"
+        },
+        "rs": {
+          "description": "Модуль деректерін тазарту"
+        },
+        "resetdb": {
+          "description": "Модуль деректерін тазарту"
+        }
+      }
+    },
+    "capability_details": {
+      "mt": "MTProto қатынасы: хабарламалар, медиа, диалогтар, чаттар, арналар және контактілер; аккаунт қауіпсіздігіне қатысты әрекеттер мен төлемдер бұғатталған",
+      "files": "модульдің жұмыс қалтасында файлдарды оқу және жазу",
+      "net": "интернетке шығыс HTTP(S) сұраулары; жергілікті, ішкі және тыйым салынған мекенжайлар бұғатталған",
+      "state": "модуль кеңістігінде деректерді тұрақты сақтау",
+      "inline": "инлайн-боттарға сұрау жіберу және олармен әрекеттесу",
+      "modules": "модульдерді жүктеу, тоқтату, қайта жүктеу және олардың тізімін, хештерін, сипаттамаларын қарау",
+      "assets": "жасырын тіркемелер қоймасына қатынас",
+      "shell": "модульдің жұмыс қалтасындағы уақыт пен шығыс көлемі шектелген қабықша командалары",
+      "logs": "құрылымды оқиғаларды журналға жазу; әрқашан рұқсат етілген",
+      "fetch": "хабарламаларды, пайдаланушылар мен чаттар деректерін және жауаптарды оқу; әрқашан рұқсат етілген"
     }
   },
   "inline_commands_hint": "Команданы таңда — кез келген чатта @<бот> және оның атын тер",
   "settings": {
-    "runtime_unavailable": "Runtime недоступен",
-    "usage_alias": "Использование: !alias <алиас> <команда>",
-    "alias_invalid": "Алиас: 1-32 символа, только a-z, 0-9 и _",
-    "alias_exists": "Такая команда уже существует: {alias}",
-    "command_not_found": "Команда не найдена: {command}\nДоступные: {known}",
-    "alias_taken": "Алиас уже занят: {alias} -> {command}. Сначала удали его через !rmalias {alias}",
-    "alias_set": "Алиас установлен: {alias} → {command}",
-    "usage_rmalias": "Использование: !rmalias <алиас>",
-    "alias_removed": "Алиас удалён: {alias}",
-    "alias_not_found": "Алиас не найден: {alias}",
-    "prefix_current": "Текущий префикс: {prefix}. Смена: !prefix <символ>",
-    "prefix_invalid": "Префикс должен быть одним не-пробельным символом",
-    "prefix_set": "Префикс сменён на {prefix}",
-    "description": "Управление алиасами и префиксом",
+    "runtime_unavailable": "Қызмет қолжетімсіз",
+    "usage_alias": "Қолдану: {prefix}alias <бүркеншік_ат> <команда>",
+    "alias_invalid": "Бүркеншік ат: 1–32 таңба, тек a-z, 0-9 және _.",
+    "alias_exists": "Команда бұрыннан бар: {alias}",
+    "command_not_found": "Команда табылмады: {command}\nҚолжетімді: {known}",
+    "alias_taken": "Бүркеншік ат қолданылуда: {alias} → {command}. Жою: {prefix}rmalias {alias}.",
+    "alias_set": "Бүркеншік ат орнатылды: {alias} → {command}",
+    "usage_rmalias": "Қолдану: {prefix}rmalias <бүркеншік_ат>",
+    "alias_removed": "Бүркеншік ат жойылды: {alias}",
+    "alias_not_found": "Бүркеншік ат табылмады: {alias}",
+    "prefix_current": "Қазіргі префикс: {prefix}. Өзгерту: {prefix}prefix <таңба>",
+    "prefix_invalid": "Префикс бос орыннан басқа бір таңба болуы керек.",
+    "prefix_set": "Префикс {prefix} болып өзгертілді",
+    "description": "Бүркеншік аттар мен префиксті басқару",
     "commands": {
-      "alias": "Создать алиас",
-      "rmalias": "Удалить алиас",
-      "prefix": "Сменить префикс"
+      "alias": "Командаға бүркеншік ат беру",
+      "rmalias": "Команданың бүркеншік атын жою",
+      "prefix": "Команда префиксін өзгерту"
+    }
+  },
+  "common": {
+    "ok": "ОК",
+    "cancel": "Бас тарту",
+    "close": "Жабу",
+    "back": "Артқа",
+    "unknown_error": "Белгісіз қате",
+    "confirm": "Растау",
+    "none": "Жоқ",
+    "unknown": "Белгісіз",
+    "yes": "Иә",
+    "no": "Жоқ",
+    "seconds": "{n} с",
+    "invalid_value": "Мән жарамсыз"
+  },
+  "languages": {
+    "ru": "Орысша",
+    "en": "Ағылшынша",
+    "kz": "Қазақша",
+    "uk": "Украинша",
+    "ja": "Жапонша"
+  },
+  "runtime": {
+    "modules_unavailable": "Модульдер қолжетімсіз",
+    "modules_empty": "Модульдер жоқ",
+    "modules": "Модульдер:\n",
+    "module_unavailable": "Модуль қолжетімсіз",
+    "module_missing": "Модуль табылмады: {module_id}",
+    "module_info": "Модуль: {module}\nНұсқа: {version}\nКомандалар: {commands}\nМүмкіндіктер: {capabilities}\nСипаттама: {description}",
+    "help_unavailable": "Анықтама қолжетімсіз",
+    "page_unavailable": "Анықтама беті қолжетімсіз",
+    "catalog": "Каталог: ",
+    "next": "Келесі",
+    "bot_unavailable": "Инлайн-бот қолжетімсіз",
+    "bot_failed": "Инлайн-бот жасау мүмкін болмады: {error}",
+    "protected": "Жүйелік модуль қорғалған: {module_id}",
+    "unload_failed": "Модульді тоқтату мүмкін болмады: {error}",
+    "not_ready": "Қызметтер әлі дайын емес",
+    "purged": "Модуль жойылды: {module} (деректер тазартылды)",
+    "unloaded": "Модуль тоқтатылды: {module} (деректер сақталды)",
+    "reset_failed": "Деректер тазартылды, бірақ қайта жүктеу орындалмады: {error}",
+    "reset": "Деректер тазартылды: {module_id}",
+    "id_mismatch": "Модуль идентификаторы сәйкес емес: {module_id}",
+    "downgrade": "Нұсқаны төмендетуге тыйым салынған: {old} → {new}",
+    "rollback_failed": "Қайта жүктеу орындалмады: {error}; қалпына келтіру де орындалмады",
+    "rolled_back": "Қайта жүктеу орындалмады: {error}; алдыңғы нұсқа қалпына келтірілді",
+    "reloaded": "Қайта жүктелді: {module_id}",
+    "exported": "Экспортталды: {file_name}",
+    "invalid_request": "Сұрау жарамсыз",
+    "cancelled": "Бас тартылды",
+    "module_cancelled": "Бас тартылды: {module_id}",
+    "source_missing": "Бастапқы код жоқ",
+    "activation_failed": "Модульді жүктеу мүмкін болмады",
+    "module_loaded": "Модуль жүктелді",
+    "loaded": "Жүктелді: {module_id} {version}",
+    "backup_failed": "Сақтық көшірме жасау мүмкін болмады: {error}",
+    "backup_created": "Сақтық көшірме жасалды: {name}",
+    "backups_empty": "Сақтық көшірмелер жоқ",
+    "backups": "Сақтық көшірмелер:\n",
+    "backup_unavailable": "Сақтық көшірме қолжетімсіз",
+    "backup_invalid": "Сақтық көшірме жарамсыз: {error}",
+    "backup_valid": "Көшірме жарамды. Файл саны: {count}",
+    "restore_confirm": "Қалпына келтіруді растау керек пе?",
+    "invalid_module": "Модуль жарамсыз",
+    "invalid_page": "Анықтама беті жарамсыз",
+    "invalid_restore": "Қалпына келтіру сұрауы жарамсыз",
+    "restore_failed": "Қалпына келтіру орындалмады",
+    "restore_error": "Қалпына келтіру орындалмады: {error}",
+    "restore_done": "Қалпына келтірілді",
+    "callback_failed": "Әрекетті орындау мүмкін болмады",
+    "callback_denied": "Батырма ескірген немесе қолжетімсіз.",
+    "load_error": "Жүктеу орындалмады: {error}: {detail}",
+    "load_failed": "Жүктеу орындалмады: {error}",
+    "load_screen": "Жүктеу орындалмады: {module_id} {version}\n{screen}",
+    "updated": "Жаңартылды: {module_id} {version}",
+    "caps_request": "{module_id} v{version} модулі мына мүмкіндіктерді сұрайды:",
+    "caps_retry": "Растау үшін жүктеу командасын қайтала",
+    "usage_mi": "Қолдану: {prefix}mi <module>",
+    "usage_help": "Қолдану: {prefix}hlp [page] | {prefix}hlp <module>",
+    "usage_reload": "Қолдану: {prefix}rl <module> [force]",
+    "usage_unload": "Қолдану: {prefix}ul [-c] <module>",
+    "usage_reset": "Қолдану: {prefix}rs <module>",
+    "usage_export": "Қолдану: {prefix}ex <module>",
+    "usage_backup": "Қолдану: {prefix}bk | {prefix}bk list | {prefix}bk test <archive> | {prefix}bk restore <archive>",
+    "usage_load": "Қолдану: {prefix}ld <raw-url> немесе .hmod файлына жауап",
+    "bot_status": "Инлайн-бот: @{name} ({status})",
+    "health": "Күйі: {status}",
+    "last_error": "Соңғы қате: {error}",
+    "running_commands": "Орындалып жатқан командалар: {count}",
+    "connection": "Байланыс: {status}; қайта қосылу саны: {count}; MTProto: {mt}; бот: {bot}",
+    "health_ready": "дайын",
+    "health_degraded": "ақаулар бар",
+    "health_stopped": "тоқтатылған",
+    "health_closed": "жабылған",
+    "health_new": "іске қосылуда",
+    "service": {
+      "runtime": "Қызмет",
+      "kernel": "Ядро",
+      "state": "Қойма",
+      "capabilities": "Мүмкіндіктер",
+      "modules": "Модульдер",
+      "responses": "Жауаптар",
+      "callbacks": "Батырмалар",
+      "observatory": "Журнал",
+      "backups": "Сақтық көшірмелер",
+      "tasks": "Тапсырмалар",
+      "event_router": "Оқиғалар"
+    },
+    "file_missing": "Модуль файлы табылмады",
+    "file_document": "Модульді файл ретінде жібер",
+    "timeout": "{command} командасы {seconds} с ішінде аяқталмады.",
+    "unknown_capability": "белгісіз мүмкіндік (тыйым салынған)"
+  },
+  "acl": {
+    "owners": "<b>Иелер</b><br>",
+    "account": " · аккаунт",
+    "protected": " · қорғалған",
+    "failed": "<b>Қате:</b> <i>{error}</i>",
+    "owner_added": "<code>{user_id}</code> <b>иелер қатарына қосылды</b>",
+    "owner_exists": "<code>{user_id}</code> әлдеқашан иесі",
+    "owner_removed": "<code>{user_id}</code> <b>ие құқығынан айырылды</b>",
+    "owner_missing": "<code>{user_id}</code> ие болып тағайындалмаған",
+    "group_created": "<code>{name}</code> <b>тобы құрылды</b>",
+    "group_deleted": "<code>{name}</code> <b>тобы жойылды</b>",
+    "group_missing": "<code>{name}</code> тобы табылмады",
+    "group_item": "<b>{name}</b> — қатысушылар: {users}, ережелер: {rules}",
+    "groups": "<b>Құқық топтары</b><br>",
+    "group_detail": "<b>{name} тобы</b><br><b>Қатысушылар</b><br>{users}<br><b>Ережелер</b><br>{rules}",
+    "member_exists": "<code>{user_id}</code> әлдеқашан <code>{name}</code> тобында",
+    "member_missing": "<code>{user_id}</code> <code>{name}</code> тобында жоқ",
+    "member_added": "<code>{user_id}</code> <code>{name}</code> <b>тобына қосылды</b>",
+    "member_removed": "<code>{user_id}</code> <code>{name}</code> <b>тобынан шығарылды</b>",
+    "duration": " {duration} мерзімге",
+    "group_rule": "<b>Ереже қосылды:</b> sgroup <code>{target}</code> → {kind}/{rule}{until}",
+    "rule_added": "<b>Ереже қосылды:</b> {kind} <code>{target}</code> → {type}/{rule}{until}",
+    "rule_removed": "<b>Ереже жойылды</b>",
+    "nothing_remove": "Жоятын ештеңе жоқ",
+    "rules_cleared": "<b>Ережелер тазартылды</b>",
+    "nothing_clear": "Тазартатын ештеңе жоқ",
+    "permissions": "<b>Құқықтар</b><br>",
+    "user_groups": "<br>Топтар: <code>{groups}</code>",
+    "user_detail": "<b>Пайдаланушы <code>{user_id}</code></b><br>Құқықтар: <b>{permissions}</b><br>Дәреже: <code>{rank}</code>{groups}",
+    "no_permission": "Рұқсат жоқ.",
+    "revoked": "<code>{user_id}</code> үшін <code>{label}</code> <b>құқығы қайтарылды</b>",
+    "nothing_revoke": "Қайтаратын құқық жоқ",
+    "grant_failed": "<b>Құқық беру орындалмады:</b> <i>{error}</i>",
+    "granted": "<code>{user_id}</code> үшін <code>{label}</code> <b>құқығы берілді</b>",
+    "self_owner": "Бұл пайдаланушы аккаунттың иесі.",
+    "bad_group": "Топ атауы: әріптер мен сандар, 32 таңбаға дейін.",
+    "no_groups": "Құқық топтары жоқ. Құру: {prefix}sgnew <атау>",
+    "bad_duration": "Мерзім: сан + s/m/h/d/w немесе forever.",
+    "bad_rule": "Ереже: command/атау немесе module/атау.",
+    "empty": "Берілген құқықтар жоқ. {prefix}perm <user_id> <рөл> командасын қолдан.",
+    "bad_label": "Белгісіз құқық: {label}",
+    "no_owner_grant": "Ие құқығы {prefix}owadd арқылы беріледі.",
+    "usage": "<code>{prefix}owadd &lt;user_id|reply&gt;</code> — Ие қосу\n<code>{prefix}owrm &lt;user_id|reply&gt;</code> — Иені жою\n<code>{prefix}owls</code> — Иелер тізімі\n<code>{prefix}sgnew &lt;name&gt;</code> — Құқық тобын құру\n<code>{prefix}sgls</code> — Топтар тізімі\n<code>{prefix}sg &lt;name&gt;</code> — Топ мүшелері мен ережелері\n<code>{prefix}sgdel &lt;name&gt;</code> — Топты жою\n<code>{prefix}sgadd &lt;name&gt; &lt;user_id|reply&gt;</code> — Қатысушы қосу\n<code>{prefix}sgrm &lt;name&gt; &lt;user_id|reply&gt;</code> — Қатысушыны жою\n<code>{prefix}rule &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;command|module&gt;/&lt;name&gt; [expiry]</code> — Рұқсат ережесін қосу\n<code>{prefix}rulerm &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;rule&gt;</code> — Ережені жою\n<code>{prefix}ruleclr &lt;user|chat|sgroup&gt; [target]</code> — Ережелерді тазарту\n<code>{prefix}perm &lt;user_id&gt; &lt;admin|trusted|everyone&gt; [remove]</code> — Құқық беру немесе қайтару\n<code>{prefix}perms</code> — Құқықтар тізімі\n<code>{prefix}whois &lt;user_id&gt;</code> — Пайдаланушы құқықтары",
+    "account_owner": "Аккаунт иесін жоюға болмайды."
+  },
+  "inline": {
+    "form": "Hotaru пішіні",
+    "error": {
+      "title": "Қате {code}",
+      "400": "Сұрау жарамсыз",
+      "403": "Рұқсат жоқ",
+      "404": "Табылмады",
+      "500": "Ішкі қате"
     }
   }
 }

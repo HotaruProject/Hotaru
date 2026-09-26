@@ -242,6 +242,7 @@ class OutputUpdater:
 
     def _fmt_entry(self, title: str, content: Any, is_code: bool, lang: str | None = None) -> str:
         esc = _escape(_censor(str(content), self.ctx))
+        title = self.ctx.t("kernel.executor.section." + title, title)
         if is_code:
             block = f'<pre class="language-{_escape(lang)}">{esc}</pre>' if lang else f"<pre>{esc}</pre>"
             return f"<b>{_escape(title)}:</b>\n{block}"
@@ -249,13 +250,13 @@ class OutputUpdater:
 
     def _pages_from(self, sections: list[Any], returncode: int | None) -> list[str]:
         elapsed = (time.perf_counter() - self.start_time) * 1000
-        head = f"<b>Executor</b> | <code>{elapsed:.1f}ms</code>"
+        head = self.ctx.t('kernel.executor.heading', elapsed=elapsed)
         limit = 4096
         room = max(64, limit - _u16(head) - 2)
         blocks: list[str] = []
         entries = list(sections)
         if returncode is not None:
-            entries.append(("result", f"Exit code: {returncode}", False))
+            entries.append(("result", self.ctx.t('kernel.executor.exit_code', returncode=returncode), False))
         for entry in entries:
             title, content, is_code = entry[0], entry[1], entry[2]
             lang = entry[3] if len(entry) > 3 else None
@@ -362,9 +363,9 @@ class OutputUpdater:
                 if buffer_str:
                     sections.append(("output", buffer_str[-2800:], True))
                 else:
-                    sections.append(("output", "Running...", False))
+                    sections.append(("output", self.ctx.t('kernel.executor.running'), False))
             if returncode is not None:
-                sections = list(sections) + [("result", f"Exit code: {returncode}", False)]
+                sections = list(sections) + [("result", self.ctx.t('kernel.executor.exit_code', returncode=returncode), False)]
             if final:
                 self._pages = self._pages_from(sections, None)
                 self._page = 0
@@ -372,7 +373,7 @@ class OutputUpdater:
                 buttons = self._nav(0)
             else:
                 elapsed = (time.perf_counter() - self.start_time) * 1000
-                parts = [f"<b>Executor</b> | <code>{elapsed:.1f}ms</code>"]
+                parts = [self.ctx.t('kernel.executor.heading', elapsed=elapsed)]
                 for entry in sections:
                     title, content, is_code = entry[0], entry[1], entry[2]
                     lang = entry[3] if len(entry) > 3 else None
@@ -1281,7 +1282,7 @@ async def command_sh(ctx: Any, invocation: Any) -> Any:
     if not cmd:
         prefix = ctx.runtime.config.prefix if ctx.runtime else "."
         await ctx.respond(
-            f"<b>Usage:</b> <code>{prefix}sh &lt;command&gt;</code>",
+            ctx.t('kernel.executor.usage_sh', prefix=prefix),
             parse_mode="HTML", rich=False,
         )
         return
@@ -1394,7 +1395,7 @@ async def command_py(ctx: Any, invocation: Any) -> Any:
     if not raw_code:
         prefix = ctx.runtime.config.prefix if ctx.runtime else "."
         await ctx.respond(
-            f"<b>Usage:</b> <code>{prefix}py &lt;code&gt;</code> | reply с кодом | -so без вывода",
+            ctx.t('kernel.executor.usage_py', prefix=prefix),
             parse_mode="HTML", rich=False,
         )
         return
@@ -1472,7 +1473,7 @@ async def command_py(ctx: Any, invocation: Any) -> Any:
         with contextlib.redirect_stdout(stdout_buf), contextlib.redirect_stderr(stderr_buf):
             await eval_task
     except asyncio.CancelledError:
-        error_trace = "Execution cancelled"
+        error_trace = ctx.t('kernel.executor.cancelled')
     except Exception:
         error_trace = traceback.format_exc()
     finally:
@@ -1495,14 +1496,14 @@ async def command_py(ctx: Any, invocation: Any) -> Any:
     if error_trace:
         sections.append(("traceback", error_trace, True, "python"))
     if len(sections) == 1:
-        sections.append(("result", "Done ✓", False))
+        sections.append(("result", ctx.t('kernel.executor.done'), False))
 
     await updater.finish(sections)
     
 async def command_kill(ctx: Any, invocation: Any) -> Any:
     reply = await _get_reply(ctx, invocation)
     if not reply:
-        await ctx.respond("<b>Reply to a running py/sh output message to kill it.</b>", parse_mode="HTML")
+        await ctx.respond(ctx.t('kernel.executor.kill_reply'), parse_mode="HTML")
         return
 
     target_id = _msg_id(reply)
@@ -1527,8 +1528,8 @@ async def command_kill(ctx: Any, invocation: Any) -> Any:
         _ACTIVE_PY.pop(target_id, None)
 
     if killed:
-        await ctx.respond("<b>Process killed!</b>", parse_mode="HTML")
+        await ctx.respond(ctx.t('kernel.executor.killed'), parse_mode="HTML")
     else:
-        await ctx.respond("<b>No active process found for this message.</b>", parse_mode="HTML")
+        await ctx.respond(ctx.t('kernel.executor.no_process'), parse_mode="HTML")
 
 

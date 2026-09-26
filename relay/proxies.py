@@ -1336,18 +1336,27 @@ class InlineHelper:
         return items[start:start + size], start + size < len(items)
 
     async def error(self, code: int, text: str, *, query: Any) -> Any:
-        return await self.show(query, f"Error {code}", f"<b>{code}</b> {self.escape(text)}")
+        title = self._inline.runtime.t("inline.error.title", code=code) if self._inline is not None else f"Error {code}"
+        return await self.show(query, title, f"<b>{code}</b> {self.escape(text)}")
 
     async def e400(self, query: Any, text: str = "Bad request") -> Any:
+        if text == "Bad request" and self._inline is not None:
+            text = self._inline.runtime.t("inline.error.400")
         return await self.error(400, text, query=query)
 
     async def e403(self, query: Any, text: str = "Forbidden") -> Any:
+        if text == "Forbidden" and self._inline is not None:
+            text = self._inline.runtime.t("inline.error.403")
         return await self.error(403, text, query=query)
 
     async def e404(self, query: Any, text: str = "Not found") -> Any:
+        if text == "Not found" and self._inline is not None:
+            text = self._inline.runtime.t("inline.error.404")
         return await self.error(404, text, query=query)
 
     async def e500(self, query: Any, text: str = "Internal error") -> Any:
+        if text == "Internal error" and self._inline is not None:
+            text = self._inline.runtime.t("inline.error.500")
         return await self.error(500, text, query=query)
 
     def rich(self, result_id: str, title: str, html_text: str, *, buttons: Any = None, **kw: Any) -> dict[str, Any]:
@@ -1369,7 +1378,8 @@ class InlineHelper:
 
     def form(self, text: str, buttons: Any = None, **kw: Any) -> dict[str, Any]:
         kw.setdefault("parse_mode", "HTML")
-        result = self.article(secrets.token_hex(6), "Hotaru form", text, **kw)
+        title = self._inline.runtime.t("inline.form") if self._inline is not None else "Hotaru form"
+        result = self.article(secrets.token_hex(6), title, text, **kw)
         if buttons is not None:
             result["reply_markup"] = {"inline_keyboard": buttons}
         return result
@@ -1463,6 +1473,8 @@ class UiHelper:
         return self.button_url(text, url)
 
     def close(self, text: str = "Close") -> dict[str, str]:
+        if text == "Close" and self._router is not None and self._router.runtime is not None:
+            text = self._router.runtime.t("common.close")
         async def handler(callback: Any, payload: Any) -> Any:
             try:
                 await callback.answer()

@@ -69,6 +69,8 @@ class CallbackContext:
     async def _edit_inline(app: Any, id_field: dict[str, Any], message: str, data: dict[str, Any]) -> Any:
         from relay.firewall import trusted_scope
 
+        if data.get('reply_markup') == {'_': 'replyInlineMarkup', 'rows': []}:
+            data = {key: value for key, value in data.items() if key != 'reply_markup'}
         try:
             with trusted_scope():
                 return await app.mt_messages_edit_inline_bot_message(id=id_field, message=message, **data)
@@ -354,7 +356,7 @@ class CallbackStore:
             self.connection.commit()
         return handle
 
-    def consume(self, handle: str, binding: CallbackBinding) -> dict[str, Any]:
+    def peek(self, handle: str, binding: CallbackBinding) -> dict[str, Any]:
         entry = self._items.get(handle)
         if entry is None and self.connection is not None:
             row = self.connection.execute(
@@ -388,11 +390,16 @@ class CallbackStore:
         actor_ok = str(entry.binding.actor) == str(binding.actor)
         if not actor_ok or not chat_ok or not message_ok:
             raise CallbackDenied("callback is invalid")
+        return entry.value
+
+    def consume(self, handle: str, binding: CallbackBinding) -> dict[str, Any]:
+        value = self.peek(handle, binding)
+        entry = self._items[handle]
         entry.consumed = True
         if self.connection is not None:
             self.connection.execute("UPDATE callback_store SET consumed = 1 WHERE handle = ?", (handle,))
             self.connection.commit()
-        return entry.value
+        return value
 
     def unconsume(self, handle: str) -> None:
         entry = self._items.get(handle)

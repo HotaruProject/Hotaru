@@ -8,7 +8,7 @@ import urllib.parse
 import urllib.request
 from functools import partial
 from types import SimpleNamespace
-from typing import Any, cast
+from typing import Any, Callable, cast
 
 from .denylist import is_blocked_host, payload_hits_blocked
 from .firewall import trusted_scope
@@ -143,14 +143,17 @@ PROVIDERS: dict[str, dict[str, Any]] = {
 KNOWN = frozenset(PROVIDERS)
 
 
-def describe(capabilities: tuple[str, ...]) -> str:
+def describe(capabilities: tuple[str, ...], t: Callable[..., str] | None = None) -> str:
     lines: list[str] = []
     for cap in capabilities:
         meta = PROVIDERS.get(cap)
         if meta is None:
-            lines.append(f"{cap}: unknown capability (denied)")
+            text = t("runtime.unknown_capability") if t is not None else "unknown capability (denied)"
+            lines.append(f"{cap}: {text}")
             continue
-        lines.append(f"{cap}: {meta['title']} — {meta['detail']}")
+        title = t("kernel.capabilities." + cap, meta['title']) if t is not None else meta['title']
+        detail = t("kernel.capability_details." + cap, meta['detail']) if t is not None else meta['detail']
+        lines.append(f"{cap}: {title} — {detail}")
     return "\n".join(lines)
 
 

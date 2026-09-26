@@ -59,33 +59,32 @@ async def command_help(ctx: Any, invocation: Any) -> Any:
 async def _show_help(ctx: Any, invocation: Any) -> Any:
     runtime = ctx.runtime
     if runtime is None:
-        await ctx.respond("<b>Runtime unavailable</b>", parse_mode="HTML")
+        await ctx.respond(ctx.t('kernel.help_ui.unavailable'), parse_mode="HTML")
         return
 
     if invocation.args:
         if len(invocation.args) != 1:
             await ctx.respond(
-                "<b>Usage:</b> <code>.hlp</code> or <code>.hlp &lt;module-id&gt;</code>",
+                ctx.t('kernel.help_ui.usage', prefix=_escape(runtime.config.prefix)),
                 parse_mode="HTML",
             )
             return
         if runtime.modules is None:
-            await ctx.respond("<b>Module manager unavailable</b>", parse_mode="HTML")
+            await ctx.respond(ctx.t('kernel.help_ui.manager_unavailable'), parse_mode="HTML")
             return
 
         module_id = invocation.args[0].casefold()
         active = runtime.modules.get(module_id)
         if active is None:
             if runtime.state is not None and module_id in runtime.state.module_ids():
-                last_error = runtime.state.namespace(module_id).get("lasterror", "none")
+                last_error = runtime.state.namespace(module_id).get("lasterror", ctx.t("common.none"))
                 await ctx.respond(
-                    f'<b>Module disabled:</b> <code>{_escape(module_id)}</code><br>'
-                    f"<i>Error: {_escape(last_error)}</i>",
+                    ctx.t('kernel.help_ui.disabled', module=_escape(module_id), error=_escape(last_error)),
                     parse_mode="HTML",
                 )
             else:
                 await ctx.respond(
-                    f'<b>Module not found:</b> <code>{_escape(module_id)}</code>',
+                    ctx.t('kernel.help_ui.missing', module=_escape(module_id)),
                     parse_mode="HTML",
                 )
             return
@@ -94,7 +93,7 @@ async def _show_help(ctx: Any, invocation: Any) -> Any:
         localized = manifest.localized(runtime.language(), manifest.description)
         description = localized.get("description", manifest.description)
         _commands = _command_line(runtime.config.prefix, manifest.commands)
-        capabilities = ", ".join(_escape(ctx.t(f"kernel.capabilities.{item}", item)) for item in manifest.capabilities) or "none"
+        capabilities = ", ".join(_escape(ctx.t(f"kernel.capabilities.{item}", item)) for item in manifest.capabilities) or ctx.t("common.none")
         text = (
             f'<b>{_escape(manifest.module_id)}</b> <i>v{_escape(manifest.version)}</i>'
         )
@@ -108,9 +107,9 @@ async def _show_help(ctx: Any, invocation: Any) -> Any:
             if command_description:
                 line += f" — {_escape(command_description)}"
             command_lines.append(line)
-        cmd_title = _escape(ctx.t("kernel.help_ui.commands", "Commands"))
-        cap_title = _escape(ctx.t("kernel.help_ui.capabilities", "Capabilities"))
-        text += f"<details><summary>{cmd_title}</summary><p>{'<br>'.join(command_lines) or 'none'}</p></details>"
+        cmd_title = _escape(ctx.t('kernel.help_ui.commands'))
+        cap_title = _escape(ctx.t('kernel.help_ui.capabilities'))
+        text += f"<details><summary>{cmd_title}</summary><p>{'<br>'.join(command_lines) or ctx.t('common.none')}</p></details>"
         text += f"<details><summary>{cap_title}</summary><p>{capabilities}</p></details>"
         await ctx.respond(text, parse_mode="HTML", rich=True, rich_fallback="bot")
         return
@@ -141,9 +140,9 @@ async def _show_help(ctx: Any, invocation: Any) -> Any:
             )
 
     total = len(kernel_modules) + len(user_modules)
-    title = _escape(ctx.t("kernel.help_ui.module_count", "Hotaru Help · {count} modules", count=total))
-    kernel_title = _escape(ctx.t("kernel.help_ui.kernel_modules", "Kernel Modules"))
-    user_title = _escape(ctx.t("kernel.help_ui.user_modules", "User Modules"))
+    title = _escape(ctx.t('kernel.help_ui.module_count', count=total))
+    kernel_title = _escape(ctx.t('kernel.help_ui.kernel_modules'))
+    user_title = _escape(ctx.t('kernel.help_ui.user_modules'))
     text = f"<b>{title}</b>"
 
     if kernel_modules:

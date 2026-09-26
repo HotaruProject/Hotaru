@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, cast
 
 from goygram import Session
+from goygram.errors import ConnectionClosedError
 from relay.firewall import trusted_scope
 
 BOTFATHER = "@BotFather"
@@ -284,17 +285,15 @@ class InlineManager:
         self.bot_app: Any = None
         self.info: InlineBotInfo | None = None
         self._task: asyncio.Task[None] | None = None
-        self._reauth_task: asyncio.Task[None] | None = None
         self._handlers: list[Callable[[Any], Awaitable[Any]]] = []
         self._cb_handlers: list[Callable[[Any], Awaitable[Any]]] = []
         self._pm_handlers: list[Callable[[Any], Awaitable[Any]]] = []
         self._chosen_handlers: list[Callable[[Any], Awaitable[Any]]] = []
         self._stop = asyncio.Event()
         self.ready = asyncio.Event()
-        self._session_failure = asyncio.Event()
         self._create_attempts: list[float] = []
         self._provision_lock = asyncio.Lock()
-        self._reauth_lock = asyncio.Lock()
+        self._start_lock = asyncio.Lock()
 
     def on_inline(self, handler: Callable[[Any], Awaitable[Any]]) -> Callable[[Any], Awaitable[Any]]:
         self._handlers.append(handler)
@@ -645,19 +644,22 @@ class InlineManager:
                     return
 
     async def start(self) -> None:
-        if self._task is not None and not self._task.done():
-            return
-        if self.info is None:
-            await self.ensure_bot(allow_create=True)
+        async with self._start_lock:
+            if self._task is not None and not self._task.done():
+                return
+            if self.info is None:
+                await self.ensure_bot(allow_create=True)
+            self._stop.clear()
+            self.ready.clear()
+            self._task = asyncio.create_task(self._run(), name="hotaru:inline-bot")
+
+    def _new_app(self) -> Any:
         assert self.info is not None
         from goygram import GoyGram
 
         main = self.runtime.app
         if main is not None and main.core.bot_token == self.info.token:
             raise InlineError("inline polling requires a token separate from the primary bot")
-        self._stop.clear()
-        self.ready.clear()
-        self._session_failure.clear()
         from hotaru.accounts import bot_vault_path
         uid = None
         session = getattr(self.runtime.app, "session", None)
@@ -692,7 +694,7 @@ class InlineManager:
             if bot_user and bot_user.get("dc_id"):
                 bot_session.data["dc"] = bot_user["dc_id"]
 
-        self.bot_app = GoyGram(
+        app = GoyGram(
             bot_token=self.info.token,
             api_id=self.runtime.config.api_id,
             api_hash=self.runtime.config.api_hash,
@@ -701,200 +703,113 @@ class InlineManager:
             intake="mtproto",
             default_transport="mtproto",
         )
-        self.bot_app.on_inline(self._dispatch_inline)
-        self.bot_app.on_cb(self._dispatch_callback)
-        self.bot_app.on_msg(self._dispatch_bot_pm)
-        self.bot_app.on_update(self._dispatch_chosen)
-        self._task = asyncio.create_task(self._run(), name="hotaru:inline-bot")
-        if self.runtime.observatory is not None:
-            self.runtime.observatory.emit("inline", "run_scheduled", username=self.info.username)
+        app.on_inline(self._dispatch_inline)
+        app.on_cb(self._dispatch_callback)
+        app.on_msg(self._dispatch_bot_pm)
+        app.on_update(self._dispatch_chosen)
+        return app
 
-    async def _warm_owner_peer(self) -> None:
-        app = self.bot_app
-        runtime = self.runtime
-        if app is None or runtime is None:
-            return
-        kernel = getattr(runtime, "kernel", None)
-        owner = getattr(kernel, "owner_id", None) if kernel is not None else None
-        if not isinstance(owner, int) or owner <= 0:
-            return
-        mt = getattr(app, "mt", None)
-        if mt is None:
-            return
-        # Prefer username from already-resolved bot info — it's available
-        # immediately without any network round-trip and avoids the startup
-        # timeout that occurred when querying the userbot MT before its
-        # connection was fully established.
-        username = getattr(self.info, "username", None) if self.info is not None else None
-        if not isinstance(username, str) or not username:
-            # Fall back to fetching via userbot MT only if info has no username.
-            main = getattr(runtime, "app", None)
-            main_mt = getattr(main, "mt", None) if main is not None else None
-            if main_mt is not None:
-                try:
-                    result = await main_mt.call("users.getUsers", id=[{"_": "inputPeerSelf"}])
-                    if isinstance(result, list):
-                        body: dict[str, Any] = {}
-                        users: Any = cast('list[Any]', result)
-                    else:
-                        body = _result_body(result)
-                        users = body.get("users", body)
-                    if isinstance(users, list) and users and isinstance(users[0], dict):
-                        username = cast('dict[str, Any]', users[0]).get("username")
-                    elif isinstance(body.get("username"), str):
-                        username = body.get("username")
-                except Exception as exc:
-                    if runtime.observatory is not None:
-                        runtime.observatory.emit("inline", "warmup_self_lookup_error", error=type(exc).__name__)
-        if not isinstance(username, str) or not username:
-            if runtime.observatory is not None:
-                runtime.observatory.emit("inline", "warmup_no_username")
-            return
-        for attempt in range(3):
-            if self._stop.is_set():
-                return
-            try:
-                await mt.resolve_peer("@" + username)
-            except Exception as exc:
-                if runtime.observatory is not None:
-                    runtime.observatory.emit("inline", "warmup_error", attempt=attempt, error=type(exc).__name__)
-                await asyncio.sleep(2.0 * (attempt + 1))
-                continue
-            entity = mt.entities.get(("user", int(owner)))
-            if entity is not None and entity.get("access_hash"):
-                if runtime.observatory is not None:
-                    runtime.observatory.emit("inline", "warmup_ok", username=username)
-                return
+    async def _auth_bot(self, app: Any) -> None:
+        from goygram.security import bootstrap_session
+
+        info = self.info
+        if info is None:
+            raise InlineError("inline bot client is missing")
+        result = await bootstrap_session(
+            app.core,
+            api_id=self.runtime.config.api_id,
+            api_hash=self.runtime.config.api_hash,
+            session_name=app.core.session_name,
+            bot_token=info.token,
+            session=app.session,
+        )
+        if not result or app.session.auth_key is None or not app.session.is_bot:
+            raise InlineError("inline bot authorization did not complete")
 
     async def _run(self) -> None:
-        app = self.bot_app
-        assert app is not None
         delay = 1.0
-        if self.runtime.observatory is not None:
-            self.runtime.observatory.emit("inline", "run_begin")
         while not self._stop.is_set():
-            ready_task = None
+            app = None
             try:
-                ready_task = asyncio.create_task(self._await_ready(app), name="hotaru:inline-ready")
-                await app.run()
-                if self.runtime.observatory is not None:
-                    self.runtime.observatory.emit("inline", "run_return", session_failure=self._session_failure.is_set(), stopped=self._stop.is_set())
-                if self._session_failure.is_set():
-                    await self._restart_bot_session(app)
-                return
+                if self.info is None:
+                    await self.ensure_bot(allow_create=True)
+                app = self.bot_app = self._new_app()
+                await asyncio.wait_for(self._auth_bot(app), timeout=60.0)
+                delay = 1.0
+                await self._poll(app)
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
-                if self._is_session_auth_failure(exc):
-                    if self.runtime.observatory is not None:
-                        self.runtime.observatory.emit("inline", "session_reauth", error=type(exc).__name__)
-                    await self._restart_bot_session(app)
-                    return
                 if self._is_auth_failure(exc):
-                    if self.runtime.observatory is not None:
-                        self.runtime.observatory.emit("inline", "token_revoked_midflight")
                     self._forget_bot()
-                    await self.stop_polling()
-                    try:
-                        await self.ensure_bot()
-                        await self.start()
-                    except Exception as retry_exc:
-                        if self.runtime.observatory is not None:
-                            self.runtime.observatory.emit("inline", "reprovision_failed", error=type(retry_exc).__name__)
-                    return
                 if self.runtime.observatory is not None:
                     self.runtime.observatory.emit("inline", "poll_error", error=type(exc).__name__, detail=str(exc)[:240], delay=delay)
-                try:
-                    await asyncio.wait_for(self._stop.wait(), timeout=delay)
-                except asyncio.TimeoutError:
-                    pass
-                delay = min(delay * 2, 60.0)
             finally:
-                if ready_task is not None and not ready_task.done():
-                    ready_task.cancel()
-
-    async def _await_ready(self, app: Any) -> None:
-        deadline = time.monotonic() + 3.0
-        while not self._stop.is_set():
-            session = getattr(app, "session", None)
-            mt = getattr(app, "mt", None)
-            if mt is not None and session is not None and session.is_bot:
-                if time.monotonic() < deadline and self._bot_transport_starting(mt, session):
-                    await asyncio.sleep(0.05)
-                    continue
-                if self.runtime.observatory is not None:
-                    self.runtime.observatory.emit("inline", "health_begin", session_key=session.auth_key is not None, mt_key=getattr(mt, "auth_key", None) is not None)
-                try:
-                    await app.mt_users_get_users(id=[{"_": "inputUserSelf"}])
-                except Exception as exc:
-                    if self.runtime.observatory is not None:
-                        self.runtime.observatory.emit("inline", "health_error", error=type(exc).__name__, detail=str(exc)[:240], auth_failure=self._is_session_auth_failure(exc))
-                    if self._is_session_auth_failure(exc):
-                        self._session_failure.set()
+                self.ready.clear()
+                if app is not None:
+                    try:
+                        await app.close()
+                    except Exception as exc:
                         if self.runtime.observatory is not None:
-                            self.runtime.observatory.emit("inline", "session_invalid", error=type(exc).__name__)
-                        app.stop()
-                        if self._reauth_task is None or self._reauth_task.done():
-                            self._reauth_task = asyncio.create_task(self._restart_bot_session(app), name="hotaru:inline-reauth")
-                        return
-                    await asyncio.sleep(0.05 if isinstance(exc, (ConnectionError, TimeoutError)) else 0.5)
-                    continue
-                self.ready.set()
-                if self.runtime.observatory is not None:
-                    self.runtime.observatory.emit("inline", "ready_set", self_id=getattr(app.session, "self_id", None), dc=getattr(app.session, "dc", None))
-                asyncio.create_task(self._warm_owner_peer())
-                return
-            await asyncio.sleep(0.2)
-
-    @staticmethod
-    def _bot_transport_starting(mt: Any, session: Any) -> bool:
-        if session.auth_key is None and getattr(mt, "auth_key", None) is None:
-            return True
-        if not hasattr(mt, "_reader_task"):
-            return False
-        reader = getattr(mt, "_reader_task", None)
-        return reader is None or reader.done()
-
-    @staticmethod
-    def _is_session_auth_failure(exc: Exception) -> bool:
-        text = str(exc).upper()
-        return any(value in text for value in ("AUTH_KEY_UNREGISTERED", "AUTH_KEY_INVALID", "AUTH_KEY_PERM_EMPTY", "AUTH_KEY_DUPLICATED", "SESSION_REVOKED", "SESSION_EXPIRED"))
-
-    async def _restart_bot_session(self, app: Any) -> None:
-        async with self._reauth_lock:
-            if self.bot_app is not app:
-                return
-            if self.runtime.observatory is not None:
-                self.runtime.observatory.emit("inline", "recovery_begin", username=getattr(self.info, "username", None))
-            self.ready.clear()
+                            self.runtime.observatory.emit("inline", "close_error", error=type(exc).__name__)
+                self.bot_app = None
             try:
-                app.stop()
-                await app.close()
-            except Exception:
+                await asyncio.wait_for(self._stop.wait(), timeout=delay)
+            except asyncio.TimeoutError:
                 pass
-            info = self.info
-            if info is not None:
-                try:
-                    self.info = await self.getbot(info.token)
-                    if self.runtime.observatory is not None:
-                        self.runtime.observatory.emit("inline", "recovery_token_valid", username=self.info.username)
-                except InlineError:
-                    if self.runtime.observatory is not None:
-                        self.runtime.observatory.emit("inline", "recovery_token_invalid", username=info.username)
-                    self._forget_bot()
-                    await self.ensure_bot(allow_create=True)
-                    if self.runtime.observatory is not None:
-                        self.runtime.observatory.emit("inline", "recovery_bot_replaced", username=getattr(self.info, "username", None))
-            self.bot_app = None
-            self._task = None
-            try:
-                await self.start()
-            except Exception as exc:
-                if self.runtime.observatory is not None:
-                    self.runtime.observatory.emit("inline", "recovery_failed", error=type(exc).__name__, detail=str(exc)[:240])
-                raise
+            delay = min(delay * 2, 60.0)
+
+    async def _poll(self, app: Any) -> None:
+        tasks: list[asyncio.Task[Any]] = []
+        try:
+            await app.core.fsm.start()
+            tasks.append(asyncio.create_task(app.core.disp.consume(), name="hotaru:inline-dispatch"))
+            await app.mt.start()
+            reader = app.mt._reader_task
+            if reader is None:
+                raise InlineError("inline bot reader did not start")
+            tasks.append(reader)
+            await self._probe(app)
+            if any(task.done() for task in tasks):
+                raise InlineError("inline bot stopped during startup")
+            self.ready.set()
             if self.runtime.observatory is not None:
-                self.runtime.observatory.emit("inline", "recovery_restarted", username=getattr(self.info, "username", None))
+                self.runtime.observatory.emit("inline", "ready_set", self_id=app.session.self_id, dc=app.session.dc)
+            tasks.append(asyncio.create_task(self._watch_bot(app), name="hotaru:inline-health"))
+            stop = asyncio.create_task(self._stop.wait(), name="hotaru:inline-stop")
+            tasks.append(stop)
+            done, _ = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+            if stop not in done:
+                for task in done:
+                    if task.cancelled():
+                        raise InlineError("inline bot polling stopped")
+                    task.result()
+                raise InlineError("inline bot polling stopped")
+        finally:
+            self.ready.clear()
+            for task in tasks:
+                task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+    async def _probe(self, app: Any) -> None:
+        deadline = time.monotonic() + 3.0
+        while True:
+            try:
+                await asyncio.wait_for(app.mt.call("updates.getState", api_id=self.runtime.config.api_id), timeout=15.0)
+                await self._check_bot(app)
+                return
+            except (ConnectionError, ConnectionClosedError, TimeoutError, asyncio.TimeoutError):
+                if self._stop.is_set() or time.monotonic() >= deadline:
+                    raise
+                await asyncio.sleep(0.05)
+
+    async def _check_bot(self, app: Any) -> None:
+        await asyncio.wait_for(app.mt_users_get_users(id=[{"_": "inputUserSelf"}], retry=0), timeout=15.0)
+
+    async def _watch_bot(self, app: Any) -> None:
+        while not self._stop.is_set():
+            await asyncio.sleep(30.0)
+            await self._check_bot(app)
 
     @staticmethod
     def _is_auth_failure(exc: Exception) -> bool:
@@ -918,8 +833,9 @@ class InlineManager:
                 pass
 
     async def _dispatch_inline(self, query: Any) -> None:
-        if self.runtime.observatory is not None:
-            self.runtime.observatory.emit("inline", "query_received", src=str(getattr(query, "src", "")), qid=str(getattr(query, "id", "")), text=str(getattr(query, "query", ""))[:64])
+        text = str(getattr(query, "query", ""))
+        if self.runtime.observatory is not None and not text.startswith("hotaru-login:"):
+            self.runtime.observatory.emit("inline", "query_received", src=str(getattr(query, "src", "")), qid=str(getattr(query, "id", "")), text=text[:64])
         for handler in tuple(self._handlers):
             try:
                 await handler(query)
@@ -945,7 +861,8 @@ class InlineManager:
             from hotaru.security import AccessVerdict
 
             verdict = security.check_callback(callback, transport="inline")
-            if verdict is not AccessVerdict.ALLOW:
+            login = getattr(self.runtime, 'account_login', None)
+            if verdict is not AccessVerdict.ALLOW and not (login is not None and login.ui.accepts(callback)):
                 return
         for handler in tuple(self._cb_handlers):
             try:

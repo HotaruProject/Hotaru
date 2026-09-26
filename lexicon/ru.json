@@ -8,7 +8,14 @@
     "cancel": "Отмена",
     "close": "Закрыть",
     "back": "Назад",
-    "unknown_error": "Неизвестная ошибка"
+    "unknown_error": "Неизвестная ошибка",
+    "confirm": "Подтвердить",
+    "none": "Нет",
+    "unknown": "Неизвестно",
+    "yes": "Да",
+    "no": "Нет",
+    "seconds": "{n} с",
+    "invalid_value": "Некорректное значение"
   },
   "kernel": {
     "config": {
@@ -41,7 +48,9 @@
           "description": "Возобновить юзербота"
         }
       },
-      "restarted": "Юзербот успешно перезапущен за {took}"
+      "restarted": "Юзербот успешно перезапущен за {took}",
+      "running": "Юзербот работает.",
+      "already_running": "Юзербот уже работает."
     },
     "updater": {
       "unavailable": "Runtime недоступен",
@@ -71,10 +80,16 @@
       "ignored_toast": "Проигнорировано",
       "updating": "Обновляю…",
       "notify_on": "Уведомления об обновлениях включены",
-      "notify_off": "Уведомления об обновлениях выключены"
+      "notify_off": "Уведомления об обновлениях выключены",
+      "check_failed": "<b>Не удалось проверить обновления:</b> <i>{error}</i>",
+      "failed": "<b>Не удалось обновить:</b> <i>{error}</i>",
+      "conflicts": "<b>Локальные изменения с конфликтами сохранены:</b> <code>{path}</code>",
+      "button_update": "Обновить",
+      "button_ignore": "Пропустить",
+      "confirm": "<br><br>Обновить сейчас?"
     },
     "kernel": {
-      "runtime_unavailable": "Runtime недоступен",
+      "runtime_unavailable": "Сервис недоступен",
       "modules_unavailable": "Модули недоступны",
       "modules_none": "Модулей нет",
       "usage": "Использование: {usage}",
@@ -83,10 +98,18 @@
       "alias_not_found": "Алиас не найден: {alias}"
     },
     "capabilities": {
-      "mt": "Прямой доступ к MTProto",
-      "state": "Постоянное хранилище состояния",
-      "files": "Доступ к файловой системе",
-      "net": "Доступ к сети"
+      "mt": "Доступ к MTProto",
+      "state": "Хранение данных",
+      "files": "Доступ к файлам",
+      "net": "Доступ к сети",
+      "bot": "Доступ к боту",
+      "modules": "Управление модулями",
+      "loader": "Загрузка модулей",
+      "fetch": "Загрузка файлов",
+      "inline": "Инлайн-боты",
+      "assets": "Хранилище вложений",
+      "shell": "Команды оболочки",
+      "logs": "Журнал"
     },
     "hotaru-kernel": {
       "description": "Модули ядра Hotaru",
@@ -152,7 +175,7 @@
       "description": "Тестовый модуль прокси и возможностей Hotaru",
       "commands": {
         "tfstatus": {
-          "description": "Пинг MTProto"
+          "description": "Проверить подключение MTProto"
         },
         "tfhistory": {
           "description": "Тест получения истории"
@@ -185,37 +208,205 @@
       "kernel_modules": "Модули ядра",
       "user_modules": "Пользовательские модули",
       "commands": "Команды",
-      "capabilities": "Возможности"
+      "capabilities": "Возможности",
+      "unavailable": "<b>Сервис недоступен</b>",
+      "manager_unavailable": "<b>Менеджер модулей недоступен</b>",
+      "usage": "<b>Использование:</b> <code>{prefix}hlp</code> или <code>{prefix}hlp &lt;модуль&gt;</code>",
+      "disabled": "<b>Модуль отключён:</b> <code>{module}</code><br><i>Ошибка: {error}</i>",
+      "missing": "<b>Модуль не найден:</b> <code>{module}</code>"
     },
     "accounts": {
-      "description": "Мультиаккаунтинг: регистрация, авторизация, запуск и остановка аккаунтов",
+      "description": "Управление аккаунтами",
       "commands": {
         "acc": {
-          "description": "Управление аккаунтом: acc <#> <start|stop|on|off|del>"
+          "description": "Управление аккаунтом"
         },
         "acca": {
-          "description": "Авторизовать новый аккаунт: acca <#>"
+          "description": "Добавить аккаунт или войти"
         },
         "accs": {
-          "description": "Список аккаунтов"
+          "description": "Открыть панель аккаунтов"
         }
       },
-      "usage": "использование: !acc <#> <start|stop|on|off|del>\n!acca — зарегистрировать аккаунт (номер выдаётся автоматически)\n!accs — список",
+      "usage": "<b>Аккаунты</b>\n<code>{prefix}acca [user_id]</code> · добавить по QR / номеру\n<code>{prefix}acca cancel</code> · отменить вход\n<code>{prefix}accs [#]</code> · панель аккаунтов\n<code>{prefix}acc [#]</code> · панель аккаунтов\n<code>{prefix}acc 2 start|stop|restart|on|off|del</code>",
       "empty": "Аккаунты не зарегистрированы.",
       "no_self": "Не удалось определить user id сессии.",
-      "not_registered": "Аккаунт #{n} не зарегистрирован."
+      "not_registered": "Аккаунт #{n} не зарегистрирован.",
+      "heading": "<b>Аккаунты</b> · {count}",
+      "item": "#{n} · {status}",
+      "account": "Аккаунт №{n}",
+      "detail": "<b>Аккаунт №{n}</b>\n<code>{uid}</code> · {status}\nАвтозапуск: {enabled}",
+      "owner": "<b>Это аккаунт владельца.</b>",
+      "on": "вкл.",
+      "off": "выкл.",
+      "changed": "Список аккаунтов изменился.",
+      "reopen": "Открой {prefix}accs заново.",
+      "remove_confirm": "<b>Удалить аккаунт №{n}?</b>\nОн остановится. Файлы сессии сохранятся.",
+      "permissions": "<b>Права</b> · {account}\n<code>{uid}</code>\nТолько управление аккаунтами.",
+      "access_off": "Доступ отключён.",
+      "cancelled": "отменено.",
+      "cancel_denied": "Отменить вход может только тот, кто его начал.",
+      "no_login": "Вход не запущен.",
+      "already_added": "Аккаунт №{n} уже добавлен.",
+      "result": "Аккаунт №{n}: {status}.",
+      "button": {
+        "add": "Добавить аккаунт",
+        "refresh": "Обновить",
+        "close": "Закрыть",
+        "permissions": "Права",
+        "start": "Запустить",
+        "stop": "Остановить",
+        "restart": "Перезапустить",
+        "login": "Войти",
+        "enable_start": "Включить и запустить",
+        "autostart_on": "Вкл. автозапуск",
+        "autostart_off": "Выкл. автозапуск",
+        "remove": "Удалить",
+        "back": "Назад",
+        "accounts": "‹ Аккаунты",
+        "grant_all": "Выдать все",
+        "revoke": "Отозвать всё",
+        "cancel": "Отмена",
+        "qr": "QR",
+        "phone": "Номер",
+        "submit": "Отправить",
+        "enter_phone": "Ввести номер",
+        "enter_code": "Ввести код",
+        "enter_password": "Ввести пароль"
+      },
+      "right": {
+        "view": "Просмотр",
+        "add": "Добавление",
+        "start": "Запуск",
+        "stop": "Остановка",
+        "restart": "Перезапуск",
+        "autostart": "Автозапуск",
+        "remove": "Удаление"
+      },
+      "status": {
+        "current": "текущий",
+        "running": "работает",
+        "starting": "запускается",
+        "login": "нужен вход",
+        "stopped": "остановлен",
+        "disabled": "отключён",
+        "enabled": "включён",
+        "removed": "удалён"
+      },
+      "login": {
+        "saved": "<i>Для входа открой Избранное.</i>",
+        "private": "<i>Для входа открой личные сообщения.</i>",
+        "choose": "<b>Добавить аккаунт</b>\nВыбери способ входа.",
+        "timeout": "Время входа истекло.",
+        "retry_timeout": "Время входа истекло. Запусти {prefix}acca заново.",
+        "open_failed": "Не удалось открыть вход. Попробуй ещё раз.",
+        "added": "Аккаунт №{n} добавлен. Запускается…",
+        "running": "Аккаунт №{n} добавлен и работает.",
+        "starting": "Аккаунт №{n} добавлен. Ещё запускается; проверь {prefix}accs.",
+        "start_failed": "Аккаунт №{n} добавлен, но не запустился. Открой {prefix}accs.",
+        "expired": "Этот вход уже завершён.",
+        "busy": "Вход уже запущен.",
+        "submitted": "Отправлено.",
+        "input_expired": "Ввод устарел.",
+        "phone_format": "Нужен номер в международном формате, например +12345678901.",
+        "code_format": "Введи код из Telegram.",
+        "password_format": "Введи пароль 2FA.",
+        "check_form": "Открой форму входа.",
+        "edit_input": "Исправь ввод и попробуй ещё раз.",
+        "use_phone": "Использовать {phone}",
+        "submit_code": "Отправить код",
+        "submit_password": "Отправить пароль",
+        "continue": "Нажми, чтобы продолжить.",
+        "checking": "Проверяю…",
+        "private_only": "Используй личный чат для входа.",
+        "no_password": "Пароль сейчас не требуется.",
+        "scan": "Сканируй с аккаунта, который добавляешь.\nНастройки → Устройства → Подключить устройство.",
+        "password_prompt": "<b>Пароль 2FA</b>\nВведи пароль для завершения входа.",
+        "password_command": "Нужен пароль 2FA. Отправь {prefix}acca password <пароль>.",
+        "wrong_password": "Неверный пароль. Попробуй ещё раз.",
+        "phone_prompt": "<b>Номер телефона</b>\nВ международном формате, например +12345678901.",
+        "phone_invalid": "Неверный номер телефона.",
+        "phone_banned": "Этот номер заблокирован.",
+        "code_prompt": "<b>Код входа</b>\nВведи код от Telegram.",
+        "wrong_code": "Неверный код. Попробуй ещё раз.",
+        "code_expired": "Код истёк. Введи номер для получения нового.",
+        "qr_prompt": "<b>Вход по QR</b>\nСканируй QR ниже с аккаунта, который добавляешь.",
+        "flood": "Попробуй через {seconds} с.",
+        "failed": "Не удалось войти. Попробуй ещё раз."
+      },
+      "error": {
+        "no_permission": "Нет прав.",
+        "owner_protected": "Аккаунт владельца защищён.",
+        "invalid_permission": "Неверное право.",
+        "invalid_user": "Неверный пользователь.",
+        "not_found": "Аккаунт №{n} не найден.",
+        "current": "Этот аккаунт работает здесь.",
+        "invalid_lock": "Не удалось заблокировать сессию.",
+        "running": "Аккаунт уже запущен.",
+        "invalid_owner": "Неверный владелец.",
+        "invalid_id": "ID и номер аккаунта должны быть положительными.",
+        "wrong_session": "Сессия не совпадает с аккаунтом.",
+        "number_taken": "Номер аккаунта {n} уже занят.",
+        "stop_first": "Сначала останови аккаунт.",
+        "disabled": "Аккаунт №{n} отключён.",
+        "login_first": "Сначала войди в этот аккаунт.",
+        "stopping": "Аккаунт №{n} ещё останавливается.",
+        "login_busy": "Вход уже запущен.",
+        "qr_failed": "Не удалось отправить QR.",
+        "phone_unavailable": "Вход по номеру недоступен; попробуй QR.",
+        "login_response": "Неожиданный ответ при входе.",
+        "no_user": "При входе не получен пользователь.",
+        "wrong_account": "Неверный аккаунт; нужен пользователь {uid}.",
+        "unknown": "Не удалось выполнить действие."
+      }
     },
     "acl": {
-      "description": "Управление правами: выдача, отзыв, список прав пользователей",
+      "description": "Управление правами",
       "commands": {
         "perms": {
-          "description": "Список прав всех пользователей"
+          "description": "Список прав"
         },
         "perm": {
-          "description": "Выдать/отозвать право: perm <user_id> <owner|admin|trusted|everyone> [remove]"
+          "description": "Выдать или отозвать права"
         },
         "whois": {
-          "description": "Права пользователя: whois <user_id>"
+          "description": "Права пользователя"
+        },
+        "owadd": {
+          "description": "Добавить владельца"
+        },
+        "owrm": {
+          "description": "Удалить владельца"
+        },
+        "owls": {
+          "description": "Список владельцев"
+        },
+        "sgnew": {
+          "description": "Создать группу прав"
+        },
+        "sgls": {
+          "description": "Список групп"
+        },
+        "sg": {
+          "description": "Участники и правила группы"
+        },
+        "sgdel": {
+          "description": "Удалить группу"
+        },
+        "sgadd": {
+          "description": "Добавить участника"
+        },
+        "sgrm": {
+          "description": "Удалить участника"
+        },
+        "rule": {
+          "description": "Добавить правило доступа"
+        },
+        "rulerm": {
+          "description": "Удалить правило"
+        },
+        "ruleclr": {
+          "description": "Очистить правила"
         }
       },
       "usage": "использование:\n!owadd <user_id|reply> — выдать owner\n!owrm <user_id|reply> — снять owner\n!owls — владельцы\n!sgnew <name> — создать группу прав\n!sgls — список групп\n!sg <name> — участники и права группы\n!sgdel <name> — удалить группу\n!sgadd <name> <user_id|reply> — добавить юзера в группу\n!sgrm <name> <user_id|reply> — убрать юзера из группы\n!rule <user|chat|sgroup> <target> <command|module>/<name> [срок] — выдать право\n!rulerm — убрать правило\n!ruleclr — очистить все правила цели\n!perm <user_id> <admin|trusted|everyone> [remove] — выдать/снять право\n!perms — список прав\n!whois <user_id> — права пользователя",
@@ -245,34 +436,112 @@
         "logs": {
           "description": "Логи юзербота с файлом"
         }
-      }
+      },
+      "pending": "ожидание"
     },
     "commands": {
-      "lg": "view recent observatory log entries"
+      "lg": "Показать последние записи журнала"
     },
     "settings": {
       "description": "Управление алиасами и префиксом",
       "commands": {
-        "alias": "Создать алиас",
-        "rmalias": "Удалить алиас",
-        "prefix": "Сменить префикс"
+        "alias": {
+          "description": "Создать алиас команды"
+        },
+        "rmalias": {
+          "description": "Удалить алиас команды"
+        },
+        "prefix": {
+          "description": "Сменить префикс команд"
+        }
       }
+    },
+    "executor": {
+      "heading": "<b>Исполнитель</b> | <code>{elapsed:.1f} мс</code>",
+      "exit_code": "Код завершения: {returncode}",
+      "running": "Выполняется…",
+      "usage_sh": "<b>Использование:</b> <code>{prefix}sh &lt;команда&gt;</code>",
+      "usage_py": "<b>Использование:</b> <code>{prefix}py &lt;код&gt;</code> или ответ на код; -so — без вывода",
+      "cancelled": "Выполнение отменено",
+      "done": "Готово ✓",
+      "kill_reply": "<b>Ответь на сообщение выполняющейся py/sh, чтобы остановить процесс.</b>",
+      "killed": "<b>Процесс остановлен.</b>",
+      "no_process": "<b>У этого сообщения нет активного процесса.</b>",
+      "section": {
+        "code": "Код",
+        "command": "Команда",
+        "output": "Вывод",
+        "result": "Результат",
+        "return": "Возвращённое значение",
+        "traceback": "Трассировка"
+      },
+      "description": "Выполнение Python и команд оболочки",
+      "commands": {
+        "py": {
+          "description": "Выполнить код Python"
+        },
+        "sh": {
+          "description": "Выполнить команду оболочки"
+        },
+        "kill": {
+          "description": "Остановить выполняющуюся команду"
+        }
+      }
+    },
+    "catalyst": {
+      "description": "Управление модулями",
+      "commands": {
+        "ld": {
+          "description": "Загрузить модуль"
+        },
+        "ul": {
+          "description": "Выгрузить модуль"
+        },
+        "rl": {
+          "description": "Перезагрузить модуль"
+        },
+        "ex": {
+          "description": "Экспортировать модуль"
+        },
+        "rs": {
+          "description": "Очистить данные модуля"
+        },
+        "resetdb": {
+          "description": "Очистить данные модуля"
+        }
+      }
+    },
+    "capability_details": {
+      "mt": "доступ к MTProto: сообщения, медиа, диалоги, чаты, каналы и контакты; операции безопасности аккаунта и платежи заблокированы",
+      "files": "чтение и запись файлов в рабочей папке модуля",
+      "net": "исходящие HTTP(S)-запросы в интернет; локальные, внутренние и запрещённые адреса заблокированы",
+      "state": "постоянное хранение данных в пространстве модуля",
+      "inline": "запросы к инлайн-ботам и взаимодействие с ними",
+      "modules": "загрузка, выгрузка, перезагрузка и просмотр модулей, их хешей и описаний",
+      "assets": "доступ к скрытому хранилищу вложений",
+      "shell": "команды оболочки в рабочей папке модуля с ограничением времени и объёма вывода",
+      "logs": "запись структурированных событий в журнал; разрешено всегда",
+      "fetch": "чтение сообщений, данных пользователей и чатов, получение ответов; разрешено всегда"
     }
   },
   "commands": {
     "hlp": {
       "description": "Показать помощь",
-      "usage": "{prefix}hlp [id-модуля]"
+      "usage": "{prefix}hlp [модуль]"
     },
     "help": {
       "description": "Показать помощь",
-      "usage": "{prefix}help [id-модуля]"
+      "usage": "{prefix}help [модуль]"
     },
     "lang": {
       "description": "Показать или изменить язык",
-      "usage": "{prefix}lang [language]",
+      "usage": "{prefix}lang [язык]",
       "invalid": "Неподдерживаемый язык: {language}",
-      "changed": "Язык изменён на {language}"
+      "changed": "Язык изменён на {language}",
+      "unavailable": "Сервис недоступен",
+      "lexicon_unavailable": "Словарь переводов недоступен",
+      "languages_unavailable": "Языки недоступны",
+      "current": "Текущий язык: {language}"
     }
   },
   "languages": {
@@ -284,24 +553,170 @@
   },
   "inline_commands_hint": "Выбери команду — введи @<бот> и её имя в любом чате",
   "settings": {
-    "runtime_unavailable": "Runtime недоступен",
-    "usage_alias": "Использование: !alias <алиас> <команда>",
-    "alias_invalid": "Алиас: 1-32 символа, только a-z, 0-9 и _",
-    "alias_exists": "Такая команда уже существует: {alias}",
-    "command_not_found": "Команда не найдена: {command}\nДоступные: {known}",
-    "alias_taken": "Алиас уже занят: {alias} -> {command}. Сначала удали его через !rmalias {alias}",
+    "runtime_unavailable": "Сервис недоступен",
+    "usage_alias": "Использование: {prefix}alias <алиас> <команда>",
+    "alias_invalid": "Алиас: 1–32 символа, только a-z, 0-9 и _.",
+    "alias_exists": "Команда уже существует: {alias}",
+    "command_not_found": "Команда не найдена: {command}\nДоступны: {known}",
+    "alias_taken": "Алиас занят: {alias} → {command}. Удали через {prefix}rmalias {alias}.",
     "alias_set": "Алиас установлен: {alias} → {command}",
-    "usage_rmalias": "Использование: !rmalias <алиас>",
+    "usage_rmalias": "Использование: {prefix}rmalias <алиас>",
     "alias_removed": "Алиас удалён: {alias}",
     "alias_not_found": "Алиас не найден: {alias}",
-    "prefix_current": "Текущий префикс: {prefix}. Смена: !prefix <символ>",
-    "prefix_invalid": "Префикс должен быть одним не-пробельным символом",
-    "prefix_set": "Префикс сменён на {prefix}",
+    "prefix_current": "Текущий префикс: {prefix}. Сменить: {prefix}prefix <символ>",
+    "prefix_invalid": "Префикс — один символ, кроме пробельных.",
+    "prefix_set": "Префикс изменён на {prefix}",
     "description": "Управление алиасами и префиксом",
     "commands": {
-      "alias": "Создать алиас",
-      "rmalias": "Удалить алиас",
-      "prefix": "Сменить префикс"
+      "alias": "Создать алиас команды",
+      "rmalias": "Удалить алиас команды",
+      "prefix": "Сменить префикс команд"
+    }
+  },
+  "runtime": {
+    "modules_unavailable": "Модули недоступны",
+    "modules_empty": "Модулей нет",
+    "modules": "Модули:\n",
+    "module_unavailable": "Модуль недоступен",
+    "module_missing": "Модуль не найден: {module_id}",
+    "module_info": "Модуль: {module}\nВерсия: {version}\nКоманды: {commands}\nВозможности: {capabilities}\nОписание: {description}",
+    "help_unavailable": "Справка недоступна",
+    "page_unavailable": "Страница справки недоступна",
+    "catalog": "Каталог: ",
+    "next": "Далее",
+    "bot_unavailable": "Инлайн-бот недоступен",
+    "bot_failed": "Не удалось создать инлайн-бота: {error}",
+    "protected": "Системный модуль защищён: {module_id}",
+    "unload_failed": "Не удалось выгрузить модуль: {error}",
+    "not_ready": "Сервисы ещё не готовы",
+    "purged": "Модуль удалён: {module} (данные очищены)",
+    "unloaded": "Модуль выгружен: {module} (данные сохранены)",
+    "reset_failed": "Данные очищены, но перезагрузка не удалась: {error}",
+    "reset": "Данные очищены: {module_id}",
+    "id_mismatch": "Идентификатор модуля не совпадает: {module_id}",
+    "downgrade": "Понижение версии запрещено: {old} → {new}",
+    "rollback_failed": "Перезагрузка не удалась: {error}; откат тоже не удался",
+    "rolled_back": "Перезагрузка не удалась: {error}; прежняя версия восстановлена",
+    "reloaded": "Перезагружен: {module_id}",
+    "exported": "Экспортирован: {file_name}",
+    "invalid_request": "Некорректный запрос",
+    "cancelled": "Отменено",
+    "module_cancelled": "Отменено: {module_id}",
+    "source_missing": "Исходный код отсутствует",
+    "activation_failed": "Не удалось загрузить модуль",
+    "module_loaded": "Модуль загружен",
+    "loaded": "Загружен: {module_id} {version}",
+    "backup_failed": "Не удалось создать копию: {error}",
+    "backup_created": "Копия создана: {name}",
+    "backups_empty": "Резервных копий нет",
+    "backups": "Резервные копии:\n",
+    "backup_unavailable": "Резервная копия недоступна",
+    "backup_invalid": "Некорректная резервная копия: {error}",
+    "backup_valid": "Копия исправна. Файлов: {count}",
+    "restore_confirm": "Подтвердить восстановление?",
+    "invalid_module": "Некорректный модуль",
+    "invalid_page": "Некорректная страница справки",
+    "invalid_restore": "Некорректный запрос на восстановление",
+    "restore_failed": "Не удалось восстановить",
+    "restore_error": "Не удалось восстановить: {error}",
+    "restore_done": "Восстановлено",
+    "callback_failed": "Не удалось выполнить действие",
+    "callback_denied": "Кнопка устарела или недоступна.",
+    "load_error": "Не удалось загрузить: {error}: {detail}",
+    "load_failed": "Не удалось загрузить: {error}",
+    "load_screen": "Не удалось загрузить: {module_id} {version}\n{screen}",
+    "updated": "Обновлён: {module_id} {version}",
+    "caps_request": "Модуль {module_id} v{version} запрашивает возможности:",
+    "caps_retry": "Повтори команду загрузки для подтверждения",
+    "usage_mi": "Использование: {prefix}mi <module>",
+    "usage_help": "Использование: {prefix}hlp [page] | {prefix}hlp <module>",
+    "usage_reload": "Использование: {prefix}rl <module> [force]",
+    "usage_unload": "Использование: {prefix}ul [-c] <module>",
+    "usage_reset": "Использование: {prefix}rs <module>",
+    "usage_export": "Использование: {prefix}ex <module>",
+    "usage_backup": "Использование: {prefix}bk | {prefix}bk list | {prefix}bk test <archive> | {prefix}bk restore <archive>",
+    "usage_load": "Использование: {prefix}ld <raw-url> или ответ на файл .hmod",
+    "bot_status": "Инлайн-бот: @{name} ({status})",
+    "health": "Состояние: {status}",
+    "last_error": "Последняя ошибка: {error}",
+    "running_commands": "Выполняются команды: {count}",
+    "connection": "Подключение: {status}; переподключений: {count}; MTProto: {mt}; бот: {bot}",
+    "health_ready": "готов",
+    "health_degraded": "есть сбои",
+    "health_stopped": "остановлен",
+    "health_closed": "закрыт",
+    "health_new": "запускается",
+    "service": {
+      "runtime": "Сервис",
+      "kernel": "Ядро",
+      "state": "Хранилище",
+      "capabilities": "Возможности",
+      "modules": "Модули",
+      "responses": "Ответы",
+      "callbacks": "Кнопки",
+      "observatory": "Журнал",
+      "backups": "Резервные копии",
+      "tasks": "Задачи",
+      "event_router": "События"
+    },
+    "file_missing": "Файл модуля не найден",
+    "file_document": "Отправь модуль файлом",
+    "timeout": "Команда {command} не завершилась за {seconds} с.",
+    "unknown_capability": "неизвестная возможность (запрещена)"
+  },
+  "acl": {
+    "owners": "<b>Владельцы</b><br>",
+    "account": " · аккаунт",
+    "protected": " · защищён",
+    "failed": "<b>Ошибка:</b> <i>{error}</i>",
+    "owner_added": "<code>{user_id}</code> <b>добавлен во владельцы</b>",
+    "owner_exists": "<code>{user_id}</code> уже владелец",
+    "owner_removed": "У <code>{user_id}</code> <b>сняты права владельца</b>",
+    "owner_missing": "<code>{user_id}</code> не назначен владельцем",
+    "group_created": "<b>Создана группа</b> <code>{name}</code>",
+    "group_deleted": "<b>Удалена группа</b> <code>{name}</code>",
+    "group_missing": "Группа <code>{name}</code> не найдена",
+    "group_item": "<b>{name}</b> — участников: {users}, правил: {rules}",
+    "groups": "<b>Группы прав</b><br>",
+    "group_detail": "<b>Группа {name}</b><br><b>Участники</b><br>{users}<br><b>Правила</b><br>{rules}",
+    "member_exists": "<code>{user_id}</code> уже в группе <code>{name}</code>",
+    "member_missing": "<code>{user_id}</code> нет в группе <code>{name}</code>",
+    "member_added": "<code>{user_id}</code> <b>добавлен в</b> <code>{name}</code>",
+    "member_removed": "<code>{user_id}</code> <b>удалён из</b> <code>{name}</code>",
+    "duration": " на {duration}",
+    "group_rule": "<b>Правило добавлено:</b> sgroup <code>{target}</code> → {kind}/{rule}{until}",
+    "rule_added": "<b>Правило добавлено:</b> {kind} <code>{target}</code> → {type}/{rule}{until}",
+    "rule_removed": "<b>Правило удалено</b>",
+    "nothing_remove": "Удалять нечего",
+    "rules_cleared": "<b>Правила очищены</b>",
+    "nothing_clear": "Очищать нечего",
+    "permissions": "<b>Права</b><br>",
+    "user_groups": "<br>Группы: <code>{groups}</code>",
+    "user_detail": "<b>Пользователь <code>{user_id}</code></b><br>Права: <b>{permissions}</b><br>Ранг: <code>{rank}</code>{groups}",
+    "no_permission": "Нет прав.",
+    "revoked": "У <code>{user_id}</code> <b>отозвано</b> <code>{label}</code>",
+    "nothing_revoke": "Отзывать нечего",
+    "grant_failed": "<b>Не удалось выдать права:</b> <i>{error}</i>",
+    "granted": "<code>{user_id}</code> <b>выдано</b> <code>{label}</code>",
+    "self_owner": "Этот пользователь уже владеет аккаунтом.",
+    "bad_group": "Имя группы: буквы и цифры, до 32 символов.",
+    "no_groups": "Групп прав нет. Создать: {prefix}sgnew <имя>",
+    "bad_duration": "Срок: число + s/m/h/d/w или forever.",
+    "bad_rule": "Правило: command/имя или module/имя.",
+    "empty": "Выданных прав нет. Используй {prefix}perm <user_id> <роль>.",
+    "bad_label": "Неизвестное право: {label}",
+    "no_owner_grant": "Права владельца выдаются через {prefix}owadd.",
+    "usage": "<code>{prefix}owadd &lt;user_id|reply&gt;</code> — Добавить владельца\n<code>{prefix}owrm &lt;user_id|reply&gt;</code> — Удалить владельца\n<code>{prefix}owls</code> — Список владельцев\n<code>{prefix}sgnew &lt;name&gt;</code> — Создать группу прав\n<code>{prefix}sgls</code> — Список групп\n<code>{prefix}sg &lt;name&gt;</code> — Участники и правила группы\n<code>{prefix}sgdel &lt;name&gt;</code> — Удалить группу\n<code>{prefix}sgadd &lt;name&gt; &lt;user_id|reply&gt;</code> — Добавить участника\n<code>{prefix}sgrm &lt;name&gt; &lt;user_id|reply&gt;</code> — Удалить участника\n<code>{prefix}rule &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;command|module&gt;/&lt;name&gt; [expiry]</code> — Добавить правило доступа\n<code>{prefix}rulerm &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;rule&gt;</code> — Удалить правило\n<code>{prefix}ruleclr &lt;user|chat|sgroup&gt; [target]</code> — Очистить правила\n<code>{prefix}perm &lt;user_id&gt; &lt;admin|trusted|everyone&gt; [remove]</code> — Выдать или отозвать права\n<code>{prefix}perms</code> — Список прав\n<code>{prefix}whois &lt;user_id&gt;</code> — Права пользователя",
+    "account_owner": "Владельца аккаунта нельзя удалить."
+  },
+  "inline": {
+    "form": "Форма Hotaru",
+    "error": {
+      "title": "Ошибка {code}",
+      "400": "Некорректный запрос",
+      "403": "Нет доступа",
+      "404": "Не найдено",
+      "500": "Внутренняя ошибка"
     }
   }
 }

@@ -140,7 +140,7 @@ def collect_settings(state: Any) -> None:
         state.set_setting("inline-bot-username-wanted", wanted)
 
 
-def _save_vault(app: Any, vault: Path, session_name: str, api_id: int, api_hash: str, user: dict[str, Any], extra: dict[str, Any] | None = None) -> None:
+def save_vault(app: Any, vault: Path, session_name: str, api_id: int, api_hash: str, user: dict[str, Any], extra: dict[str, Any] | None = None) -> None:
     security = importlib.import_module("goygram.security")
     _current_dc_id = cast(Callable[[Any], int | None], getattr(security, "_current_dc_id"))
     _extract_auth_blob = cast(Callable[[dict[str, Any]], bytes | None], getattr(security, "_extract_auth_blob"))
@@ -323,7 +323,11 @@ async def sign_in(runtime: Any) -> dict[str, str]:
             console.print("[yellow]QR failed, phone login[/]")
     if packed is None:
         packed = await _phone_login(console, app, api_id, api_hash)
-    _save_vault(app, vault, session_name, api_id, api_hash, packed["user"], packed.get("raw"))
+    from .accounts import parse_user_id
+    uid = parse_user_id(config.session_name)
+    if uid is not None and packed["user"].get("id") != uid:
+        raise RuntimeError(f"Wrong account; log in as user {uid}.")
+    save_vault(app, vault, session_name, api_id, api_hash, packed["user"], packed.get("raw"))
     if hasattr(runtime.app, "session"):
         runtime.app.session.data = getattr(app, "session", runtime.app.session).data if getattr(app, "session", None) else packed["raw"]
         if not runtime.app.session.data:

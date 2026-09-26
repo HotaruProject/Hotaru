@@ -122,7 +122,9 @@ class Kernel:
         if not self._is_authorized(message):
             return None
         if self.security is not None:
-            verdict = self.security.check(message, transport="mt", is_group=self._is_group(message))
+            name = self.parser.command_name(getattr(message, 'text', '') or '')
+            spec = self.registry.resolve_name(name) if name is not None else None
+            verdict = self.security.check(message, transport="mt", module_id=spec.module_id if spec is not None else None, is_group=self._is_group(message))
             if verdict is not AccessVerdict.ALLOW:
                 return None
         message_id = self._message_id(message)
@@ -170,9 +172,11 @@ class Kernel:
             )
         except asyncio.TimeoutError:
             if self.response_service is not None:
+                runtime = getattr(self.context_factory, "runtime", None)
+                text = runtime.t("runtime.timeout", seconds=round(self.command_timeout), command=spec.name) if runtime is not None else f"command timed out after {self.command_timeout:.0f}s: {spec.name}"
                 return await self.response_service.answer(
                     message,
-                    text=f"command timed out after {self.command_timeout:.0f}s: {spec.name}",
+                    text=text,
                     output="edit",
                 )
             return None
