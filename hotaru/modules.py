@@ -159,12 +159,6 @@ class HmodLoader:
             compile(tree, str(candidate), "exec", flags=__future__.annotations.compiler_flag, dont_inherit=True)
         except (SyntaxError, ValueError, TypeError) as exc:
             raise ModuleValidationError("module failed validation") from exc
-        from .typesafe import TypeCheckError, check_hmod
-
-        try:
-            check_hmod(source, candidate)
-        except TypeCheckError as exc:
-            raise ModuleValidationError(f"module failed pyright strict: {exc}") from exc
         digest = hashlib.sha256(source.encode("utf-8")).hexdigest()
         return LoadedModule(candidate, digest, source, manifest)
 

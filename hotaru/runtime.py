@@ -2360,9 +2360,6 @@ class Runtime:
             self.kernel.suspended = self.state.get_setting("suspended") == "1"
         if self.modules is not None and self.constellations_dir.is_dir():
             hmod_paths = sorted(self.constellations_dir.glob("*.hmod"))
-            from .typesafe import check_hmods
-
-            check_hmods(hmod_paths)
             if hasattr(self.modules, "begin_boot"):
                 self.modules.begin_boot()
             for hmod_path in hmod_paths:

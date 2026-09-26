@@ -39,16 +39,6 @@ def _apply_account_session(config: Any, session_base: Any) -> Any:
     return replace(config, session_name=session_name, session_dir=root, state_path=state)
 
 
-def _ensure_types() -> None:
-    from .typesafe import TypeCheckError, check_kernel
-
-    try:
-        check_kernel()
-    except TypeCheckError as exc:
-        print(exc, file=sys.stderr)
-        raise SystemExit("pyright strict failed")
-
-
 def main() -> None:
     from .state import apply_vault_key_env
 
@@ -64,11 +54,9 @@ def main() -> None:
             from .runtime import Runtime
             config = RuntimeConfig.from_database()
             config = _apply_account_session(config, _os.environ["HOTARU_ACCOUNT_SESSION"])
-            _ensure_types()
             asyncio.run(Runtime(config).run())
             return
     ensure_kernel_dependencies()
-    _ensure_types()
     from .config import RuntimeConfig
     from .runtime import Runtime
     config = RuntimeConfig.from_database()

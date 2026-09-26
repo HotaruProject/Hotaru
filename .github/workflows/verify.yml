@@ -19,4 +19,38 @@ jobs:
           enable-cache: true
       - run: uv sync --locked
       - run: uv run --locked python -m compileall -q hotaru relay
+      - run: uv pip install 'basedpyright==1.40.1'
+      - name: strict types
+        run: |
+          .venv/bin/python - <<'PY'
+          import json
+          import pathlib
+          import subprocess
+          import sys
+          import tempfile
+
+          root = pathlib.Path.cwd()
+          work = pathlib.Path(tempfile.mkdtemp())
+          preamble = "from __future__ import annotations\nfrom hotaru.response import ModuleContext\nctx: ModuleContext\n"
+          targets = [str(root / "hotaru"), str(root / "relay")]
+          for index, path in enumerate(sorted((root / "constellations").glob("*.hmod"))):
+              dest = work / f"{index}-{path.stem}.py"
+              dest.write_text(preamble + path.read_text(encoding="utf-8"), encoding="utf-8")
+              targets.append(str(dest))
+          (work / "pyrightconfig.json").write_text(
+              json.dumps(
+                  {
+                      "include": targets,
+                      "exclude": [str(root / ".venv"), str(root / "observatory"), str(root / "sanctuary")],
+                      "typeCheckingMode": "strict",
+                      "pythonVersion": "3.8",
+                      "pythonPlatform": "Linux",
+                      "venvPath": str(root),
+                      "venv": ".venv",
+                  }
+              )
+          )
+          print(f"checking {len(targets)} targets (hotaru, relay, .hmod modules)")
+          raise SystemExit(subprocess.run([sys.executable, "-m", "basedpyright", "--project", str(work / "pyrightconfig.json")], cwd=root).returncode)
+          PY
       - run: uv build
