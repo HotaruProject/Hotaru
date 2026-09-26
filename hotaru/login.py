@@ -1259,6 +1259,8 @@ async def _phone_login(app: Any, api_id: int, api_hash: str) -> dict[str, Any]:
         err = _extract_error(sent)
         if err and "SESSION_PASSWORD_NEEDED" not in err:
             log_error(err)
+            if "API_ID" in err or "API_HASH" in err:
+                raise ValueError(err)
             continue
         code_hash = _extract_phone_code_hash(sent)
         if not code_hash:
@@ -1421,7 +1423,21 @@ async def _sign_in(runtime: Any) -> dict[str, str]:
         if packed is None:
             log_warn("QR failed, phone login")
     if packed is None:
-        packed = await _phone_login(app, api_id, api_hash)
+        while True:
+            try:
+                packed = await _phone_login(app, api_id, api_hash)
+                break
+            except Exception as exc:
+                message = str(exc)
+                if "API_ID" not in message and "API_HASH" not in message:
+                    raise
+                log_error(f"Telegram rejected the API ID / hash ({message}); enter them again")
+                api_id = int(_ask("API ID", placeholder="1234567", validate=_api_id_problem))
+                api_hash = _ask("API hash", secret=True, validate=_api_hash_problem)
+                runtime.state.set_setting("api-id", api_id)
+                runtime.state.set_setting("api-hash", api_hash)
+                app.api_id, app.api_hash = api_id, api_hash
+                config.api_id, config.api_hash = api_id, api_hash
     from .accounts import parse_user_id
     uid = parse_user_id(config.session_name)
     if uid is not None and packed["user"].get("id") != uid:
