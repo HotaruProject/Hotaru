@@ -17,6 +17,7 @@ BOTFATHER = "@BotFather"
 BOTFATHER_ID = 93372553
 TOKEN_RE = re.compile(r"\d{6,}:[A-Za-z0-9_-]{35}")
 USERNAME_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9_]{2,31}bot$", re.IGNORECASE)
+WARM_DEADLINE_SECONDS = 120.0
 
 
 class InlineError(RuntimeError):
@@ -818,34 +819,38 @@ class InlineManager:
         mt = getattr(app, "mt", None)
         if not isinstance(owner, int) or owner <= 0 or mt is None:
             return
+        deadline = time.monotonic() + WARM_DEADLINE_SECONDS
         username: str | None = None
-        for attempt in range(4):
-            if self._stop.is_set():
-                return
+        reported = False
+        while not self._stop.is_set() and time.monotonic() < deadline:
             username = await self._owner_username()
             if username is None:
-                await asyncio.sleep(1.0)
+                await asyncio.sleep(3.0)
                 continue
             try:
                 await mt.resolve_peer("@" + username)
             except Exception as exc:
-                if runtime.observatory is not None:
-                    runtime.observatory.emit("inline", "warmup_error", attempt=attempt, error=type(exc).__name__)
-                await asyncio.sleep(2.0 * (attempt + 1))
+                if not reported and runtime.observatory is not None:
+                    reported = True
+                    runtime.observatory.emit("inline", "warmup_error", error=type(exc).__name__)
+                await asyncio.sleep(3.0)
                 continue
             entity = mt.entities.get(("user", owner))
             if entity is not None and entity.get("access_hash"):
                 if runtime.observatory is not None:
                     runtime.observatory.emit("inline", "warmup_ok", username=username)
                 return
-            await asyncio.sleep(1.0)
-        if runtime.observatory is not None:
+            await asyncio.sleep(3.0)
+        if runtime.observatory is not None and not self._stop.is_set():
             runtime.observatory.emit("inline", "warmup_missed", owner=owner, username=username)
 
     async def _owner_username(self) -> str | None:
         main = getattr(self.runtime, "app", None)
         mt = getattr(main, "mt", None)
         if mt is None:
+            return None
+        reader = getattr(mt, "_reader_task", None)
+        if reader is None or reader.done():
             return None
         try:
             result = await mt.call("users.getUsers", id=[{"_": "inputPeerSelf"}])
