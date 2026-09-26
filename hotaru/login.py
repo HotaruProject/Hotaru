@@ -425,6 +425,7 @@ _resize_armed = False
 def set_prelude(render: Callable[[], str] | None) -> None:
     global _prelude
     _prelude = render
+    del _block_log[:]
 
 
 def _block_write(text: str) -> None:
@@ -433,9 +434,8 @@ def _block_write(text: str) -> None:
 
 
 def print_prelude() -> None:
-    """Draw the header block; _block_log keeps only what is written after it."""
+    """Draw the banner. The header lines written after it stay in _block_log for repaints."""
     text = _prelude() if _prelude is not None else ""
-    del _block_log[:]
     if text:
         write(text + "\n")
 
