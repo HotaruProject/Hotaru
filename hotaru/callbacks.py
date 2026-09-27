@@ -251,13 +251,16 @@ class CallbackContext:
             with trusted_scope():
                 return await delete_chat_msg(app, chat_id, msg_id)
         inline_mid = getattr(self, "inline_message_id", None)
-        bot_app = getattr(self, "app", None)
-        if inline_mid is not None and bot_app is not None:
-            id_field: dict[str, Any] | None = cast('dict[str, Any]', inline_mid) if isinstance(inline_mid, dict) else {"_": "inputBotInlineMessageID", "raw": inline_mid} if isinstance(inline_mid, (str, bytes)) else None
-            if id_field is not None:
-                from relay.firewall import trusted_scope
-                with trusted_scope():
-                    return await bot_app.mt_messages_edit_inline_bot_message( id=id_field, message="\u200b", reply_markup={"_": "replyInlineMarkup", "rows": []})
+        if inline_mid is not None:
+            if isinstance(inline_mid, dict):
+                target = cast('dict[str, Any]', inline_mid)
+                owner = target.get("owner_id")
+                message = target.get("id")
+                if target.get("_") == "inputBotInlineMessageID64" and type(owner) is int and -1000000000000 < owner < 0 and type(message) is int and 0 < message < 2147483648 and user_app is not None:
+                    from relay.firewall import trusted_scope
+                    with trusted_scope():
+                        return await delete_chat_msg(user_app, owner - 1000000000000, message)
+            raise ValueError("inline card has no resolvable deletion target")
         if hasattr(self._callback, "delete") and getattr(self._callback, "delete") is not self.delete:
             return await self._callback.delete()
         return None
