@@ -96,6 +96,21 @@ def _fmt(payload: Mapping[str, Any]) -> str:
     return html.escape(" ".join(str(p) for p in parts if p), quote=False)
 
 
+def _rich(batch: List[Mapping[str, Any]]) -> dict[str, str]:
+    sources = {str(p.get("module") or p.get("component") or "-") for p in batch}
+    text = (
+        "<h1>📋 Hotaru log</h1>"
+        "<table><tr><th>metric</th><th>count</th></tr>"
+        f"<tr><td><b>events</b></td><td>{len(batch)}</td></tr>"
+        f"<tr><td><b>sources</b></td><td>{len(sources)}</td></tr></table>"
+        "<h2>log</h2>"
+    )
+    for payload in batch:
+        title = f"{payload.get('module') or payload.get('component') or '-'} / {payload.get('event') or '-'}"
+        text += f"<h3>{html.escape(title, quote=False)}</h3><pre>{_fmt(payload).replace(chr(10), '<br>')}</pre>"
+    return {"_": "inputRichMessageHTML", "html": text}
+
+
 def _sink(payload: Any) -> Any:
     if not isinstance(payload, dict):
         return
@@ -174,7 +189,7 @@ async def task_pump(ctx: Any) -> Any:
     if topic_id is None:
         return
     try:
-        await ctx.forum.send(topic_id, "\n".join(_fmt(p) for p in batch))
+        await ctx.forum.send(topic_id, "", rich=_rich(batch))
         _state["failed"] = 0
     except Exception as exc:
         _state["topic_id"] = None
