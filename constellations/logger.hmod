@@ -38,6 +38,7 @@ from typing import Any, Dict, List, Mapping, cast
 
 import asyncio
 import html
+import re
 import time
 
 TOPIC_TITLE = "Logs"
@@ -118,6 +119,14 @@ def _sink(payload: Any) -> Any:
     if payload.get("component") == "logger":
         return
     if payload.get("component") == "forum":
+        return
+    if payload.get("component") == "updater" and payload.get("event") in ("poller_uptodate", "poller_notified"):
+        return
+    if (
+        payload.get("component") == "mtproto"
+        and payload.get("event") == "log"
+        and re.fullmatch(r"MTProto connection lost, reconnecting in [0-9]+\.[0-9]s", str(payload.get("msg") or ""))
+    ):
         return
     level = str(payload.get("level") or "info").lower()
     # Pass events whose numeric severity >= current floor (more severe = higher number).
