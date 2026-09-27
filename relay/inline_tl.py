@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, cast
 
-from goygram.sugar import html_to_entities
+from .emoji import to_entities
 from goygram.types.kbd import kbd_to_tl
 
 _MEDIA_KINDS = {"photo", "video", "mpeg4_gif", "audio", "voice", "document", "gif"}
@@ -23,10 +23,6 @@ def _mime_of(result: dict[str, Any], kind: str) -> str:
     if kind == "voice":
         return "audio/ogg"
     return "application/octet-stream"
-
-
-def _html_to_entities(html_src: str) -> tuple[str, list[dict[str, Any]]]:
-    return html_to_entities(html_src)
 
 
 def _kbd(buttons: Any) -> dict[str, Any] | None:
@@ -72,7 +68,7 @@ def _send_message(result: dict[str, Any], content: dict[str, Any], kind: str) ->
         text = str(content.get("message_text", content.get("text", "")) or result.get("caption", ""))
         media: dict[str, Any] = {"_": "inputBotInlineMessageMediaAuto", "message": text}
         if str(result.get("parse_mode", "")).lower() == "html" or str(content.get("parse_mode", "")).lower() == "html":
-            plain, ents = _html_to_entities(text)
+            plain, ents = to_entities(text)
             if ents:
                 media["message"] = plain
                 media["entities"] = ents
@@ -84,7 +80,7 @@ def _send_message(result: dict[str, Any], content: dict[str, Any], kind: str) ->
     if content.get("disable_web_page_preview") or content.get("no_webpage"):
         text_payload["no_webpage"] = True
     if str(content.get("parse_mode", "")).lower() == "html" or str(result.get("parse_mode", "")).lower() == "html":
-        plain, ents = _html_to_entities(text)
+        plain, ents = to_entities(text)
         if ents:
             text_payload["message"] = plain
             text_payload["entities"] = ents

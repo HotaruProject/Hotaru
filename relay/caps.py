@@ -21,7 +21,7 @@ from .denylist import is_blocked_host, payload_hits_blocked
 from .firewall import trusted_scope
 from hotaru.plainfmt import rich_to_plain
 from hotaru.capabilities import BehaviorEnvelope
-from goygram.sugar import html_to_entities
+from .emoji import to_entities
 from .rpc import rpcname
 
 if TYPE_CHECKING:
@@ -545,7 +545,7 @@ class CapabilityHost:
                 kwargs.pop("rich_message", None)
                 if isinstance(html_text, str) and lowered.startswith(("messages.send", "messages.edit")):
                     plain_html = rich_to_plain(html_text)
-                    plain, entities = html_to_entities(plain_html)
+                    plain, entities = to_entities(plain_html)
                     kwargs["message"] = (kwargs.get("message") or "") + plain
                     if entities:
                         kwargs["entities"] = entities

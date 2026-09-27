@@ -16,8 +16,7 @@ if TYPE_CHECKING:
 from goygram.errors import EntityBoundsInvalidError
 from goygram import ext
 from relay.firewall import module_scope
-from goygram.rich import rich_html
-from goygram.sugar import html_to_entities
+from relay.emoji import to_entities, to_rich
 from goygram.types.kbd import kbd_to_tl
 from relay.rpc import delete_chat_msg
 
@@ -150,7 +149,7 @@ class CallbackContext:
                 if markup is not None:
                     data["reply_markup"] = markup
             data.pop("parse_mode", None)
-            plain, raw_ents = html_to_entities(text)
+            plain, raw_ents = to_entities(text)
             ents = [e for e in raw_ents if int(e.get("length", 0)) > 0]
             if ents:
                 data["entities"] = ents
@@ -173,7 +172,7 @@ class CallbackContext:
                     return None
                 if use_rich:
                     data.pop("entities", None)
-                    data["rich_message"] = {"_": "inputRichMessageHTML", **rich_html(text)}
+                    data["rich_message"] = {"_": "inputRichMessageHTML", **to_rich(text)}
                 from relay.firewall import trusted_scope
                 with trusted_scope():
                     return await self._edit_inline(target_app, inline_id, "" if use_rich else plain, data)
@@ -200,7 +199,7 @@ class CallbackContext:
                     if markup is not None:
                         data["reply_markup"] = markup
                 data.pop("parse_mode", None)
-                plain, raw_ents = html_to_entities(text)
+                plain, raw_ents = to_entities(text)
                 ents = [e for e in raw_ents if int(e.get("length", 0)) > 0]
                 if ents:
                     data["entities"] = ents
@@ -211,7 +210,7 @@ class CallbackContext:
                 _cb_log(log)
                 if use_rich:
                     data.pop("entities", None)
-                    data["rich_message"] = {"_": "inputRichMessageHTML", **rich_html(text)}
+                    data["rich_message"] = {"_": "inputRichMessageHTML", **to_rich(text)}
                 from relay.firewall import trusted_scope
                 with trusted_scope():
                     return await self._edit_inline(target_app, bot_inline_id, "" if use_rich else plain, data)
@@ -229,7 +228,7 @@ class CallbackContext:
                     if markup is not None:
                         data["reply_markup"] = markup
                 data.pop("parse_mode", None)
-                plain, raw_ents = html_to_entities(text)
+                plain, raw_ents = to_entities(text)
                 ents = [e for e in raw_ents if int(e.get("length", 0)) > 0]
                 if ents:
                     data["entities"] = ents

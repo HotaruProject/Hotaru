@@ -17,8 +17,8 @@ from .state import StateNamespace
 from .plainfmt import rich_to_plain
 from relay.firewall import trusted_scope
 from relay.files import document, put, take
-from goygram.rich import rich_html
-from goygram.sugar import extract_sent_message, html_to_entities, split_html_text
+from goygram.sugar import extract_sent_message, split_html_text
+from relay.emoji import to_entities, to_rich
 from goygram.types.obj import Obj
 from relay.proxies import (
     Gateway,
@@ -253,7 +253,7 @@ class ResponseService:
                 payload["parse_mode"] = "HTML"
             else:
                 payload.pop("parse_mode", None)
-                plain, entities = html_to_entities(text)
+                plain, entities = to_entities(text)
                 payload["entities"] = entities
                 text = plain
         if output in ("edit", "auto") and hasattr(message, "edit"):
@@ -960,7 +960,7 @@ class ModuleContext:
         message = caption or ""
         data: dict[str, Any] = {"peer": peer, "media": media, "message": message, "random_id": secrets.randbits(63)}
         if message:
-            plain, ents = html_to_entities(str(message))
+            plain, ents = to_entities(str(message))
             data["message"] = plain
             if ents:
                 data["entities"] = ents
@@ -1130,7 +1130,7 @@ class ModuleContext:
             response = await self._trusted_send_rich(html, peer, output=output, message_id=message_id, **kwargs)
             self._remember_response(response)
             return response
-        data = {"peer": peer, "message": "", "random_id": secrets.randbits(63), "rich_message": {"_": "inputRichMessageHTML", **rich_html(html)}}
+        data = {"peer": peer, "message": "", "random_id": secrets.randbits(63), "rich_message": {"_": "inputRichMessageHTML", **to_rich(html)}}
         kwargs.pop("parse_mode", None)
         if output == "edit" and message_id is not None:
             data["id"] = int(message_id)
@@ -1150,7 +1150,7 @@ class ModuleContext:
     async def _trusted_send_rich(self, html: Any, peer: Any, *, output: str = "reply", message_id: int | None = None, **kwargs: Any) -> Response:
         import secrets as _secrets
         app = self.runtime.app
-        rich_message = cast('dict[str, object]', html) if isinstance(html, dict) else {"_": "inputRichMessageHTML", **rich_html(html)}
+        rich_message = cast('dict[str, object]', html) if isinstance(html, dict) else {"_": "inputRichMessageHTML", **to_rich(html)}
         if output == "edit" and message_id is not None:
             with trusted_scope():
                 result = await app.mt_messages_edit_message( peer=peer, id=int(message_id), message="", rich_message=rich_message)
