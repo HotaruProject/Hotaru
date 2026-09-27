@@ -5,7 +5,7 @@ HOTARU = {
     "capabilities": ["mt"],
 }
 
-from typing import Any
+from typing import Any, cast
 from dataclasses import replace
 
 
@@ -67,14 +67,15 @@ async def command_aliasls(ctx: Any, invocation: Any) -> Any:
     if runtime is None:
         await ctx.respond(ctx.t('settings.runtime_unavailable'))
         return
-    pairs = runtime.kernel.registry.aliases()
-    if not pairs:
+    aliases = runtime.state.get_setting("user_aliases", {})
+    if not isinstance(aliases, dict) or not aliases:
         await ctx.respond(ctx.t('settings.alias_list_empty'))
         return
+    data = cast(Any, aliases)
     prefix = runtime.config.prefix
     lines = [ctx.t('settings.alias_list_title')]
-    for alias, command in pairs:
-        lines.append(f"<code>{prefix}{alias}</code> → <code>{prefix}{command}</code>")
+    for alias in sorted(data):
+        lines.append(f"<code>{prefix}{alias}</code> → <code>{prefix}{data[alias]}</code>")
     await ctx.respond("<br>".join(lines), parse_mode="HTML")
 
 
