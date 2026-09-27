@@ -3,6 +3,7 @@ from __future__ import annotations
 import __future__
 import asyncio
 import inspect
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
@@ -10,6 +11,9 @@ from typing import Any, Callable
 from .modules import HmodLoader, LoadedModule
 from .tasks import TaskSupervisor
 from relay.firewall import module_scope
+
+
+log = logging.getLogger(__name__)
 
 
 class ActivationError(RuntimeError):
@@ -173,8 +177,8 @@ class ModuleManager:
             return
         try:
             await self._run_lifecycle(namespace.get(loaded.manifest.fade), context, loaded.manifest.module_id)
-        except Exception:
-            pass
+        except Exception as exc:
+            log.error("module fade failed: %s", type(exc).__name__)
 
     async def _rise_sandbox(self, loaded: LoadedModule, sandbox: Any, context: Any) -> None:
         if not loaded.manifest.rise:
@@ -187,8 +191,8 @@ class ModuleManager:
                 {"source": "lifecycle"},
                 target=loaded.manifest.rise,
             )
-        except Exception:
-            pass
+        except Exception as exc:
+            log.error("sandbox rise failed: %s", type(exc).__name__)
 
     async def _fade_sandbox(self, loaded: LoadedModule, sandbox: Any, context: Any) -> None:
         if not loaded.manifest.fade:
@@ -201,8 +205,8 @@ class ModuleManager:
                 {"source": "lifecycle"},
                 target=loaded.manifest.fade,
             )
-        except Exception:
-            pass
+        except Exception as exc:
+            log.error("sandbox fade failed: %s", type(exc).__name__)
 
     def begin_boot(self) -> None:
         self._booting = True
@@ -214,8 +218,8 @@ class ModuleManager:
         for runner in pending:
             try:
                 await runner()
-            except Exception:
-                pass
+            except Exception as exc:
+                log.error("deferred rise failed: %s", type(exc).__name__)
 
     def rehydrate_form(self, module_id: str, payload: dict[str, Any]) -> Any:
         callback = self._rehydrators.get(module_id)
@@ -364,16 +368,21 @@ class ModuleManager:
     async def _run_task(self, name: str, task_def: dict[str, Any], handler: Any, ctx: Any) -> None:
         interval = float(task_def.get("interval", 60.0))
         module_id = getattr(ctx, "module_id", "") if ctx is not None else ""
+        failed = False
         while True:
             try:
                 with module_scope(module_id):
                     result = handler(ctx)
                     if inspect.isawaitable(result):
                         await result
+                failed = False
                 await asyncio.sleep(interval)
             except asyncio.CancelledError:
                 break
-            except Exception:
+            except Exception as exc:
+                if not failed:
+                    log.error("module task failed: %s", type(exc).__name__)
+                failed = True
                 await asyncio.sleep(interval)
 
     async def _cleanup(self, context: Any) -> None:
@@ -408,8 +417,8 @@ class ModuleManager:
                     if getattr(kernel, "context_factory", None) is not None:
                         fade_ctx = kernel.context_factory.create(module_id, None)
                         await self._fade_host(active.loaded, namespace, fade_ctx)
-            except Exception:
-                pass
+            except Exception as exc:
+                log.error("module fade setup failed: %s", type(exc).__name__)
         if stopper is not None:
             result = stopper(active)
             if inspect.isawaitable(result):

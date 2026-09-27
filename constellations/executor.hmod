@@ -933,15 +933,9 @@ class _MsgProxy:
 class _DBProxy:
 
     def __init__(self, state: Any, module_id: str = "executor") -> None:
-        ns = None
-        if state is not None:
-            if hasattr(state, "namespace"):
-                try:
-                    ns = state.namespace(module_id)
-                except Exception:
-                    ns = state
-            else:
-                ns = state
+        if state is None:
+            raise RuntimeError("executor state is unavailable")
+        ns = state.namespace(module_id) if hasattr(state, "namespace") else state
         self.__dict__["_ns"] = ns
         self.__dict__["_raw_state"] = state
 
@@ -951,49 +945,23 @@ class _DBProxy:
 
     def get(self, key: str, default: Any = None) -> Any:
         ns = self.__dict__["_ns"]
-        if ns is None:
-            return default
-        try:
-            return ns.get(key, default)
-        except Exception:
-            return default
+        return ns.get(key, default)
 
     def set(self, key: str, value: Any) -> None:
         ns = self.__dict__["_ns"]
-        if ns is None:
-            return
-        try:
-            ns.set(key, value)
-        except Exception:
-            pass
+        ns.set(key, value)
 
     def delete(self, key: str) -> bool:
         ns = self.__dict__["_ns"]
-        if ns is None:
-            return False
-        try:
-            result = ns.delete(key)
-            return bool(result)
-        except Exception:
-            return False
+        return bool(ns.delete(key))
 
     def has(self, key: str) -> bool:
         ns = self.__dict__["_ns"]
-        if ns is None:
-            return False
-        try:
-            return ns.get(key) is not None
-        except Exception:
-            return False
+        return ns.get(key) is not None
 
     def keys(self) -> tuple[str, ...]:
         ns = self.__dict__["_ns"]
-        if ns is None:
-            return ()
-        try:
-            return ns.keys()
-        except Exception:
-            return ()
+        return ns.keys()
 
     def all(self) -> dict[str, Any]:
         return {k: self.get(k) for k in self.keys()}
@@ -1274,10 +1242,10 @@ def _build_py_helpers(ctx: Any, invocation: Any, reply: Any) -> dict[str, Any]:
 def _kill_group(process: Any) -> None:
     try:
         os.killpg(os.getpgid(process.pid), signal.SIGKILL)
-    except Exception:
+    except OSError:
         try:
             process.kill()
-        except Exception:
+        except ProcessLookupError:
             pass
 
 
@@ -1531,20 +1499,14 @@ async def command_kill(ctx: Any, invocation: Any) -> Any:
 
     proc = _ACTIVE_SH.get(target_id)
     if proc is not None:
-        try:
-            _kill_group(proc)
-            killed = True
-        except Exception:
-            pass
+        _kill_group(proc)
+        killed = True
         _ACTIVE_SH.pop(target_id, None)
 
     task = _ACTIVE_PY.get(target_id)
     if task is not None:
-        try:
-            task.cancel()
-            killed = True
-        except Exception:
-            pass
+        task.cancel()
+        killed = True
         _ACTIVE_PY.pop(target_id, None)
 
     if killed:
