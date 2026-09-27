@@ -112,28 +112,31 @@ def _rich(ctx: Any, batch: List[Mapping[str, Any]]) -> dict[str, Any]:
         ]},
         {"_": "pageBlockHeading2", "text": {"_": "textPlain", "text": ctx.t("kernel.logger.log", "Log")}},
     ]
+    log_blocks: List[dict[str, Any]] = []
+    blocks.append({"_": "pageBlockDetails", "title": {
+        "_": "textPlain", "text": ctx.t("kernel.logger.log", "Log"),
+    }, "blocks": log_blocks})
     group_start = None
     for payload in batch:
         stamp = float(payload.get("ts") or 0)
         if group_start is None or not 0 <= stamp - group_start <= 3:
             group_start = stamp
-            blocks.append({"_": "pageBlockBlockquote", "text": {
+            log_blocks.append({"_": "pageBlockBlockquote", "text": {
                 "_": "textPlain", "text": ctx.tools.timestamp(stamp, ctx.i18n.language),
             }, "caption": {"_": "textPlain", "text": ""}})
         source = str(payload.get("component") or "-")
         if payload.get("module") and payload["module"] != source:
             source += f" / {payload['module']}"
         level = str(payload.get("level") or "info").upper()
-        title = f"{level} · {source} · {payload.get('event') or '-'}"
-        lines = [str(payload["msg"])] if payload.get("msg") is not None else []
+        lines = [f"{level} · {source} · {payload.get('event') or '-'}"]
+        if payload.get("msg") is not None:
+            lines.append(str(payload["msg"]))
         for key in sorted(set(payload) - {"ts", "time", "level", "component", "module", "event", "msg"}):
             if payload[key] is not None:
                 lines.append(f"{key}={payload[key]}")
-        blocks.extend([
-            {"_": "pageBlockDetails", "title": {"_": "textPlain", "text": title}, "blocks": [
-                {"_": "pageBlockPreformatted", "text": {"_": "textPlain", "text": "\n".join(lines)}, "language": ""},
-            ]},
-        ])
+        log_blocks.append({
+            "_": "pageBlockPreformatted", "text": {"_": "textPlain", "text": "\n".join(lines)}, "language": "",
+        })
     return {"_": "inputRichMessage", "blocks": blocks}
 
 
