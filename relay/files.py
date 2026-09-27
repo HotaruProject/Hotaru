@@ -22,6 +22,9 @@ def document(up: dict[str, Any], *, mime: str = "application/octet-stream", file
 
 
 async def put(app: Any, source: Any, *, file_name: str | None = None, **kw: Any) -> dict[str, Any]:
+    if isinstance(source, (bytes, bytearray)):
+        from io import BytesIO
+        source = BytesIO(source)
     with trusted_scope():
         return await app.charged_upload(source, file_name=file_name, **kw)
 

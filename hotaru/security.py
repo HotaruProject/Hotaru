@@ -115,7 +115,7 @@ class SecurityGate:
             if stale is not None:
                 self._windows.pop(stale, None)
 
-    def check(self, event: Any, *, transport: str, module_id: str | None = None, is_group: bool = False) -> AccessVerdict:
+    def check(self, event: Any, *, transport: str, module_id: str | None = None, is_group: bool = False, authorized: bool = False) -> AccessVerdict:
         principal = self.principal_of(event, transport=transport)
         policy = self._policies.get(module_id) if module_id else None
         if module_id == 'accounts' and self.access is not None and self.access.accounts is not None:
@@ -125,6 +125,8 @@ class SecurityGate:
             if not self._rate_ok(principal, policy, privileged=True):
                 return AccessVerdict.SILENT
             return AccessVerdict.ALLOW
+        if authorized:
+            return AccessVerdict.ALLOW if self._rate_ok(principal, policy) else AccessVerdict.SILENT
         if policy is not None and policy.allow_others:
             if is_group and not policy.allow_groups:
                 return AccessVerdict.SILENT

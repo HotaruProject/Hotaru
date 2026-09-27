@@ -151,7 +151,7 @@ class CallbackContext:
             log["ents"] = len(ents)
             log["entities"] = ents
             bot_app = getattr(getattr(runtime, "inline", None), "bot_app", None) if runtime is not None else None
-            user_app = getattr(runtime, "app", None) or app
+            user_app = app or getattr(runtime, "app", None)
             if inline_mid is not None:
                 target_app = bot_app or user_app
                 log["bot"] = bool(getattr(target_app, "bot_token", None))
@@ -207,7 +207,7 @@ class CallbackContext:
                 with trusted_scope():
                     return await self._edit_inline(target_app, bot_inline_id, "" if use_rich else plain, data)
         if isinstance(chat_id, int) and isinstance(msg_id, int):
-            user_app = getattr(runtime, "app", None) or app
+            user_app = app or getattr(runtime, "app", None)
             if user_app is not None:
                 data = dict(kwargs)
                 use_rich = bool(data.pop("rich", False))
@@ -237,8 +237,11 @@ class CallbackContext:
         except Exception:
             pass
         runtime = getattr(self, "_hotaru_runtime", None)
+        form = (getattr(runtime, "_forms", None) or {}).get(getattr(self, "_hotaru_form_id", None))
+        if form is not None:
+            return await runtime.delete_form(form[0])
         user_app = getattr(runtime, "app", None) if runtime is not None else None
-        app = user_app or getattr(self, "app", None)
+        app = getattr(self, "app", None) or user_app
         chat_id = getattr(self, "chat_id", None)
         msg_id = getattr(self, "msg_id", None)
         if not isinstance(msg_id, int):
@@ -413,11 +416,13 @@ class CallbackStore:
             self.connection.execute("UPDATE callback_store SET consumed = 0 WHERE handle = ?", (handle,))
             self.connection.commit()
 
-    def rebind(self, handle: str, binding: CallbackBinding) -> str:
+    def rebind(self, handle: str, binding: CallbackBinding, *, scope: dict[str, Any] | None = None) -> str:
         entry = self._load(handle)
         if entry is None:
             raise CallbackDenied("callback is invalid")
-        value = self.consume(handle, entry.binding)
+        value = dict(self.consume(handle, entry.binding))
+        if scope is not None:
+            value.update(scope)
         return self.issue(binding, value)
 
     def _prune(self) -> None:
@@ -502,10 +507,43 @@ class CallbackRouter:
         if not isinstance(data, str):
             raise CallbackDenied("callback payload is invalid")
         value = self.store.peek(data, binding)
-        if not isinstance(value.get("module"), str) and self.runtime is not None:
+        if self.runtime is not None:
+            from types import SimpleNamespace
             access = getattr(self.runtime, "access", None)
-            if access is None or not access.is_owner(binding.actor):
-                raise CallbackDenied("callback requires owner access")
+            module_id = value.get("module")
+            form_id = value.get("form_id")
+            form = (getattr(self.runtime, "_forms", None) or {}).get(form_id)
+            if form_id and form is None:
+                raise CallbackDenied("form is no longer active")
+            if form is not None:
+                source = form[1]
+                expected = getattr(source, "inline_message_id", None)
+                actual = getattr(callback, "inline_message_id", None)
+                if actual is None:
+                    actual = getattr(callback, "msg_id", None)
+                if isinstance(expected, dict) and isinstance(actual, dict):
+                    expected = {key: expected.get(key) for key in ("dc_id", "id", "owner_id")}
+                    actual = {key: actual.get(key) for key in ("dc_id", "id", "owner_id")}
+                if expected is not None and actual != expected:
+                    raise CallbackDenied("callback belongs to another form")
+                if expected is None and (str(binding.chat_id) != str(source.chat_id) or binding.message_id != source.id):
+                    raise CallbackDenied("callback belongs to another message")
+                callback._hotaru_form_id = form_id
+            if access is None:
+                raise CallbackDenied("access is unavailable")
+            if not access.is_owner(binding.actor):
+                command = value.get("command")
+                spec = self.runtime.kernel.registry.resolve_name(command) if isinstance(command, str) else None
+                if spec is None or spec.kernel or spec.module_id != module_id or form is None:
+                    raise CallbackDenied("callback requires current command access")
+                event = SimpleNamespace(from_id=binding.actor, chat_id=form[1].chat_id)
+                if not self.runtime.kernel._is_authorized(event, spec):
+                    raise CallbackDenied("command access was revoked")
+        security = getattr(self.runtime, "security", None)
+        if security is not None:
+            from .security import AccessVerdict
+            if security.check(callback, transport="mt", module_id=value.get("module"), authorized=True) is not AccessVerdict.ALLOW:
+                raise CallbackDenied("callback rate limit reached")
         value = self.store.consume(data, binding)
         handler = None
         if isinstance(value.get("module"), str):
@@ -560,7 +598,7 @@ class CallbackRouter:
                             raw_forms = getattr(self.runtime, "_forms", None)
                             if isinstance(raw_forms, dict):
                                 forms_dict = cast('dict[str, Any]', raw_forms)
-                                for form_entry in forms_dict.values():
+                                for form_entry in ([form] if form is not None else []):
                                     entry_tuple = cast('tuple[Any, ...]', form_entry) if isinstance(form_entry, (tuple, list)) else ()
                                     if len(entry_tuple) >= 5 and isinstance(entry_tuple[4], dict):
                                         form_opts = cast('dict[str, Any]', entry_tuple[4])
