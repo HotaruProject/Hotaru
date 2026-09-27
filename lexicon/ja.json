@@ -432,6 +432,9 @@
         "rmalias": {
           "description": "コマンドの別名を削除"
         },
+        "aliasls": {
+          "description": "コマンドエイリアスの一覧を表示"
+        },
         "prefix": {
           "description": "コマンドのプレフィックスを変更"
         }
@@ -565,6 +568,8 @@
     "usage_rmalias": "使い方: {prefix}rmalias <別名>",
     "alias_removed": "別名を削除しました: {alias}",
     "alias_not_found": "別名が見つかりません: {alias}",
+    "alias_list_empty": "エイリアスはまだありません",
+    "alias_list_title": "<b>エイリアス</b>",
     "prefix_current": "現在のプレフィックス: {prefix}。変更: {prefix}prefix <文字>",
     "prefix_invalid": "プレフィックスは空白を含まない1～8文字にしてください。",
     "prefix_set": "プレフィックスを {prefix} に変更しました",
@@ -572,6 +577,7 @@
     "commands": {
       "alias": "コマンドの別名を作成",
       "rmalias": "コマンドの別名を削除",
+      "aliasls": "コマンドエイリアスの一覧を表示",
       "prefix": "コマンドのプレフィックスを変更"
     }
   },
