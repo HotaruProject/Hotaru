@@ -244,7 +244,7 @@ class Runtime:
             cb_secret = secrets.token_hex(32)
             self.state.set_setting("callback_secret", cb_secret)
         cb_key = derive_key(cb_secret)
-        self.callbacks = CallbackRouter(CallbackStore(secret=cb_key, connection=self.state.connection), runtime=self)
+        self.callbacks = CallbackRouter(CallbackStore(secret=cb_key, store=self.state), runtime=self)
         self.cap_host = CapabilityHost(self)
         self.context_factory.cap_host = self.cap_host
         self.context_factory.callback_router = self.callbacks
