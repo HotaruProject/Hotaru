@@ -27,7 +27,10 @@
         "config": {
           "description": "Open settings"
         }
-      }
+      },
+      "template_fields": "Available template fields",
+      "template_syntax": "Use {{name}}, numeric {{name:.2f}}, and {{{{ / }}}} for literal braces. Values are HTML-escaped.",
+      "template_preview": "Preview (HTML, example values)"
     },
     "power": {
       "already_stopped": "Userbot is already stopped.",
@@ -535,7 +538,13 @@
         "ping": {
           "description": "Measure userbot ping"
         }
-      }
+      },
+      "fields": {
+        "latency": "Response time in milliseconds",
+        "uptime": "Userbot runtime, nonzero units only",
+        "uptime_seconds": "Userbot runtime in seconds"
+      },
+      "example_uptime": "2 hours 3 minutes"
     }
   },
   "commands": {
