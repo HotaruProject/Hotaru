@@ -222,6 +222,7 @@ class Runtime:
             response_service=self.responses,
             form_sender=self._send_form,
             command_timeout=self.config.command_timeout,
+            activity=lambda: self.activity,
         )
         self.kernel.security = self.security
         self.state = StateStore(self.config.state_path)
@@ -256,6 +257,7 @@ class Runtime:
         self.observatory = Observatory(Path("observatory/runtime/events.jsonl"))
         observatory_install(self.observatory)
         observatory_hook_stdio()
+        self.activity = 0
         self.tasks = TaskSupervisor()
         self.modules = ModuleManager(tasks=self.tasks)
         self.modules.form_cleanup = self.unload_module_forms
@@ -286,6 +288,10 @@ class Runtime:
         self.event_router.attach_aux(self.app)
         return self.app
 
+
+    def note_activity(self) -> None:
+        """Bumped whenever a module does something, so a busy command is never timed out."""
+        self.activity += 1
 
     async def _on_callback(self, callback: Any) -> object | None:
         if self.callbacks is None:

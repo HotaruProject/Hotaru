@@ -191,6 +191,7 @@ class CapabilityHost:
         return capability in active.loaded.manifest.capabilities
 
     async def call(self, module_id: str, capability: str, payload: dict[str, Any]) -> Any:
+        self.runtime.note_activity()
         if capability not in KNOWN:
             raise PermissionError(f"unknown capability: {capability}")
         meta = PROVIDERS[capability]
