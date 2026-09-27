@@ -104,7 +104,7 @@ def _module_form(ctx: Any, module_id: str) -> Dict[str, Any]:
 
     schema = ConfigSchema.from_manifest(manifest.config_schema)
     namespace = runtime.state.namespace(module_id)
-    mod_config = ModuleConfig(module_id, namespace, schema)
+    mod_config = ModuleConfig(module_id, namespace, schema, translate=ctx.t)
 
     text = f"<b>{_escape(module_id)}</b>\n\n"
     param_buttons: List[Any] = []
@@ -167,11 +167,12 @@ def _parameter_form(ctx: Any, module_id: str, key: str) -> Dict[str, Any]:
         }
 
     namespace = runtime.state.namespace(module_id)
-    mod_config = ModuleConfig(module_id, namespace, schema)
+    mod_config = ModuleConfig(module_id, namespace, schema, translate=ctx.t)
     val = mod_config.get(key)
     disp = field.format_value(val)
     disp_str = disp if disp != "" else "(пусто)"
-    def_str = str(field.default) if (field.default is not None and str(field.default) != "") else "(пусто)"
+    default = mod_config.default(key)
+    def_str = str(default) if default is not None and str(default) != "" else "(пусто)"
 
 
     text = (
@@ -280,17 +281,15 @@ def _parameter_form(ctx: Any, module_id: str, key: str) -> Dict[str, Any]:
     else:
         buttons.append([ctx.ui.input("✏️ Ввести", make_input_handler(key, field), placeholder=f"Новое значение {key}")])
 
-    def make_reset(def_val: Any) -> Any:
-        async def handler(c: Any, p: Any) -> Any:
-            mod_config.set(key, def_val)
-            await c.edit(**_parameter_form(ctx, module_id, key))
-        return handler
+    async def on_reset(c: Any, p: Any) -> Any:
+        mod_config.reset(key)
+        await c.edit(**_parameter_form(ctx, module_id, key))
 
     async def on_back(c: Any, p: Any) -> Any:
         await c.edit(**_module_form(ctx, module_id))
 
     buttons.append([
-        ctx.ui.button("🔄 Сброс", make_reset(field.default)),
+        ctx.ui.button("🔄 Сброс", on_reset),
         ctx.ui.button("Назад", on_back),
         ctx.ui.close("Закрыть"),
     ])
@@ -318,7 +317,7 @@ async def command_conf(ctx: Any, invocation: Any) -> Any:
             return
         schema = ConfigSchema.from_manifest(active.loaded.manifest.config_schema)
         ns = runtime.state.namespace(module_id)
-        mod_conf = ModuleConfig(module_id, ns, schema)
+        mod_conf = ModuleConfig(module_id, ns, schema, translate=ctx.t)
         mod_conf.reset()
         await ctx.respond(**_module_form(ctx, module_id))
         return
@@ -338,7 +337,7 @@ async def command_conf(ctx: Any, invocation: Any) -> Any:
 
     if new_val is not None:
         ns = runtime.state.namespace(module_id)
-        mod_conf = ModuleConfig(module_id, ns, schema)
+        mod_conf = ModuleConfig(module_id, ns, schema, translate=ctx.t)
         try:
             coerced = field.parse_input(new_val)
             mod_conf.set(key, coerced)

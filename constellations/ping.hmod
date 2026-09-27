@@ -6,7 +6,7 @@ HOTARU = {
     "config_schema": {
         "template": {
             "type": "str",
-            "default": "<b>Пинг</b> <code>{latency} мс</code>\n<b>Аптайм</b> <code>{uptime}</code>",
+            "default_key": "kernel.ping.template",
             "max_len": 3000,
             "description": "HTML ping template: {latency} in ms, {uptime}. Other braces are literal.",
             "category": "General",
@@ -28,9 +28,6 @@ async def command_ping(ctx: "ModuleContext", invocation: "CommandInvocation") ->
     ping_ms = (time.perf_counter_ns() - start) / 10**6
     uptime_s = max(0, int(time.monotonic() - ctx.runtime.started_at))
     uptime = ctx.tools.duration(uptime_s, ctx.i18n.language)
-    template = ctx.config.get("template").strip() or ctx.t(
-        "kernel.ping.template", "<b>Ping</b> <code>{latency} ms</code>\n<b>Uptime</b> <code>{uptime}</code>",
-        latency="{latency}", uptime="{uptime}",
-    )
+    template = ctx.config.get("template").strip()
     text = ctx.tools.render(template, latency=f"{ping_ms:.3f}", uptime=ctx.escape(uptime))
     await ctx.respond(text, parse_mode="HTML", output="edit")
