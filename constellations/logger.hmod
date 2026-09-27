@@ -87,9 +87,9 @@ def _fmt(payload: Mapping[str, Any]) -> str:
     level = str(payload.get("level") or "info").upper()
     comp = str(payload.get("component") or "-")
     event = str(payload.get("event") or "-")
-    stamp = time.strftime("%H:%M:%S", time.localtime(payload.get("ts") or 0))
+    stamp = time.strftime("%d %B %Y · %H:%M:%S %Z", time.localtime(payload.get("ts") or 0))
     parts = [f"[{stamp}]", level, comp, event]
-    for key in sorted(set(payload) - {"ts", "level", "component", "event"}):
+    for key in sorted(set(payload) - {"ts", "time", "level", "component", "event"}):
         value = payload.get(key)
         if value is None:
             continue
@@ -103,18 +103,25 @@ def _rich(batch: List[Mapping[str, Any]]) -> dict[str, Any]:
         {"_": "pageBlockHeading1", "text": {"_": "textPlain", "text": "📋 Hotaru log"}},
         {"_": "pageBlockParagraph", "text": {"_": "textPlain", "text": f"Events: {len(batch)} · Sources: {len(sources)}"}},
     ]
+    group_start = None
     for payload in batch:
-        stamp = str(payload.get("time") or time.strftime("%Y-%m-%d %H:%M:%S %z", time.localtime(payload.get("ts") or 0)))
+        stamp = float(payload.get("ts") or 0)
+        if group_start is None or not 0 <= stamp - group_start <= 3:
+            group_start = stamp
+            blocks.append({"_": "pageBlockBlockquote", "text": {
+                "_": "textPlain", "text": time.strftime("%d %B %Y · %H:%M:%S %Z", time.localtime(stamp)),
+            }, "caption": {"_": "textPlain", "text": ""}})
         source = str(payload.get("component") or "-")
         if payload.get("module") and payload["module"] != source:
             source += f" / {payload['module']}"
-        title = f"{str(payload.get('level') or 'info').upper()} · {source} · {payload.get('event') or '-'}"
+        level = str(payload.get("level") or "info").upper()
+        icon = "🔴" if LEVELS.get(level.lower(), 20) >= 40 else "🟠" if LEVELS.get(level.lower(), 20) >= 30 else "🔹"
+        title = f"{icon} {level} · {source} · {payload.get('event') or '-'}"
         lines = [str(payload["msg"])] if payload.get("msg") is not None else []
         for key in sorted(set(payload) - {"ts", "time", "level", "component", "module", "event", "msg"}):
             if payload[key] is not None:
                 lines.append(f"{key}={payload[key]}")
         blocks.extend([
-            {"_": "pageBlockParagraph", "text": {"_": "textPlain", "text": stamp}},
             {"_": "pageBlockDetails", "title": {"_": "textPlain", "text": title}, "blocks": [
                 {"_": "pageBlockPreformatted", "text": {"_": "textPlain", "text": "\n".join(lines)}, "language": ""},
             ]},
@@ -192,8 +199,10 @@ async def task_pump(ctx: Any) -> Any:
             _emit(ctx, "topic_error", error=type(exc).__name__, detail=str(exc)[:160])
             return
     queue = _state.get("queue")
-    if queue is None:
+    if queue is None or queue.empty():
         return
+    await asyncio.sleep(3)
+    now = time.monotonic()
     batch: List[Mapping[str, Any]] = []
     while not queue.empty() and len(batch) < 40:
         try:
