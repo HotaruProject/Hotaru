@@ -29,6 +29,8 @@
         }
       },
       "template_fields": "Available template fields",
+      "shared_prefix": "Current command prefix",
+      "shared_uptime": "Runtime uptime in seconds",
       "template_syntax": "Use {{name}}, numeric {{name:.2f}}, and {{{{ / }}}} for literal braces. Values are HTML-escaped.",
       "template_preview": "Preview (HTML, example values)"
     },

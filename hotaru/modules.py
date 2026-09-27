@@ -42,6 +42,7 @@ class ModuleManifest:
     inline_commands: tuple[str, ...] = ()
     rise: str = ""
     fade: str = ""
+    template_fields: dict[str, dict[str, Any]] | None = None
 
     @property
     def description(self) -> str:
@@ -156,6 +157,12 @@ class HmodLoader:
         try:
             tree = ast.parse(source, filename=str(candidate), mode="exec")
             manifest = self._manifest(tree)
+            for definition in (manifest.template_fields or {}).values():
+                if "provider" in definition:
+                    target = "template_" + definition["provider"]
+                    handlers = [node for node in tree.body if isinstance(node, ast.AsyncFunctionDef) and node.name == target]
+                    if len(handlers) != 1 or len(handlers[0].args.args) != 1 or handlers[0].args.vararg or handlers[0].args.kwarg or handlers[0].args.kwonlyargs:
+                        raise ModuleValidationError(f"{target}: expected async def {target}(ctx)")
             compile(tree, str(candidate), "exec", flags=__future__.annotations.compiler_flag, dont_inherit=True)
         except ModuleValidationError:
             raise
@@ -294,6 +301,44 @@ class HmodLoader:
                 if any(not isinstance(value, str) for value in cast('dict[object, object]', details).values()):
                     raise ModuleValidationError("manifest command translation values are invalid")
 
+        from relay.toolkit import template_fields, template_render
+
+        publications: dict[str, dict[str, Any]] = {}
+        published = raw.get("template_fields", {})
+        if not isinstance(published, dict) or len(cast('dict[object, object]', published)) > 64:
+            raise ModuleValidationError("manifest template_fields must contain at most 64 fields")
+        if published and module_id == "hotaru":
+            raise ModuleValidationError("hotaru template namespace is reserved")
+        for name, entry in cast('dict[object, object]', published).items():
+            if not isinstance(name, str) or "/" in name or not isinstance(entry, dict):
+                raise ModuleValidationError("invalid published template field")
+            definition = dict(cast('dict[str, Any]', entry))
+            scope = definition.pop("scope", "private")
+            consumers = definition.pop("modules", [])
+            if scope not in ("private", "shared", "global") or not isinstance(consumers, list):
+                raise ModuleValidationError("template scope must be private/shared/global")
+            consumers = cast("list[object]", consumers)
+            if scope == "shared":
+                if not consumers or len(consumers) > 64 or any(not isinstance(item, str) or not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,63}", item) for item in consumers):
+                    raise ModuleValidationError("shared template fields require module IDs")
+            elif consumers:
+                raise ModuleValidationError("modules requires shared scope")
+            provider = definition.pop("provider", None)
+            has_value = "value" in definition
+            value = definition.pop("value", None)
+            if has_value == (provider is not None):
+                raise ModuleValidationError("template field requires exactly one value or provider")
+            if provider is not None and (not isinstance(provider, str) or not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,63}", provider)):
+                raise ModuleValidationError("invalid template provider name")
+            try:
+                metadata = template_fields({name: definition})[name]
+                if has_value:
+                    template_render("{" + name + "}", {name: metadata}, {name: value})
+            except ValueError as exc:
+                raise ModuleValidationError(str(exc)) from exc
+            publications[name] = dict(metadata, scope=scope, modules=consumers)
+            publications[name]["value" if has_value else "provider"] = value if has_value else provider
+
         return ModuleManifest(
             module_id,
             version,
@@ -309,6 +354,7 @@ class HmodLoader:
             tuple(cast("list[str]", inline_commands)),
             rise,
             fade,
+            publications,
         )
 
     @staticmethod

@@ -543,6 +543,9 @@ class ModuleContext:
     def render_template(self, key: str, **values: Any) -> str:
         return self.config.render(key, **values)
 
+    async def render_template_async(self, key: str, **values: Any) -> str:
+        return await self.runtime.modules.render_template(self, key, values)
+
     @property
     def config(self) -> Any:
         from .config import ModuleConfig

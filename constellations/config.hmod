@@ -175,7 +175,7 @@ def _parameter_form(ctx: Any, module_id: str, key: str, page: int = 0) -> Dict[s
     disp_str = disp if disp != "" else "(пусто)"
     default = mod_config.default(key)
     def_str = str(default) if default is not None and str(default) != "" else "(пусто)"
-    if field.template_fields:
+    if field.template_fields is not None:
         disp_str = ctx.tools.truncate(disp_str, 200)
         def_str = ctx.tools.truncate(def_str, 200)
 
@@ -188,14 +188,15 @@ def _parameter_form(ctx: Any, module_id: str, key: str, page: int = 0) -> Dict[s
     )
 
     if field.description:
-        description = ctx.tools.truncate(field.description, 120) if field.template_fields else field.description
+        description = ctx.tools.truncate(field.description, 120) if field.template_fields is not None else field.description
         text += f"• Описание: <i>{_escape(description)}</i>\n"
 
     pages = 1
-    if field.template_fields:
+    if field.template_fields is not None:
         title = ctx.t("kernel.config.template_fields", "Available template fields")
         text += f"\n<b>{_escape(title)}</b>\n"
         preview_fields = {name: dict(meta) for name, meta in field.template_fields.items()}
+        preview_fields.update(runtime.modules.template_catalog(module_id))
         for meta in preview_fields.values():
             if meta.get("example_key"):
                 meta["example"] = ctx.t(meta["example_key"], str(meta["example"]))
@@ -216,14 +217,18 @@ def _parameter_form(ctx: Any, module_id: str, key: str, page: int = 0) -> Dict[s
         text += "\n" + _escape(ctx.t("kernel.config.template_syntax", "Use {name}, numeric {name:.2f}, and {{ / }} for literal braces. Values are HTML-escaped.")) + "\n"
         preview_label = ctx.t("kernel.config.template_preview", "Preview (HTML, example values)")
         try:
-            preview = ctx.tools.template_render(val, preview_fields, legacy_braces=field.legacy_braces)
+            preview_names = ctx.tools.template_names(val, legacy_braces=field.legacy_braces)
+            for name in preview_names:
+                if "/" in name and name not in preview_fields:
+                    raise ValueError(f"Template field unavailable or not exported: {name}")
+            preview = ctx.tools.template_render(val, {name: meta for name, meta in preview_fields.items() if name in preview_names or name in field.template_fields}, legacy_braces=field.legacy_braces)
         except ValueError as exc:
             preview = str(exc)
         preview = ctx.tools.truncate(preview, 400)
         text += f"\n<b>{_escape(preview_label)}</b>\n<pre>{_escape(preview)}</pre>\n"
 
     buttons: List[List[Any]] = []
-    if field.template_fields and len(field.template_fields) > 3:
+    if pages > 1:
         def change_page(destination: int) -> Any:
             async def handler(c: Any, p: Any) -> Any:
                 await c.edit(**_parameter_form(ctx, module_id, key, destination))
