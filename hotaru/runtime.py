@@ -1807,13 +1807,6 @@ class Runtime:
             return self.t('runtime.usage_reset', prefix=self.config.prefix)
         return await self.reset_module_database(invocation.args[0])
 
-    @staticmethod
-    def _version_key(value: str) -> tuple[int, ...] | None:
-        parts = value.split(".")
-        if not parts or any(not part.isdigit() for part in parts):
-            return None
-        return tuple(int(part) for part in parts)
-
     async def _command_rl(self, invocation: Any) -> str:
         if len(invocation.args) not in (1, 2) or self.modules is None:
             return self.t('runtime.usage_reload', prefix=self.config.prefix)
@@ -1834,12 +1827,6 @@ class Runtime:
                 candidate_loaded = self.modules.loader.load(candidate)
                 if candidate_loaded.manifest.module_id != module_id:
                     return self.t('runtime.id_mismatch', module_id=module_id)
-                current_version = self._version_key(active.loaded.manifest.version)
-                candidate_version = self._version_key(candidate_loaded.manifest.version)
-                if not force and current_version is not None and candidate_version is not None and candidate_version < current_version:
-                    if self.observatory is not None:
-                        self.observatory.emit("modules", "update_blocked", module=module_id, old_version=active.loaded.manifest.version, new_version=candidate_loaded.manifest.version, reason="downgrade")
-                    return self.t('runtime.downgrade', old=active.loaded.manifest.version, new=candidate_loaded.manifest.version)
             await self.deactivate_module(module_id)
             try:
                 await self.activate_module(str(reload_path))
