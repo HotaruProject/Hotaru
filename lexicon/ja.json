@@ -420,6 +420,8 @@
         }
       },
       "template_fields": "利用可能なテンプレート変数",
+      "shared_prefix": "現在のコマンド接頭辞",
+      "shared_uptime": "起動後の経過秒数",
       "template_syntax": "{{name}}、数値書式 {{name:.2f}}、通常の波括弧には {{{{ / }}}} を使います。値はHTMLエスケープされます。",
       "template_preview": "プレビュー（HTML、サンプル値）"
     },

@@ -430,6 +430,10 @@ class SandboxAttachment:
         return f"SandboxAttachment(kind={self.kind!r}, file_name={self.file_name!r})"
 
 
+_template_providers = {}
+_template_resolving = set()
+
+
 class SandboxContext:
     def __init__(self, tools, payload):
         payload = payload or {}
@@ -449,7 +453,28 @@ class SandboxContext:
         entry = self._msg.get("templates", {}).get(key)
         if entry is None:
             raise ValueError(f"{key}: no template_fields declared")
+        if any("/" in name for name in self.tools.template_names(entry["value"], legacy_braces=entry["legacy_braces"])):
+            raise ValueError("Shared fields require await ctx.render_template_async(key, **values)")
         return self.tools.template_render(entry["value"], entry["fields"], values, legacy_braces=entry["legacy_braces"])
+
+    async def render_template_async(self, key, **values):
+        entry = self._msg.get("templates", {}).get(key)
+        if entry is None:
+            raise ValueError(f"{key}: no template_fields declared")
+        local = {}
+        names = self.tools.template_names(entry["value"], legacy_braces=entry["legacy_braces"])
+        fields = dict(entry["fields"], **{name: {} for name in names if "/" in name})
+        for name in self.tools.template_names(entry["value"], fields, legacy_braces=entry["legacy_braces"]):
+            handler = _template_providers.get(name)
+            if handler is not None:
+                if name in _template_resolving:
+                    raise ValueError("Template provider cycle")
+                _template_resolving.add(name)
+                try:
+                    local[name] = await asyncio.wait_for(handler(self), timeout=2.0)
+                finally:
+                    _template_resolving.discard(name)
+        return _cap_call("$template", {"key": key, "values": values, "local": local})
 
     @property
     def i18n(self):
@@ -950,6 +975,9 @@ def main():
         with _capture_module_output():
             code = compile(cfg["source"], cfg.get("module_id", "sandbox"), "exec", flags=__future__.annotations.compiler_flag, dont_inherit=True)
             exec(code, ns, ns)
+            for name, definition in ns.get("HOTARU", {}).get("template_fields", {}).items():
+                if "provider" in definition:
+                    _template_providers[cfg["module_id"] + "/" + name] = ns["template_" + definition["provider"]]
     except BaseException as exc:
         trace = exc.__traceback__
         while trace is not None and trace.tb_next is not None:
@@ -1115,7 +1143,7 @@ def main():
                         chat_id=payload.get("chat_id"),
                     )
                     with _capture_module_output():
-                        if payload.get("source") == "lifecycle":
+                        if payload.get("source") in ("lifecycle", "template"):
                             result = _invoke_lifecycle(handler, ctx)
                         else:
                             result = handler(ctx, invocation)
@@ -1575,16 +1603,17 @@ class ModuleSandbox:
             key: {"value": config.get(key), "fields": field.template_fields, "legacy_braces": field.legacy_braces}
             for key, field in config.schema.items() if field.template_fields is not None
         })
+        payload.setdefault("language", context.i18n.language)
         async with self._roundtrip_lock(module_id):
+            self._respond_contexts[module_id] = context
             if source is not None:
                 self._respond_sources[module_id] = source
-                self._respond_contexts[module_id] = context or self.runtime.context_factory.create(module_id, source)
             try:
-                result = await self._roundtrip(module_id, {"command": command, "args": args, "payload": payload, "target": target})
+                result = await asyncio.wait_for(self._roundtrip(module_id, {"command": command, "args": args, "payload": payload, "target": target}), timeout=self.call_timeout)
             finally:
+                self._respond_contexts.pop(module_id, None)
                 if source is not None:
                     self._respond_sources.pop(module_id, None)
-                    self._respond_contexts.pop(module_id, None)
         if not isinstance(result, dict) or not result.get("ok"):
             raise SandboxError(f"sandbox call failed: {result.get('error') if isinstance(result, dict) else 'malformed'}")
         return result.get("result")
@@ -1641,37 +1670,54 @@ class ModuleSandbox:
                 return message
 
         task = asyncio.ensure_future(loop.run_in_executor(None, _roundtrip))
-        while True:
+        try:
+            while True:
+                try:
+                    return await asyncio.wait_for(asyncio.shield(task), timeout=0.05)
+                except asyncio.TimeoutError:
+                    if self._pending_caps.get(module_id):
+                        await self._serve_caps(module_id)
+                    if self._respond_pending.get(module_id):
+                        await self._serve_respond(module_id)
+                    if self._cb_respond_pending.get(module_id):
+                        await self._serve_cb_respond(module_id)
+        except (Exception, asyncio.CancelledError):
             try:
-                return await asyncio.wait_for(asyncio.shield(task), timeout=0.05)
-            except asyncio.TimeoutError:
-                if self._pending_caps.get(module_id):
-                    await self._serve_caps(module_id)
-                if self._respond_pending.get(module_id):
-                    await self._serve_respond(module_id)
-                if self._cb_respond_pending.get(module_id):
-                    await self._serve_cb_respond(module_id)
-                continue
-            except Exception:
-                task.cancel()
-                raise
+                process.kill()
+            except ProcessLookupError:
+                pass
+            await asyncio.gather(task, return_exceptions=True)
+            self._pending_caps.pop(module_id, None)
+            self._respond_pending.pop(module_id, None)
+            self._cb_respond_pending.pop(module_id, None)
+            raise
 
     async def _serve_caps(self, module_id: str) -> None:
         caps = self._pending_caps.pop(module_id, [])
+        process = self._workers.get(module_id)
         cap_host = getattr(self.runtime, "cap_host", None)
         for message in caps:
             name = message.get("cap")
             payload_value = message.get("payload")
             payload = cast('dict[str, Any]', payload_value) if isinstance(payload_value, dict) else {}
             reply = {"kind": "cap_result", "ok": False, "error": "capability host is unavailable"}
-            if cap_host is not None:
+            if cap_host is not None or name == "$template":
                 try:
-                    result = await cap_host.call(module_id, name, payload)
+                    if name == "$template":
+                        context = self._respond_contexts.get(module_id)
+                        if context is None:
+                            context = self.runtime.context_factory.create(module_id, None)
+                        if set(payload) - {"key", "values", "local"} or not isinstance(payload.get("key"), str) or not isinstance(payload.get("local", {}), dict):
+                            raise ValueError("Invalid template request")
+                        result = await self.runtime.modules.render_template(context, payload["key"], payload.get("values", {}), payload.get("local", {}))
+                    else:
+                        if cap_host is None:
+                            raise RuntimeError("capability host is unavailable")
+                        result = await cap_host.call(module_id, name, payload)
                     reply = {"kind": "cap_result", "ok": True, "result": result}
                 except Exception as exc:
                     reply = {"kind": "cap_result", "ok": False, "error": f"{type(exc).__name__}: {exc}"[:200]}
-            process = self._workers.get(module_id)
-            if process is not None and process.poll() is None and process.stdin is not None:
+            if process is self._workers.get(module_id) and process is not None and process.poll() is None and process.stdin is not None:
                 process.stdin.write((_proto_dumps(reply) + "\n").encode("utf-8"))
                 process.stdin.flush()
 

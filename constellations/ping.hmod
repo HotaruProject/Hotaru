@@ -34,5 +34,5 @@ async def command_ping(ctx: "ModuleContext", invocation: "CommandInvocation") ->
     ping_ms = (time.perf_counter_ns() - start) / 10**6
     uptime_s = ctx.uptime
     uptime = ctx.tools.duration(uptime_s, ctx.i18n.language)
-    text = ctx.render_template("template", latency=ping_ms, uptime=uptime, uptime_seconds=uptime_s)
+    text = await ctx.render_template_async("template", latency=ping_ms, uptime=uptime, uptime_seconds=uptime_s)
     await ctx.respond(text, parse_mode="HTML", output="edit")

@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, Callable, Iterator, Mapping, Sequence, cast
 
 from .state import StateNamespace, StateStore
-from relay.toolkit import template_fields, template_render
+from relay.toolkit import template_fields, template_render, template_validate, template_names
 
 
 def discover_state(path: str | Path | None = None) -> Path:
@@ -447,7 +447,7 @@ class ConfigField:
         result = self.validator.validate(value)
         if self.template_fields is not None:
             try:
-                template_render(result, self.template_fields)
+                template_validate(result, self.template_fields)
             except ValueError as exc:
                 raise ConfigValidationError(str(exc)) from exc
         return result
@@ -512,8 +512,10 @@ class ConfigSchema:
                         if not isinstance(v, StringValidator) or sec:
                             raise ConfigValidationError(f"{key}: template_fields requires a non-secret string parameter")
                         try:
-                            declared = template_fields(spec["template_fields"])
-                            template_render(default, declared)
+                            declared = {} if spec["template_fields"] == {} else template_fields(spec["template_fields"])
+                            if any("/" in name for name in declared):
+                                raise ValueError("Local template field names cannot contain /")
+                            template_validate(default, declared)
                         except ValueError as exc:
                             raise ConfigValidationError(f"{key}: {exc}") from exc
                     elif legacy:
@@ -607,7 +609,10 @@ class ModuleConfig:
         field = self.schema[key]
         if field.template_fields is None:
             raise ConfigValidationError(f"{key}: no template_fields declared")
-        return template_render(self.get(key), field.template_fields, values, legacy_braces=field.legacy_braces)
+        template = self.get(key)
+        if any("/" in name for name in template_names(template, legacy_braces=field.legacy_braces)):
+            raise ValueError("Shared fields require await ctx.render_template_async(key, **values)")
+        return template_render(template, field.template_fields, values, legacy_braces=field.legacy_braces)
 
     def __getitem__(self, key: str) -> Any:
         val = self.get(key)

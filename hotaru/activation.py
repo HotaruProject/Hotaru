@@ -5,8 +5,9 @@ import asyncio
 import inspect
 import logging
 from dataclasses import dataclass
+from contextvars import ContextVar
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, cast
 
 from .modules import HmodLoader, LoadedModule
 from .tasks import TaskSupervisor
@@ -14,6 +15,7 @@ from relay.firewall import module_scope
 
 
 log = logging.getLogger(__name__)
+_template_stack: ContextVar[tuple[str, ...]] = ContextVar("template_stack", default=())
 
 
 class ActivationError(RuntimeError):
@@ -435,6 +437,81 @@ class ModuleManager:
             self.binder.unbind(active.loaded, commands, kern, is_kernel=ik)
         del self._active[module_id]
         return True
+
+    def template_catalog(self, consumer: str) -> dict[str, dict[str, Any]]:
+        result: dict[str, dict[str, Any]] = {
+            "hotaru/prefix": {"type": "str", "example": ".", "description_key": "kernel.config.shared_prefix"},
+            "hotaru/uptime": {"type": "int", "example": 7380, "description_key": "kernel.config.shared_uptime"},
+        }
+        for module_id, active in self._active.items():
+            for name, definition in (active.loaded.manifest.template_fields or {}).items():
+                if module_id == consumer or definition["scope"] == "global" or (definition["scope"] == "shared" and consumer in definition["modules"]):
+                    result[module_id + "/" + name] = {key: value for key, value in definition.items() if key not in ("scope", "modules", "provider", "value")}
+        return result
+
+    async def render_template(self, ctx: Any, key: str, values: Any, local: dict[str, Any] | None = None) -> str:
+        from relay.toolkit import template_names, template_render
+
+        config = ctx.config
+        field = config.schema[key]
+        if field.template_fields is None:
+            raise ValueError(f"{key}: no template_fields declared")
+        if not isinstance(values, dict):
+            raise ValueError("Template values must be a mapping")
+        data = dict(cast("dict[str, Any]", values))
+        if len(data) > 64 or set(data) - set(field.template_fields):
+            raise ValueError("Only declared local template values may be supplied")
+        template = config.get(key)
+        names = template_names(template, legacy_braces=field.legacy_braces)
+        catalog = self.template_catalog(ctx.module_id)
+        fields = dict(field.template_fields)
+        shared = [name for name in names if "/" in name]
+        for name in shared:
+            if name not in catalog:
+                raise ValueError(f"Template field unavailable or not exported: {name}")
+            fields[name] = catalog[name]
+        template_render(template, fields, {**{name: fields[name]["example"] for name in shared}, **data}, legacy_braces=field.legacy_braces)
+        shared = [name for name in template_names(template, fields, legacy_braces=field.legacy_braces) if "/" in name]
+        providers = {name: self._active.get(name.split("/", 1)[0]) for name in shared if not name.startswith("hotaru/")}
+        stack = _template_stack.get()
+        if len(stack) >= 8:
+            raise ValueError("Template provider depth exceeded")
+        token = _template_stack.set(stack + (ctx.module_id,))
+        try:
+            async def resolve() -> str:
+                for name in shared:
+                    if name == "hotaru/prefix":
+                        data[name] = ctx.runtime.kernel.parser.prefix
+                    elif name == "hotaru/uptime":
+                        data[name] = ctx.uptime
+                    else:
+                        module_id, field_name = name.split("/", 1)
+                        active = providers[name]
+                        if active is None or self._active.get(module_id) is not active:
+                            raise ValueError(f"Template provider inactive or changed: {module_id}")
+                        definition = (active.loaded.manifest.template_fields or {})[field_name]
+                        if "value" in definition:
+                            data[name] = definition["value"]
+                        elif module_id == ctx.module_id and local is not None and name in local:
+                            data[name] = local[name]
+                        else:
+                            namespace = active.context.namespace
+                            sandboxed = bool(namespace.get("__sandbox__"))
+                            if module_id in stack or (sandboxed and module_id == ctx.module_id and local is not None):
+                                raise ValueError(f"Template provider cycle: {name}")
+                            producer = ctx.runtime.context_factory.create(module_id, None)
+                            target = "template_" + definition["provider"]
+                            if sandboxed:
+                                data[name] = await self._sandbox_ref.call(module_id, target, [], {"source": "template"}, target=target, context=producer)
+                            else:
+                                with module_scope(module_id):
+                                    data[name] = await namespace[target](producer)
+                        if self._active.get(module_id) is not active:
+                            raise ValueError(f"Template provider changed during rendering: {module_id}")
+                return template_render(template, fields, data, legacy_braces=field.legacy_braces)
+            return await asyncio.wait_for(resolve(), timeout=2.0)
+        finally:
+            _template_stack.reset(token)
 
     def get(self, module_id: str) -> ActiveModule | None:
         return self._active.get(module_id)

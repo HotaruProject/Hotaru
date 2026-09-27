@@ -414,12 +414,53 @@ def _template_value(value: Any, kind: str) -> bool:
             or (kind == "bool" and type(value) is bool))
 
 
+def _template_parts(template: str, declared: dict[str, Any], legacy_braces: bool) -> list[tuple[str, str | None, str | None, str | None]]:
+    try:
+        parts = list(string.Formatter().parse(template))
+        for _, name, _, conversion in parts:
+            if name is not None and (name not in declared or conversion is not None):
+                raise ValueError(f"Unknown or unsafe template field {{{name}}}; available: " + ", ".join(declared))
+    except ValueError:
+        if not legacy_braces:
+            raise
+        escaped = template.replace("{", "{{").replace("}", "}}")
+        for name in declared:
+            escaped = escaped.replace("{{" + name + "}}", "{" + name + "}")
+        parts = list(string.Formatter().parse(escaped))
+    if len(parts) > 256:
+        raise ValueError("Template has too many fields or escaped braces (maximum 256)")
+    return parts
+
+
+def template_names(template: str, fields: dict[str, Any] | None = None, *, legacy_braces: bool = False) -> list[str]:
+    if fields is not None:
+        return list(dict.fromkeys(name for _, name, _, _ in _template_parts(template, fields, legacy_braces) if name is not None))
+    try:
+        return list(dict.fromkeys(name for _, name, _, _ in string.Formatter().parse(template) if name is not None))
+    except ValueError:
+        if not legacy_braces:
+            raise
+        return list(dict.fromkeys(re.findall(r"\{([a-z0-9][a-z0-9-]{0,63}/[A-Za-z][A-Za-z0-9_]{0,63})\}", template)))
+
+
+def template_validate(template: object, fields: object) -> str:
+    declared = {} if fields == {} else template_fields(fields)
+    if not isinstance(template, str) or len(template) > 4096:
+        raise ValueError("Template must be text of at most 4096 characters")
+    for _, name, spec, conversion in string.Formatter().parse(template):
+        if name is not None and name not in declared and re.fullmatch(r"[a-z0-9][a-z0-9-]{0,63}/[A-Za-z][A-Za-z0-9_]{0,63}", name):
+            if conversion is not None:
+                raise ValueError("Template conversions are not allowed")
+            declared[name] = {"type": "int" if spec else "str", "example": 0 if spec else "", "description": name}
+    return template_render(template, declared)
+
+
 def template_fields(raw: object) -> dict[str, dict[str, Any]]:
     if not isinstance(raw, dict) or not 1 <= len(cast('dict[object, object]', raw)) <= 64:
         raise ValueError("template_fields must declare between 1 and 64 fields")
     result: dict[str, dict[str, Any]] = {}
     for name, entry in cast('dict[object, object]', raw).items():
-        if not isinstance(name, str) or not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,63}", name):
+        if not isinstance(name, str) or not re.fullmatch(r"(?:[a-z0-9][a-z0-9-]{0,63}/)?[A-Za-z][A-Za-z0-9_]{0,63}", name):
             raise ValueError("Invalid template field name")
         if not isinstance(entry, dict):
             raise ValueError(f"{name}: field metadata must be a mapping")
@@ -454,7 +495,7 @@ def template_fields(raw: object) -> dict[str, dict[str, Any]]:
 
 
 def template_render(template: object, fields: object, values: object = None, *, legacy_braces: bool = False) -> str:
-    declared = template_fields(fields)
+    declared = {} if fields == {} else template_fields(fields)
     if not isinstance(template, str) or len(template) > 4096:
         raise ValueError("Template must be text of at most 4096 characters")
     if values is None:
@@ -467,20 +508,7 @@ def template_render(template: object, fields: object, values: object = None, *, 
             raise ValueError("Template values require at most 64 named keys")
     if set(data) - set(declared):
         raise ValueError("Unknown template values: " + ", ".join(sorted(set(data) - set(declared))))
-    try:
-        parts = list(string.Formatter().parse(template))
-        for _, name, _, conversion in parts:
-            if name is not None and (name not in declared or conversion is not None):
-                raise ValueError(f"Unknown or unsafe template field {{{name}}}; available: " + ", ".join(declared))
-    except ValueError:
-        if not legacy_braces:
-            raise
-        escaped = template.replace("{", "{{").replace("}", "}}")
-        for name in declared:
-            escaped = escaped.replace("{{" + name + "}}", "{" + name + "}")
-        parts = list(string.Formatter().parse(escaped))
-    if len(parts) > 256:
-        raise ValueError("Template has too many fields or escaped braces (maximum 256)")
+    parts = _template_parts(template, declared, legacy_braces)
     output: list[str] = []
     size = 0
     for literal, name, spec, _ in parts:
@@ -1107,6 +1135,7 @@ async def search(values: Any, query: object, *, key: Any = None, limit: object =
 
 TOOLKIT_FUNCS = {
     "template_fields": template_fields,
+    "template_names": template_names,
     "template_render": template_render,
     "search": search,
     "args_parse": args_parse,
