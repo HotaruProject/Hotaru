@@ -47,10 +47,7 @@ def _current_commit(runtime: Any) -> Any:
 
 def _latest_commit(runtime: Any) -> Any:
     origin_main = _git(runtime, "rev-parse", "origin/main").strip()
-    try:
-        _git(runtime, "cat-file", "-e", origin_main + "^{commit}")
-    except Exception:
-        return _current_commit(runtime)
+    _git(runtime, "cat-file", "-e", origin_main + "^{commit}")
     return origin_main
 
 def _changelog(runtime: Any) -> Any:

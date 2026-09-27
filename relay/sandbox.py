@@ -964,14 +964,10 @@ def main():
                 if action_id == "close" or str(action_id).startswith("close_"):
                     cb_proxy = SandboxCallbackProxy(cb_data)
                     try:
-                        del_fn = getattr(cb_proxy, "delete", None)
-                        if callable(del_fn):
-                            res = del_fn()
-                            if asyncio.iscoroutine(res):
-                                asyncio.run(res)
+                        asyncio.run(cb_proxy.delete())
                         out = {"ok": True, "result": None}
-                    except BaseException:
-                        out = {"ok": True, "result": None}
+                    except BaseException as exc:
+                        out = {"ok": False, "error": type(exc).__name__}
                     sys.stdout.write(_proto_dumps(out) + "\n")
                     sys.stdout.flush()
                     continue
@@ -1068,11 +1064,11 @@ def main():
                         import inspect as _inspect
                         try:
                             sig = _inspect.signature(cb_handler)
-                            if len(sig.parameters) == 1:
-                                result = cb_handler(cb_proxy)
-                            else:
-                                result = cb_handler(cb_proxy, cb_data.get("payload"))
-                        except Exception:
+                        except (TypeError, ValueError):
+                            sig = None
+                        if sig is not None and len(sig.parameters) == 1:
+                            result = cb_handler(cb_proxy)
+                        else:
                             result = cb_handler(cb_proxy, cb_data.get("payload"))
                         if asyncio.iscoroutine(result):
                             result = asyncio.run(result)
@@ -1836,21 +1832,24 @@ class ModuleSandbox:
         return handler
 
     def stop_module(self, module_id: str) -> bool:
+        process = self._workers.get(module_id)
+        if process is not None and process.poll() is None:
+            try:
+                process.terminate()
+                process.wait(timeout=5)
+            except Exception:
+                try:
+                    process.kill()
+                    process.wait(timeout=5)
+                except Exception as exc:
+                    import logging
+                    logging.getLogger(__name__).error("sandbox stop failed: %s", type(exc).__name__)
+                    return False
         self._module_defs.pop(module_id, None)
-        process = self._workers.pop(module_id, None)
+        self._workers.pop(module_id, None)
         self._booted.pop(module_id, None)
         self._last_use.pop(module_id, None)
-        if process is None:
-            return False
-        try:
-            process.terminate()
-            process.wait(timeout=5)
-        except Exception:
-            try:
-                process.kill()
-            except Exception:
-                pass
-        return True
+        return process is not None
 
     def reap_idle(self, idle_seconds: float) -> list[str]:
         now = time.monotonic()

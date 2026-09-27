@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import logging
 import time
 from collections import OrderedDict
 from relay.denylist import is_blocked_peer
@@ -14,6 +15,8 @@ from .inline_registry import InlineRegistry
 from .security import AccessVerdict, SecurityGate
 from .access import AccessManager, Permission
 from .tasks import TaskLimitError, TaskSupervisor
+
+log = logging.getLogger(__name__)
 
 ACTIVITY_POLL = 0.2
 
@@ -115,8 +118,8 @@ class Kernel:
         try:
             assert self.sandbox is not None
             await self.sandbox.call(watcher.module_id, watcher.name, [], payload, source=message, target=f"watcher_{watcher.name}")
-        except Exception:
-            pass
+        except Exception as exc:
+            log.error("sandbox watcher failed: %s", type(exc).__name__)
 
     async def _invoke_watcher(self, watcher: Any, context: Any, message: Any) -> None:
         try:
@@ -203,12 +206,13 @@ class Kernel:
         except asyncio.CancelledError:
             return None
         except Exception as exc:
+            log.error("command failed: %s", type(exc).__name__)
             if self.response_service is not None:
                 try:
-                    from html import escape
-                    text = escape(f"{type(exc).__name__}: {exc}")
+                    text = type(exc).__name__
                     return await context.respond(text) if context is not None else await self.response_service.answer(message, text=text, output="auto")
-                except Exception:
+                except Exception as response_exc:
+                    log.error("command error response failed: %s", type(response_exc).__name__)
                     return None
             return None
         if spec.kernel and self.response_service is not None:

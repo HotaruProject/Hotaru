@@ -423,10 +423,7 @@ class AccountUI:
         if action == 'close':
             form = self.find_form(ctx)
             if form is None:
-                if getattr(ctx, 'inline_message_id', None) is not None:
-                    await ctx.edit('\u200b', buttons=[])
-                else:
-                    await ctx.delete()
+                await ctx.delete()
             else:
                 await form.delete()
                 if form.nonce is not None:

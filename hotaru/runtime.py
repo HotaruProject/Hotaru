@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import gc
 import hashlib
+import inspect
 import json
 import logging
 import os
@@ -87,16 +88,8 @@ class InputContext:
         return await self.runtime._edit_input_form(self, text, buttons, kwargs)
 
     async def delete(self) -> bool:
-        mid = self.inline_message_id
-        bot = getattr(getattr(self.runtime, "inline", None), "bot_app", None)
-        if mid is None or bot is None:
-            return True
-        id_field: dict[str, Any] = cast('dict[str, Any]', mid) if isinstance(mid, dict) else {"_": "inputBotInlineMessageID", "raw": mid}
-        try:
-            with trusted_scope():
-                await bot.mt_messages_edit_inline_bot_message(id=id_field, message="\u200b")
-        except Exception:
-            pass
+        if not await self.runtime._drop_transfer(self.source, self.inline_message_id):
+            raise RuntimeError("input transfer could not be deleted")
         return True
 
     async def cancel(self) -> bool:
@@ -1028,18 +1021,25 @@ class Runtime:
         ctx = InputContext(self, source, chosen, value, payload)
         ctx.form_nonce = form_nonce
         try:
-            result = handler(ctx, value, payload)
-        except TypeError:
             try:
-                result = handler(ctx, value)
-            except TypeError:
-                result = handler(ctx)
-        try:
+                signature = inspect.signature(handler)
+            except (TypeError, ValueError):
+                signature = None
+            args = (ctx, value, payload)
+            if signature is not None:
+                for candidate in (args, args[:2], args[:1]):
+                    try:
+                        signature.bind(*candidate)
+                    except TypeError:
+                        continue
+                    args = candidate
+                    break
+            result = handler(*args)
             if asyncio.iscoroutine(result) or isinstance(result, asyncio.Future):
                 await result
         except Exception as exc:
             if self.observatory is not None:
-                self.observatory.emit("inline", "input_error", error=type(exc).__name__, detail=str(exc)[:160])
+                self.observatory.emit("inline", "input_error", level="error", error=type(exc).__name__)
         finally:
             if self._input_requests is not None:
                 self._input_requests.pop(token, None)
@@ -1149,7 +1149,16 @@ class Runtime:
         with trusted_scope():
             return await bot.mt_messages_edit_inline_bot_message(**data)
 
-    async def _drop_transfer(self, source: Any, inline_id: Any) -> None:
+    async def _drop_transfer(self, source: Any, inline_id: Any) -> bool:
+        if isinstance(inline_id, dict) and inline_id.get("_") == "inputBotInlineMessageID64" and type(inline_id.get("owner_id")) is int and inline_id["owner_id"] < 0:
+            try:
+                callback = SimpleNamespace(src="mt", app=self.app, inline_message_id=inline_id)
+                await CallbackContext(callback, self).delete()
+            except Exception as exc:
+                if self.observatory is not None:
+                    self.observatory.emit("inline", "transfer_cleanup_failed", level="error", error=type(exc).__name__)
+                return False
+            return True
         chat_id = getattr(source, "chat_id", None)
         if not isinstance(chat_id, int) and self.state is not None:
             ref_chat = self.state.get_setting("inline-reference-chat")
@@ -1169,8 +1178,10 @@ class Runtime:
                     with trusted_scope():
                         peer = await app.mt.resolve_peer(chat_id)
                         hist = await app.mt_messages_get_history(peer=peer, offset_id=0, offset_date=0, add_offset=0, limit=10, max_id=0, min_id=0, hash=0)
-                except Exception:
-                    break
+                except Exception as exc:
+                    if self.observatory is not None:
+                        self.observatory.emit("inline", "transfer_cleanup_failed", level="error", error=type(exc).__name__)
+                    return False
                 body: Any = cast('dict[str, Any]', hist).get("result", hist) if isinstance(hist, dict) else hist
                 messages = cast('dict[str, Any]', body).get("messages") if isinstance(body, dict) else None
                 for message in cast('list[Any]', messages or []):
@@ -1191,21 +1202,17 @@ class Runtime:
                             with trusted_scope():
                                 await delete_chat_msg(app, chat_id, mid)
                             deleted = True
-                        except Exception:
-                            pass
+                        except Exception as exc:
+                            if self.observatory is not None:
+                                self.observatory.emit("inline", "transfer_cleanup_failed", level="error", error=type(exc).__name__)
+                            return False
                     break
                 if deleted:
                     break
                 await asyncio.sleep(0.2)
-        bot = getattr(getattr(self, "inline", None), "bot_app", None)
-        if inline_id is not None and bot is not None and not deleted:
-            id_field: dict[str, Any] = cast('dict[str, Any]', inline_id) if isinstance(inline_id, dict) else {"_": "inputBotInlineMessageID", "raw": inline_id}
-            try:
-                with trusted_scope():
-                    await bot.mt_messages_edit_inline_bot_message(id=id_field, message="\u200b")
-            except Exception:
-                pass
-
+        if not deleted and self.observatory is not None:
+            self.observatory.emit("inline", "transfer_cleanup_failed", level="error", error="UnresolvedMessage")
+        return deleted
 
     async def _dispatch_inline_command(self, text: str, query: Any) -> list[dict[str, Any]]:
         kernel = self.kernel
