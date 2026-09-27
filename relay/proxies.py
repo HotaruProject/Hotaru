@@ -10,8 +10,9 @@ from .caps import MT_BLOCKED, normalize_method
 from .rpc import rpcname
 from .denylist import payload_hits_blocked
 from .firewall import trusted_scope
-from goygram.rich import rich_html
-from goygram.sugar import extract_sent_message, html_to_entities
+from goygram.sugar import extract_sent_message
+from . import emoji
+from .emoji import to_entities, to_rich
 from goygram.types.kbd import kbd_to_tl
 
 
@@ -79,6 +80,10 @@ class Gateway:
         self._check(method)
         if payload_hits_blocked(kwargs):
             raise PermissionError("mt kwargs target a denied peer")
+        if kwargs is not None and not emoji.premium():
+            entities = kwargs.get("entities")
+            if isinstance(entities, list):
+                kwargs = {**kwargs, "entities": emoji.degrade(cast('list[dict[str, Any]]', entities))}
         return await self._host.call(self._module_id, "mt", {"method": method, "kwargs": kwargs or {}})
 
     async def send(self, method: str, **kwargs: Any) -> Any:
@@ -91,7 +96,7 @@ class Gateway:
         return await self.call("messages.sendMessage", {"message": text, **kwargs})
 
     async def send_html(self, text: str, **kwargs: Any) -> Any:
-        plain, entities = html_to_entities(str(text))
+        plain, entities = to_entities(str(text))
         payload: dict[str, Any] = {"message": plain, **kwargs}
         if entities:
             payload["entities"] = entities
@@ -130,14 +135,14 @@ class Gateway:
         return await self.call("messages.sendMedia", {"media": media, "message": caption, **kwargs})
 
     async def send_rich(self, html_text: str | dict[str, Any], **kwargs: Any) -> Any:
-        rich = {"_": "inputRichMessageHTML", **rich_html(html_text)} if isinstance(html_text, str) else html_text
+        rich = {"_": "inputRichMessageHTML", **to_rich(html_text)} if isinstance(html_text, str) else html_text
         return await self.call("messages.sendMessage", {"rich_message": rich, **kwargs})
 
     async def edit_message(self, message_id: int, text: str, **kwargs: Any) -> Any:
         return await self.call("messages.editMessage", {"id": message_id, "message": text, **kwargs})
 
     async def edit_rich(self, message_id: int, html_text: str | dict[str, Any], **kwargs: Any) -> Any:
-        rich = {"_": "inputRichMessageHTML", **rich_html(html_text)} if isinstance(html_text, str) else html_text
+        rich = {"_": "inputRichMessageHTML", **to_rich(html_text)} if isinstance(html_text, str) else html_text
         return await self.call("messages.editMessage", {"id": message_id, "rich_message": rich, **kwargs})
 
     async def delete_message(self, message_id: int, **kwargs: Any) -> Any:
@@ -157,7 +162,7 @@ class RichGateway:
 
     @staticmethod
     def html(value: str, *, rtl: bool = False, noautolink: bool = False, files: Any = None) -> dict[str, Any]:
-        result: dict[str, Any] = {"_": "inputRichMessageHTML", **rich_html(str(value))}
+        result: dict[str, Any] = {"_": "inputRichMessageHTML", **to_rich(str(value))}
         if rtl:
             result["rtl"] = True
         if noautolink:
@@ -436,8 +441,7 @@ class BotGateway:
             media = document(up, mime=mime, file_name=kwargs.get("file_name"))
         data: dict[str, Any] = {"peer": kwargs.get("chat_id"), "media": media, "message": caption, "random_id": secrets.randbits(63)}
         if str(kwargs.get("parse_mode", "")).lower() == "html" and caption:
-            from goygram.sugar import html_to_entities
-            plain, ents = html_to_entities(caption)
+            plain, ents = to_entities(caption)
             data["message"] = plain
             if ents:
                 data["entities"] = ents
@@ -467,7 +471,6 @@ class BotGateway:
         return tl_markup if isinstance(tl_markup, dict) else None
 
     def _map_method(self, method: str, kwargs: dict[str, Any]) -> tuple[str, dict[str, Any]] | None:
-        from goygram.sugar import html_to_entities
 
         data: dict[str, Any] = {}
         if method in {"sendMessage", "sendRichMessage"}:
@@ -481,7 +484,7 @@ class BotGateway:
             else:
                 data["message"] = text
                 if str(kwargs.get("parse_mode", "")).lower() == "html":
-                    plain, ents = html_to_entities(text)
+                    plain, ents = to_entities(text)
                     data["message"] = plain
                     if ents:
                         data["entities"] = ents
@@ -503,7 +506,7 @@ class BotGateway:
             else:
                 data["message"] = text
                 if str(kwargs.get("parse_mode", "")).lower() == "html":
-                    plain, ents = html_to_entities(text)
+                    plain, ents = to_entities(text)
                     data["message"] = plain
                     if ents:
                         data["entities"] = ents
@@ -522,7 +525,7 @@ class BotGateway:
             else:
                 data["message"] = text
                 if str(kwargs.get("parse_mode", "")).lower() == "html":
-                    plain, ents = html_to_entities(text)
+                    plain, ents = to_entities(text)
                     data["message"] = plain
                     if ents:
                         data["entities"] = ents
@@ -546,7 +549,7 @@ class BotGateway:
         return await self.call(method, **kwargs)
 
     async def rich_send(self, chat_id: int | str, html_text: str, *, buttons: Any = None, **kwargs: Any) -> Any:
-        data = {"chat_id": chat_id, "rich_message": {"_": "inputRichMessageHTML", **rich_html(html_text)}, **kwargs}
+        data = {"chat_id": chat_id, "rich_message": {"_": "inputRichMessageHTML", **to_rich(html_text)}, **kwargs}
         if buttons is not None:
             data["reply_markup"] = {"inline_keyboard": buttons} if isinstance(buttons, list) else buttons
         try:
@@ -583,19 +586,19 @@ class BotGateway:
         return await self.call("sendDocument", **data)
 
     async def rich_edit(self, chat_id: int | str, message_id: int, html_text: str, *, buttons: Any = None, **kwargs: Any) -> Any:
-        data = {"chat_id": chat_id, "message_id": message_id, "rich_message": {"_": "inputRichMessageHTML", **rich_html(html_text)}, **kwargs}
+        data = {"chat_id": chat_id, "message_id": message_id, "rich_message": {"_": "inputRichMessageHTML", **to_rich(html_text)}, **kwargs}
         if buttons is not None:
             data["reply_markup"] = buttons
         return await self.call("editMessageText", **data)
 
     async def rich_draft(self, chat_id: int | str, html_text: str, *, draft_id: int, **kwargs: Any) -> Any:
-        return await self.call("sendRichMessageDraft", chat_id=chat_id, draft_id=draft_id, rich_message={"_": "inputRichMessageHTML", **rich_html(html_text)}, **kwargs)
+        return await self.call("sendRichMessageDraft", chat_id=chat_id, draft_id=draft_id, rich_message={"_": "inputRichMessageHTML", **to_rich(html_text)}, **kwargs)
 
     async def inline_answer(self, query: Any, results: list[dict[str, Any]], **kwargs: Any) -> Any:
         return await query.answer(results=results, **kwargs)
 
     async def inline_edit(self, inline_message_id: str, html_text: str, *, buttons: Any = None, **kwargs: Any) -> Any:
-        data = {"inline_message_id": inline_message_id, "rich_message": {"_": "inputRichMessageHTML", **rich_html(html_text)}, **kwargs}
+        data = {"inline_message_id": inline_message_id, "rich_message": {"_": "inputRichMessageHTML", **to_rich(html_text)}, **kwargs}
         if buttons is not None:
             data["reply_markup"] = buttons
         return await self.call("editMessageText", **data)
@@ -1149,7 +1152,7 @@ class ForumHelper:
             data["message"] = ""
             data["rich_message"] = rich
         else:
-            plain, ents = html_to_entities(str(text))
+            plain, ents = to_entities(str(text))
             data["message"] = plain
             if ents:
                 data["entities"] = ents
@@ -1186,7 +1189,7 @@ class ForumHelper:
         host = self._bot_app() if use_bot else getattr(self._runtime, "app", None)
         up = await put(host, path, file_name=file_name)
         media = self._media_document(up, file_name)
-        plain, ents = html_to_entities(str(caption))
+        plain, ents = to_entities(str(caption))
         data: dict[str, Any] = {"media": media, "message": plain, "random_id": secrets.randbits(63), "reply_to": {"_": "inputReplyToMessage", "reply_to_msg_id": int(topic_id)}}
         if ents:
             data["entities"] = ents
@@ -1212,7 +1215,7 @@ class ForumHelper:
         if isinstance(rich, dict):
             data["rich_message"] = rich
         else:
-            plain, ents = html_to_entities(str(text))
+            plain, ents = to_entities(str(text))
             data["message"] = plain
             if ents:
                 data["entities"] = ents
@@ -1231,7 +1234,7 @@ class ForumHelper:
         host = self._bot_app() if use_bot else getattr(self._runtime, "app", None)
         up = await put(host, path, file_name=file_name)
         media = self._media_document(up, file_name)
-        plain, ents = html_to_entities(str(caption))
+        plain, ents = to_entities(str(caption))
         data: dict[str, Any] = {"id": int(message_id), "media": media, "message": plain}
         if ents:
             data["entities"] = ents
@@ -1362,7 +1365,7 @@ class InlineHelper:
     def rich(self, result_id: str, title: str, html_text: str, *, buttons: Any = None, **kw: Any) -> dict[str, Any]:
         from goygram.types import InlineObj
         result = InlineObj.article(result_id, title, html_text)
-        result["input_message_content"] = {"rich_message": {"_": "inputRichMessageHTML", **rich_html(html_text)}}
+        result["input_message_content"] = {"rich_message": {"_": "inputRichMessageHTML", **to_rich(html_text)}}
         if buttons is not None:
             result["reply_markup"] = {"inline_keyboard": buttons}
         return result

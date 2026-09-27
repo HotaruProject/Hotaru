@@ -32,7 +32,8 @@ from relay.sandbox import ModuleSandbox
 from relay.caps import CapabilityHost, describe as describe_caps
 from relay.rpc import delete_chat_msg
 from relay.firewall import install as install_firewall, trusted_scope
-from goygram.sugar import html_to_entities, extract_sent_message
+from relay.emoji import set_premium, to_entities, to_rich
+from goygram.sugar import extract_sent_message
 from goygram import GoyGram, Session
 from goygram.types.kbd import kbd_to_tl
 from goygram.security import bootstrap_session
@@ -49,7 +50,6 @@ from .security import SecurityGate
 from .state import StateStore
 from .supervisor import ConnectionSupervisor
 from .tasks import TaskSupervisor
-from goygram.rich import rich_html
 
 IDLE_WORKER_SECONDS = 1800.0
 
@@ -389,7 +389,7 @@ class Runtime:
                     current.append(btn_item)
             rebound.append(current)
         bot_app = self.inline.bot_app
-        plain, ents = html_to_entities(text)
+        plain, ents = to_entities(text)
         edit_data: dict[str, Any] = {"peer": chat_id, "id": form_id, "message": plain}
         if ents:
             edit_data["entities"] = ents
@@ -594,7 +594,7 @@ class Runtime:
         else:
             if self.inline is None or self.inline.bot_app is None:
                 raise RuntimeError("form bot transport is unavailable")
-            plain, entities = html_to_entities(next_text)
+            plain, entities = to_entities(next_text)
             with trusted_scope():
                 value = await self.inline.bot_app.mt_messages_edit_message(peer=source.chat_id, id=source.id, message=plain, entities=entities, reply_markup=kbd_to_tl({"inline_keyboard": next_buttons}))
         if self._forms is None:
@@ -667,6 +667,7 @@ class Runtime:
                     for module_id in sandbox.reap_idle(IDLE_WORKER_SECONDS):
                         if self.observatory is not None:
                             self.observatory.emit("sandbox", "worker_reaped", module=module_id)
+                set_premium(await self.is_premium())
             except asyncio.CancelledError:
                 return
             except Exception:
@@ -957,7 +958,7 @@ class Runtime:
             form_text, buttons, rich = form
             result = InlineObj.article("hotaru-form", self.t("inline.form"), form_text, parse_mode="HTML")
             if rich:
-                result["input_message_content"] = {"rich_message": {"_": "inputRichMessageHTML", **rich_html(form_text)}}
+                result["input_message_content"] = {"rich_message": {"_": "inputRichMessageHTML", **to_rich(form_text)}}
             if buttons:
                 result["reply_markup"] = {"inline_keyboard": buttons}
             await answer_tl(query, results=[result], cache_time=0, is_personal=True)
@@ -1123,7 +1124,7 @@ class Runtime:
             chat_id = getattr(command, "chat_id", None)
             msg_id = getattr(command, "id", None) or getattr(command, "msg_id", None)
             if self.app is not None and chat_id is not None and isinstance(msg_id, int):
-                plain, raw_ents = html_to_entities(text)
+                plain, raw_ents = to_entities(text)
                 ents = [e for e in raw_ents if int(e.get("length", 0)) > 0]
                 data_msg: dict[str, Any] = {"peer": chat_id, "id": msg_id, "message": plain}
                 if ents:
@@ -1138,9 +1139,9 @@ class Runtime:
             raise RuntimeError("inline bot is not ready")
         id_field: dict[str, Any] = cast('dict[str, Any]', inline_id) if isinstance(inline_id, dict) else {"_": "inputBotInlineMessageID", "raw": inline_id}
         if options.get("rich"):
-            data: dict[str, Any] = {"id": id_field, "message": "", "rich_message": {"_": "inputRichMessageHTML", **rich_html(text)}}
+            data: dict[str, Any] = {"id": id_field, "message": "", "rich_message": {"_": "inputRichMessageHTML", **to_rich(text)}}
         else:
-            plain, raw_ents = html_to_entities(text)
+            plain, raw_ents = to_entities(text)
             ents = [e for e in raw_ents if int(e.get("length", 0)) > 0]
             data = {"id": id_field, "message": plain}
             if ents:
@@ -1347,7 +1348,7 @@ class Runtime:
         body, buttons, rich = form
         result = InlineObj.article("hotaru-form", self.t("inline.form"), body, parse_mode="HTML", kbd={"inline_keyboard": [buttons]})
         if rich:
-            result["input_message_content"] = {"rich_message": {"_": "inputRichMessageHTML", **rich_html(body)}}
+            result["input_message_content"] = {"rich_message": {"_": "inputRichMessageHTML", **to_rich(body)}}
         await answer_tl(query, results=[result], cache_time=0, is_personal=True)
 
     async def _on_inline_callback(self, callback: Any) -> Any:
