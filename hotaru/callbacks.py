@@ -5,7 +5,6 @@ import hashlib
 import inspect
 import json
 import secrets
-import time
 import types
 from dataclasses import dataclass
 from pathlib import Path
@@ -273,7 +272,6 @@ class _Entry:
     binding: CallbackBinding
     value: dict[str, Any]
     consumed: bool = False
-    expires: float = 0.0
 
 
 def derive_key(seed: str) -> bytes:
@@ -287,15 +285,13 @@ class CallbackStore:
     def __init__(
         self,
         *,
-        ttl: float = 3600.0,
         max_items: int = 16384,
         secret: bytes | None = None,
         connection: Any = None,
         store: Any = None,
     ) -> None:
-        if ttl < 0 or max_items < 1:
+        if max_items < 1:
             raise ValueError("invalid callback limits")
-        self.ttl = ttl
         self.max_items = max_items
         self._key = secret or _derive_key(secrets.token_hex(16))
         self._connection = connection
@@ -321,10 +317,6 @@ class CallbackStore:
             "value TEXT NOT NULL, "
             "consumed INTEGER NOT NULL DEFAULT 0)"
         )
-        columns = {row[1] for row in self.connection.execute("PRAGMA table_info(callback_store)")}
-        if "expires" not in columns:
-            self.connection.execute("ALTER TABLE callback_store ADD COLUMN expires REAL NOT NULL DEFAULT 0")
-            self.connection.execute("UPDATE callback_store SET consumed = 1")
         self.connection.commit()
 
     def _seal(self) -> str:
@@ -350,14 +342,14 @@ class CallbackStore:
             return handle
         self._prune()
         handle = self._seal()
-        entry = _Entry(binding, value, consumed=False, expires=time.time() + self.ttl if self.ttl else 0.0)
+        entry = _Entry(binding, value, consumed=False)
         self._items[handle] = entry
         if self.connection is not None:
             chat_str = str(binding.chat_id) if binding.chat_id is not None else None
             val_str = json.dumps(value, ensure_ascii=False, default=str)
             self.connection.execute(
-                "INSERT INTO callback_store(handle, actor, chat_id, message_id, value, consumed, expires) VALUES (?, ?, ?, ?, ?, 0, ?)",
-                (handle, str(binding.actor), chat_str, binding.message_id, val_str, entry.expires),
+                "INSERT INTO callback_store(handle, actor, chat_id, message_id, value, consumed) VALUES (?, ?, ?, ?, ?, 0)",
+                (handle, str(binding.actor), chat_str, binding.message_id, val_str),
             )
             self.connection.commit()
         return handle
@@ -366,7 +358,7 @@ class CallbackStore:
         entry = self._items.get(handle)
         if entry is None and self.connection is not None:
             row = self.connection.execute(
-                "SELECT actor, chat_id, message_id, value, consumed, expires FROM callback_store WHERE handle = ?",
+                "SELECT actor, chat_id, message_id, value, consumed FROM callback_store WHERE handle = ?",
                 (handle,),
             ).fetchone()
             if row is not None:
@@ -384,7 +376,6 @@ class CallbackStore:
                     ),
                     val_data,
                     consumed=is_consumed,
-                    expires=float(row[5]),
                 )
                 self._items[handle] = entry
         return entry
@@ -396,8 +387,6 @@ class CallbackStore:
             raise CallbackDenied("callback is invalid")
         if entry.consumed:
             raise CallbackDenied("callback has already been used")
-        if entry.expires and entry.expires <= time.time():
-            raise CallbackDenied("callback has expired")
         chat_ok = entry.binding.chat_id in (None, 0) or str(entry.binding.chat_id) == str(binding.chat_id)
         message_ok = entry.binding.message_id in (None, 0) or entry.binding.message_id == binding.message_id
         actor_ok = str(entry.binding.actor) == str(binding.actor)
@@ -432,12 +421,11 @@ class CallbackStore:
         return self.issue(binding, value)
 
     def _prune(self) -> None:
-        now = time.time()
-        stale = [key for key, entry in self._items.items() if entry.consumed or (entry.expires and entry.expires <= now)]
+        stale = [key for key, entry in self._items.items() if entry.consumed]
         for key in stale:
             self._items.pop(key, None)
         if self.connection is not None:
-            self.connection.execute("DELETE FROM callback_store WHERE consumed = 1 OR (expires > 0 AND expires <= ?)", (now,))
+            self.connection.execute("DELETE FROM callback_store WHERE consumed = 1")
             self.connection.execute("DELETE FROM callback_store WHERE rowid IN (SELECT rowid FROM callback_store ORDER BY rowid DESC LIMIT -1 OFFSET ?)", (self.max_items - 1,))
             self.connection.commit()
         while len(self._items) >= self.max_items:
