@@ -767,7 +767,7 @@ class InlineManager:
             await app.core.fsm.start()
             tasks.append(asyncio.create_task(app.core.disp.consume(), name="hotaru:inline-dispatch"))
             await app.mt.start()
-            reader = app.mt._reader_task
+            reader = app.mt.reader_task
             if reader is None:
                 raise InlineError("inline bot reader did not start")
             tasks.append(reader)
@@ -850,7 +850,7 @@ class InlineManager:
         mt = getattr(main, "mt", None)
         if mt is None:
             return None
-        reader = getattr(mt, "_reader_task", None)
+        reader = mt.reader_task
         if reader is None or reader.done():
             return None
         try:
