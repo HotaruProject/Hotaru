@@ -2357,10 +2357,6 @@ class Runtime:
                 return
             if self.observatory is not None:
                 self.observatory.emit("inline", "started", username=self.inline.info.username)
-            try:
-                await self.is_premium(refresh=True)
-            except Exception:
-                pass
 
     def _inline_degraded(self, exc: BaseException) -> None:
         if self.observatory is not None:
