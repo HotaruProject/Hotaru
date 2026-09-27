@@ -1085,7 +1085,7 @@ class ModuleContext:
                 if kind in {"page", "text"}:
                     html = str(html) + buttons_html(buttons, kind=kind)
                     buttons = buttons if needs_form(buttons) else None
-                result = await self._bot_form(html, buttons, kwargs)
+                result = await self._bot_form(html, buttons, {**kwargs, "rich": True})
                 return result if isinstance(result, Response) else Response(True, "reply", getattr(self._source, "src", None), result)
             if kind == "inline":
                 from goygram.types.kbd import kbd_to_tl
@@ -1097,7 +1097,7 @@ class ModuleContext:
             allowed = await self.premium()
         if not allowed:
             if fb == "bot":
-                result = await self._bot_form(html, None, kwargs)
+                result = await self._bot_form(html, None, {**kwargs, "rich": True})
                 return result if isinstance(result, Response) else Response(True, "reply", getattr(self._source, "src", None), result)
             kwargs.pop("parse_mode", None)
             kwargs.setdefault("output", "auto")
