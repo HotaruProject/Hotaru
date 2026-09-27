@@ -721,7 +721,16 @@
     "bad_label": "Невідоме право: {label}",
     "no_owner_grant": "Права власника надаються через {prefix}owadd.",
     "usage": "<code>{prefix}owadd &lt;user_id|reply&gt;</code> — Додати власника\n<code>{prefix}owrm &lt;user_id|reply&gt;</code> — Видалити власника\n<code>{prefix}owls</code> — Список власників\n<code>{prefix}sgnew &lt;name&gt;</code> — Створити групу прав\n<code>{prefix}sgls</code> — Список груп\n<code>{prefix}sg &lt;name&gt;</code> — Учасники та правила групи\n<code>{prefix}sgdel &lt;name&gt;</code> — Видалити групу\n<code>{prefix}sgadd &lt;name&gt; &lt;user_id|reply&gt;</code> — Додати учасника\n<code>{prefix}sgrm &lt;name&gt; &lt;user_id|reply&gt;</code> — Видалити учасника\n<code>{prefix}rule &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;command|module&gt;/&lt;name&gt; [expiry]</code> — Додати правило доступу\n<code>{prefix}rulerm &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;rule&gt;</code> — Видалити правило\n<code>{prefix}ruleclr &lt;user|chat|sgroup&gt; [target]</code> — Очистити правила\n<code>{prefix}perm &lt;user_id&gt; &lt;admin|trusted|everyone&gt; [remove]</code> — Надати або відкликати права\n<code>{prefix}perms</code> — Список прав\n<code>{prefix}whois &lt;user_id&gt;</code> — Права користувача",
-    "account_owner": "Власника акаунта не можна видалити."
+    "account_owner": "Власника акаунта не можна видалити.",
+    "owner_confirm": "Надати <code>{user_id}</code> повний доступ: виконання коду, оновлення й призначення власників?",
+    "confirm": "Підтвердити",
+    "clear_confirm": "Видалити всі правила в області <code>{scope}</code>? Власники та ролі не зміняться.",
+    "kernel_rule": "Вбудовані команди лише для власників. Вибери наявну команду або модуль користувача.",
+    "invalid_target": "Потрібен числовий ID: додатний для користувача, ID чату для чату.",
+    "model": "Власник має повний доступ. admin/trusted — окремі ролі, не власники й не доступ до всіх команд. Правило відкриває вказану команду/модуль користувача; група об’єднує правила. Права акаунтів і можливості модулів окремі. Перевірка: <code>{prefix}whois ID команда</code>.",
+    "forever": "Безстроково",
+    "allowed": "<code>{command}</code>: дозволено в цьому чаті.",
+    "denied": "<code>{command}</code>: немає чинного доступу в цьому чаті або команда невідома."
   },
   "inline": {
     "form": "Форма Hotaru",

@@ -721,7 +721,16 @@
     "bad_label": "Белгісіз құқық: {label}",
     "no_owner_grant": "Ие құқығы {prefix}owadd арқылы беріледі.",
     "usage": "<code>{prefix}owadd &lt;user_id|reply&gt;</code> — Ие қосу\n<code>{prefix}owrm &lt;user_id|reply&gt;</code> — Иені жою\n<code>{prefix}owls</code> — Иелер тізімі\n<code>{prefix}sgnew &lt;name&gt;</code> — Құқық тобын құру\n<code>{prefix}sgls</code> — Топтар тізімі\n<code>{prefix}sg &lt;name&gt;</code> — Топ мүшелері мен ережелері\n<code>{prefix}sgdel &lt;name&gt;</code> — Топты жою\n<code>{prefix}sgadd &lt;name&gt; &lt;user_id|reply&gt;</code> — Қатысушы қосу\n<code>{prefix}sgrm &lt;name&gt; &lt;user_id|reply&gt;</code> — Қатысушыны жою\n<code>{prefix}rule &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;command|module&gt;/&lt;name&gt; [expiry]</code> — Рұқсат ережесін қосу\n<code>{prefix}rulerm &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;rule&gt;</code> — Ережені жою\n<code>{prefix}ruleclr &lt;user|chat|sgroup&gt; [target]</code> — Ережелерді тазарту\n<code>{prefix}perm &lt;user_id&gt; &lt;admin|trusted|everyone&gt; [remove]</code> — Құқық беру немесе қайтару\n<code>{prefix}perms</code> — Құқықтар тізімі\n<code>{prefix}whois &lt;user_id&gt;</code> — Пайдаланушы құқықтары",
-    "account_owner": "Аккаунт иесін жоюға болмайды."
+    "account_owner": "Аккаунт иесін жоюға болмайды.",
+    "owner_confirm": "<code>{user_id}</code> үшін толық рұқсат: код орындау, жаңарту және иелерді тағайындау?",
+    "confirm": "Растау",
+    "clear_confirm": "<code>{scope}</code> ережелерін жою керек пе? Иелер мен рөлдер өзгермейді.",
+    "kernel_rule": "Кірістірілген командалар тек иелерге арналған. Пайдаланушы командасын не модулін таңда.",
+    "invalid_target": "Сандық ID керек: пайдаланушы үшін оң сан, чат үшін чат ID.",
+    "model": "Иеде толық рұқсат бар. admin/trusted — бөлек рөлдер, иелер емес. Ереже көрсетілген пайдаланушы командасына/модуліне рұқсат береді; топ ережелерді біріктіреді. Аккаунт құқықтары мен модуль мүмкіндіктері бөлек. Тексеру: <code>{prefix}whois ID команда</code>.",
+    "forever": "Мерзімсіз",
+    "allowed": "<code>{command}</code>: осы чатта рұқсат бар.",
+    "denied": "<code>{command}</code>: осы чатта рұқсат жоқ немесе команда белгісіз."
   },
   "inline": {
     "form": "Hotaru пішіні",
