@@ -122,21 +122,26 @@ class AccountForm:
         self.source = SimpleNamespace(id=0, message_id=0, chat_id=uid, from_id=uid, src='mt')
         self.nonce: str | None = None
         self.mid: Any = None
+        self.handle: Any = None
 
     async def send(self, text: str, buttons: Any) -> None:
+        from hotaru.response import FormHandle
+        options = {'delete_source': False, 'module_id': 'accounts', 'callback_actor': self.source.from_id, 'command': 'acca'}
         with trusted_scope():
-            sent = await self.runtime._send_form(self.source, text, buttons, {'delete_source': False})
-        self.nonce = self.source._hotaru_inline_form_id[7:]
+            sent = await self.runtime._send_form(self.source, text, buttons, options)
+            key = self.source._hotaru_inline_form_id
+            self.handle = FormHandle(self.runtime, self.source, sent, key=key)
+            self.runtime.register_form(self.handle, self.source, text, buttons, options)
+        self.nonce = key[7:]
         self.source.id = sent['id']
         if self.mid is not None:
             self.runtime._form_inline_ids[self.nonce] = self.mid
 
     async def edit(self, text: str, buttons: Any = None) -> None:
-        from hotaru.runtime import InputContext
-        ctx = InputContext(self.runtime, self.source, None, '', None)
-        ctx.form_nonce = self.nonce
+        if self.handle is None:
+            raise RuntimeError('account form is not registered')
         with trusted_scope():
-            await ctx.edit(text, buttons=buttons or [])
+            await self.handle.edit(text, buttons=buttons or [])
 
     def bind(self, ctx: Any) -> None:
         mid = getattr(ctx, 'inline_message_id', None)
@@ -146,9 +151,10 @@ class AccountForm:
                 self.runtime._form_inline_ids[self.nonce] = mid
 
     async def delete(self) -> None:
-        if self.source.id:
-            with trusted_scope():
-                await delete_chat_msg(self.runtime.app, self.source.chat_id, self.source.id)
+        if self.handle is None:
+            return
+        with trusted_scope():
+            await self.handle.delete()
         for name in ('_inline_forms', '_form_inline_ids', '_form_module_ids', '_form_chosen'):
             values = getattr(self.runtime, name, None)
             if values is not None:
