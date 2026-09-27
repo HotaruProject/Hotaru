@@ -13,6 +13,7 @@ import inspect
 import io
 import os
 import re
+import signal
 import sys
 import pty
 import textwrap
@@ -1267,6 +1268,16 @@ def _build_py_helpers(ctx: Any, invocation: Any, reply: Any) -> dict[str, Any]:
     }
 
 
+def _kill_group(process: Any) -> None:
+    try:
+        os.killpg(os.getpgid(process.pid), signal.SIGKILL)
+    except Exception:
+        try:
+            process.kill()
+        except Exception:
+            pass
+
+
 async def command_sh(ctx: Any, invocation: Any) -> Any:
     raw = _get_raw_text(invocation)
     skip_output = False
@@ -1293,6 +1304,11 @@ async def command_sh(ctx: Any, invocation: Any) -> Any:
 
     env = os.environ.copy()
     env["TERM"] = "xterm"
+    env["PAGER"] = "cat"
+    env["SYSTEMD_PAGER"] = "cat"
+    env["GIT_PAGER"] = "cat"
+    env["GIT_TERMINAL_PROMPT"] = "0"
+    env["DEBIAN_FRONTEND"] = "noninteractive"
     bindir = os.path.dirname(sys.executable)
     env["PATH"] = f"{bindir}{os.pathsep}{env.get('PATH', '')}"
     if sys.prefix != getattr(sys, "base_prefix", sys.prefix):
@@ -1313,10 +1329,11 @@ async def command_sh(ctx: Any, invocation: Any) -> Any:
 
     process = await asyncio.create_subprocess_exec(
         shell, "-c", cmd,
-        stdin=slave,
+        stdin=asyncio.subprocess.DEVNULL,
         stdout=slave,
         stderr=slave,
         env=env,
+        start_new_session=True,
     )
     os.close(slave)
     os.set_blocking(master, False)
@@ -1356,7 +1373,7 @@ async def command_sh(ctx: Any, invocation: Any) -> Any:
         except asyncio.TimeoutError:
             pass
     except asyncio.CancelledError:
-        process.kill()
+        _kill_group(process)
         await process.wait()
     finally:
         if not reader_task.done():
@@ -1512,7 +1529,7 @@ async def command_kill(ctx: Any, invocation: Any) -> Any:
     proc = _ACTIVE_SH.get(target_id)
     if proc is not None:
         try:
-            proc.kill()
+            _kill_group(proc)
             killed = True
         except Exception:
             pass
