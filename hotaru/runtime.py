@@ -141,6 +141,8 @@ class Runtime:
     cap_host: CapabilityHost | None = None
     lexicon: Lexicon | None = None
     closed: bool = False
+    activity: int = 0
+    _relaunch: bool = False
     _inline_forms: dict[str, tuple[str, list[list[dict[str, Any]]], bool]] | None = None
     _forms: dict[str, tuple[Any, Any, str, Any, dict[str, Any]]] | None = None
     _input_requests: dict[str, tuple[Any, ...]] | None = None

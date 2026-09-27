@@ -16,6 +16,7 @@ import sys
 import termios
 import time
 import unicodedata
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Dict, Sequence, TypedDict, cast
 
@@ -1437,7 +1438,7 @@ async def _sign_in(runtime: Any) -> dict[str, str]:
                 runtime.state.set_setting("api-id", api_id)
                 runtime.state.set_setting("api-hash", api_hash)
                 app.api_id, app.api_hash = api_id, api_hash
-                config.api_id, config.api_hash = api_id, api_hash
+                runtime.config = config = replace(config, api_id=api_id, api_hash=api_hash)
     from .accounts import parse_user_id
     uid = parse_user_id(config.session_name)
     if uid is not None and packed["user"].get("id") != uid:

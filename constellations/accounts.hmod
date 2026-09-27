@@ -162,6 +162,7 @@ class AccountUI:
         self.gate = asyncio.Lock()
         self.key = secrets.token_urlsafe(8)
         self.views: dict[str, str] = {}
+        self.watches: dict[str, asyncio.Task[Any]] = {}
         self.forms: dict[str, AccountForm] = {}
 
     def t(self, key: str, **params: Any) -> str:
@@ -271,6 +272,12 @@ class AccountUI:
             text += '\n' + self.t('access_off')
         return text, rows
 
+    def can_cancel(self, actor: Any, data: Any) -> bool:
+        login = self.runtime.account_login
+        data = cast('dict[str, Any]', data) if isinstance(data, dict) else {}
+        return (login is not None and actor == login.actor
+                and bool(login.sid) and data.get('sid') == login.sid and data.get('action') == 'cancel')
+
     def accepts(self, ctx: Any) -> bool:
         data = getattr(ctx, 'data', '')
         if isinstance(data, bytes):
@@ -278,13 +285,14 @@ class AccountUI:
         if not isinstance(data, str):
             return False
         actor = getattr(ctx, 'from_id', None)
-        if not isinstance(actor, int) or not self.access.allows(actor, 'view'):
+        if not isinstance(actor, int):
             return False
         try:
             value = self.runtime.callbacks.store.peek(data, CallbackBinding(actor, getattr(ctx, 'chat_id', None), None))
         except CallbackDenied:
             return False
-        return value.get('module') == 'accounts' and value.get('action_id') == 'panel'
+        return (value.get('module') == 'accounts' and value.get('action_id') == 'panel'
+                and (self.access.allows(actor, 'view') or self.can_cancel(actor, value.get('payload'))))
 
     async def open(self, ctx: Any, number: int | None = None) -> None:
         actor = ctx.message.from_id
@@ -310,9 +318,12 @@ class AccountUI:
         ids: dict[str, Any] = getattr(self.runtime, '_form_inline_ids', None) or {}
         forms: dict[str, tuple[str, list[list[dict[str, Any]]], bool]] = getattr(self.runtime, '_inline_forms', None) or {}
         for nonce, form in self.forms.items():
-            if mid is not None and mid == ids.get(nonce):
-                form.bind(ctx)
-                return form
+            known = ids.get(nonce)
+            if mid is not None and known is not None:
+                if mid == known:
+                    form.bind(ctx)
+                    return form
+                continue
             rows = forms.get(nonce, ('', [], False))[1]
             if any(button.get('callback_data') == data for row in rows for button in row):
                 form.bind(ctx)
@@ -327,7 +338,8 @@ class AccountUI:
             await form.edit(text, rows)
 
     async def callback(self, ctx: Any, data: dict[str, Any]) -> None:
-        if ctx.from_id != data.get('actor', self.runtime.app.session.self_id) or not self.access.allows(ctx.from_id, 'view'):
+        if (ctx.from_id != data.get('actor', self.runtime.app.session.self_id)
+                or not (self.access.allows(ctx.from_id, 'view') or self.can_cancel(ctx.from_id, data))):
             await ctx.answer(self.t('error.no_permission'), alert=True)
             return
         if data.get('key') != self.key:
@@ -338,17 +350,29 @@ class AccountUI:
             await self.runtime.account_login.callback(ctx, data)
             return
         key = str(getattr(ctx, 'inline_message_id', None) or (getattr(ctx, 'chat_id', None), getattr(ctx, 'msg_id', None)))
+        task = self.watches.pop(key, None)
+        if task is not None:
+            task.cancel()
         self.views[key] = secrets.token_urlsafe(8)
         ctx.account_view = (key, self.views[key])
         while len(self.views) > 128:
             self.views.pop(next(iter(self.views)))
         await ctx.answer()
         async with self.gate:
+            if task is not None:
+                await asyncio.gather(task, return_exceptions=True)
             with trusted_scope():
                 try:
                     await self.change(ctx, data)
                 except AccountError as exc:
                     await ctx.answer(self.error(exc), alert=True)
+                except Exception:
+                    if action in {'list', 'view', 'rights'}:
+                        handle = getattr(ctx, 'data', '')
+                        if isinstance(handle, bytes):
+                            handle = handle.decode('utf-8', 'replace')
+                        self.runtime.callbacks.store.unconsume(handle)
+                    raise
 
     async def watch(self, ctx: Any, number: int, uid: int, pid: int, page: int) -> None:
         key, version = ctx.account_view
@@ -362,6 +386,9 @@ class AccountUI:
                 await self.edit(ctx, text, rows)
         except Exception:
             return
+        finally:
+            if self.watches.get(key) is asyncio.current_task():
+                self.watches.pop(key, None)
 
     async def change(self, ctx: Any, data: dict[str, Any]) -> None:
         action = str(data.get('action', ''))
@@ -396,7 +423,10 @@ class AccountUI:
         if action == 'close':
             form = self.find_form(ctx)
             if form is None:
-                await ctx.delete()
+                if getattr(ctx, 'inline_message_id', None) is not None:
+                    await ctx.edit('\u200b', buttons=[])
+                else:
+                    await ctx.delete()
             else:
                 await form.delete()
                 if form.nonce is not None:
@@ -445,7 +475,7 @@ class AccountUI:
                         self.access.check(actor, 'autostart', profile.user_id)
                         manager.set_enabled(number, True)
                     pid = manager.spawn(number)
-                    self.runtime.tasks.spawn('accounts', self.watch(ctx, number, profile.user_id, pid, page), name=f'hotaru:account-panel:{number}')
+                    self.watches[ctx.account_view[0]] = self.runtime.tasks.spawn('accounts', self.watch(ctx, number, profile.user_id, pid, page), name=f'hotaru:account-panel:{number}')
                 elif action == 'toggle':
                     manager.set_enabled(number, bool(data['enabled']))
                 elif action == 'delete':
@@ -635,13 +665,14 @@ class AccountLogin:
             method = 'back' if data['action'] == 'back' else data.get('method')
             if method not in {'qr', 'phone', 'back'}:
                 return
+            task = self.task
             self.choice.set_result(method)
             await ctx.answer()
-            if method == 'back' and self.task is not None:
-                await self.task
+            if method == 'back' and task is not None:
+                await task
         elif data['action'] == 'cancel':
             await ctx.answer()
-            await self.cancel()
+            await self.cancel(str(data['sid']))
         else:
             accepted = self.accept(str(data.get('entry', '')))
             await ctx.answer(self.t('login.submitted') if accepted else self.t('login.input_expired'))
@@ -716,15 +747,18 @@ class AccountLogin:
             self.ticket = ''
             self.entries.clear()
 
-    async def cancel(self) -> bool:
-        if self.task is None or self.task.done():
-            return False
-        self.task.cancel()
-        await asyncio.gather(self.task, return_exceptions=True)
-        if self.sid:
-            self.clear()
-            await self.dismiss()
-        return True
+    async def cancel(self, sid: str | None = None) -> bool:
+        async with self.gate:
+            if sid is not None and sid != self.sid:
+                return False
+            if self.task is None or self.task.done():
+                return False
+            self.task.cancel()
+            await asyncio.gather(self.task, return_exceptions=True)
+            if self.sid:
+                self.clear()
+                await self.dismiss()
+            return True
 
     async def submit(self, ctx: Any, value: str) -> None:
         if not self.private(ctx):
