@@ -6,7 +6,7 @@ import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterator, Mapping, Sequence, cast
+from typing import Any, Callable, Iterator, Mapping, Sequence, cast
 
 from .state import StateNamespace, StateStore
 
@@ -438,6 +438,7 @@ class ConfigField:
     doc: str = ""
     secret: bool = False
     requires_restart: bool = False
+    default_key: str = ""
 
     def coerce(self, value: Any) -> Any:
         return self.validator.validate(value)
@@ -460,6 +461,7 @@ class ConfigField:
             "doc": self.doc,
             "secret": self.secret,
             "requires_restart": self.requires_restart,
+            "default_key": self.default_key,
         })
         return res
 
@@ -490,7 +492,7 @@ class ConfigSchema:
                     doc = str(spec.get("doc", ""))
                     sec = bool(spec.get("secret", False) or isinstance(v, SecretValidator))
                     rst = bool(spec.get("requires_restart", False))
-                    fields[key] = ConfigField(key=key, validator=v, default=default, description=desc, category=cat, doc=doc, secret=sec, requires_restart=rst)
+                    fields[key] = ConfigField(key=key, validator=v, default=default, description=desc, category=cat, doc=doc, secret=sec, requires_restart=rst, default_key=str(spec.get("default_key", "")))
                 else:
                     v = StringValidator(default=str(s or ""))
                     fields[key] = ConfigField(key=key, validator=v, default=str(s or ""))
@@ -546,16 +548,27 @@ class ConfigSchema:
 
 
 class ModuleConfig:
-    def __init__(self, module_id: str, state: StateNamespace, schema: ConfigSchema | Mapping[str, Any] | None = None) -> None:
+    def __init__(self, module_id: str, state: StateNamespace, schema: ConfigSchema | Mapping[str, Any] | None = None, *, translate: Callable[[str], str] | None = None) -> None:
+        self.translate = translate
         self.module_id = module_id
         self.state = state
         self.schema = ConfigSchema.from_manifest(schema) if schema is not None else ConfigSchema({})
 
+    def default(self, key: str, fallback: Any = None) -> Any:
+        field = self.schema.get(key)
+        if field is None:
+            return fallback
+        if field.default_key and self.translate is not None:
+            value = self.translate(field.default_key)
+            if value != field.default_key:
+                return field.coerce(value)
+        return field.default
+
     def get(self, key: str, default: Any = None) -> Any:
         field = self.schema.get(key)
-        fallback = field.default if field is not None else default
+        fallback = self.default(key, default)
         raw = self.state.get(key, fallback)
-        if raw is None and fallback is not None:
+        if (raw is None and fallback is not None) or (field is not None and field.default_key and isinstance(raw, str) and not raw.strip()):
             raw = fallback
         if field is not None and raw is not None:
             try:
@@ -585,13 +598,13 @@ class ModuleConfig:
     def reset(self, key: str | None = None) -> None:
         if key is not None:
             field = self.schema.get(key)
-            if field is not None:
+            if field is not None and not field.default_key:
                 self.set(key, field.default)
             else:
                 self.delete(key)
         else:
-            for k, field in self.schema.items():
-                self.set(k, field.default)
+            for k in self.schema:
+                self.reset(k)
 
     def all(self) -> dict[str, Any]:
         res: dict[str, Any] = {}
@@ -606,10 +619,11 @@ class ModuleConfig:
         result: dict[str, dict[str, Any]] = {}
         for key, field in self.schema.items():
             current = self.get(key)
-            if current != field.default:
+            default = self.default(key)
+            if current != default:
                 result[key] = {
                     "current": current,
-                    "default": field.default,
+                    "default": default,
                     "category": field.category,
                 }
         return result
@@ -621,7 +635,7 @@ class ModuleConfig:
             if field is not None and field.secret and mask_secrets:
                 data[key] = "••••••••"
             else:
-                data[key] = val
+                data[key] = self.state.get(key) if field is not None and field.default_key else val
         return data
 
     def import_dict(self, data: Mapping[str, Any]) -> tuple[int, list[str]]:
@@ -632,7 +646,11 @@ class ModuleConfig:
             if val == "••••••••":
                 continue
             try:
-                self.set(key, val)
+                field = self.schema.get(key)
+                if val is None and field is not None and field.default_key:
+                    self.reset(key)
+                else:
+                    self.set(key, val)
                 count += 1
             except Exception as e:
                 errors.append(f"{key}: {e}")
@@ -954,7 +972,7 @@ class ConfigManager:
                     continue
                 schema = ConfigSchema.from_manifest(schema_raw)
                 ns = runtime.state.namespace(manifest.module_id)
-                mod_conf = ModuleConfig(manifest.module_id, ns, schema)
+                mod_conf = ModuleConfig(manifest.module_id, ns, schema, translate=runtime.t)
                 for key, field in schema.items():
                     if (
                         term in manifest.module_id.casefold()
@@ -987,7 +1005,7 @@ class ConfigManager:
                     continue
                 schema = ConfigSchema.from_manifest(manifest.config_schema)
                 ns = runtime.state.namespace(manifest.module_id)
-                mod_conf = ModuleConfig(manifest.module_id, ns, schema)
+                mod_conf = ModuleConfig(manifest.module_id, ns, schema, translate=runtime.t)
                 data["modules"][manifest.module_id] = mod_conf.export_dict(mask_secrets=mask_secrets)
         return data
 
@@ -1011,7 +1029,7 @@ class ConfigManager:
                     continue
                 schema = ConfigSchema.from_manifest(manifest.config_schema)
                 ns = runtime.state.namespace(manifest.module_id)
-                mod_conf = ModuleConfig(manifest.module_id, ns, schema)
+                mod_conf = ModuleConfig(manifest.module_id, ns, schema, translate=runtime.t)
                 count, errs = mod_conf.import_dict(mod_vals)
                 report["modules"][mod_id] = count
                 report["errors"].extend([f"{mod_id}.{e}" for e in errs])

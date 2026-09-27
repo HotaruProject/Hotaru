@@ -543,7 +543,7 @@ class ModuleContext:
                     manifest = getattr(active.loaded, "manifest", None)
                     if manifest is not None:
                         schema = getattr(manifest, "config_schema", None)
-        return ModuleConfig(self.module_id, self.state, schema)
+        return ModuleConfig(self.module_id, self.state, schema, translate=self.t)
 
     @property
     def ui(self) -> Any:
