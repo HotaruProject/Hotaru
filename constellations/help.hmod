@@ -76,9 +76,9 @@ async def _show_help(ctx: Any, invocation: Any) -> Any:
                 limit=8,
             )
             if matches:
-                lines = [_module_line(runtime, hit["value"].loaded.manifest.module_id, hit["value"].loaded.manifest, False) for hit in matches]
-                await ctx.respond("".join(lines), parse_mode="HTML", rich=True, rich_fallback="bot")
-                return
+                active = matches[0]["value"]
+                module_id = active.loaded.manifest.module_id
+        if active is None:
             if runtime.state is not None and module_id in runtime.state.module_ids():
                 last_error = runtime.state.namespace(module_id).get("lasterror", ctx.t("common.none"))
                 await ctx.respond(
