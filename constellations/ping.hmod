@@ -17,11 +17,13 @@ async def command_ping(ctx: "ModuleContext", invocation: "CommandInvocation") ->
     start = time.perf_counter_ns()
     await ctx.respond("...")
     ping_ms = (time.perf_counter_ns() - start) / 10**6
-    uptime_s = time.monotonic()
-    h, rem = divmod(int(uptime_s), 3600)
+    uptime_s = max(0, int(time.monotonic() - ctx.runtime.started_at))
+    days, rem = divmod(uptime_s, 86400)
+    h, rem = divmod(rem, 3600)
     m, s = divmod(rem, 60)
+    uptime = " ".join(f"{value} {unit}" for value, unit in ((days, "д"), (h, "ч"), (m, "мин"), (s, "с")) if value) or "0 с"
     text = (
-        f"<b>Пинг</b> <code>{ping_ms:.3f} ms</code>\n"
-        f"<b>Аптайм</b> <code>{h}h {m:02d}m {s:02d}s</code>"
+        f"<b>Пинг</b> <code>{ping_ms:.3f} мс</code>\n"
+        f"<b>Аптайм</b> <code>{uptime}</code>"
     )
     await ctx.respond(text, parse_mode="HTML", output="edit")

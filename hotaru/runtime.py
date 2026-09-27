@@ -11,7 +11,7 @@ import sys
 import tempfile
 import time
 import traceback
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
@@ -116,6 +116,7 @@ class FormRecord:
 class Runtime:
     KERNEL_MODULE_ID = "kernel-core"
     config: RuntimeConfig
+    started_at: float = field(default_factory=time.monotonic, init=False)
     app: Any = None
     kernel: Kernel | None = None
     state: StateStore | None = None
