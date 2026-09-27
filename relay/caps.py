@@ -7,6 +7,7 @@ import socket
 import asyncio
 import os
 import secrets
+import shutil
 import stat
 from pathlib import Path
 import subprocess
@@ -135,7 +136,7 @@ PROVIDERS: dict[str, dict[str, Any]] = {
     },
     "shell": {
         "title": "Shell",
-        "detail": "developer shell commands in the module workspace with timeout and output limits",
+        "detail": "full shell access with the Hotaru process OS permissions, including host files, credentials and network; NOT confined to the module workspace. Command timeout and returned output limits still apply",
         "side_effect": "write",
     },
     "logs": {
@@ -287,7 +288,11 @@ class CapabilityHost:
         active = modules.get(module_id)
         if active is None:
             return False
-        return capability in active.loaded.manifest.capabilities
+        manifest = active.loaded.manifest
+        return capability in manifest.capabilities and (
+            self.runtime._is_kernel_module(module_id)
+            or self.runtime._caps_consented(module_id, self.runtime._caps_fingerprint(manifest))
+        )
 
     async def call(self, module_id: str, capability: str, payload: dict[str, Any]) -> Any:
         self.runtime.note_activity()
@@ -444,13 +449,16 @@ class CapabilityHost:
         workspace = self.runtime.config.state_path.parent / "workspaces" / module_id
         workspace.mkdir(parents=True, exist_ok=True)
         env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "HOME": str(workspace), "LANG": "C.UTF-8"}
+        if os.name == "nt":
+            env.update({key: os.environ[key] for key in ("SystemRoot", "COMSPEC", "PATHEXT") if key in os.environ})
         try:
             loop = asyncio.get_running_loop()
             proc = await loop.run_in_executor(
                 None,
                 partial(
                     subprocess.run,
-                ["/bin/sh", "-lc", command],
+                command if os.name == "nt" else [shutil.which("sh") or "/bin/sh", "-lc", command],
+                shell=os.name == "nt",
                 cwd=str(workspace),
                 env=env,
                 capture_output=True,
@@ -521,11 +529,18 @@ class CapabilityHost:
 
     def _file_op(self, module_id: str, payload: dict[str, Any], meta: dict[str, Any]) -> Any:
         op = payload.get("op", "read")
+        root = self.runtime.config.state_path.parent / "workspaces" / module_id
+        root.mkdir(parents=True, exist_ok=True)
+        if op == "list":
+            fd = _workspace_open(root, "", os.O_RDONLY | os.O_DIRECTORY)
+            try:
+                with os.scandir(fd) as entries:
+                    return sorted(entry.name for entry in entries if entry.is_file(follow_symlinks=False))
+            finally:
+                os.close(fd)
         name = payload.get("name")
         if not isinstance(name, str) or not name or "/" in name or "\\" in name or ".." in name or name.startswith(".") or "\x00" in name or len(name) > 190:
             raise PermissionError("file name must be a simple relative name")
-        root = self.runtime.config.state_path.parent / "workspaces" / module_id
-        root.mkdir(parents=True, exist_ok=True)
         target = root / name
         if root.is_symlink() or target.resolve().parent != root.resolve():
             raise PermissionError("file path escapes the module workspace")
@@ -546,13 +561,6 @@ class CapabilityHost:
             with os.fdopen(fd, "w", encoding="utf-8") as handle:
                 handle.write(content)
             return {"bytes": len(content.encode())}
-        if op == "list":
-            fd = _workspace_open(root, "", os.O_RDONLY | os.O_DIRECTORY)
-            try:
-                with os.scandir(fd) as entries:
-                    return sorted(entry.name for entry in entries if entry.is_file(follow_symlinks=False))
-            finally:
-                os.close(fd)
         raise PermissionError(f"unknown file op: {op}")
 
     def _check_net_target(self, url: str) -> urllib.parse.ParseResult:
@@ -623,6 +631,8 @@ class CapabilityHost:
         if state is None:
             raise PermissionError("state store is not ready")
         op = payload.get("op", "get")
+        if op == "keys":
+            return list(state.namespace(module_id).keys())
         key = payload.get("key")
         if not isinstance(key, str) or not key or "\x00" in key or len(key) > 1024:
             raise PermissionError("state op requires a valid key")
@@ -640,8 +650,6 @@ class CapabilityHost:
             return {"ok": True}
         if op == "delete":
             return {"deleted": namespace.delete(key)}
-        if op == "keys":
-            return list(namespace.keys())
         raise PermissionError(f"unknown state op: {op}")
 
     def _module_brief(self, module_id: str) -> dict[str, Any]:
