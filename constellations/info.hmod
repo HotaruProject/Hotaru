@@ -1,0 +1,72 @@
+HOTARU = {
+    "id": "info",
+    "version": "1.4.0",
+    "commands": ["info"],
+    "capabilities": ["mt"],
+    "config_schema": {
+        "template": {
+            "type": "str",
+            "default": (
+                "<b>Hotaru</b> <code>ff4a0e6</code>\n\n"
+                "<b>Аптайм</b> · <code>{uptime}</code>\n"
+                "<b>Модули</b> · <code>{modules}</code>"
+            ),
+            "description": "Шаблон .info, плейсхолдеры {version} {uptime} {modules}",
+            "category": "General",
+        },
+    },
+    "lexicon": {
+        "en": {
+            "description": "Userbot info card",
+            "commands": {"info": {"description": "Show userbot info"}},
+        },
+        "ru": {
+            "description": "Карточка юзербота",
+            "commands": {"info": {"description": "Информация о юзерботе"}},
+        },
+    },
+}
+
+import subprocess
+import time
+
+
+def _placeholders(ctx: Any) -> dict:
+    runtime = ctx.runtime
+    version = "unknown"
+    try:
+        out = subprocess.run(
+            ["git", "-C", "/root/Hotaru", "rev-parse", "--short", "HEAD"],
+            capture_output=True, timeout=5,
+        )
+        if out.returncode == 0:
+            version = out.stdout.decode().strip()
+    except Exception:
+        pass
+    uptime_s = time.monotonic()
+    h, rem = divmod(int(uptime_s), 3600)
+    m, s = divmod(rem, 60)
+    uptime = f"{h}h {m:02d}m {s:02d}s"
+    modules = 0
+    mod_mgr = getattr(runtime, "modules", None)
+    if mod_mgr is not None and hasattr(mod_mgr, "items"):
+        modules = len(mod_mgr.items())
+    return {
+        "version": version,
+        "uptime": uptime,
+        "modules": modules,
+    }
+
+
+async def command_info(ctx, invocation):
+    template = ctx.config.get("template")
+    if not template:
+        await ctx.respond("info: template is empty")
+        return
+    values = _placeholders(ctx)
+    try:
+        text = template.format(**values)
+    except (KeyError, IndexError, ValueError) as exc:
+        await ctx.respond(f"info: bad placeholder {exc}")
+        return
+    await ctx.respond(text, parse_mode="HTML", rich=True, rich_fallback="bot")
