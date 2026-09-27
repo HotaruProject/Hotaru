@@ -536,7 +536,7 @@
     },
     "ping": {
       "description": "ユーザーボットの応答確認",
-      "template": "<b>応答時間</b> <code>{latency} ms</code>\n<b>稼働時間</b> <code>{uptime}</code>",
+      "template": "<b> ping</b> <code>{latency} ms</code>\n<b>アップタイム</b> <code>{uptime}</code>",
       "commands": {
         "ping": {
           "description": "ユーザーボットのpingを測定"

@@ -536,7 +536,7 @@
     },
     "ping": {
       "description": "Перевірка відгуку юзербота",
-      "template": "<b>Пінг</b> <code>{latency} мс</code>\n<b>Час роботи</b> <code>{uptime}</code>",
+      "template": "<b>Пінг</b> <code>{latency} ms</code>\n<b>Аптайм</b> <code>{uptime}</code>",
       "commands": {
         "ping": {
           "description": "Замір пінгу юзербота"

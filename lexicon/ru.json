@@ -530,7 +530,7 @@
     },
     "ping": {
       "description": "Проверка отклика юзербота",
-      "template": "<b>Пинг</b> <code>{latency} мс</code>\n<b>Аптайм</b> <code>{uptime}</code>",
+      "template": "<b>Пинг</b> <code>{latency} ms</code>\n<b>Аптайм</b> <code>{uptime}</code>",
       "commands": {
         "ping": {
           "description": "Замер пинга юзербота"
