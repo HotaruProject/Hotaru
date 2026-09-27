@@ -491,7 +491,7 @@ class SandboxContext:
         reply_to = target.get("reply_to")
         if not isinstance(reply_to, dict):
             return None
-        fetched = await _cap_call("fetch", {"op": "reply", "peer": self.chat_id, "reply_to": reply_to})
+        fetched = _cap_call("fetch", {"op": "reply", "peer": self.chat_id, "reply_to": reply_to})
         return fetched if isinstance(fetched, dict) else None
 
     async def reply_text(self, message=None):
@@ -502,11 +502,11 @@ class SandboxContext:
         return str(text) if text is not None else None
 
     async def msg(self, chat_id, message_id):
-        fetched = await _cap_call("fetch", {"op": "message", "peer": chat_id, "id": int(message_id)})
+        fetched = _cap_call("fetch", {"op": "message", "peer": chat_id, "id": int(message_id)})
         return fetched if isinstance(fetched, dict) else None
 
     async def resolve(self, value):
-        fetched = await _cap_call("fetch", {"op": "entity", "value": value})
+        fetched = _cap_call("fetch", {"op": "entity", "value": value})
         return fetched if isinstance(fetched, dict) else None
 
     @staticmethod
@@ -564,10 +564,10 @@ class SandboxContext:
         return _respond_call({"content": caption or "", "kwargs": kwargs})
 
     async def upload_file(self, source, **kwargs):
-        return await _cap_call("assets", {"op": "upload", "file": source, "filename": kwargs.get("file_name")})
+        return _cap_call("assets", {"op": "upload", "file": source, "filename": kwargs.get("file_name")})
 
     async def download_file(self, source, destination, **kwargs):
-        return await _cap_call("assets", {"op": "download", "message": source, "destination": destination})
+        return _cap_call("assets", {"op": "download", "message": source, "destination": destination})
 
     def file_media(self, up, *, mime="application/octet-stream", file_name=None, force_file=True):
         name = file_name or (up.get("name") if isinstance(up, dict) else None) or "file"
@@ -608,10 +608,10 @@ class SandboxContext:
 
 class _AssetsProxy:
     async def upload(self, file, filename=None):
-        return await _cap_call("assets", {"op": "upload", "file": file, "filename": filename})
+        return _cap_call("assets", {"op": "upload", "file": file, "filename": filename})
         
     async def download(self, message, destination=None):
-        return await _cap_call("assets", {"op": "download", "message": message, "destination": destination})
+        return _cap_call("assets", {"op": "download", "message": message, "destination": destination})
 
 
 class _RichProxy:
