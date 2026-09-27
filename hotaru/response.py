@@ -1,17 +1,17 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import secrets
 import tempfile
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Literal, cast
 from collections.abc import Awaitable
 
 from goygram.errors import FloodWaitError, MessageNotModifiedError
-from relay.inline import InlineError
 
 from .state import StateNamespace
 from .plainfmt import rich_to_plain
@@ -334,7 +334,7 @@ class ResponseService:
         result: list[Any] = []
         for index, part in enumerate(parts):
             options = dict(kwargs)
-            options["output"] = "edit" if index == 0 and kwargs.get("output", "auto") == "auto" else kwargs.get("output", "reply")
+            options["output"] = kwargs.get("output", "auto") if index == 0 else "reply"
             result.append(await self.answer(message, text=part, **options))
         return result
 
@@ -347,7 +347,7 @@ class ResponseService:
         result: list[Any] = []
         for index, part in enumerate(parts):
             options = dict(kwargs)
-            options["output"] = "edit" if index == 0 and kwargs.get("output", "auto") == "auto" else "reply"
+            options["output"] = kwargs.get("output", "auto") if index == 0 else "reply"
             result.append(await self.answer(message, text=part, **options))
         return result
 
@@ -432,6 +432,8 @@ class ModuleContext:
     runtime: Any = None
     _premium: bool | None = None
     _response_source: Any = None
+    _response_form: Any = None
+    _response_lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False)
 
     def __repr__(self) -> str:
         return f"ModuleContext({self.module_id!r})"
@@ -631,7 +633,7 @@ class ModuleContext:
         return bool(self._premium) if self._premium is not None else False
 
     async def _via_bot(self, buttons: Any, kind: str | None) -> bool:
-        if not await self.premium():
+        if kind == "inline" or not await self.premium():
             return True
         return needs_callback(buttons)
 
@@ -649,11 +651,37 @@ class ModuleContext:
                 actor = getter("from_id") if callable(getter) else None
             if isinstance(actor, int):
                 kwargs["callback_actor"] = actor
-        return await self.form_sender(self._delivery_source, text, buttons or [], kwargs)
+        kwargs.setdefault("module_id", self.module_id)
+        if self.runtime is not None and self.runtime.kernel is not None:
+            kwargs.setdefault("command", self.runtime.kernel.parser.command_name(getattr(self._source, "text", "") or ""))
+        source = self._delivery_source
+        kwargs.setdefault("delete_source", self._response_source is not None or self._outgoing)
+        result = await self.form_sender(source, text, buttons or [], kwargs)
+        key = getattr(source, "_hotaru_inline_form_id", None)
+        handle = FormHandle(self.runtime, source, result, key=key)
+        if self.runtime is not None:
+            self.runtime.register_form(handle, source, text, buttons or [], kwargs)
+        self._response_form = handle
+        return handle
 
     async def _deliver(self, text: str | None = None, **kwargs: Any) -> Any:
         if text is not None:
             kwargs["text"] = text
+        output = kwargs.get("output", "auto")
+        if output == "auto" or output == "edit" and self._response_source is None and not self._outgoing:
+            kwargs["output"] = "edit" if self._response_source is not None or self._outgoing else "reply"
+        native = kwargs.pop("rich_message", None)
+        if native is not None:
+            if not isinstance(native, dict) or native.get("_") not in {"inputRichMessage", "inputRichMessageHTML"}:
+                raise ResponseError("expected a native Rich input")
+            if native.get("_") == "inputRichMessageHTML":
+                return await self._deliver(text=str(native.get("html", "")), rich=True, **kwargs)
+            if not await self.premium():
+                raise ResponseError("native Rich blocks require Premium; use HTML for a plain fallback")
+            source = self._delivery_source
+            result = await self._trusted_send_rich(native, getattr(source, "chat_id", None), message_id=getattr(source, "id", None), **kwargs)
+            self._remember_response(result)
+            return result
         media = kwargs.pop("media", None)
         if media is not None:
             return await self.send_file(media, kwargs.pop("text", None), **kwargs)
@@ -680,12 +708,12 @@ class ModuleContext:
                 use_rich = False
         if kwargs.get("text") is not None:
             kwargs.setdefault("parse_mode", "HTML")
-        if kwargs.get("buttons") and await self._via_bot(kwargs["buttons"], kind or ("page" if use_rich else "inline")):
+        if kwargs.get("buttons") and (not use_rich or await self._via_bot(kwargs["buttons"], kind or "page")):
             return await self._bot_form(kwargs.get("text", ""), kwargs["buttons"] if (kind or "inline") == "inline" or needs_form(kwargs["buttons"]) else None, kwargs)
-        if kwargs.get("buttons") and kind in {"page", "text"}:
+        if kwargs.get("buttons") and use_rich and kind in {"page", "text"}:
             kwargs["text"] = str(kwargs.get("text") or "") + buttons_html(kwargs.pop("buttons"), kind=kind)
             use_rich = True
-        if kwargs.get("text") is not None and use_rich and self.cap_host is not None:
+        if kwargs.get("text") is not None and use_rich:
             value = kwargs.pop("text")
             limit = int(kwargs.pop("split_limit", 4096))
             file_limit = int(kwargs.pop("file_limit", 200000))
@@ -702,11 +730,26 @@ class ModuleContext:
                 return result
             return await self.send_rich(value, **kwargs)
         parse_mode = kwargs.pop("parse_mode", None)
-        result = await self.responses.answer(self._delivery_source, parse_mode=parse_mode, **kwargs)
+        value = kwargs.get("text")
+        limit = int(kwargs.pop("split_limit", 4096))
+        file_limit = int(kwargs.pop("file_limit", 200000))
+        filename = kwargs.pop("filename", "response.html")
+        preserve_html = kwargs.pop("preserve_html", True)
+        if isinstance(value, str) and len(value) > limit:
+            if len(value) > file_limit:
+                return await self.respond_file(value.encode("utf-8"), file_name=filename, output=kwargs.get("output", "auto"))
+            kwargs.pop("text")
+            result = await self.responses.smart_split(self._delivery_source, value, limit=limit, file_limit=file_limit, preserve_html=preserve_html, parse_mode=parse_mode, **kwargs)
+        else:
+            result = await self.responses.answer(self._delivery_source, parse_mode=parse_mode, **kwargs)
         self._remember_response(result)
         return result
 
     async def respond(self, content: Any = None, **kwargs: Any) -> Any:
+        async with self._response_lock:
+            return await self._respond(content, **kwargs)
+
+    async def _respond(self, content: Any = None, **kwargs: Any) -> Any:
         callback = kwargs.pop("callback", None)
         if callback is not None:
             text = content if isinstance(content, str) else kwargs.pop("text", "")
@@ -718,6 +761,15 @@ class ModuleContext:
             kwargs.pop("rich_fallback", None)
             if buttons is not None:
                 norm_btns = self._normalize_buttons(buttons)
+                form_id = getattr(callback, "_hotaru_form_id", None)
+                entry = (getattr(self.runtime, "_forms", None) or {}).get(form_id)
+                if entry is not None and self.callback_router is not None:
+                    from .callbacks import CallbackBinding
+                    for row in norm_btns:
+                        for button in row:
+                            token = button.get("callback_data")
+                            if isinstance(token, str):
+                                button["callback_data"] = self.callback_router.store.rebind(token, CallbackBinding(getattr(callback, "from_id", 0), None, 0), scope={"form_id": form_id, "command": entry[4].get("command")})
                 kwargs["kbd"] = {"inline_keyboard": norm_btns}
                 kwargs["buttons"] = norm_btns
             try:
@@ -726,11 +778,13 @@ class ModuleContext:
                 pass
             return await callback.edit(str(text or ""), **kwargs)
         mode = kwargs.pop("mode", kwargs.pop("output", "auto"))
-        delete_source = kwargs.pop("delete_source", False)
+        delete_source = kwargs.pop("delete_source", None)
         if kwargs.pop("force_reply", False):
             mode = "reply"
         if mode == "auto":
-            mode = "edit" if self._response_source is not None or self._outgoing else "reply"
+            mode = "edit" if self._response_source is not None or self._response_form is not None or self._outgoing else "reply"
+        if mode == "edit" and self._response_source is None and self._response_form is None and not self._outgoing:
+            mode = "reply"
         if mode not in {"edit", "reply"}:
             raise ResponseError("response mode must be edit, reply, or auto")
         if delete_source == "auto":
@@ -751,16 +805,17 @@ class ModuleContext:
             else:
                 kwargs.setdefault("media", content)
         buttons = kwargs.pop("buttons", None)
+        if mode == "edit" and self._response_form is not None:
+            kwargs.pop("inline", None)
+            kwargs.pop("bot", None)
+            return await self._response_form.edit(kwargs.pop("text", ""), self._normalize_buttons(buttons) if buttons is not None else [], **kwargs)
+        if delete_source is not None and (buttons is not None or kwargs.get("inline") or kwargs.get("form")):
+            kwargs["delete_source"] = delete_source
         if kwargs.pop("inline", False):
             self.runtime.purge_forms() if self.runtime is not None else None
-            try:
-                result = await self.inline_form(kwargs.pop("text", ""), buttons, **kwargs)
-            except (InlineError, RuntimeError, ResponseError, Exception):
-                kwargs["buttons"] = buttons
-                kwargs["buttons_as"] = "inline"
-                kwargs["output"] = mode
-                result = await self._deliver(**kwargs)
+            result = await self.inline_form(kwargs.pop("text", ""), buttons, **kwargs)
         elif kwargs.pop("bot", False):
+            bot_text = kwargs.get("text", "")
             chat_id = kwargs.pop("chat_id", getattr(self._source, "chat_id", None))
             if kwargs.get("rich_message") is not None:
                 result = await self.bot.rich_send(chat_id, kwargs.pop("rich_message"), buttons=buttons, **kwargs)
@@ -768,6 +823,13 @@ class ModuleContext:
                 result = await self.bot.send_photo(chat_id, kwargs.pop("media"), caption=kwargs.pop("text", ""), buttons=buttons, **kwargs)
             else:
                 result = await self.bot.send_message(chat_id, kwargs.pop("text", ""), buttons=buttons, **kwargs)
+            from types import SimpleNamespace
+            source = SimpleNamespace(chat_id=chat_id, src="bot")
+            handle = FormHandle(self.runtime, source, result)
+            if self.runtime is not None:
+                self.runtime.register_form(handle, source, bot_text, buttons or [], {"module_id": self.module_id, "callback_actor": getattr(self._source, "from_id", None), **kwargs})
+            self._response_form = handle
+            result = handle
         elif kwargs.get("form") is not None:
             form = kwargs.pop("form")
             result = await self.form(form.get("text", ""), form.get("buttons"), output=mode, **kwargs)
@@ -777,6 +839,8 @@ class ModuleContext:
             if kind is not None and kind not in {"inline", "page", "text"}:
                 raise ResponseError("buttons_as must be inline, page, or text")
             place = kind or ("page" if kwargs.get("rich") else "inline")
+            if not kwargs.get("rich"):
+                place = "inline"
             if await self._via_bot(buttons, place):
                 text = kwargs.pop("text", "")
                 if place in {"page", "text"}:
@@ -796,8 +860,13 @@ class ModuleContext:
                 result = await self._deliver(rich_message=kwargs.pop("rich_message"), **kwargs)
             else:
                 result = await self._deliver(**kwargs)
-        if delete_source:
-            await self._delete_source()
+        if isinstance(result, FormHandle):
+            self._response_form = result
+        if delete_source and self._outgoing and not isinstance(result, FormHandle):
+            try:
+                await self._delete_source()
+            except Exception as exc:
+                logging.getLogger(__name__).warning("response cleanup failed: %s", type(exc).__name__)
         return result
 
     async def smart_respond(self, content: Any = None, **kwargs: Any) -> Any:
@@ -829,7 +898,7 @@ class ModuleContext:
         self_id = getattr(getattr(app, "session", None), "self_id", None)
         self._response_source = Obj(
             getattr(self._source, "src", "mt"),
-            {"kind": "msg", "msg_id": message_id, "chat_id": chat_id, "from_id": self_id, "is_me": True, "_hotaru_actor_id": getattr(self._source, "from_id", None)},
+            {"kind": "msg", "msg_id": message_id, "chat_id": chat_id, "from_id": self_id, "is_me": True, "_hotaru_actor_id": getattr(self._source, "from_id", None), "_hotaru_command": self.runtime.kernel.parser.command_name(getattr(self._source, "text", "") or "") if getattr(self.runtime, "kernel", None) is not None else None},
             app,
         )
 
@@ -879,8 +948,8 @@ class ModuleContext:
             data["message"] = plain
             if ents:
                 data["entities"] = ents
-        source_id = getattr(self._source, "id", None)
-        if output in {"edit", "auto"} and self._outgoing and isinstance(source_id, int):
+        source_id = getattr(self._delivery_source, "id", None)
+        if output in {"edit", "auto"} and (self._response_source is not None or self._outgoing) and isinstance(source_id, int):
             edit_data = {key: value for key, value in data.items() if key != "random_id"}
             edit_data["id"] = source_id
             try:
@@ -894,7 +963,7 @@ class ModuleContext:
         reply_to = kwargs.pop("reply_to", None)
         topic_id = kwargs.pop("topic_id", self.topic_id)
         if reply_to is None:
-            mid = getattr(self._source, "id", None)
+            mid = reply_message_id(self._source) or getattr(self._source, "id", None)
             if isinstance(mid, int) and mid > 0:
                 header: dict[str, Any] = {"_": "inputReplyToMessage", "reply_to_msg_id": mid}
                 if isinstance(topic_id, int) and topic_id > 0:
@@ -943,14 +1012,7 @@ class ModuleContext:
         if buttons and isinstance(buttons[0], dict):
             buttons = [buttons]
         buttons = self._normalize_buttons(buttons)
-        kwargs["buttons"] = buttons
-        kwargs["text"] = text
-        kwargs.setdefault("module_id", self.module_id)
-        result = await self._deliver(**kwargs)
-        handle = FormHandle(self.runtime, self._source, result)
-        if self.runtime is not None:
-            self.runtime.register_form(handle, self._source, text, buttons, kwargs)
-        return handle
+        return await self._bot_form(text, buttons, kwargs)
 
     def _normalize_buttons(self, buttons: Any) -> Any:
         if not buttons or self.callback_router is None:
@@ -986,13 +1048,7 @@ class ModuleContext:
             value = [value]
         if self.callback_router is not None:
             value = self._normalize_buttons(value)
-        kwargs.setdefault("module_id", self.module_id)
-        result = await self.form_sender(self._source, text, value, kwargs)
-        key = getattr(self._source, "_hotaru_inline_form_id", None)
-        handle = FormHandle(self.runtime, self._source, result, key=key)
-        if self.runtime is not None:
-            self.runtime.register_form(handle, self._source, text, value, kwargs)
-        return handle
+        return await self._bot_form(text, value, kwargs)
 
     async def reply_html(self, text: str, **kwargs: Any) -> Response:
         kwargs.setdefault("output", "reply")
@@ -1007,18 +1063,13 @@ class ModuleContext:
         return await self.send_file(media, caption, **kwargs)
 
     async def respond_media(self, media: Any, **kwargs: Any) -> Response:
-        kwargs.setdefault("output", "reply")
+        kwargs.setdefault("output", "auto")
         return await self._deliver(media=media, **kwargs)
 
     async def respond_rich(self, rich_message: Any, **kwargs: Any) -> Response:
         if isinstance(rich_message, str):
-            return await self.send_rich(rich_message, **kwargs)
-        if not isinstance(rich_message, dict):
-            raise ResponseError("rich_message must be HTML text or a native input object")
-        buttons = kwargs.pop("buttons", None)
-        if buttons is not None and self.form_sender is not None:
-            return await self.form_sender(self._source, rich_message, buttons, kwargs)
-        return await self._context_tg_call("messages.sendMessage", {"peer": self._source.chat_id, "message": "", "rich_message": rich_message, **kwargs})
+            return await self.respond(rich_message, rich=True, **kwargs)
+        return await self.respond(rich_message=rich_message, **kwargs)
 
     async def send_rich(self, html: str, **kwargs: Any) -> Response:
         buttons = kwargs.pop("buttons", None)
@@ -1049,12 +1100,15 @@ class ModuleContext:
                 result = await self._bot_form(html, None, kwargs)
                 return result if isinstance(result, Response) else Response(True, "reply", getattr(self._source, "src", None), result)
             kwargs.pop("parse_mode", None)
+            kwargs.setdefault("output", "auto")
             return await self._deliver(text=rich_to_plain(html), **kwargs)
         source = self._delivery_source
         peer = getattr(source, "chat_id", None)
         if peer is None:
             raise ResponseError("rich message target is missing")
-        output = kwargs.pop("output", "reply")
+        output = kwargs.pop("output", "auto")
+        if output == "auto" or output == "edit" and self._response_source is None and not self._outgoing:
+            output = "edit" if self._response_source is not None or self._outgoing else "reply"
         message_id = getattr(source, "id", None)
         if self.runtime is not None and getattr(self.runtime, "app", None) is not None:
             response = await self._trusted_send_rich(html, peer, output=output, message_id=message_id, **kwargs)
@@ -1067,7 +1121,7 @@ class ModuleContext:
             data.pop("peer", None)
             result = await self._context_tg_call("messages.editMessage", {"peer": peer, **data})
             return Response(True, "edit", getattr(self._source, "src", None), result)
-        reply_to = kwargs.pop("reply_to", None) or message_id
+        reply_to = kwargs.pop("reply_to", None) or reply_message_id(self._source) or getattr(self._source, "id", None)
         topic_id = kwargs.pop("topic_id", None) or self.topic_id
         if reply_to is not None:
             data["reply_to"] = {"_": "inputReplyToMessage", "reply_to_msg_id": int(reply_to), **( {"top_msg_id": int(topic_id)} if topic_id is not None else {})}
@@ -1077,15 +1131,15 @@ class ModuleContext:
         self._remember_response(response)
         return response
 
-    async def _trusted_send_rich(self, html: str, peer: Any, *, output: str = "reply", message_id: int | None = None, **kwargs: Any) -> Response:
+    async def _trusted_send_rich(self, html: Any, peer: Any, *, output: str = "reply", message_id: int | None = None, **kwargs: Any) -> Response:
         import secrets as _secrets
         app = self.runtime.app
-        rich_message = {"_": "inputRichMessageHTML", **rich_html(html)}
+        rich_message = html if isinstance(html, dict) else {"_": "inputRichMessageHTML", **rich_html(html)}
         if output == "edit" and message_id is not None:
             with trusted_scope():
                 result = await app.mt_messages_edit_message( peer=peer, id=int(message_id), message="", rich_message=rich_message)
             return Response(True, "edit", getattr(self._source, "src", None), result)
-        reply_to = kwargs.pop("reply_to", None) or message_id
+        reply_to = kwargs.pop("reply_to", None) or reply_message_id(self._source) or getattr(self._source, "id", None)
         topic_id = kwargs.pop("topic_id", None) or self.topic_id
         data = {"peer": peer, "message": "", "random_id": _secrets.randbits(63), "rich_message": rich_message}
         if reply_to is not None:

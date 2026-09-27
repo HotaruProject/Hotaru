@@ -61,7 +61,12 @@ class TsecRule:
             raise AccessError("rule must reference a command or a module")
         if not self.rule:
             raise AccessError("rule value is required")
-        if self.expires < 0:
+        if self.target_type in {"user", "chat"} and (not isinstance(self.target, int) or isinstance(self.target, bool) or self.target == 0 or self.target_type == "user" and self.target < 0):
+            raise AccessError("rule target must be a valid numeric ID")
+        if self.target_type == "sgroup" and (not isinstance(self.target, str) or not self.target.isalnum() or len(self.target) > 32):
+            raise AccessError("rule target must be a valid group name")
+        import math
+        if not math.isfinite(self.expires) or self.expires < 0:
             raise AccessError("rule duration must not be negative")
 
 
@@ -334,12 +339,12 @@ class AccessManager:
         rules.append(rule)
         self.save_tsec(rules)
 
-    def remove_tsec(self, target_type: str, target: int | str, rule: str) -> bool:
+    def remove_tsec(self, target_type: str, target: int | str, rule: str, rule_type: str | None = None) -> bool:
         if target_type == "sgroup":
             group = self.sgroup(str(target))
             if group is None:
                 return False
-            permissions = [perm for perm in group.permissions if rule not in {perm.get("rule"), "*"}]
+            permissions = [perm for perm in group.permissions if not (rule in {perm.get("rule"), "*"} and (rule_type is None or perm.get("rule_type") == rule_type))]
             if len(permissions) == len(group.permissions):
                 return False
             group.permissions = permissions
@@ -349,7 +354,7 @@ class AccessManager:
         kept: list[TsecRule] = []
         removed = False
         for existing in rules:
-            if existing.target_type == target_type and existing.target == target and rule in {existing.rule, "*"}:
+            if existing.target_type == target_type and existing.target == target and rule in {existing.rule, "*"} and (rule_type is None or existing.rule_type == rule_type):
                 removed = True
                 continue
             kept.append(existing)
@@ -466,6 +471,10 @@ class AccessManager:
 
     def allows(self, user_id: int | None, permission: Permission) -> bool:
         if self.is_owner(user_id):
+            return True
+        if user_id is None or user_id <= 0:
+            return False
+        if permission & Permission.EVERYONE:
             return True
         return bool(self.permissions_of(user_id) & permission)
 

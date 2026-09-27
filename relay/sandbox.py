@@ -14,10 +14,6 @@ from pathlib import Path
 from typing import Any, cast
 
 from . import toolkit as _toolkit
-from goygram.rich import rich_html
-from goygram.sugar import extract_sent_message, html_to_entities
-from goygram.types.obj import Obj
-from hotaru.plainfmt import rich_to_plain
 from hotaru.callbacks import CallbackBinding
 from relay.firewall import trusted_scope
 
@@ -1306,7 +1302,7 @@ class ModuleSandbox:
         self._last_use: dict[str, float] = {}
         self._module_defs: dict[str, tuple[str, list[str]]] = {}
         self._respond_sources: dict[str, Any] = {}
-        self._respond_targets: dict[str, int] = {}
+        self._respond_contexts: dict[str, Any] = {}
         self._cb_waiters: dict[tuple[str, str], asyncio.Future[Any]] = {}
         self._active_callback: dict[str, Any] = {}
         self._cb_respond_pending: dict[str, list[dict[str, Any]]] = {}
@@ -1564,17 +1560,17 @@ class ModuleSandbox:
         await loop.run_in_executor(None, lambda: self._spawn_worker(module_id, source, commands))
         return True
 
-    async def call(self, module_id: str, command: str, args: list[str], payload: dict[str, Any], source: Any = None, target: str | None = None) -> Any:
+    async def call(self, module_id: str, command: str, args: list[str], payload: dict[str, Any], source: Any = None, target: str | None = None, context: Any = None) -> Any:
         async with self._roundtrip_lock(module_id):
             if source is not None:
                 self._respond_sources[module_id] = source
-                self._respond_targets.pop(module_id, None)
+                self._respond_contexts[module_id] = context or self.runtime.context_factory.create(module_id, source)
             try:
                 result = await self._roundtrip(module_id, {"command": command, "args": args, "payload": payload, "target": target})
             finally:
                 if source is not None:
                     self._respond_sources.pop(module_id, None)
-                    self._respond_targets.pop(module_id, None)
+                    self._respond_contexts.pop(module_id, None)
         if not isinstance(result, dict) or not result.get("ok"):
             raise SandboxError(f"sandbox call failed: {result.get('error') if isinstance(result, dict) else 'malformed'}")
         return result.get("result")
@@ -1731,151 +1727,29 @@ class ModuleSandbox:
                 process.stdin.flush()
 
     async def _trusted_respond(self, module_id: str, source: Any, payload: dict[str, Any]) -> Any:
-        import secrets as _secrets
-
-        content = payload.get("content")
-        kwargs = dict(payload.get("kwargs") or {})
+        from hotaru.response import FormHandle, Response
         if source is None:
             raise PermissionError("no message source is bound to this call")
-        app = getattr(self.runtime, "app", None)
-        if app is None or getattr(app, "mt", None) is None:
-            raise PermissionError("userbot transport is not ready")
-        chat_id = getattr(source, "chat_id", None)
-        text = kwargs.pop("text", None)
-        if text is None and isinstance(content, str):
-            text = content
-        if kwargs.get("buttons"):
-            buttons = kwargs.pop("buttons")
-            kwargs.pop("output", None)
-            with trusted_scope():
-                buttons = self._sandbox_buttons(module_id, buttons, chat_id)
-            options = dict(kwargs.pop("module_options", {}))
-            options.setdefault("module_id", module_id)
-            for k, v in kwargs.items():
-                if k not in options:
-                    options[k] = v
-            form_sender = getattr(self.runtime, "form_sender", None) or getattr(self.runtime, "_send_form", None) or getattr(getattr(self.runtime, "context_factory", None), "form_sender", None) or getattr(getattr(self.runtime, "kernel", None), "form_sender", None)
-            if form_sender is None:
-                raise PermissionError("form transport is unavailable")
-            with trusted_scope():
-                return await form_sender(source, text or "", buttons, options)
-        rich = bool(kwargs.pop("rich", False))
-        if rich:
-            allowed = False
-            runtime = getattr(self, "runtime", None)
-            if runtime is not None:
-                try:
-                    allowed = await runtime.is_premium()
-                except Exception:
-                    allowed = False
-            if not allowed:
-                rich = False
-                if isinstance(text, str):
-                    text = rich_to_plain(text)
-        output = kwargs.pop("output", "auto")
-        media = kwargs.pop("media", None)
-        kwargs.pop("parse_mode", None)
-        kwargs.pop("split_limit", None)
-        kwargs.pop("file_limit", None)
-        kwargs.pop("filename", None)
-        kwargs.pop("preserve_html", None)
-        source_message_id = getattr(source, "id", None)
-        response_message_id = self._respond_targets.get(module_id)
-        message_id = response_message_id if output != "reply" and response_message_id is not None else source_message_id
-        is_out = response_message_id is not None or bool(getattr(source, "is_me", False) or getattr(source, "out", False))
-        if output == "auto":
-            output = "edit" if is_out else "reply"
-        topic_id = None
-        for name in ("topic_id", "message_thread_id", "top_msg_id"):
-            value = getattr(source, name, None)
-            if isinstance(value, int) and value > 0:
-                topic_id = value
-                break
-
-        def remember(result: Any) -> Any:
-            value = result
-            if isinstance(result, list):
-                value = next((item.message for item in cast('list[Any]', result) if getattr(item, "action", None) == "reply"), None)
-            sent_value = extract_sent_message(value)
-            sent = sent_value if isinstance(sent_value, dict) else {}
-            sent_id = sent.get("id")
-            if isinstance(sent_id, int):
-                self._respond_targets[module_id] = sent_id
-            return cast(Any, result)
-
-        async def send_plain(value: str, *, mode: str) -> Any:
-            plain, entities = html_to_entities(value)
-            data_entities = entities or None
-            if mode == "edit" and message_id is not None:
-                with trusted_scope():
-                    return await app.mt_messages_edit_message( peer=chat_id, id=int(message_id), message=plain, entities=data_entities)
-            data: dict[str, Any] = {"peer": chat_id, "message": plain, "random_id": _secrets.randbits(63)}
-            if data_entities is not None:
-                data["entities"] = data_entities
-            if topic_id is not None:
-                data["reply_to"] = {"_": "inputReplyToMessage", "reply_to_msg_id": int(message_id), "top_msg_id": topic_id} if message_id is not None else None
-                if data["reply_to"] is None:
-                    data.pop("reply_to")
-            elif message_id is not None and mode == "reply":
-                data["reply_to"] = {"_": "inputReplyToMessage", "reply_to_msg_id": int(message_id)}
-            with trusted_scope():
-                return await app.mt_messages_send_message( **data)
-
-        async def send_rich_html(html: str, *, mode: str) -> Any:
-            rich_message = {"_": "inputRichMessageHTML", **rich_html(html)}
-            if mode == "edit" and message_id is not None:
-                with trusted_scope():
-                    return await app.mt_messages_edit_message( peer=chat_id, id=int(message_id), message="", rich_message=rich_message)
-            data = {"peer": chat_id, "message": "", "random_id": _secrets.randbits(63), "rich_message": rich_message}
-            if message_id is not None:
-                reply_to = {"_": "inputReplyToMessage", "reply_to_msg_id": int(message_id)}
-                if topic_id is not None:
-                    reply_to["top_msg_id"] = topic_id
-                data["reply_to"] = reply_to
-            with trusted_scope():
-                return await app.mt_messages_send_message( **data)
-
-        if media is not None:
+        context = self._respond_contexts.get(module_id)
+        if context is None:
+            context = self.runtime.context_factory.create(module_id, source)
+            self._respond_contexts[module_id] = context
+        kwargs = dict(payload.get("kwargs") or {})
+        if kwargs.get("media") is not None or kwargs.get("file") is not None or payload.get("content") is not None and not isinstance(payload["content"], str):
             raise PermissionError("sandbox respond media must go through files capability")
-        if rich:
-            if not isinstance(text, str):
-                raise PermissionError("rich respond requires string content")
-            try:
-                result = await send_rich_html(text, mode=output)
-                return remember(result) if output == "reply" else result
-            except Exception as exc:
-                marker = str(exc).lower()
-                if "length" in marker or "too long" in marker or "MESSAGE_TOO_LONG" in str(exc):
-                    parts: list[str] = []
-                    limit = 3800
-                    rest = text
-                    while len(rest) > limit:
-                        cut = rest.rfind("\n", 0, limit + 1)
-                        if cut < limit // 2:
-                            cut = limit
-                        parts.append(rest[:cut])
-                        rest = rest[cut:].lstrip("\n")
-                    parts.append(rest)
-                    last = None
-                    for index, part in enumerate(parts):
-                        mode = "edit" if index == 0 and output == "edit" else "reply"
-                        last = await send_rich_html(part, mode=mode)
-                    return remember(last)
-                raise
-        if isinstance(text, str):
-            limit = 4096
-            if len(text) > limit:
-                target = source
-                if response_message_id is not None:
-                    target = Obj(
-                        getattr(source, "src", "mt"),
-                        {"kind": "msg", "msg_id": response_message_id, "chat_id": chat_id, "is_me": True},
-                        app,
-                    )
-                return remember(await self.runtime.responses.smart_split(target, text))
-            result = await send_plain(text, mode=output)
-            return remember(result) if output == "reply" else result
-        raise PermissionError("sandbox respond requires text content")
+        if kwargs.get("buttons"):
+            kwargs["buttons"] = self._sandbox_buttons(module_id, kwargs["buttons"], getattr(source, "chat_id", None))
+        for key in ("module_options", "module_id", "callback_actor", "chat_id", "peer", "bot"):
+            kwargs.pop(key, None)
+        with trusted_scope():
+            result = await context.respond(payload.get("content"), **kwargs)
+        if isinstance(result, Response):
+            return result.message
+        if isinstance(result, FormHandle):
+            return result.value
+        if isinstance(result, list):
+            return [item.message if isinstance(item, Response) else item for item in result]
+        return result
 
     def _sandbox_buttons(self, module_id: str, buttons: Any, chat_id: Any) -> Any:
         with trusted_scope():

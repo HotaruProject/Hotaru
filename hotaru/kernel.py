@@ -156,7 +156,7 @@ class Kernel:
         if not self._is_authorized(message, spec):
             return None
         if self.security is not None:
-            verdict = self.security.check(message, transport="mt", module_id=spec.module_id, is_group=self._is_group(message))
+            verdict = self.security.check(message, transport="mt", module_id=spec.module_id, is_group=self._is_group(message), authorized=True)
             if verdict is not AccessVerdict.ALLOW:
                 return None
         self._remember(key)
@@ -166,42 +166,37 @@ class Kernel:
         previous = self._running.get(task_key)
         if previous is not None and not previous.done():
             previous.cancel()
+        context = self.context_factory.create(spec.module_id, message) if self.context_factory is not None else None
         try:
             work = self.tasks.spawn(
                 spec.module_id,
-                self._invoke(spec, invocation, message),
+                self._invoke(spec, invocation, message, context),
                 name=f"hotaru:cmd:{spec.name}",
             )
         except TaskLimitError:
             return None
-        task = asyncio.create_task(self._execute(spec, message, work), name=f"hotaru:response:{spec.name}")
+        task = asyncio.create_task(self._execute(spec, message, work, context), name=f"hotaru:response:{spec.name}")
         task.add_done_callback(lambda _: work.cancel() if not work.done() else None)
         self._running[task_key] = task
         task.add_done_callback(lambda t: self._running.pop(task_key, None) if self._running.get(task_key) is t else None)
 
-    async def _execute(self, spec: Any, message: Any, task: asyncio.Task[Any]) -> object | None:
+    async def _execute(self, spec: Any, message: Any, task: asyncio.Task[Any], context: Any = None) -> object | None:
         try:
             result = await self._await_work(task)
         except asyncio.TimeoutError:
             if self.response_service is not None:
                 runtime = getattr(self.context_factory, "runtime", None)
                 text = runtime.t("runtime.timeout", seconds=round(self.command_timeout), command=spec.name) if runtime is not None else f"command timed out after {self.command_timeout:.0f}s: {spec.name}"
-                return await self.response_service.answer(
-                    message,
-                    text=text,
-                    output="edit",
-                )
+                return await context.respond(text) if context is not None else await self.response_service.answer(message, text=text, output="auto")
             return None
         except asyncio.CancelledError:
             return None
         except Exception as exc:
             if self.response_service is not None:
                 try:
-                    return await self.response_service.answer(
-                        message,
-                        text=f"{type(exc).__name__}: {exc}",
-                        output="edit",
-                    )
+                    from html import escape
+                    text = escape(f"{type(exc).__name__}: {exc}")
+                    return await context.respond(text) if context is not None else await self.response_service.answer(message, text=text, output="auto")
                 except Exception:
                     return None
             return None
@@ -210,11 +205,11 @@ class Kernel:
                 values = cast('tuple[object, ...]', result)
                 if len(values) == 2:
                     text, buttons = values
-                    if self.form_sender is not None and buttons:
-                        return await self.form_sender(message, text, buttons)
-                    return await self.response_service.answer(message, text=text, buttons=buttons, output="edit")
+                    if context is not None:
+                        return await context.respond(text, buttons=buttons)
+                    return await self.response_service.answer(message, text=text, buttons=buttons, output="auto")
             if isinstance(result, str):
-                return await self.response_service.answer(message, text=result, output="edit")
+                return await context.respond(result) if context is not None else await self.response_service.answer(message, text=result, output="auto")
         return cast(object, result)
 
     async def _await_work(self, task: asyncio.Task[Any]) -> object | None:
@@ -235,13 +230,13 @@ class Kernel:
                 task.cancel()
             await asyncio.gather(task, return_exceptions=True)
 
-    async def _invoke(self, spec: Any, invocation: CommandInvocation, message: Any) -> object:
+    async def _invoke(self, spec: Any, invocation: CommandInvocation, message: Any, context: Any = None) -> object:
         if self.sandbox is not None and spec.sandbox:
-            result = await self.sandbox_dispatch(spec, invocation)
+            result = await self.sandbox_dispatch(spec, invocation, context)
         else:
             if self.context_factory is None:
                 raise RuntimeError("module context factory is not configured")
-            context = self.context_factory.create(spec.module_id, message)
+            context = context or self.context_factory.create(spec.module_id, message)
             with module_scope(spec.module_id):
                 result = spec.handler(context, invocation)
         if inspect.isawaitable(result):
@@ -249,7 +244,7 @@ class Kernel:
                 return await result
         return result
 
-    async def sandbox_dispatch(self, spec: Any, invocation: CommandInvocation) -> object:
+    async def sandbox_dispatch(self, spec: Any, invocation: CommandInvocation, context: Any = None) -> object:
         payload: dict[str, Any] = {
             "source": invocation.source,
             "message_id": invocation.message_id,
@@ -278,6 +273,7 @@ class Kernel:
             payload,
             source=message,
             target=f"command_{spec.name}",
+            context=context,
         )
         if isinstance(result, str):
             return result
@@ -312,6 +308,8 @@ class Kernel:
             name = self.parser.command_name(getattr(message, "text", None) or "")
             spec = self.registry.resolve_name(name) if name is not None else None
         if self.access is not None:
+            if spec is not None and spec.kernel and not self.access.is_owner(user_id):
+                return spec.module_id == "accounts" and self.access.check_tsec(user_id, spec.module_id, spec.name, getattr(message, "chat_id", None))
             required = self._required_permission(message, spec)
             if self.access.allows(user_id, required):
                 return True

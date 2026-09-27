@@ -334,7 +334,7 @@ class InlineManager:
         state.set_setting("inline-bot-username", info.username)
         state.set_setting("inline-bot-id", info.bot_id)
         owner = self._owner_id()
-        if owner is not None:
+        if owner is not None and state.get_setting("owner-id") is None:
             state.set_setting("owner-id", owner)
         self.info = info
 
@@ -343,7 +343,7 @@ class InlineManager:
         if state is None:
             raise InlineError("state store is not ready")
         owner = self._owner_id()
-        if owner is not None:
+        if owner is not None and state.get_setting("owner-id") is None:
             state.set_setting("owner-id", owner)
         token = state.get_setting("inline-bot-token")
         stored_id = state.get_setting("inline-bot-id")
@@ -943,14 +943,6 @@ class InlineManager:
         return result
 
     async def _dispatch_callback(self, callback: Any) -> None:
-        security = getattr(self.runtime, "security", None)
-        if security is not None:
-            from hotaru.security import AccessVerdict
-
-            verdict = security.check_callback(callback, transport="inline")
-            login = getattr(self.runtime, 'account_login', None)
-            if verdict is not AccessVerdict.ALLOW and not (login is not None and login.ui.accepts(callback)):
-                return
         for handler in tuple(self._cb_handlers):
             try:
                 await handler(callback)
@@ -968,7 +960,9 @@ class InlineManager:
             from hotaru.security import AccessVerdict
 
             security = getattr(self.runtime, "security", None)
-            if security is None or security.check(update, transport="inline") is not AccessVerdict.ALLOW:
+            request = (getattr(self.runtime, "_input_requests", None) or {}).get(text.partition(" ")[0].split(":", 1)[1]) if text.startswith("hotaru-input:") else None
+            authorized = request is not None and self.runtime._input_actor_matches(update, request[2])
+            if security is None or security.check(update, transport="inline", authorized=authorized) is not AccessVerdict.ALLOW:
                 return
         token = text.partition(" ")[0].split(":", 1)[1] if text.startswith("hotaru-input:") else None
         if token is not None:

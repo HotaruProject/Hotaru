@@ -20,7 +20,7 @@ from collections.abc import Awaitable
 
 from .capabilities import CapabilityBroker
 from .backup import BackupService
-from .callbacks import CallbackBinding, CallbackDenied, CallbackRouter, CallbackStore, derive_key
+from .callbacks import CallbackBinding, CallbackContext, CallbackDenied, CallbackRouter, CallbackStore, derive_key
 from .config import RuntimeConfig
 from .commands import CommandParser
 from goygram.types import InlineObj
@@ -306,12 +306,6 @@ class Runtime:
             return None
         if not isinstance(getattr(callback, "msg_id", None), int):
             return None
-        if self.security is not None:
-            from .security import AccessVerdict
-
-            verdict = self.security.check_callback(callback, transport="mt")
-            if verdict is not AccessVerdict.ALLOW:
-                return None
         try:
             callback._hotaru_runtime = self
         except Exception:
@@ -350,7 +344,8 @@ class Runtime:
         if not isinstance(actor, int):
             actor = int(owner)
         options.setdefault("callback_actor", actor)
-        options.setdefault("delete_source", True)
+        options.setdefault("command", self.kernel.parser.command_name(getattr(command, "text", "") or ""))
+        options.setdefault("delete_source", bool(getattr(command, "is_me", False) or getattr(command, "out", False)))
         chat_id = getattr(command, "chat_id", None)
         if not isinstance(chat_id, (int, str)):
             raise RuntimeError("form target chat is missing")
@@ -419,7 +414,7 @@ class Runtime:
         if tl_markup is not None:
             edit_data["reply_markup"] = tl_markup
         await bot_app.mt_messages_edit_message( **edit_data)
-        if hasattr(command, "delete"):
+        if options.get("delete_source") and hasattr(command, "delete"):
             await command.delete()
         return cast('dict[str, Any]', sent) if isinstance(sent, dict) else sent
 
@@ -427,12 +422,21 @@ class Runtime:
         if self._forms is None:
             self._forms = {}
         key = getattr(handle, "key", None) or secrets.token_urlsafe(12)
+        actions = self._form_actions(buttons)
+        sent = extract_sent_message(handle.value)
+        if not isinstance(sent, dict) or not isinstance(sent.get("id"), int):
+            raise RuntimeError("form delivery has no message identity")
+        inline_id = (self._form_inline_ids or {}).get(key.split(":", 1)[1]) if key.startswith("inline:") else None
+        if key.startswith("inline:") and key.split(":", 1)[1] in (self._inline_forms or {}):
+            buttons = self._inline_forms[key.split(":", 1)[1]][1]
+        source = SimpleNamespace(src="inline" if key.startswith("inline:") else "bot", chat_id=getattr(source, "chat_id", None), id=sent["id"], inline_message_id=inline_id)
+        handle._source = source
         handle._key = key
         record = dict(options)
         record["form_id"] = key
         record["module_id"] = record.get("module_id") or getattr(source, "module_id", "")
         saved_actions = options.get("actions")
-        record["actions"] = saved_actions if isinstance(saved_actions, list) else self._form_actions(buttons)
+        record["actions"] = saved_actions if isinstance(saved_actions, list) else actions
         self._forms[key] = (handle, source, text, buttons, record)
         ttl = options.get("ttl")
         ttl_value = float(ttl) if isinstance(ttl, (int, float)) else 0.0
@@ -447,7 +451,7 @@ class Runtime:
         if self.state is not None and record.get("module_id"):
             self.state.connection.execute(
                 "INSERT OR REPLACE INTO form_state(form_id,module_id,source,chat_id,message_id,inline_message_id,text,buttons,options,expires) VALUES (?,?,?,?,?,?,?,?,?,?)",
-                (key, record["module_id"], getattr(source, "src", "mt"), str(getattr(source, "chat_id", "")), getattr(source, "id", None), getattr(source, "inline_message_id", None), text, json.dumps(buttons, ensure_ascii=False, default=str), json.dumps(record, ensure_ascii=False, default=str), deadline),
+                (key, record["module_id"], getattr(source, "src", "mt"), str(getattr(source, "chat_id", "")), getattr(source, "id", None), json.dumps(getattr(source, "inline_message_id", None)), text, json.dumps(buttons, ensure_ascii=False, default=str), json.dumps(record, ensure_ascii=False, default=str), deadline),
             )
             self.state.connection.commit()
 
@@ -462,7 +466,7 @@ class Runtime:
         restored = 0
         for row in rows:
             try:
-                source = SimpleNamespace(src=row[2], chat_id=int(row[3]) if row[3] else None, id=row[4], inline_message_id=row[5], module_id=row[1])
+                source = SimpleNamespace(src=row[2], chat_id=int(row[3]) if row[3] else None, id=row[4], inline_message_id=json.loads(row[5]) if row[5] else None, module_id=row[1])
                 handle = FormHandle(self, source, key=row[0])
                 setattr(handle, "_key", row[0])
                 buttons_raw: Any = json.loads(row[7])
@@ -578,7 +582,30 @@ class Runtime:
         next_buttons = old_buttons if buttons is None else buttons
         options.update(kwargs)
         options["delete_source"] = False
-        value = await self._send_form(source, next_text, next_buttons, options)
+        actor = options.get("callback_actor")
+        rebound = []
+        for row in next_buttons or []:
+            current = []
+            for button in row if isinstance(row, list) else [row]:
+                item = dict(button)
+                token = item.get("callback_data")
+                if isinstance(token, str) and self.callbacks is not None:
+                    item["callback_data"] = self.callbacks.store.rebind(token, CallbackBinding(actor, None if source.src == "inline" else source.chat_id, 0 if source.src == "inline" else source.id), scope={"form_id": handle.key, "command": options.get("command")})
+                current.append(item)
+            rebound.append(current)
+        next_buttons = rebound
+        if source.src == "inline":
+            inline_id = getattr(source, "inline_message_id", None) or (self._form_inline_ids or {}).get(str(handle.key).split(":", 1)[-1])
+            if inline_id is None:
+                raise RuntimeError("inline form edit identity is unavailable")
+            callback = SimpleNamespace(src="mt", app=self.app, chat_id=source.chat_id, msg_id=source.id, inline_message_id=inline_id, from_id=actor, form_nonce=str(handle.key).split(":", 1)[-1])
+            value = await CallbackContext(callback, self).edit(next_text, buttons=next_buttons, rich=bool(options.get("rich", False)))
+        else:
+            if self.inline is None or self.inline.bot_app is None:
+                raise RuntimeError("form bot transport is unavailable")
+            plain, entities = html_to_entities(next_text)
+            with trusted_scope():
+                value = await self.inline.bot_app.mt_messages_edit_message(peer=source.chat_id, id=source.id, message=plain, entities=entities, reply_markup=kbd_to_tl({"inline_keyboard": next_buttons}))
         if self._forms is None:
             raise RuntimeError("form is not registered")
         self._forms[handle.key] = (handle, source, next_text, next_buttons, options)
@@ -616,10 +643,8 @@ class Runtime:
             message_id = getattr(source, "id", None) or getattr(source, "message_id", None)
             if chat_id is not None and isinstance(message_id, int):
                 with trusted_scope():
-                    try:
-                        await self.app.delete_msg(chat_id, message_id)
-                    except Exception:
-                        pass
+                    app = self.inline.bot_app if getattr(source, "src", None) == "bot" and self.inline is not None else self.app
+                    await delete_chat_msg(app, chat_id, message_id)
         return True
 
     def purge_forms(self) -> int:
@@ -712,6 +737,8 @@ class Runtime:
         reply_to = options.get("reply_to")
         if not isinstance(reply_to, int):
             reply_to = reply_message_id(command)
+        if not isinstance(reply_to, int) and not bool(getattr(command, "is_me", False) or getattr(command, "out", False)):
+            reply_to = message_id
         if self._form_module_ids is None:
             self._form_module_ids = {}
         self._form_module_ids[nonce] = str(options.get("module_id") or "")
@@ -759,7 +786,7 @@ class Runtime:
                     actor = options.get("callback_actor")
                     if not isinstance(actor, int):
                         actor = int(self.kernel.owner_id or 0)
-                    btn_item["callback_data"] = self.callbacks.store.rebind(handle, CallbackBinding(actor, None, 0))
+                    btn_item["callback_data"] = self.callbacks.store.rebind(handle, CallbackBinding(actor, None, 0), scope={"form_id": "inline:" + nonce, "command": options.get("command")})
                     if button.get("_action_id"):
                         btn_item["_action_id"] = button["_action_id"]
                         btn_item["_payload"] = button.get("_payload")
@@ -862,8 +889,12 @@ class Runtime:
             await asyncio.wait_for(ready.wait(), 5.0)
         except asyncio.TimeoutError:
             pass
-        if options.get("delete_source", True) and chat_id is not None:
-            await self._delete_inline_source(command, chat_id, message_id)
+        if options.get("delete_source", True) and chat_id is not None and bool(getattr(command, "is_me", False) or getattr(command, "out", False)):
+            try:
+                await self._delete_inline_source(command, chat_id, message_id)
+            except Exception as exc:
+                if self.observatory is not None:
+                    self.observatory.emit("response", "source_cleanup_failed", error=type(exc).__name__)
         sent = extract_sent_message(sent_result)
         if isinstance(sent, dict) and isinstance(sent.get("id"), int):
             if self._form_msgs is None:
@@ -896,7 +927,9 @@ class Runtime:
         if self.security is not None:
             from .security import AccessVerdict
 
-            verdict = self.security.check(query, transport="inline")
+            request = (self._input_requests or {}).get(text.partition(" ")[0].split(":", 1)[1]) if text.startswith("hotaru-input:") else None
+            authorized = request is not None and self._input_actor_matches(query, request[2])
+            verdict = self.security.check(query, transport="inline", authorized=authorized)
             if verdict is not AccessVerdict.ALLOW:
                 await answer_tl(query, results=[], cache_time=0, is_personal=True)
                 return
@@ -944,7 +977,16 @@ class Runtime:
         owner = getattr(source, "_hotaru_actor_id", getattr(source, "from_id", None))
         if source is None:
             owner = getattr(getattr(self.app, "session", None), "self_id", None) or getattr(self.kernel, "owner_id", None)
-        return type(actor) is int and actor > 0 and actor == owner
+        if type(actor) is not int or actor <= 0 or actor != owner:
+            return False
+        if source is None:
+            return True
+        if self.access is not None and self.access.is_owner(actor):
+            return True
+        form = (self._forms or {}).get(str(getattr(source, "_hotaru_form_id", "")))
+        command = (form[4].get("command") if form is not None else None) or getattr(source, "_hotaru_command", None) or (self.kernel.parser.command_name(getattr(source, "text", "") or "") if self.kernel is not None else None)
+        spec = self.kernel.registry.resolve_name(command) if command and self.kernel is not None else None
+        return spec is not None and self.kernel._is_authorized(SimpleNamespace(from_id=actor, chat_id=getattr(source, "chat_id", None)), spec)
 
     async def _on_chosen_input(self, chosen: Any) -> None:
         text = str(getattr(chosen, "query", "") or "").strip()
@@ -1297,15 +1339,6 @@ class Runtime:
 
     async def _on_inline_callback(self, callback: Any) -> Any:
         if self.security is None or self.callbacks is None:
-            return None
-        from .security import AccessVerdict
-
-        verdict = self.security.check_callback(callback, transport="inline")
-        if verdict is not AccessVerdict.ALLOW and not (self.account_login is not None and self.account_login.ui.accepts(callback)):
-            try:
-                await callback.answer()
-            except Exception:
-                pass
             return None
         try:
             callback._hotaru_runtime = self
