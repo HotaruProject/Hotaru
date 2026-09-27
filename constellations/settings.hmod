@@ -78,7 +78,8 @@ async def command_prefix(ctx: Any, invocation: Any) -> Any:
         await ctx.respond(ctx.t('settings.prefix_current', prefix=current))
         return
     new_prefix = invocation.args[0]
-    if len(new_prefix) != 1 or new_prefix.isspace():
+    from hotaru.commands import valid_prefix
+    if len(invocation.args) != 1 or not valid_prefix(new_prefix):
         await ctx.respond(ctx.t('settings.prefix_invalid'))
         return
     runtime.state.set_setting("prefix", new_prefix)

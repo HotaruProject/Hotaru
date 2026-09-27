@@ -578,7 +578,7 @@
     "alias_removed": "Alias removed: {alias}",
     "alias_not_found": "Alias not found: {alias}",
     "prefix_current": "Current prefix: {prefix}. Change: {prefix}prefix <character>",
-    "prefix_invalid": "Prefix must be one non-whitespace character.",
+    "prefix_invalid": "Prefix must contain 1 to 8 visible characters without whitespace.",
     "prefix_set": "Prefix changed to {prefix}",
     "description": "Alias and prefix management",
     "commands": {

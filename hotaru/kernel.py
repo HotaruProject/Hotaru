@@ -124,8 +124,19 @@ class Kernel:
                 result = watcher.handler(context, message)
                 if inspect.isawaitable(result):
                     await result
-        except Exception:
-            pass
+        except Exception as exc:
+            log.error("watcher failed: %s", type(exc).__name__)
+
+    def command_name(self, text: str | None) -> str | None:
+        invocation = self.parser.parse(text, source="command", message_id=0, chat_id=None)
+        if invocation is None:
+            return None
+        spec = self.registry.resolve(invocation)
+        if spec is None:
+            swapped = self.parser.swap_invocation(invocation)
+            if swapped is not None:
+                spec = self.registry.resolve(swapped)
+        return spec.name if spec is not None else None
 
     async def dispatch(self, message: Any, *, source: str) -> object | None:
         if self._is_blocked_peer(message):
@@ -247,6 +258,7 @@ class Kernel:
     async def sandbox_dispatch(self, spec: Any, invocation: CommandInvocation, context: Any = None) -> object:
         payload: dict[str, Any] = {
             "source": invocation.source,
+            "raw_args": invocation.raw_args,
             "message_id": invocation.message_id,
             "chat_id": invocation.chat_id,
             "attachment": self._sandbox_attachment(invocation.message),
@@ -305,7 +317,7 @@ class Kernel:
         if not isinstance(user_id, int):
             user_id = None
         if spec is None:
-            name = self.parser.command_name(getattr(message, "text", None) or "")
+            name = self.command_name(getattr(message, "text", None) or "")
             spec = self.registry.resolve_name(name) if name is not None else None
         if self.access is not None:
             if spec is not None and spec.kernel and not self.access.is_owner(user_id):
@@ -324,7 +336,7 @@ class Kernel:
     def _required_permission(self, message: Any, spec: CommandSpec | None = None) -> Permission:
         from .access import DEFAULT_COMMAND_PERMISSION, PUBLIC_COMMAND_PERMISSION
         if spec is None:
-            name = self.parser.command_name(getattr(message, "text", None) or "")
+            name = self.command_name(getattr(message, "text", None) or "")
             spec = self.registry.resolve_name(name) if name is not None else None
         if spec is None:
             return DEFAULT_COMMAND_PERMISSION

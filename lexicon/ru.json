@@ -578,7 +578,7 @@
     "alias_removed": "Алиас удалён: {alias}",
     "alias_not_found": "Алиас не найден: {alias}",
     "prefix_current": "Текущий префикс: {prefix}. Сменить: {prefix}prefix <символ>",
-    "prefix_invalid": "Префикс — один символ, кроме пробельных.",
+    "prefix_invalid": "Префикс: от 1 до 8 видимых символов без пробелов.",
     "prefix_set": "Префикс изменён на {prefix}",
     "description": "Управление алиасами и префиксом",
     "commands": {

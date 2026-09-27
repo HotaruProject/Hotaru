@@ -344,7 +344,7 @@ class Runtime:
         if not isinstance(actor, int):
             actor = int(owner)
         options.setdefault("callback_actor", actor)
-        options.setdefault("command", self.kernel.parser.command_name(getattr(command, "text", "") or ""))
+        options.setdefault("command", self.kernel.command_name(getattr(command, "text", "") or "") if self.kernel is not None else None)
         options.setdefault("delete_source", bool(getattr(command, "is_me", False) or getattr(command, "out", False)))
         chat_id = getattr(command, "chat_id", None)
         if not isinstance(chat_id, (int, str)):
@@ -986,7 +986,7 @@ class Runtime:
         if self.access is not None and self.access.is_owner(actor):
             return True
         form = (self._forms or {}).get(str(getattr(source, "_hotaru_form_id", "")))
-        command = (form[4].get("command") if form is not None else None) or getattr(source, "_hotaru_command", None) or (self.kernel.parser.command_name(getattr(source, "text", "") or "") if self.kernel is not None else None)
+        command = (form[4].get("command") if form is not None else None) or getattr(source, "_hotaru_command", None) or (self.kernel.command_name(getattr(source, "text", "") or "") if self.kernel is not None else None)
         spec = self.kernel.registry.resolve_name(command) if command and self.kernel is not None else None
         return spec is not None and self.kernel._is_authorized(SimpleNamespace(from_id=actor, chat_id=getattr(source, "chat_id", None)), spec)
 

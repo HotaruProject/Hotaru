@@ -1,9 +1,13 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
-from .layouts import swap_layout
+from .layouts import prefix_variants, swap_layout
+
+
+def valid_prefix(prefix: str) -> bool:
+    return isinstance(prefix, str) and 1 <= len(prefix) <= 8 and prefix.isprintable() and not any(c.isspace() for c in prefix)
 
 
 @dataclass(frozen=True)
@@ -16,13 +20,25 @@ class CommandInvocation:
     message: Any = None
     layout_swapped: bool = False
     module_id: str | None = None
+    raw_args: str = ""
 
 
 class CommandParser:
     def __init__(self, prefix: str = "!") -> None:
-        if len(prefix) != 1 or prefix.isspace():
-            raise ValueError("prefix must be one non-whitespace character")
+        self._prefix: str = ""
+        self._prefixes: tuple[str, ...] = ()
         self.prefix = prefix
+
+    @property
+    def prefix(self) -> str:
+        return self._prefix
+
+    @prefix.setter
+    def prefix(self, value: str) -> None:
+        if not valid_prefix(value):
+            raise ValueError("prefix must contain 1–8 visible non-whitespace characters")
+        self._prefix = value
+        self._prefixes = prefix_variants(value)
 
     def parse(
         self,
@@ -33,42 +49,39 @@ class CommandParser:
         chat_id: int | str | None,
         message: Any = None,
     ) -> CommandInvocation | None:
-        if not text or not text.startswith(self.prefix):
+        if not isinstance(text, str) or not text:
             return None
-        parts = text[len(self.prefix) :].split()
-        if not parts:
+        prefix = next((p for p in self._prefixes if text.startswith(p)), None)
+        if prefix is None:
             return None
-        name = parts[0].casefold()
-        if not name.isidentifier():
+        body = text[len(prefix):]
+        if any(body.startswith(p) for p in self._prefixes):
             return None
+        body = body.lstrip()
+        if not body:
+            return None
+        stop = next((i for i, c in enumerate(body) if c.isspace()), len(body))
+        name = body[:stop].casefold()
+        if not name.isidentifier() and not swap_layout(name).isidentifier():
+            return None
+        raw = body[stop + 1:] if stop < len(body) else ""
         return CommandInvocation(
             name=name,
-            args=tuple(parts[1:]),
+            args=tuple(raw.split()),
             source=source,
             message_id=message_id,
             chat_id=chat_id,
             message=message,
+            layout_swapped=prefix != self.prefix,
+            raw_args=raw,
         )
 
     def command_name(self, text: str | None) -> str | None:
-        if not text or not text.startswith(self.prefix):
-            return None
-        parts = text[len(self.prefix) :].split()
-        if not parts:
-            return None
-        name = parts[0].casefold()
-        return name if name.isidentifier() else None
+        invocation = self.parse(text, source="command", message_id=0, chat_id=None)
+        return invocation.name if invocation is not None else None
 
     def swap_invocation(self, invocation: CommandInvocation) -> CommandInvocation | None:
         swapped = swap_layout(invocation.name).casefold()
         if not swapped.isidentifier() or swapped == invocation.name:
             return None
-        return CommandInvocation(
-            name=swapped,
-            args=invocation.args,
-            source=invocation.source,
-            message_id=invocation.message_id,
-            chat_id=invocation.chat_id,
-            message=invocation.message,
-            layout_swapped=True,
-        )
+        return replace(invocation, name=swapped, layout_swapped=True)
