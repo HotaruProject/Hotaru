@@ -115,7 +115,7 @@
       "description": "Модули ядра Hotaru",
       "commands": {
         "ver": {
-          "description": "Версия Hotaru"
+          "description": "Показать текущий коммит"
         },
         "st": {
           "description": "Статус рантайма"

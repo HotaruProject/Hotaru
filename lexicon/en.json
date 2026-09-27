@@ -115,7 +115,7 @@
       "description": "Hotaru kernel — system commands",
       "commands": {
         "ver": {
-          "description": "Show Hotaru version"
+          "description": "Show the running commit"
         },
         "st": {
           "description": "Runtime status"

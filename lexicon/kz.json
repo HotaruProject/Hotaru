@@ -42,7 +42,7 @@
       "description": "Hotaru ядросының жүйелік командалары",
       "commands": {
         "ver": {
-          "description": "Hotaru нұсқасы"
+          "description": "Ағымдағы коммитті көрсету"
         },
         "st": {
           "description": "Рантайм күйі"

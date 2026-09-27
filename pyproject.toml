@@ -1,19 +1,21 @@
 [build-system]
-requires = ["hatchling>=1.25"]
+requires = ["hatchling>=1.25", "hatch-vcs>=0.4"]
 build-backend = "hatchling.build"
 
 [project]
 name = "hotaru"
-version = "0.1.5"
+dynamic = ["version"]
 description = "Hotaru userbot kernel on GoyGram"
 requires-python = ">=3.8"
 dependencies = [
     "goygram>=0.8.11",
-    "rich>=13.7",
 ]
 
 [project.scripts]
 hotaru = "hotaru.__main__:main"
+
+[tool.hatch.version]
+source = "vcs"
 
 [tool.hatch.metadata]
 allow-direct-references = true

@@ -1325,14 +1325,14 @@ class Runtime:
             return None
 
     def _command_ver(self, invocation: Any) -> str:
-        from . import __version__
+        from .update import current_commit
 
         try:
             import goygram
             goygram_version = goygram.__version__
         except Exception:
             goygram_version = self.t("common.unknown")
-        return f"Hotaru {__version__} · goygram {goygram_version}"
+        return f"Hotaru @{current_commit()} · goygram {goygram_version}"
 
     def _command_st(self, invocation: Any) -> str:
         status = self.status()
