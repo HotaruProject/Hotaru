@@ -104,6 +104,11 @@ class CallbackContext:
 
     async def edit(self, text: str, **kwargs: Any) -> Any:
         runtime = getattr(self, "_hotaru_runtime", getattr(self._callback, "_hotaru_runtime", None))
+        form = (getattr(runtime, "_forms", None) or {}).get(getattr(self, "_hotaru_form_id", None))
+        if form is not None and runtime is not None:
+            kwargs.pop("module_id", None)
+            return await runtime.edit_form(form[0], text, **kwargs)
+
         raw_buttons = kwargs.get("buttons")
         if runtime is not None and self._has_input_buttons(raw_buttons):
             from hotaru.runtime import InputContext
