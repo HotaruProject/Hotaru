@@ -548,7 +548,7 @@
   "settings": {
     "runtime_unavailable": "Сервіс недоступний",
     "usage_alias": "Використання: {prefix}alias <аліас> <команда>",
-    "alias_invalid": "Аліас: 1–32 символи, лише a-z, 0-9 та _.",
+    "alias_invalid": "Аліас: 1–32 символи, літери будь-яких мов, цифри та _; не може починатися з цифри.",
     "alias_exists": "Команда вже існує: {alias}",
     "command_not_found": "Команду не знайдено: {command}\nДоступні: {known}",
     "alias_taken": "Аліас зайнято: {alias} → {command}. Видали через {prefix}rmalias {alias}.",

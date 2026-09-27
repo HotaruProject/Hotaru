@@ -9,12 +9,6 @@ from typing import Any
 from dataclasses import replace
 
 
-import re
-
-
-_ALIAS_RE = re.compile(r"^[a-z0-9_]{1,32}$")
-
-
 async def command_alias(ctx: Any, invocation: Any) -> Any:
     runtime = ctx.runtime
     if runtime is None:
@@ -26,7 +20,7 @@ async def command_alias(ctx: Any, invocation: Any) -> Any:
     alias, command = invocation.args
     alias = alias.casefold()
     command = command.casefold().lstrip("/")
-    if not _ALIAS_RE.match(alias):
+    if not 1 <= len(alias) <= 32 or not alias.isidentifier():
         await ctx.respond(ctx.t('settings.alias_invalid'))
         return
     if runtime.kernel.registry.resolve_name(alias) is None and command not in runtime.kernel.registry.names():
