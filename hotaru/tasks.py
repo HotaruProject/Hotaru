@@ -32,7 +32,8 @@ class TaskSupervisor:
         return task
 
     async def cancel_module(self, module_id: str) -> None:
-        tasks = tuple(self._tasks.get(module_id, ()))
+        current = asyncio.current_task()
+        tasks = tuple(task for task in self._tasks.get(module_id, ()) if task is not current)
         for task in tasks:
             task.cancel()
         if tasks:

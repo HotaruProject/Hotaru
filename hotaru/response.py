@@ -515,6 +515,8 @@ class ModuleContext:
         access = getattr(runtime, "access", None) if runtime is not None else None
         if access is None:
             raise RuntimeError("access manager is unavailable")
+        if not access.is_owner(getattr(self._source, "from_id", None)):
+            raise PermissionError("access administration is owner-only")
         return access
 
     @property
@@ -827,7 +829,7 @@ class ModuleContext:
         self_id = getattr(getattr(app, "session", None), "self_id", None)
         self._response_source = Obj(
             getattr(self._source, "src", "mt"),
-            {"kind": "msg", "msg_id": message_id, "chat_id": chat_id, "from_id": self_id, "is_me": True},
+            {"kind": "msg", "msg_id": message_id, "chat_id": chat_id, "from_id": self_id, "is_me": True, "_hotaru_actor_id": getattr(self._source, "from_id", None)},
             app,
         )
 

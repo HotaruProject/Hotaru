@@ -9,10 +9,11 @@ from relay.firewall import module_scope
 from typing import Any, Callable, Protocol, cast
 
 from .commands import CommandInvocation, CommandParser
-from .registry import CommandRegistry
+from .registry import CommandRegistry, CommandSpec
 from .inline_registry import InlineRegistry
 from .security import AccessVerdict, SecurityGate
 from .access import AccessManager, Permission
+from .tasks import TaskLimitError, TaskSupervisor
 
 ACTIVITY_POLL = 0.2
 
@@ -51,6 +52,7 @@ class Kernel:
         self.activity = activity or (lambda: 0)
         self.security: SecurityGate | None = None
         self.sandbox: Any = None
+        self.tasks = TaskSupervisor()
         self._seen: OrderedDict[tuple[str, int | str | None, int], None] = OrderedDict()
         self._seen_limit = seen_limit
         self._running: dict[tuple[int | str | None, int], asyncio.Task[Any]] = {}
@@ -64,7 +66,7 @@ class Kernel:
         return await self.dispatch(message, source="edit")
 
     async def _on_msg(self, message: Any) -> object | None:
-        asyncio.create_task(self.dispatch_watchers(message), name="hotaru:dispatch_watchers")
+        await self.dispatch_watchers(message)
         return await self.dispatch(message, source="new")
 
     async def dispatch_watchers(self, message: Any) -> None:
@@ -92,18 +94,22 @@ class Kernel:
             payload["topic_id"] = topic_id
 
         for watcher in watchers:
-            if self.sandbox is not None and watcher.sandbox:
-                asyncio.create_task(
-                    self._invoke_sandbox_watcher(watcher, payload, message),
-                    name=f"hotaru:watcher:{watcher.name}"
-                )
-            else:
-                if self.context_factory is not None:
+            try:
+                if self.sandbox is not None and watcher.sandbox:
+                    self.tasks.spawn(
+                        watcher.module_id,
+                        self._invoke_sandbox_watcher(watcher, payload, message),
+                        name=f"hotaru:watcher:{watcher.name}"
+                    )
+                elif self.context_factory is not None:
                     context = self.context_factory.create(watcher.module_id, message)
-                    asyncio.create_task(
+                    self.tasks.spawn(
+                        watcher.module_id,
                         self._invoke_watcher(watcher, context, message),
                         name=f"hotaru:watcher:{watcher.name}"
                     )
+            except TaskLimitError:
+                continue
 
     async def _invoke_sandbox_watcher(self, watcher: Any, payload: Any, message: Any) -> None:
         try:
@@ -124,14 +130,6 @@ class Kernel:
     async def dispatch(self, message: Any, *, source: str) -> object | None:
         if self._is_blocked_peer(message):
             return None
-        if not self._is_authorized(message):
-            return None
-        if self.security is not None:
-            name = self.parser.command_name(getattr(message, 'text', '') or '')
-            spec = self.registry.resolve_name(name) if name is not None else None
-            verdict = self.security.check(message, transport="mt", module_id=spec.module_id if spec is not None else None, is_group=self._is_group(message))
-            if verdict is not AccessVerdict.ALLOW:
-                return None
         message_id = self._message_id(message)
         chat_id = getattr(message, "chat_id", None)
         key = (source, chat_id, message_id)
@@ -146,7 +144,6 @@ class Kernel:
         )
         if invocation is None:
             return None
-        self._remember(key)
         spec = self.registry.resolve(invocation)
         if spec is None:
             swapped = self.parser.swap_invocation(invocation)
@@ -156,22 +153,34 @@ class Kernel:
                     invocation = swapped
         if spec is None:
             return None
+        if not self._is_authorized(message, spec):
+            return None
+        if self.security is not None:
+            verdict = self.security.check(message, transport="mt", module_id=spec.module_id, is_group=self._is_group(message))
+            if verdict is not AccessVerdict.ALLOW:
+                return None
+        self._remember(key)
         if self.suspended and not spec.kernel:
             return None
         task_key = (chat_id, message_id)
         previous = self._running.get(task_key)
         if previous is not None and not previous.done():
             previous.cancel()
-        task = asyncio.create_task(
-            self._execute(spec, invocation, message),
-            name=f"hotaru:cmd:{spec.name}",
-        )
+        try:
+            work = self.tasks.spawn(
+                spec.module_id,
+                self._invoke(spec, invocation, message),
+                name=f"hotaru:cmd:{spec.name}",
+            )
+        except TaskLimitError:
+            return None
+        task = asyncio.create_task(self._execute(spec, message, work), name=f"hotaru:response:{spec.name}")
+        task.add_done_callback(lambda _: work.cancel() if not work.done() else None)
         self._running[task_key] = task
         task.add_done_callback(lambda t: self._running.pop(task_key, None) if self._running.get(task_key) is t else None)
 
-    async def _execute(self, spec: Any, invocation: CommandInvocation, message: Any) -> object | None:
+    async def _execute(self, spec: Any, message: Any, task: asyncio.Task[Any]) -> object | None:
         try:
-            task = asyncio.create_task(self._invoke(spec, invocation, message), name=f"hotaru:cmd:{spec.name}")
             result = await self._await_work(task)
         except asyncio.TimeoutError:
             if self.response_service is not None:
@@ -212,15 +221,19 @@ class Kernel:
         """A command that is doing something gets all the time it needs: only an idle one times out."""
         started = time.monotonic()
         seen = self.activity()
-        while True:
-            done, _ = await asyncio.wait({task}, timeout=ACTIVITY_POLL)
-            if done:
-                return task.result()
-            if self.activity() != seen:
-                return await task
-            if time.monotonic() - started >= self.command_timeout:
+        try:
+            while True:
+                done, _ = await asyncio.wait({task}, timeout=ACTIVITY_POLL)
+                if done:
+                    return task.result()
+                if self.activity() != seen:
+                    return await task
+                if time.monotonic() - started >= self.command_timeout:
+                    raise asyncio.TimeoutError
+        finally:
+            if not task.done():
                 task.cancel()
-                raise asyncio.TimeoutError
+            await asyncio.gather(task, return_exceptions=True)
 
     async def _invoke(self, spec: Any, invocation: CommandInvocation, message: Any) -> object:
         if self.sandbox is not None and spec.sandbox:
@@ -291,40 +304,30 @@ class Kernel:
     def unregister_module_command(self, module_id: str, name: str) -> bool:
         return self.registry.unregister(name, module_id=module_id)
 
-    def _is_authorized(self, message: Any) -> bool:
+    def _is_authorized(self, message: Any, spec: CommandSpec | None = None) -> bool:
         user_id = getattr(message, "from_id", None)
         if not isinstance(user_id, int):
             user_id = None
+        if spec is None:
+            name = self.parser.command_name(getattr(message, "text", None) or "")
+            spec = self.registry.resolve_name(name) if name is not None else None
         if self.access is not None:
-            required = self._required_permission(message)
+            required = self._required_permission(message, spec)
             if self.access.allows(user_id, required):
                 return True
-            text = getattr(message, "text", None) or ""
-            name = self.parser.command_name(text)
             chat_id = getattr(message, "chat_id", None)
-            module_id = None
-            if name is not None:
-                spec = self.registry.resolve_name(name)
-                module_id = spec.module_id if spec is not None else None
-            if self.access.check_tsec(user_id, module_id, name, chat_id):
+            if spec is not None and self.access.check_tsec(user_id, spec.module_id, spec.name, chat_id):
                 return True
             return False
         if bool(getattr(message, "is_me", False)):
             return True
-        if self.owner_id is None:
-            return False
-        if user_id == self.owner_id:
-            return True
-        chat_id = getattr(message, "chat_id", None)
-        return chat_id == self.owner_id
+        return self.owner_id is not None and user_id == self.owner_id
 
-    def _required_permission(self, message: Any) -> Permission:
+    def _required_permission(self, message: Any, spec: CommandSpec | None = None) -> Permission:
         from .access import DEFAULT_COMMAND_PERMISSION, PUBLIC_COMMAND_PERMISSION
-        text = getattr(message, "text", None) or ""
-        name = self.parser.command_name(text)
-        if name is None:
-            return DEFAULT_COMMAND_PERMISSION
-        spec = self.registry.resolve_name(name)
+        if spec is None:
+            name = self.parser.command_name(getattr(message, "text", None) or "")
+            spec = self.registry.resolve_name(name) if name is not None else None
         if spec is None:
             return DEFAULT_COMMAND_PERMISSION
         if spec.kernel:

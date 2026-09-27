@@ -193,25 +193,45 @@ def install_seccomp():
         raise OSError("seccomp filter installation failed")
 
 
-def install_firewall(protected):
+def install_firewall(protected, namespaces=False):
     roots = [str(Path(item).resolve()) for item in protected]
+    native_root = str((Path(os.__file__).resolve().parent / "lib-dynload").resolve()) + os.sep
+
+    def deny_process(*args, **kwargs):
+        raise PermissionError("module process escape is denied")
+
+    for module_name, attribute in (("subprocess", "_fork_exec"), ("_posixsubprocess", "fork_exec")):
+        module = sys.modules.get(module_name)
+        if module is not None and hasattr(module, attribute):
+            setattr(module, attribute, deny_process)
 
     def audit(event, args):
+        if not namespaces and event == "os.chdir":
+            raise PermissionError("portable sandbox working directory is fixed")
+        if event.startswith("ctypes."):
+            raise PermissionError("module native code access is denied")
         if event == "import" and args and str(args[0]).split(".", 1)[0].casefold() in {"goygram", "hotaru", "relay"}:
             raise PermissionError("module cannot import Hotaru/GoyGram internals; use capability proxies")
+        if not namespaces and event == "import" and len(args) > 1 and args[1]:
+            if not str(Path(os.fsdecode(args[1])).resolve()).startswith(native_root):
+                raise PermissionError("portable sandbox only permits standard-library native extensions")
         if event in {"open", "os.open"} and args and isinstance(args[0], (str, bytes)):
+            if not namespaces and args[1] is None and not os.path.isabs(args[0]):
+                raise PermissionError("portable sandbox requires absolute paths for descriptor opens")
             value = str(Path(os.fsdecode(args[0])).resolve())
             if value.endswith((".vault", ".session")) or any(value == root or value.startswith(root + os.sep) for root in roots):
                 raise PermissionError("module access to Telegram session storage is denied")
-        if event in {"os.remove", "os.rmdir", "os.truncate", "shutil.rmtree"} and args and isinstance(args[0], (str, bytes)):
-            value = str(Path(os.fsdecode(args[0])).resolve())
-            if any(value == root or value.startswith(root + os.sep) for root in roots):
-                raise PermissionError("module access to Telegram session storage is denied")
-        if event in {"os.rename", "os.link", "os.symlink"} and args and isinstance(args[0], (str, bytes)):
-            value = str(Path(os.fsdecode(args[0])).resolve())
-            if any(value == root or value.startswith(root + os.sep) for root in roots):
-                raise PermissionError("module access to Telegram session storage is denied")
-        if event in {"subprocess.Popen", "os.system", "os.posix_spawn", "ctypes.dlopen", "multiprocessing.Process"}:
+        if event in {"os.remove", "os.rmdir", "os.truncate", "shutil.rmtree", "os.rename", "os.link", "os.symlink"}:
+            count = 2 if event in {"os.rename", "os.link", "os.symlink"} else 1
+            for path in args[:count]:
+                if not isinstance(path, (str, bytes)):
+                    continue
+                if not namespaces and not os.path.isabs(path) and any(isinstance(fd, int) and fd != -1 for fd in args[count:]):
+                    raise PermissionError("portable sandbox requires absolute paths for descriptor operations")
+                value = str(Path(os.fsdecode(path)).resolve())
+                if value.endswith((".vault", ".session")) or any(value == root or value.startswith(root + os.sep) or root.startswith(value.rstrip(os.sep) + os.sep) for root in roots):
+                    raise PermissionError("module access to Telegram session storage is denied")
+        if event in {"subprocess.Popen", "os.system", "os.posix_spawn", "os.exec", "os.fork", "os.forkpty", "multiprocessing.Process"}:
             raise PermissionError("module process escape is denied")
 
     sys.addaudithook(audit)
@@ -909,7 +929,7 @@ def main():
             if _exc.errno != _errno.EPERM:
                 sys.stderr.write(f"seccomp self-test failed: splice errno={_exc.errno}\n")
                 sys.exit(1)
-    install_firewall(cfg.get("protected", []))
+    install_firewall(cfg.get("protected", []), cfg.get("namespaces", False))
     apply_limits(
         cfg.get("mem_mb", 256),
         cfg.get("file_mb", 16),
@@ -1457,6 +1477,7 @@ class ModuleSandbox:
             "net_blocked": True,
             "seccomp": SECCOMP_POLICY,
             "seccomp_required": namespaces,
+            "namespaces": namespaces,
             "protected": [
                 str(self.runtime.config.session_dir),
                 str(self.runtime.config.session_dir / f"{self.runtime.config.session_name}.vault"),
@@ -1516,16 +1537,7 @@ class ModuleSandbox:
         return process
 
     def _spawn_worker(self, module_id: str, source: str, commands: list[str]) -> subprocess.Popen[bytes]:
-        try:
-            return self._spawn(module_id, source, commands)
-        except SandboxError:
-            if not self._namespaces:
-                raise
-            self._namespaces = False
-            observatory = getattr(self.runtime, "observatory", None)
-            if observatory is not None:
-                observatory.emit("sandbox", "namespaces_unavailable", module=module_id)
-            return self._spawn(module_id, source, commands, namespaces=False)
+        return self._spawn(module_id, source, commands)
 
     def _sink_worker_log(self, module_id: str, message: dict[str, Any]) -> None:
         observatory = getattr(self.runtime, "observatory", None)
@@ -1644,6 +1656,8 @@ class ModuleSandbox:
             reply = {"kind": "cap_result", "ok": False, "error": "capability host is unavailable"}
             if cap_host is not None:
                 try:
+                    if name == "shell":
+                        raise PermissionError("sandbox modules cannot execute host shell commands")
                     result = await cap_host.call(module_id, name, payload)
                     reply = {"kind": "cap_result", "ok": True, "result": result}
                 except Exception as exc:

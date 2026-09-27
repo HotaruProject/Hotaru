@@ -75,8 +75,11 @@ class BackupService:
         os.close(fd)
         temporary_path = Path(temporary)
         try:
+            manifest_data = json.dumps(manifest, sort_keys=True, separators=(",", ":"))
+            if len(manifest_data.encode("utf-8")) + sum(path.stat().st_size for _, path in files) > self.max_bytes:
+                raise BackupError("backup exceeds the expanded size limit")
             with zipfile.ZipFile(temporary_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
-                archive.writestr("manifest.json", json.dumps(manifest, sort_keys=True, separators=(",", ":")))
+                archive.writestr("manifest.json", manifest_data)
                 for name, path in files:
                     archive.write(path, name)
             if temporary_path.stat().st_size > self.max_bytes:
@@ -92,39 +95,56 @@ class BackupService:
         archive = self._regular(Path(archive_path))
         if archive.suffix != ".hbk":
             raise BackupError("backup must use the .hbk extension")
+        if archive.stat().st_size > self.max_bytes:
+            raise BackupError("backup exceeds the size limit")
         with zipfile.ZipFile(archive) as source:
-            names = source.namelist()
-            if "manifest.json" not in names:
-                raise BackupError("backup manifest is missing")
-            if any(Path(name).is_absolute() or ".." in Path(name).parts for name in names):
+            return self._inspect(source)
+
+    def _inspect(self, source: zipfile.ZipFile) -> DryRunResult:
+        names = source.namelist()
+        if len(names) != len(set(names)):
+            raise BackupError("backup contains duplicate paths")
+        if "manifest.json" not in names or "state/state.sqlite3" not in names:
+            raise BackupError("backup manifest or state is missing")
+        if sum(info.file_size for info in source.infolist()) > self.max_bytes:
+            raise BackupError("backup exceeds the expanded size limit")
+        for info in source.infolist():
+            name = info.filename
+            if name not in {"manifest.json", "state/state.sqlite3"} and not (
+                name.startswith("modules/") and name.count("/") == 1
+                and "\\" not in name and Path(name).suffix == ".hmod"
+            ):
                 raise BackupError("backup contains an unsafe path")
-            try:
-                decoded = cast(object, json.loads(source.read("manifest.json")))
-            except (json.JSONDecodeError, UnicodeDecodeError) as exc:
-                raise BackupError("backup manifest is invalid") from exc
-            if not isinstance(decoded, dict):
-                raise BackupError("backup manifest is unsupported")
-            manifest = cast('dict[str, object]', decoded)
-            records_value = manifest.get("files")
-            if manifest.get("format") != 1 or not isinstance(records_value, dict):
-                raise BackupError("backup manifest is unsupported")
-            records = cast('dict[str, object]', records_value)
-            expected = {"manifest.json", *records}
-            if set(names) != expected:
-                raise BackupError("backup archive contains unexpected files")
-            for name, record_value in records.items():
-                record = cast('dict[str, object]', record_value) if isinstance(record_value, dict) else None
-                if name not in names or record is None:
-                    raise BackupError("backup manifest does not match archive")
-                data = source.read(name)
-                if len(data) != record.get("size") or hashlib.sha256(data).hexdigest() != record.get("sha256"):
-                    raise BackupError("backup checksum verification failed")
-                if name == "state/state.sqlite3":
-                    self._validate_state(data)
-                elif name.startswith("modules/"):
-                    self._validate_module(data)
-            metadata = manifest.get("metadata", {})
-            return {"format": 1, "files": tuple(sorted(records)), "metadata": cast('dict[str, object]', metadata) if isinstance(metadata, dict) else {}}
+            if stat.S_ISLNK(info.external_attr >> 16):
+                raise BackupError("backup contains a symlink")
+        try:
+            decoded = cast(object, json.loads(source.read("manifest.json")))
+        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+            raise BackupError("backup manifest is invalid") from exc
+        if not isinstance(decoded, dict):
+            raise BackupError("backup manifest is unsupported")
+        manifest = cast('dict[str, object]', decoded)
+        records_value = manifest.get("files")
+        if manifest.get("format") != 1 or not isinstance(records_value, dict):
+            raise BackupError("backup manifest is unsupported")
+        records = cast('dict[str, object]', records_value)
+        expected = {"manifest.json", *records}
+        if set(names) != expected:
+            raise BackupError("backup archive contains unexpected files")
+        for name, record_value in records.items():
+            record = cast('dict[str, object]', record_value) if isinstance(record_value, dict) else None
+            if name not in names or name == "manifest.json" or record is None:
+                raise BackupError("backup manifest does not match archive")
+            data = source.read(name)
+            if len(data) != record.get("size") or hashlib.sha256(data).hexdigest() != record.get("sha256"):
+                raise BackupError("backup checksum verification failed")
+            if name == "state/state.sqlite3":
+                self._validate_state(data)
+            elif name.startswith("modules/"):
+                self._validate_module(data)
+        metadata = manifest.get("metadata", {})
+        self._validate_metadata(metadata)
+        return {"format": 1, "files": tuple(sorted(records)), "metadata": cast('dict[str, object]', metadata) if isinstance(metadata, dict) else {}}
 
     @classmethod
     def _validate_metadata(cls, value: object, depth: int = 0) -> None:
@@ -173,19 +193,27 @@ class BackupService:
         return RestorePlan(archive, result["files"], result["metadata"])
 
     def stage(self, archive_path: str | Path, directory: str | Path | None = None) -> Path:
-        self.dry_run(archive_path)
-        destination = Path(directory) if directory is not None else Path(tempfile.mkdtemp(prefix="hotaru-restore-"))
-        destination.mkdir(parents=True, exist_ok=True)
-        with zipfile.ZipFile(Path(archive_path)) as source:
+        archive = self._regular(Path(archive_path))
+        if archive.suffix != ".hbk" or archive.stat().st_size > self.max_bytes:
+            raise BackupError("backup extension or size is invalid")
+        with zipfile.ZipFile(archive) as source:
+            self._inspect(source)
+            destination = Path(directory) if directory is not None else Path(tempfile.mkdtemp(prefix="hotaru-restore-"))
+            if destination.is_symlink():
+                raise BackupError("restore destination is a symlink")
+            destination.mkdir(parents=True, exist_ok=True)
+            destination.chmod(0o700)
             for info in source.infolist():
                 name = info.filename
                 if name == "manifest.json":
                     continue
-                if stat.S_ISLNK(info.external_attr >> 16):
-                    raise BackupError("backup contains a symlink")
                 target = destination / name
+                if target.parent.is_symlink():
+                    raise BackupError("restore directory is a symlink")
                 target.parent.mkdir(parents=True, exist_ok=True)
-                with target.open("xb") as stream:
+                target.parent.chmod(0o700)
+                fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+                with os.fdopen(fd, "wb") as stream:
                     stream.write(source.read(name))
         return destination
 
@@ -197,11 +225,11 @@ class BackupService:
         modules_path: str | Path,
     ) -> None:
         source = Path(staged)
-        state_source = source / "state/state.sqlite3"
+        state_source = self._regular(source / "state/state.sqlite3")
         modules_source = source / "modules"
         if not state_source.is_file():
             raise BackupError("staged restore is incomplete")
-        if modules_source.exists() and not modules_source.is_dir():
+        if modules_source.is_symlink() or (modules_source.exists() and not modules_source.is_dir()):
             raise BackupError("staged module tree is invalid")
         modules_source.mkdir(parents=True, exist_ok=True)
         target_state = Path(state_path)
@@ -219,12 +247,14 @@ class BackupService:
         modules_replaced = False
         try:
             shutil.copy2(state_source, state_temp)
+            state_temp.chmod(0o600)
             for item in modules_source.iterdir():
                 if item.is_symlink() or not item.is_file() or item.suffix != ".hmod":
                     raise BackupError("staged module tree contains an unsafe file")
                 shutil.copy2(item, modules_temp / item.name)
+                (modules_temp / item.name).chmod(0o600)
             if target_state.exists():
-                rollback_state = self._snapshot_state(target_state)
+                rollback_state = self._snapshot_state(self._regular(target_state))
                 os.replace(rollback_state, state_backup)
                 self._remove_sqlite_sidecars(target_state)
             else:

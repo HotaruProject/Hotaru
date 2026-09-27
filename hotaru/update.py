@@ -199,7 +199,7 @@ def _update_repository(root: str | os.PathLike[str]) -> UpdateResult:
     if status:
         stamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
         recovery = repo / ".hotaru" / "recovery" / (stamp + "-" + before[:12])
-        recovery.mkdir(parents=True, exist_ok=False)
+        recovery.mkdir(mode=0o700, parents=True, exist_ok=False)
         (recovery / "status.bin").write_bytes(status)
         (recovery / "tracked.patch").write_bytes(_git(repo, "diff", "--binary", "HEAD").stdout)
         (recovery / "staged.patch").write_bytes(_git(repo, "diff", "--binary", "--cached", "HEAD").stdout)

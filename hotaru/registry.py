@@ -59,6 +59,8 @@ class CommandRegistry:
             raise ValueError(f"kernel command is reserved: {key}")
         if current is not None:
             raise ValueError(f"command already registered: {key}")
+        if kernel:
+            self._aliases.pop(key, None)
         self._items[key] = CommandSpec(name=key, handler=handler, kernel=kernel, module_id=module_id, sandbox=sandbox)
 
     def register_kernel_module(self, module_id: str) -> None:
@@ -76,6 +78,9 @@ class CommandRegistry:
         return tuple(self._watchers)
 
     def register_alias(self, alias: str, command: str) -> None:
+        current = self._items.get(alias.casefold())
+        if current is not None and (current.kernel or current.module_id in KERNEL_MODULES):
+            raise ValueError(f"kernel command is reserved: {alias}")
         self._aliases[alias.casefold()] = command.casefold()
 
     def unregister_alias(self, alias: str) -> bool:

@@ -90,9 +90,13 @@ def _install(specs: list[str]) -> None:
             [py, "-m", "pip", "install", *specs],
             [py, "-m", "pip", "install", "-U", "--upgrade-strategy", "eager", *specs],
         ]
+    from .deps import run_project_install
     output = ""
-    for command in commands:
-        proc = subprocess.run(command, cwd=ROOT, capture_output=True, text=True)
+    for index, command in enumerate(commands):
+        if index == len(commands) - 1:
+            proc = run_project_install(command, cwd=ROOT)
+        else:
+            proc = subprocess.run(command, cwd=ROOT, capture_output=True, text=True)
         output = (proc.stdout or "") + (proc.stderr or "")
         if proc.returncode == 0:
             return

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, BinaryIO, cast
 
 from relay.firewall import trusted_scope
 
@@ -26,8 +26,8 @@ async def put(app: Any, source: Any, *, file_name: str | None = None, **kw: Any)
         return await app.charged_upload(source, file_name=file_name, **kw)
 
 
-async def take(app: Any, source: Any, destination: str | Path, **kw: Any) -> Any:
-    dest = str(destination)
+async def take(app: Any, source: Any, destination: str | Path | BinaryIO, **kw: Any) -> Any:
+    dest = str(destination) if isinstance(destination, (str, Path)) else destination
     with trusted_scope():
         obj: Any = source
         if isinstance(obj, tuple):

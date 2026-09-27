@@ -1,8 +1,14 @@
 from __future__ import annotations
 
 import json
+import http.client
+import ipaddress
+import socket
 import asyncio
 import os
+import secrets
+import stat
+from pathlib import Path
 import subprocess
 import urllib.parse
 import urllib.request
@@ -76,8 +82,12 @@ MT_BLOCKED = frozenset({
 
 
 def normalize_method(name: str) -> str:
+    name = name.strip()
+    if name.startswith("mt_"):
+        name = name[3:]
     if "." in name:
-        return name
+        namespace, method = name.split(".", 1)
+        return namespace + "." + method.replace("_", "")
     parts = name.split("_")
     if len(parts) < 2:
         return name
@@ -165,6 +175,95 @@ def _result_body(value: Any) -> dict[str, Any]:
     return cast('dict[str, Any]', result) if isinstance(result, dict) else payload
 
 
+def _public_connection(address: tuple[str, int], timeout: Any = None, source_address: Any = None) -> socket.socket:
+    hostname, port = address
+    if is_blocked_host(hostname):
+        raise PermissionError("net url targets a denied host")
+    addresses = socket.getaddrinfo(hostname, port, type=socket.SOCK_STREAM, proto=socket.IPPROTO_TCP)
+    for _, _, _, _, target in addresses:
+        addr = ipaddress.ip_address(target[0])
+        if not addr.is_global or addr.is_multicast:
+            raise PermissionError("net url resolves to a non-public address")
+    error: OSError = OSError("net url could not be resolved")
+    for family, kind, proto, _, target in addresses:
+        sock = socket.socket(family, kind, proto)
+        try:
+            sock.settimeout(timeout)
+            if source_address is not None:
+                sock.bind(source_address)
+            sock.connect(target)
+            return sock
+        except OSError as exc:
+            error = exc
+            sock.close()
+    raise error
+
+
+class _PublicHTTPConnection(http.client.HTTPConnection):
+    def connect(self) -> None:
+        cast(Any, self)._create_connection = _public_connection
+        super().connect()
+
+
+class _PublicHTTPSConnection(http.client.HTTPSConnection):
+    def connect(self) -> None:
+        cast(Any, self)._create_connection = _public_connection
+        super().connect()
+
+
+class _PublicHTTPHandler(urllib.request.HTTPHandler):
+    def http_open(self, req: Any) -> Any:
+        return self.do_open(_PublicHTTPConnection, req)
+
+
+class _PublicHTTPSHandler(urllib.request.HTTPSHandler):
+    def https_open(self, req: Any) -> Any:
+        return self.do_open(_PublicHTTPSConnection, req)
+
+
+def _workspace_open(root: Path, name: str, flags: int) -> int:
+    root = root.absolute()
+    target = Path(name)
+    if target.is_absolute():
+        try:
+            target = target.relative_to(root)
+        except ValueError as exc:
+            raise PermissionError("file path escapes the module workspace") from exc
+    if ".." in root.parts or ".." in target.parts:
+        raise PermissionError("file path escapes the module workspace")
+    directory = os.open(root.anchor, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        for part in (*root.parts[1:], *target.parts[:-1]):
+            try:
+                child = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=directory)
+            except FileNotFoundError:
+                if not flags & os.O_CREAT:
+                    raise
+                try:
+                    os.mkdir(part, 0o755, dir_fd=directory)
+                except FileExistsError:
+                    pass
+                child = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=directory)
+            os.close(directory)
+            directory = child
+        fd = os.open(target.name or ".", (flags & ~os.O_TRUNC) | os.O_NOFOLLOW | os.O_NONBLOCK, 0o644, dir_fd=directory)
+        try:
+            info = os.fstat(fd)
+            if flags & os.O_DIRECTORY:
+                if not stat.S_ISDIR(info.st_mode):
+                    raise PermissionError("workspace directory required")
+            elif not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+                raise PermissionError("workspace file must be regular and unlinked elsewhere")
+            if flags & os.O_TRUNC:
+                os.ftruncate(fd, 0)
+        except BaseException:
+            os.close(fd)
+            raise
+        return fd
+    finally:
+        os.close(directory)
+
+
 class CapabilityHost:
     def __init__(self, runtime: Any) -> None:
         self.runtime = runtime
@@ -195,11 +294,7 @@ class CapabilityHost:
         if capability not in KNOWN:
             raise PermissionError(f"unknown capability: {capability}")
         meta = PROVIDERS[capability]
-        if capability == "modules":
-            op = payload.get("op") if isinstance(payload.get("op"), str) else ""
-            if op in ("list", "info", "hashes", "unload", "reload") and not self._allowed(module_id, capability):
-                raise PermissionError(f"capability not granted to module: {capability}")
-        elif capability == "logs":
+        if capability == "logs":
             return self._logs_op(module_id, payload)
         elif capability == "fetch":
             return await self._fetch_op(module_id, payload)
@@ -225,6 +320,8 @@ class CapabilityHost:
         raise PermissionError(f"capability not implemented: {capability}")
 
     async def _inline_op(self, module_id: str, payload: dict[str, Any], meta: Any) -> Any:
+        if payload_hits_blocked(payload):
+            raise PermissionError("inline payload targets a denied peer")
         inline = getattr(self.runtime, "inline", None)
         if inline is None:
             raise PermissionError("inline is unavailable")
@@ -239,6 +336,8 @@ class CapabilityHost:
         raise PermissionError(f"inline op is invalid: {op}")
 
     async def _fetch_op(self, module_id: str, payload: dict[str, Any]) -> Any:
+        if payload_hits_blocked(payload):
+            raise PermissionError("fetch payload targets a denied peer")
         app = self.runtime.app
         if app is None or app.mt is None:
             raise PermissionError("userbot transport is not ready")
@@ -246,6 +345,8 @@ class CapabilityHost:
 
         async def _history(peer_value: Any, offset_id: int, limit: int) -> list[dict[str, Any]]:
             peer = await app.mt.resolve_peer(peer_value)
+            if payload_hits_blocked(peer):
+                raise PermissionError("resolved fetch target is a denied peer")
             result = await app.mt_messages_get_history(
                 peer=peer,
                 offset_id=offset_id,
@@ -373,6 +474,8 @@ class CapabilityHost:
         method = method.strip()
         lowered = method.lower()
         canonical = normalize_method(lowered).lower()
+        if "." not in canonical:
+            raise PermissionError("mt capability requires a namespaced RPC method")
         if canonical.startswith(("auth.", "phone.")) or canonical in MT_BLOCKED:
             raise PermissionError(f"mt method is blocked by policy: {method}")
         if payload_hits_blocked(payload):
@@ -424,20 +527,32 @@ class CapabilityHost:
         root = self.runtime.config.state_path.parent / "workspaces" / module_id
         root.mkdir(parents=True, exist_ok=True)
         target = root / name
+        if root.is_symlink() or target.resolve().parent != root.resolve():
+            raise PermissionError("file path escapes the module workspace")
         if op == "read":
-            if not target.is_file():
+            try:
+                fd = _workspace_open(root, name, os.O_RDONLY)
+            except FileNotFoundError:
                 return None
-            return target.read_text(encoding="utf-8", errors="replace")
+            with os.fdopen(fd, "r", encoding="utf-8", errors="replace") as handle:
+                return handle.read()
         if op == "write":
             content = payload.get("content")
             if not isinstance(content, str):
                 raise PermissionError("file write requires string content")
             if len(content.encode()) > 1024 * 1024:
                 raise PermissionError("file write exceeds 1MB")
-            target.write_text(content, encoding="utf-8")
+            fd = _workspace_open(root, name, os.O_WRONLY | os.O_CREAT | os.O_TRUNC)
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                handle.write(content)
             return {"bytes": len(content.encode())}
         if op == "list":
-            return sorted(p.name for p in root.glob("*") if p.is_file())
+            fd = _workspace_open(root, "", os.O_RDONLY | os.O_DIRECTORY)
+            try:
+                with os.scandir(fd) as entries:
+                    return sorted(entry.name for entry in entries if entry.is_file(follow_symlinks=False))
+            finally:
+                os.close(fd)
         raise PermissionError(f"unknown file op: {op}")
 
     def _check_net_target(self, url: str) -> urllib.parse.ParseResult:
@@ -445,6 +560,8 @@ class CapabilityHost:
         if parsed.scheme not in ("http", "https"):
             raise PermissionError("net url scheme is not allowed")
         hostname = parsed.hostname
+        if parsed.username is not None or parsed.password is not None:
+            raise PermissionError("net url credentials are not allowed")
         if not hostname:
             raise PermissionError("net url must contain a hostname")
         hostname = urllib.parse.unquote(hostname)
@@ -456,7 +573,7 @@ class CapabilityHost:
             import socket
             for info in socket.getaddrinfo(hostname, port, proto=socket.IPPROTO_TCP):
                 addr = ipaddress.ip_address(info[4][0])
-                if addr.is_private or addr.is_loopback or addr.is_link_local or addr.is_reserved or addr.is_multicast or addr.is_unspecified:
+                if not addr.is_global or addr.is_multicast:
                     raise PermissionError("net url resolves to a non-public address")
         except PermissionError:
             raise
@@ -492,7 +609,7 @@ class CapabilityHost:
                     host._check_net_target(newurl)
                     return super().redirect_request(req, fp, code, msg, headers, newurl)
 
-            opener = urllib.request.build_opener(_CheckedRedirect())
+            opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), _PublicHTTPHandler(), _PublicHTTPSHandler(), _CheckedRedirect())
             with opener.open(request, timeout=min(float(timeout), 15.0)) as response:
                 raw = response.read(1024 * 512)
                 return {"status": response.status, "body": raw.decode("utf-8", errors="replace")}
@@ -509,6 +626,8 @@ class CapabilityHost:
         key = payload.get("key")
         if not isinstance(key, str) or not key or "\x00" in key or len(key) > 1024:
             raise PermissionError("state op requires a valid key")
+        if op in {"set", "delete"} and key in {"sourcepath", "caps-consent", "moduleversion", "lasterror"}:
+            raise PermissionError("module lifecycle state is protected")
         namespace = state.namespace(module_id)
         if op == "get":
             return namespace.get(key)
@@ -596,20 +715,13 @@ class CapabilityHost:
             raise PermissionError("module stager is not ready")
         if isinstance(url, str) and url.startswith("https://"):
             loaded, action = await runtime.load_module(url)
-        elif isinstance(text, str) and text:
+        elif isinstance(text, str) and ("\n" in text or text.lstrip().startswith("HOTARU")):
             loaded, action = await runtime.load_module(text)
-        elif isinstance(source, str) and source:
+        elif isinstance(source, str) and ("\n" in source or source.lstrip().startswith("HOTARU")):
             loaded, action = await runtime.load_module(source)
         else:
             raise PermissionError("modules load requires an https url or module source text")
         module_id = loaded.manifest.module_id
-        if action == "confirm":
-            if not self._allowed(caller_id, "modules"):
-                loaded.path.unlink(missing_ok=True)
-                runtime.state.delete_module(module_id)
-                raise PermissionError("modules capability is required")
-            runtime._mark_caps_consent(module_id, runtime._caps_fingerprint(loaded.manifest))
-            loaded, action = await runtime.load_module(loaded.source)
         return {
             "module_id": module_id,
             "version": loaded.manifest.version,
@@ -633,6 +745,8 @@ class CapabilityHost:
         target = payload.get("module_id")
         if not isinstance(target, str) or not target:
             raise PermissionError("modules reset requires a module_id")
+        if runtime._is_kernel_module(target.casefold()):
+            raise PermissionError("kernel module state is protected")
         result = await runtime.reset_module_database(target)
         if "not found" in result:
             raise PermissionError(result)
@@ -650,23 +764,29 @@ class CapabilityHost:
         return {"module_id": module_id, "action": "reloaded", "detail": result}
 
     async def _assets_op(self, module_id: str, payload: dict[str, Any], meta: dict[str, Any]) -> Any:
+        if payload_hits_blocked(payload):
+            raise PermissionError("assets payload targets a denied peer")
         import os
         from .sandbox import SANDBOX_BASE_ROOT
 
         op = payload.get("op")
         sandbox_root = os.path.join(SANDBOX_BASE_ROOT, module_id)
+        if os.path.realpath(sandbox_root) != sandbox_root:
+            raise PermissionError("invalid module workspace")
         
         if op == "upload":
             file_path = str(payload.get("file", ""))
             filename = str(payload.get("filename") or "")
-            path = os.path.abspath(os.path.join(sandbox_root, file_path))
-            if not path.startswith(sandbox_root) or not os.path.isfile(path):
+            path = os.path.realpath(os.path.join(sandbox_root, file_path))
+            if os.path.commonpath((sandbox_root, path)) != sandbox_root or not os.path.isfile(path):
                 raise PermissionError("invalid file path")
             app = self.runtime.app
             if app is None:
                 raise PermissionError("userbot transport is not ready")
             from relay.files import put
-            return await put(app, path, file_name=filename or None)
+            fd = _workspace_open(Path(sandbox_root), path, os.O_RDONLY)
+            with os.fdopen(fd, "rb") as handle:
+                return await put(app, handle, file_name=filename or Path(path).name)
 
         if op == "download":
             raw_message_value = payload.get("message")
@@ -675,8 +795,8 @@ class CapabilityHost:
             msg_dict = cast('dict[str, Any]', raw_message_value) if isinstance(raw_message_value, dict) else {}
             destination = payload.get("destination")
             if destination:
-                dest_path = os.path.abspath(os.path.join(sandbox_root, str(destination)))
-                if not dest_path.startswith(sandbox_root):
+                dest_path = os.path.realpath(os.path.join(sandbox_root, str(destination)))
+                if os.path.commonpath((sandbox_root, dest_path)) != sandbox_root:
                     raise PermissionError("invalid destination path")
             else:
                 dest_path = sandbox_root + "/"
@@ -688,7 +808,9 @@ class CapabilityHost:
             if chat_id is None or msg_id is None:
                 raise PermissionError("invalid message object")
             from relay.files import take
-            result_path = await take(app, (chat_id, msg_id), dest_path)
-            if result_path and isinstance(result_path, str) and result_path.startswith(sandbox_root):
-                return os.path.relpath(result_path, sandbox_root)
-            return result_path
+            if dest_path.endswith(os.sep) or os.path.isdir(dest_path):
+                dest_path = os.path.join(dest_path, secrets.token_hex(12) + ".bin")
+            fd = _workspace_open(Path(sandbox_root), dest_path, os.O_RDWR | os.O_CREAT | os.O_TRUNC)
+            with os.fdopen(fd, "w+b") as handle:
+                await take(app, (chat_id, msg_id), handle)
+            return os.path.relpath(dest_path, sandbox_root)
