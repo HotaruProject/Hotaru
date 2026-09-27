@@ -258,6 +258,7 @@ class Runtime:
         observatory_install(self.observatory)
         observatory_hook_stdio()
         self.activity = 0
+        self._relaunch = False
         self.tasks = TaskSupervisor()
         self.modules = ModuleManager(tasks=self.tasks)
         self.modules.form_cleanup = self.unload_module_forms
@@ -292,6 +293,10 @@ class Runtime:
     def note_activity(self) -> None:
         """Bumped whenever a module does something, so a busy command is never timed out."""
         self.activity += 1
+
+    def request_restart(self) -> None:
+        """Ask for a relaunch: re-exec can only happen in the main process, once it has shut down."""
+        self._relaunch = True
 
     async def _on_callback(self, callback: Any) -> object | None:
         if self.callbacks is None:
@@ -2492,3 +2497,8 @@ class Runtime:
             if self._account_lock is not None:
                 self._account_lock.close()
                 self._account_lock = None
+            if self._relaunch:
+                try:
+                    os.execv(sys.executable, [sys.executable, "-m", "hotaru", *sys.argv[1:]])
+                except OSError:
+                    log.error("relaunch failed", exc_info=True)
