@@ -1236,7 +1236,7 @@ _ERRNO_NAMES = {
     "landlock_create_ruleset", "landlock_add_rule", "landlock_restrict_self",
     "ioprio_set", "ioprio_get", "getcpu", "name_to_handle_at",
     "open_by_handle_at", "openat2", "pidfd_getfd", "process_madvise",
-    "quotactl_fd", "process_mrelease", "fchmodat2",
+    "quotactl_fd", "process_mrelease", "fchmodat2", "pidfd_open",
 }
 
 _KILL_NAMES = {
@@ -1252,7 +1252,7 @@ _KILL_NAMES = {
     "process_vm_readv", "process_vm_writev", "kcmp", "perf_event_open",
     "add_key", "request_key", "keyctl", "mbind", "set_mempolicy",
     "migrate_pages", "move_pages", "open_tree", "move_mount", "fsopen",
-    "fsconfig", "fsmount", "fspick", "mount_setattr", "pidfd_open",
+    "fsconfig", "fsmount", "fspick", "mount_setattr",
     "memfd_secret", "map_shadow_stack", "statmount", "listmount", "cachestat",
     "seccomp", "fanotify_init", "fanotify_mark",
 }
