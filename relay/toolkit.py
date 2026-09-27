@@ -393,34 +393,65 @@ def uptime() -> int:
     return round(time.perf_counter() - _BOOT_TS)
 
 
-def uptime_fmt() -> str:
-    total = uptime()
-    days, remainder = divmod(total, 86400)
-    hours, remainder = divmod(remainder, 3600)
-    minutes, seconds = divmod(remainder, 60)
-    parts: list[str] = []
-    if days:
-        parts.append(f"{days}d")
-    if hours:
-        parts.append(f"{hours}h")
-    if minutes:
-        parts.append(f"{minutes}m")
-    parts.append(f"{seconds}s")
-    return " ".join(parts)
+_DURATION_UNITS = (31557600 * 10**9, 31557600 * 10**8, 31557600 * 10**6,
+                   31557600 * 1000, 31557600 * 100, 31557600, 2629800, 604800, 86400, 3600, 60, 1)
+_DURATION_NAMES = {
+    "en": ("eon|eons", "era|eras", "epoch|epochs", "millennium|millennia", "century|centuries", "year|years", "month|months", "week|weeks", "day|days", "hour|hours", "minute|minutes", "second|seconds"),
+    "ru": ("эон|эона|эонов", "эра|эры|эр", "эпоха|эпохи|эпох", "тысячелетие|тысячелетия|тысячелетий", "век|века|веков", "год|года|лет", "месяц|месяца|месяцев", "неделя|недели|недель", "день|дня|дней", "час|часа|часов", "минута|минуты|минут", "секунда|секунды|секунд"),
+    "uk": ("еон|еони|еонів", "ера|ери|ер", "епоха|епохи|епох", "тисячоліття|тисячоліття|тисячоліть", "століття|століття|століть", "рік|роки|років", "місяць|місяці|місяців", "тиждень|тижні|тижнів", "день|дні|днів", "година|години|годин", "хвилина|хвилини|хвилин", "секунда|секунди|секунд"),
+    "kz": ("эон", "эра", "дәуір", "мыңжылдық", "ғасыр", "жыл", "ай", "апта", "күн", "сағат", "минут", "секунд"),
+    "ja": ("累代", "代", "世", "千年", "世紀", "年", "か月", "週間", "日", "時間", "分", "秒"),
+}
+_MONTH_NAMES = {
+    "en": "January February March April May June July August September October November December",
+    "ru": "января февраля марта апреля мая июня июля августа сентября октября ноября декабря",
+    "uk": "січня лютого березня квітня травня червня липня серпня вересня жовтня листопада грудня",
+    "kz": "қаңтар ақпан наурыз сәуір мамыр маусым шілде тамыз қыркүйек қазан қараша желтоқсан",
+}
 
 
-def duration(seconds: int | float) -> str:
-    if seconds < 0:
-        return "0s"
-    units = [(31536000, "y"), (2592000, "mo"), (86400, "d"), (3600, "h"), (60, "m"), (1, "s")]
+def uptime_fmt(language: str = "en") -> str:
+    return duration(uptime(), language)
+
+
+def duration(seconds: int | float, language: str = "en") -> str:
+    remaining = max(0, int(seconds))
+    language = language.lower().replace("_", "-").split("-")[0]
+    language = "kz" if language == "kk" else language
+    names = _DURATION_NAMES.get(language, _DURATION_NAMES["en"])
     parts: list[str] = []
-    remaining = int(seconds)
-    for unit_secs, label in units:
-        if remaining >= unit_secs:
-            count = remaining // unit_secs
-            remaining %= unit_secs
-            parts.append(f"{count}{label}")
-    return " ".join(parts) if parts else "0s"
+    for unit_secs, labels in zip(_DURATION_UNITS, names):
+        count, remaining = divmod(remaining, unit_secs)
+        if not count:
+            continue
+        forms = labels.split("|")
+        label = plural(count, *forms) if len(forms) == 3 else forms[min(count != 1, len(forms) - 1)]
+        parts.append(f"{count}{'' if language == 'ja' else ' '}{label}")
+    return " ".join(parts) or {"ru": "меньше секунды", "uk": "менше секунди", "kz": "бір секундтан аз", "ja": "1秒未満"}.get(language, "less than a second")
+
+
+def timestamp(value: int | float, language: str = "en") -> str:
+    date = datetime.fromtimestamp(value, timezone.utc)
+    language = language.lower().replace("_", "-").split("-")[0]
+    language = "kz" if language == "kk" else language
+    if language == "ja":
+        day = f"{date.year}年{date.month}月{date.day}日"
+    else:
+        month = _MONTH_NAMES.get(language, _MONTH_NAMES["en"]).split()[date.month - 1]
+        day = f"{date.day} {month} {date.year}"
+    return f"{day} · {date:%H:%M:%S} UTC"
+
+
+def time_range(start: int | float, end: int | float | None = None, language: str = "en") -> str:
+    first = timestamp(start, language)
+    if end is None:
+        return first
+    last = timestamp(end, language)
+    if first == last:
+        return first
+    if last.split(" · ")[0] == first.split(" · ")[0]:
+        return first[:-4] + "–" + last.split(" · ")[1]
+    return first + " — " + last
 
 
 def truncate(text: str, limit: int, suffix: str = "…") -> str:
@@ -898,6 +929,8 @@ TOOLKIT_FUNCS = {
     "uptime": uptime,
     "uptime_fmt": uptime_fmt,
     "duration": duration,
+    "timestamp": timestamp,
+    "time_range": time_range,
     "truncate": truncate,
     "table": table,
     "progress": progress,

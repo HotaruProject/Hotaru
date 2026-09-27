@@ -444,6 +444,11 @@
       "alias_not_found": "Псевдонім не знайдено: {alias}"
     },
     "logger": {
+      "metric": "Метрика",
+      "count": "Кількість",
+      "events": "Події",
+      "sources": "Джерела",
+      "log": "Журнал",
       "description": "Дублювання логів у тему",
       "mirror_on": "Дублювання логів увімкнено",
       "mirror_off": "Дублювання логів вимкнено",
@@ -531,6 +536,7 @@
     },
     "ping": {
       "description": "Перевірка відгуку юзербота",
+      "template": "<b>Пінг</b> <code>{latency} мс</code>\n<b>Час роботи</b> <code>{uptime}</code>",
       "commands": {
         "ping": {
           "description": "Замір пінгу юзербота"

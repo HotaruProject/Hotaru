@@ -444,6 +444,11 @@
       "alias_not_found": "Бүркеншік ат табылмады: {alias}"
     },
     "logger": {
+      "metric": "Көрсеткіш",
+      "count": "Саны",
+      "events": "Оқиғалар",
+      "sources": "Көздер",
+      "log": "Журнал",
       "description": "Логтарды тақырыпқа көшіру",
       "mirror_on": "Логтарды көшіру қосылды",
       "mirror_off": "Логтарды көшіру өшірілді",
@@ -531,6 +536,7 @@
     },
     "ping": {
       "description": "Юзерботтың жауап беруін тексеру",
+      "template": "<b>Пинг</b> <code>{latency} мс</code>\n<b>Жұмыс уақыты</b> <code>{uptime}</code>",
       "commands": {
         "ping": {
           "description": "Юзербот пингін өлшеу"

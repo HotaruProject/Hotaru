@@ -444,6 +444,11 @@
       "alias_not_found": "エイリアスが見つかりません: {alias}"
     },
     "logger": {
+      "metric": "指標",
+      "count": "件数",
+      "events": "イベント",
+      "sources": "ソース",
+      "log": "ログ",
       "description": "ログをトピックに転送",
       "mirror_on": "ログ転送を有効にしました",
       "mirror_off": "ログ転送を無効にしました",
@@ -531,6 +536,7 @@
     },
     "ping": {
       "description": "ユーザーボットの応答確認",
+      "template": "<b>応答時間</b> <code>{latency} ms</code>\n<b>稼働時間</b> <code>{uptime}</code>",
       "commands": {
         "ping": {
           "description": "ユーザーボットのpingを測定"

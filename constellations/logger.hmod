@@ -83,11 +83,11 @@ def _level_floor(state: Any) -> Any:
     return _DEFAULT_FLOOR
 
 
-def _fmt(payload: Mapping[str, Any]) -> str:
+def _fmt(ctx: Any, payload: Mapping[str, Any]) -> str:
     level = str(payload.get("level") or "info").upper()
     comp = str(payload.get("component") or "-")
     event = str(payload.get("event") or "-")
-    stamp = time.strftime("%d %B %Y · %H:%M:%S %Z", time.localtime(payload.get("ts") or 0))
+    stamp = ctx.tools.timestamp(payload.get("ts") or 0, ctx.i18n.language)
     parts = [f"[{stamp}]", level, comp, event]
     for key in sorted(set(payload) - {"ts", "time", "level", "component", "event"}):
         value = payload.get(key)
@@ -97,11 +97,20 @@ def _fmt(payload: Mapping[str, Any]) -> str:
     return html.escape(" ".join(str(p) for p in parts if p), quote=False)
 
 
-def _rich(batch: List[Mapping[str, Any]]) -> dict[str, Any]:
+def _rich(ctx: Any, batch: List[Mapping[str, Any]]) -> dict[str, Any]:
     sources = {str(p.get("module") or p.get("component") or "-") for p in batch}
     blocks: List[dict[str, Any]] = [
-        {"_": "pageBlockHeading1", "text": {"_": "textPlain", "text": "📋 Hotaru log"}},
-        {"_": "pageBlockParagraph", "text": {"_": "textPlain", "text": f"Events: {len(batch)} · Sources: {len(sources)}"}},
+        {"_": "pageBlockHeading1", "text": {"_": "textPlain", "text": "Hotaru log"}},
+        {"_": "pageBlockTable", "title": {"_": "textPlain", "text": ""}, "rows": [
+            {"_": "pageTableRow", "cells": [
+                {"_": "pageTableCell", "header": index == 0, "text": {"_": "textPlain", "text": str(value)}}
+                for value in row
+            ]}
+            for index, row in enumerate(((ctx.t("kernel.logger.metric", "Metric"), ctx.t("kernel.logger.count", "Count")),
+                                         (ctx.t("kernel.logger.events", "Events"), len(batch)),
+                                         (ctx.t("kernel.logger.sources", "Sources"), len(sources))))
+        ]},
+        {"_": "pageBlockHeading2", "text": {"_": "textPlain", "text": ctx.t("kernel.logger.log", "Log")}},
     ]
     group_start = None
     for payload in batch:
@@ -109,14 +118,13 @@ def _rich(batch: List[Mapping[str, Any]]) -> dict[str, Any]:
         if group_start is None or not 0 <= stamp - group_start <= 3:
             group_start = stamp
             blocks.append({"_": "pageBlockBlockquote", "text": {
-                "_": "textPlain", "text": time.strftime("%d %B %Y · %H:%M:%S %Z", time.localtime(stamp)),
+                "_": "textPlain", "text": ctx.tools.timestamp(stamp, ctx.i18n.language),
             }, "caption": {"_": "textPlain", "text": ""}})
         source = str(payload.get("component") or "-")
         if payload.get("module") and payload["module"] != source:
             source += f" / {payload['module']}"
         level = str(payload.get("level") or "info").upper()
-        icon = "🔴" if LEVELS.get(level.lower(), 20) >= 40 else "🟠" if LEVELS.get(level.lower(), 20) >= 30 else "🔹"
-        title = f"{icon} {level} · {source} · {payload.get('event') or '-'}"
+        title = f"{level} · {source} · {payload.get('event') or '-'}"
         lines = [str(payload["msg"])] if payload.get("msg") is not None else []
         for key in sorted(set(payload) - {"ts", "time", "level", "component", "module", "event", "msg"}):
             if payload[key] is not None:
@@ -217,7 +225,7 @@ async def task_pump(ctx: Any) -> Any:
     if topic_id is None:
         return
     try:
-        await ctx.forum.send(topic_id, "", rich=_rich(batch))
+        await ctx.forum.send(topic_id, "", rich=_rich(ctx, batch))
         _state["failed"] = 0
     except Exception as exc:
         _state["topic_id"] = None
@@ -273,7 +281,7 @@ async def command_logs(ctx: Any, invocation: Any) -> Any:
     os.close(fd)
     try:
         with open(raw_path, "w", encoding="utf-8") as stream:
-            stream.write("\n".join(_fmt(entry) for entry in entries))
+            stream.write("\n".join(_fmt(ctx, entry) for entry in entries))
         caption = ctx.t('kernel.logger.logs_caption', count=len(entries), level=level)
         await ctx.respond_file(raw_path, caption, file_name="hotaru-logs.txt", mime_type="text/plain")
         _emit(ctx, "logs_delivered", count=len(entries))
