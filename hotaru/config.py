@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Callable, Iterator, Mapping, Sequence, cast
 
 from .state import StateNamespace, StateStore
+from relay.toolkit import template_fields, template_render
 
 
 def discover_state(path: str | Path | None = None) -> Path:
@@ -394,7 +395,7 @@ def validator_from_spec(spec: Any) -> Validator:
     if isinstance(spec, Validator):
         return spec
     if isinstance(spec, dict):
-        spec_dict = cast(dict[str, Any], spec)
+        spec_dict = cast('dict[str, Any]', spec)
         type_name = str(spec_dict.get("type", "str")).casefold()
         default = spec_dict.get("default")
         if type_name in {"bool", "boolean"}:
@@ -439,12 +440,20 @@ class ConfigField:
     secret: bool = False
     requires_restart: bool = False
     default_key: str = ""
+    template_fields: dict[str, dict[str, Any]] | None = None
+    legacy_braces: bool = False
 
     def coerce(self, value: Any) -> Any:
-        return self.validator.validate(value)
+        result = self.validator.validate(value)
+        if self.template_fields is not None:
+            try:
+                template_render(result, self.template_fields)
+            except ValueError as exc:
+                raise ConfigValidationError(str(exc)) from exc
+        return result
 
     def parse_input(self, raw: str) -> Any:
-        return self.validator.parse(raw)
+        return self.coerce(self.validator.parse(raw))
 
     def format_value(self, value: Any, mask_secret: bool = True) -> str:
         if self.secret and mask_secret:
@@ -463,6 +472,9 @@ class ConfigField:
             "requires_restart": self.requires_restart,
             "default_key": self.default_key,
         })
+        if self.template_fields is not None:
+            res["template_fields"] = self.template_fields
+            res["legacy_braces"] = self.legacy_braces
         return res
 
 
@@ -492,7 +504,21 @@ class ConfigSchema:
                     doc = str(spec.get("doc", ""))
                     sec = bool(spec.get("secret", False) or isinstance(v, SecretValidator))
                     rst = bool(spec.get("requires_restart", False))
-                    fields[key] = ConfigField(key=key, validator=v, default=default, description=desc, category=cat, doc=doc, secret=sec, requires_restart=rst, default_key=str(spec.get("default_key", "")))
+                    declared = None
+                    legacy = spec.get("legacy_braces", False)
+                    if type(legacy) is not bool:
+                        raise ConfigValidationError(f"{key}: legacy_braces must be boolean")
+                    if "template_fields" in spec:
+                        if not isinstance(v, StringValidator) or sec:
+                            raise ConfigValidationError(f"{key}: template_fields requires a non-secret string parameter")
+                        try:
+                            declared = template_fields(spec["template_fields"])
+                            template_render(default, declared)
+                        except ValueError as exc:
+                            raise ConfigValidationError(f"{key}: {exc}") from exc
+                    elif legacy:
+                        raise ConfigValidationError(f"{key}: legacy_braces requires template_fields")
+                    fields[key] = ConfigField(key=key, validator=v, default=default, description=desc, category=cat, doc=doc, secret=sec, requires_restart=rst, default_key=str(spec.get("default_key", "")), template_fields=declared, legacy_braces=legacy)
                 else:
                     v = StringValidator(default=str(s or ""))
                     fields[key] = ConfigField(key=key, validator=v, default=str(s or ""))
@@ -572,10 +598,16 @@ class ModuleConfig:
             raw = fallback
         if field is not None and raw is not None:
             try:
-                return field.coerce(raw)
+                return field.validator.validate(raw) if field.legacy_braces else field.coerce(raw)
             except ConfigValidationError:
                 return fallback
         return raw
+
+    def render(self, key: str, **values: Any) -> str:
+        field = self.schema[key]
+        if field.template_fields is None:
+            raise ConfigValidationError(f"{key}: no template_fields declared")
+        return template_render(self.get(key), field.template_fields, values, legacy_braces=field.legacy_braces)
 
     def __getitem__(self, key: str) -> Any:
         val = self.get(key)

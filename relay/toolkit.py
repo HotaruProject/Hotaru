@@ -392,6 +392,115 @@ def render(template: str, **data: Any) -> str:
     return result
 
 
+def _template_format(value: Any, spec: str) -> str:
+    if len(spec) > 32 or "{" in spec or "}" in spec:
+        raise ValueError("Nested or oversized format specifications are not allowed")
+    if spec and type(value) not in (int, float):
+        raise ValueError("Format specifications require a numeric field")
+    if spec and not re.fullmatch(r"(?:[^{}][<>=^]|[<>=^])?[+ -]?#?0?\d{0,3}[_,]?(?:\.\d{1,3})?[bcdeEfFgGnosxX%]?", spec):
+        raise ValueError("Unsupported numeric format specification")
+    if any(int(size) > 256 for size in re.findall(r"\d+", spec)):
+        raise ValueError("Format width and precision must not exceed 256")
+    try:
+        return format(value, spec)
+    except (ValueError, OverflowError) as exc:
+        raise ValueError(f"Invalid numeric format: {spec}") from exc
+
+
+def _template_value(value: Any, kind: str) -> bool:
+    return ((kind == "str" and type(value) is str and len(value) <= 16000)
+            or (kind == "int" and type(value) is int and value.bit_length() <= 256)
+            or (kind == "float" and type(value) in (int, float) and -1e100 <= cast(float, value) <= 1e100)
+            or (kind == "bool" and type(value) is bool))
+
+
+def template_fields(raw: object) -> dict[str, dict[str, Any]]:
+    if not isinstance(raw, dict) or not 1 <= len(cast('dict[object, object]', raw)) <= 64:
+        raise ValueError("template_fields must declare between 1 and 64 fields")
+    result: dict[str, dict[str, Any]] = {}
+    for name, entry in cast('dict[object, object]', raw).items():
+        if not isinstance(name, str) or not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,63}", name):
+            raise ValueError("Invalid template field name")
+        if not isinstance(entry, dict):
+            raise ValueError(f"{name}: field metadata must be a mapping")
+        meta = cast('dict[str, Any]', entry)
+        if set(meta) - {"type", "description", "description_key", "example", "format"}:
+            raise ValueError(f"{name}: unknown template field metadata")
+        kind = meta.get("type", "str")
+        if kind not in ("str", "int", "float", "bool") or not _template_value(meta.get("example"), kind):
+            raise ValueError(f"{name}: example must match type str/int/float/bool within size limits")
+        description = meta.get("description", "")
+        if isinstance(description, dict):
+            descriptions = cast('dict[object, object]', description)
+            if not descriptions or any(lang not in ("en", "ru", "kz", "uk", "ja") or not isinstance(text, str) or len(text) > 1000 for lang, text in descriptions.items()):
+                raise ValueError(f"{name}: invalid localized description")
+        elif not isinstance(description, str) or len(description) > 1000:
+            raise ValueError(f"{name}: description must be text or a locale mapping")
+        description_key = meta.get("description_key", "")
+        if not isinstance(description_key, str) or len(description_key) > 200 or not (description or description_key):
+            raise ValueError(f"{name}: a description or description_key is required")
+        spec = meta.get("format", "")
+        if not isinstance(spec, str):
+            raise ValueError(f"{name}: format must be a string")
+        try:
+            _template_format(meta["example"], spec)
+        except ValueError as exc:
+            raise ValueError(f"{name}: {exc}") from exc
+        result[name] = dict(meta, type=kind)
+    return result
+
+
+def template_render(template: object, fields: object, values: object = None, *, legacy_braces: bool = False) -> str:
+    declared = template_fields(fields)
+    if not isinstance(template, str) or len(template) > 4096:
+        raise ValueError("Template must be text of at most 4096 characters")
+    if values is None:
+        data = {name: meta["example"] for name, meta in declared.items()}
+    else:
+        if not isinstance(values, dict):
+            raise ValueError("Template values must be a mapping")
+        data = cast('dict[str, Any]', values)
+        if len(data) > 64 or any(not isinstance(key, str) for key in cast('dict[object, object]', values)):
+            raise ValueError("Template values require at most 64 named keys")
+    if set(data) - set(declared):
+        raise ValueError("Unknown template values: " + ", ".join(sorted(set(data) - set(declared))))
+    try:
+        parts = list(string.Formatter().parse(template))
+        for _, name, _, conversion in parts:
+            if name is not None and (name not in declared or conversion is not None):
+                raise ValueError(f"Unknown or unsafe template field {{{name}}}; available: " + ", ".join(declared))
+    except ValueError:
+        if not legacy_braces:
+            raise
+        escaped = template.replace("{", "{{").replace("}", "}}")
+        for name in declared:
+            escaped = escaped.replace("{{" + name + "}}", "{" + name + "}")
+        parts = list(string.Formatter().parse(escaped))
+    if len(parts) > 256:
+        raise ValueError("Template has too many fields or escaped braces (maximum 256)")
+    output: list[str] = []
+    size = 0
+    for literal, name, spec, _ in parts:
+        piece = literal
+        if name is not None:
+            if name not in data:
+                raise ValueError(f"Missing template value: {name}")
+            meta = declared[name]
+            value = data[name]
+            if not _template_value(value, meta["type"]):
+                raise ValueError(f"{name}: expected {meta['type']} within size limits")
+            try:
+                formatted = _template_format(value, spec or meta.get("format", ""))
+            except ValueError as exc:
+                raise ValueError(f"{name}: {exc}") from exc
+            piece += _html_mod.escape(formatted, quote=True)
+        size += len(piece)
+        if size > 16000:
+            raise ValueError("Rendered template exceeds 16000 characters")
+        output.append(piece)
+    return "".join(output)
+
+
 def uptime() -> int:
     return round(time.perf_counter() - _BOOT_TS)
 
@@ -994,6 +1103,8 @@ async def search(values: Any, query: object, *, key: Any = None, limit: object =
 
 
 TOOLKIT_FUNCS = {
+    "template_fields": template_fields,
+    "template_render": template_render,
     "search": search,
     "args_parse": args_parse,
     "args_raw": args_raw,
