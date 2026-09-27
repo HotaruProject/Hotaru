@@ -569,7 +569,7 @@
   "settings": {
     "runtime_unavailable": "Runtime unavailable",
     "usage_alias": "Usage: {prefix}alias <alias> <command>",
-    "alias_invalid": "Alias: 1–32 characters, a-z, 0-9 and _ only.",
+    "alias_invalid": "Alias: 1–32 characters, Unicode letters, digits and _; cannot start with a digit.",
     "alias_exists": "Command already exists: {alias}",
     "command_not_found": "Command not found: {command}\nAvailable: {known}",
     "alias_taken": "Alias is taken: {alias} → {command}. Remove it with {prefix}rmalias {alias}.",
