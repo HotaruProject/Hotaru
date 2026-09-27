@@ -35,18 +35,23 @@ async def _reply_sender_id(ctx: Any, invocation: Any) -> Any:
         return from_peer
     return None
 
-async def _resolve_target_user(ctx: Any, invocation: Any) -> Any:
-    args = invocation.args
-    for i, token in enumerate(args):
-        if token.lstrip("-").isdigit():
-            return int(token), args[i + 1:]
+async def _resolve_target_user(ctx: Any, invocation: Any, start: int = 0) -> Any:
+    args = invocation.args[start:]
+    if args:
+        token = args[0]
+        if token.isdigit() and int(token) > 0:
+            return int(token), args[1:]
+        if token.startswith("@"):
+            try:
+                user = await ctx.resolve(token)
+                uid = user.get("user_id", user.get("id")) if isinstance(user, dict) else getattr(user, "id", None)
+                if isinstance(uid, int) and uid > 0:
+                    return uid, args[1:]
+            except Exception:
+                pass
+        return None, args
     sender = await _reply_sender_id(ctx, invocation)
-    if sender is not None:
-        return sender, args
-    chat_id = getattr(invocation.message, "chat_id", None)
-    if isinstance(chat_id, int) and chat_id > 0:
-        return chat_id, args
-    return None, args
+    return (sender if isinstance(sender, int) and sender > 0 else None), args
 
 def _parse_duration(raw: Any) -> Any:
     raw = (raw or "").strip().lower()
@@ -65,7 +70,7 @@ def _parse_duration(raw: Any) -> Any:
 
 async def command_owls(ctx: Any, invocation: Any) -> Any:
     owners = ctx.access_admin.owners
-    rows = [f"<code>{uid}</code>" + (ctx.t('acl.account') if uid == ctx.access_admin.owner_id else ctx.t('acl.protected') if uid in ctx.access_admin.protected else '') for uid in owners]
+    rows = [f"<code>{uid}</code>" + (ctx.t('acl.account') if uid == getattr(getattr(ctx.runtime.app, 'session', None), 'self_id', None) else ctx.t('acl.protected') if uid in ctx.access_admin.protected else '') for uid in owners]
     await ctx.respond(ctx.t('acl.owners') + "<br>".join(rows), parse_mode="HTML")
 
 async def command_owadd(ctx: Any, invocation: Any) -> Any:
@@ -76,15 +81,14 @@ async def command_owadd(ctx: Any, invocation: Any) -> Any:
     if user_id == ctx.access_admin.owner_id:
         await ctx.respond(ctx.t('acl.self_owner'), parse_mode="HTML")
         return
-    try:
+    async def confirm(call: Any, payload: Any) -> None:
+        if not ctx.access_admin.is_owner(call.from_id):
+            await call.answer(ctx.t("acl.no_permission"), alert=True)
+            return
+        user_id = int(payload["user_id"])
         added = ctx.access_admin.add_owner(user_id)
-    except Exception as exc:
-        await ctx.respond(ctx.t('acl.failed', error=_escape(exc)), parse_mode="HTML")
-        return
-    await ctx.respond(
-        ctx.t('acl.owner_added', user_id=user_id) if added else ctx.t('acl.owner_exists', user_id=user_id),
-        parse_mode="HTML",
-    )
+        await call.edit(ctx.t('acl.owner_added' if added else 'acl.owner_exists', user_id=user_id), buttons=[])
+    await ctx.respond(ctx.t("acl.owner_confirm", user_id=user_id), buttons=[[ctx.ui.danger(ctx.t("acl.confirm"), confirm, {"user_id": user_id}), ctx.ui.close(ctx.t("common.cancel"))]])
 
 async def command_owrm(ctx: Any, invocation: Any) -> Any:
     user_id, _rest = await _resolve_target_user(ctx, invocation)
@@ -140,14 +144,14 @@ async def command_sg(ctx: Any, invocation: Any) -> Any:
         await ctx.respond(ctx.t('acl.group_missing', name=_escape(invocation.args[0])), parse_mode="HTML")
         return
     users = "<br>".join(f"▫️ <code>{uid}</code>" for uid in group.users) or ctx.t("common.none")
-    rules = "<br>".join(f"▫️ {_escape(p.get('rule_type'))}/{_escape(p.get('rule'))}" for p in group.permissions) or ctx.t("common.none")
+    rules = "<br>".join(f"▫️ {_escape(p.get('rule_type'))}/{_escape(p.get('rule'))} — " + (ctx.tools.timestamp(p["expires"], ctx.i18n.language) if p.get("expires") else ctx.t("acl.forever")) for p in group.permissions) or ctx.t("common.none")
     await ctx.respond(
         ctx.t('acl.group_detail', name=_escape(group.name), users=users, rules=rules),
         parse_mode="HTML",
     )
 
 async def command_sgadd(ctx: Any, invocation: Any) -> Any:
-    if len(invocation.args) < 2:
+    if not invocation.args:
         await ctx.respond(_usage(ctx), parse_mode="HTML")
         return
     name = invocation.args[0]
@@ -155,7 +159,7 @@ async def command_sgadd(ctx: Any, invocation: Any) -> Any:
     if group is None:
         await ctx.respond(ctx.t('acl.group_missing', name=_escape(name)), parse_mode="HTML")
         return
-    user_id, _rest = await _resolve_target_user(ctx, invocation)
+    user_id, _rest = await _resolve_target_user(ctx, invocation, 1)
     if user_id is None:
         await ctx.respond(_usage(ctx), parse_mode="HTML")
         return
@@ -168,7 +172,7 @@ async def command_sgadd(ctx: Any, invocation: Any) -> Any:
     await ctx.respond(ctx.t('acl.member_added', user_id=user_id, name=_escape(name)), parse_mode="HTML")
 
 async def command_sgrm(ctx: Any, invocation: Any) -> Any:
-    if len(invocation.args) < 2:
+    if not invocation.args:
         await ctx.respond(_usage(ctx), parse_mode="HTML")
         return
     name = invocation.args[0]
@@ -176,7 +180,7 @@ async def command_sgrm(ctx: Any, invocation: Any) -> Any:
     if group is None:
         await ctx.respond(ctx.t('acl.group_missing', name=_escape(name)), parse_mode="HTML")
         return
-    user_id, _rest = await _resolve_target_user(ctx, invocation)
+    user_id, _rest = await _resolve_target_user(ctx, invocation, 1)
     if user_id is None:
         await ctx.respond(_usage(ctx), parse_mode="HTML")
         return
@@ -209,6 +213,20 @@ async def command_rule(ctx: Any, invocation: Any) -> Any:
     if rule_type not in {"command", "module"} or not rule:
         await ctx.respond(ctx.t('acl.bad_rule'), parse_mode="HTML")
         return
+    if rule_type == "command":
+        spec = ctx.runtime.kernel.registry.resolve_name(rule)
+        if spec is None or spec.kernel:
+            await ctx.respond(ctx.t("acl.kernel_rule"))
+            return
+        rule = spec.name
+    else:
+        specs = [spec for spec in ctx.runtime.kernel.registry.items() if spec.module_id == rule]
+        if not specs or any(spec.kernel for spec in specs):
+            await ctx.respond(ctx.t("acl.kernel_rule"))
+            return
+    if kind in {"user", "chat"} and (not target.lstrip("-").isdigit() or int(target) == 0 or kind == "user" and int(target) < 0):
+        await ctx.respond(ctx.t("acl.invalid_target"))
+        return
     from hotaru.access import TsecRule
     import time as _time
     expires = _time.time() + duration if duration else 0
@@ -222,6 +240,7 @@ async def command_rule(ctx: Any, invocation: Any) -> Any:
         return
     if kind == "sgroup":
         group = ctx.access_admin.sgroup(target)
+        group.permissions[:] = [item for item in group.permissions if (item.get("rule_type"), item.get("rule")) != (rule_type, rule)]
         group.permissions.append({"rule_type": rule_type, "rule": rule, "expires": expires})
         groups = ctx.access_admin.sgroups()
         ctx.access_admin.save_sgroups(groups)
@@ -249,13 +268,17 @@ async def command_rulerm(ctx: Any, invocation: Any) -> Any:
     rule_raw = invocation.args[2]
     if "/" in rule_raw:
         _prefix, _, rule_name = rule_raw.partition("/")
-        if not rule_name:
+        if _prefix not in {"command", "module"} or not rule_name:
             await ctx.respond(ctx.t('acl.bad_rule'), parse_mode="HTML")
             return
     else:
+        _prefix = None
         rule_name = rule_raw
     target_value = int(target) if target.lstrip("-").isdigit() else target
-    removed = ctx.access_admin.remove_tsec(kind, target_value, rule_name)
+    if _prefix == "command":
+        spec = ctx.runtime.kernel.registry.resolve_name(rule_name)
+        rule_name = spec.name if spec is not None else rule_name
+    removed = ctx.access_admin.remove_tsec(kind, target_value, rule_name, _prefix)
     await ctx.respond(
         ctx.t('acl.rule_removed') if removed else ctx.t('acl.nothing_remove'),
         parse_mode="HTML",
@@ -270,19 +293,18 @@ async def command_ruleclr(ctx: Any, invocation: Any) -> Any:
         await ctx.respond(_usage(ctx), parse_mode="HTML")
         return
     target = invocation.args[1] if len(invocation.args) > 1 else None
-    if target is None:
-        removed = ctx.access_admin.remove_tsec_all(kind, None)
-        await ctx.respond(ctx.t('acl.rules_cleared') if removed else ctx.t('acl.nothing_clear'), parse_mode="HTML")
-        return
-    target_value = int(target) if target.lstrip("-").isdigit() else target
-    removed = ctx.access_admin.remove_tsec_all(kind, target_value)
-    await ctx.respond(ctx.t('acl.rules_cleared') if removed else ctx.t('acl.nothing_clear'), parse_mode="HTML")
+    target_value = int(target) if target is not None and target.lstrip("-").isdigit() else target
+    async def confirm(call: Any, payload: Any) -> None:
+        if not ctx.access_admin.is_owner(call.from_id):
+            await call.answer(ctx.t("acl.no_permission"), alert=True)
+            return
+        removed = ctx.access_admin.remove_tsec_all(payload["kind"], payload["target"])
+        await call.edit(ctx.t('acl.rules_cleared') if removed else ctx.t('acl.nothing_clear'), buttons=[])
+    await ctx.respond(ctx.t("acl.clear_confirm", scope=_escape(f"{kind}: {target if target is not None else '*'}")), buttons=[[ctx.ui.danger(ctx.t("acl.confirm"), confirm, {"kind": kind, "target": target_value}), ctx.ui.close(ctx.t("common.cancel"))]])
+
 
 async def command_perms(ctx: Any, invocation: Any) -> Any:
     entries = ctx.access_admin.store.items()
-    if not entries:
-        await ctx.respond(ctx.t("acl.empty", prefix=_escape(ctx.runtime.config.prefix)), parse_mode="HTML")
-        return
     from hotaru.access import permission_label
     rows: List[str] = []
     for entry in entries:
@@ -290,10 +312,11 @@ async def command_perms(ctx: Any, invocation: Any) -> Any:
             f"<code>{entry.user_id}</code> — <b>{_escape(permission_label(entry.permissions))}</b>"
             + (f" <i>({_escape(entry.label)})</i>" if entry.label else "")
         )
-    await ctx.respond(ctx.t('acl.permissions') + "<br>".join(rows), parse_mode="HTML")
+    owners = ", ".join(f"<code>{uid}</code>" for uid in ctx.access_admin.owners)
+    await ctx.respond(ctx.t('acl.owners') + owners + "<br><br>" + ctx.t('acl.permissions') + "<br>".join(rows) + "<br><br>" + ctx.t("acl.model", prefix=_escape(ctx.runtime.config.prefix)), parse_mode="HTML")
 
 async def command_whois(ctx: Any, invocation: Any) -> Any:
-    if not invocation.args or not invocation.args[0].lstrip("-").isdigit():
+    if not invocation.args or not invocation.args[0].isdigit() or int(invocation.args[0]) <= 0:
         await ctx.respond(_usage(ctx), parse_mode="HTML")
         return
     user_id = int(invocation.args[0])
@@ -303,8 +326,18 @@ async def command_whois(ctx: Any, invocation: Any) -> Any:
     rank = ctx.access_admin.rank_of(user_id)
     groups = [g.name for g in ctx.access_admin.sgroups().values() if user_id in g.users]
     groups_html = ctx.t('acl.user_groups', groups=_escape(', '.join(groups))) if groups else ""
+    detail = ctx.t('acl.user_detail', user_id=user_id, permissions=_escape(permission_label(permissions)), rank=rank, groups=groups_html)
+    for rule in ctx.access_admin.tsec_rules():
+        if rule.target_type == "user" and rule.target == user_id or rule.target_type == "chat" and rule.target == getattr(invocation.message, "chat_id", None):
+            detail += f"<br>{_escape(rule.target_type)}/{rule.target}: {_escape(rule.rule_type)}/{_escape(rule.rule)} — " + (ctx.tools.timestamp(rule.expires, ctx.i18n.language) if rule.expires else ctx.t("acl.forever"))
+    if len(invocation.args) > 1:
+        from types import SimpleNamespace
+        spec = ctx.runtime.kernel.registry.resolve_name(invocation.args[1])
+        allowed = spec is not None and ctx.runtime.kernel._is_authorized(SimpleNamespace(from_id=user_id, chat_id=getattr(invocation.message, "chat_id", None)), spec)
+        detail += "<br>" + ctx.t("acl.allowed" if allowed else "acl.denied", command=_escape(invocation.args[1]))
+    detail += "<br><br>" + ctx.t("acl.model", prefix=_escape(ctx.runtime.config.prefix))
     await ctx.respond(
-        ctx.t('acl.user_detail', user_id=user_id, permissions=_escape(permission_label(permissions)), rank=rank, groups=groups_html),
+        detail,
         parse_mode="HTML",
     )
 
@@ -312,7 +345,7 @@ async def command_perm(ctx: Any, invocation: Any) -> Any:
     if len(invocation.args) < 2:
         await ctx.respond(_usage(ctx), parse_mode="HTML")
         return
-    if not invocation.args[0].lstrip("-").isdigit():
+    if not invocation.args[0].isdigit() or int(invocation.args[0]) <= 0:
         await ctx.respond(_usage(ctx), parse_mode="HTML")
         return
     user_id = int(invocation.args[0])

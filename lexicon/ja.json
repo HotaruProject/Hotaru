@@ -721,7 +721,16 @@
     "bad_label": "不明な権限: {label}",
     "no_owner_grant": "オーナー権限の付与には {prefix}owadd を使ってください。",
     "usage": "<code>{prefix}owadd &lt;user_id|reply&gt;</code> — オーナーを追加\n<code>{prefix}owrm &lt;user_id|reply&gt;</code> — オーナーを削除\n<code>{prefix}owls</code> — オーナー一覧\n<code>{prefix}sgnew &lt;name&gt;</code> — 権限グループを作成\n<code>{prefix}sgls</code> — グループ一覧\n<code>{prefix}sg &lt;name&gt;</code> — グループのメンバーとルール\n<code>{prefix}sgdel &lt;name&gt;</code> — グループを削除\n<code>{prefix}sgadd &lt;name&gt; &lt;user_id|reply&gt;</code> — メンバーを追加\n<code>{prefix}sgrm &lt;name&gt; &lt;user_id|reply&gt;</code> — メンバーを削除\n<code>{prefix}rule &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;command|module&gt;/&lt;name&gt; [expiry]</code> — アクセスルールを追加\n<code>{prefix}rulerm &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;rule&gt;</code> — ルールを削除\n<code>{prefix}ruleclr &lt;user|chat|sgroup&gt; [target]</code> — ルールを消去\n<code>{prefix}perm &lt;user_id&gt; &lt;admin|trusted|everyone&gt; [remove]</code> — 権限を付与・取り消し\n<code>{prefix}perms</code> — 権限一覧\n<code>{prefix}whois &lt;user_id&gt;</code> — ユーザーの権限",
-    "account_owner": "アカウントの所有者は削除できません。"
+    "account_owner": "アカウントの所有者は削除できません。",
+    "owner_confirm": "<code>{user_id}</code> に完全な権限（コード実行、更新、所有者の追加）を付与しますか？",
+    "confirm": "承認",
+    "clear_confirm": "<code>{scope}</code> のルールをすべて削除しますか？所有者とロールは変更されません。",
+    "kernel_rule": "組み込みコマンドは所有者専用です。既存のユーザーコマンドかモジュールを選択してください。",
+    "invalid_target": "数値IDが必要です。ユーザーは正のID、チャットはチャットIDです。",
+    "model": "所有者は完全な権限を持ちます。admin/trusted は独立したロールです。ルールは指定のユーザーコマンド／モジュールのみを許可し、グループはルールをまとめます。アカウント権限とモジュール機能は別です。確認: <code>{prefix}whois ID コマンド</code>。",
+    "forever": "無期限",
+    "allowed": "<code>{command}</code>: このチャットで許可されています。",
+    "denied": "<code>{command}</code>: 有効な権限がないか、コマンドが不明です。"
   },
   "inline": {
     "form": "Hotaruフォーム",

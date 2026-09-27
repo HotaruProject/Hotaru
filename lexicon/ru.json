@@ -721,7 +721,16 @@
     "bad_label": "Неизвестное право: {label}",
     "no_owner_grant": "Права владельца выдаются через {prefix}owadd.",
     "usage": "<code>{prefix}owadd &lt;user_id|reply&gt;</code> — Добавить владельца\n<code>{prefix}owrm &lt;user_id|reply&gt;</code> — Удалить владельца\n<code>{prefix}owls</code> — Список владельцев\n<code>{prefix}sgnew &lt;name&gt;</code> — Создать группу прав\n<code>{prefix}sgls</code> — Список групп\n<code>{prefix}sg &lt;name&gt;</code> — Участники и правила группы\n<code>{prefix}sgdel &lt;name&gt;</code> — Удалить группу\n<code>{prefix}sgadd &lt;name&gt; &lt;user_id|reply&gt;</code> — Добавить участника\n<code>{prefix}sgrm &lt;name&gt; &lt;user_id|reply&gt;</code> — Удалить участника\n<code>{prefix}rule &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;command|module&gt;/&lt;name&gt; [expiry]</code> — Добавить правило доступа\n<code>{prefix}rulerm &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;rule&gt;</code> — Удалить правило\n<code>{prefix}ruleclr &lt;user|chat|sgroup&gt; [target]</code> — Очистить правила\n<code>{prefix}perm &lt;user_id&gt; &lt;admin|trusted|everyone&gt; [remove]</code> — Выдать или отозвать права\n<code>{prefix}perms</code> — Список прав\n<code>{prefix}whois &lt;user_id&gt;</code> — Права пользователя",
-    "account_owner": "Владельца аккаунта нельзя удалить."
+    "account_owner": "Владельца аккаунта нельзя удалить.",
+    "owner_confirm": "Выдать <code>{user_id}</code> полный доступ: выполнение кода, обновления и назначение владельцев?",
+    "confirm": "Подтвердить",
+    "clear_confirm": "Удалить все правила в области <code>{scope}</code>? Владельцы и роли не изменятся.",
+    "kernel_rule": "Встроенные команды доступны только владельцам. Выбери существующую команду или модуль пользователя.",
+    "invalid_target": "Нужен числовой ID: положительный для пользователя, ID чата для чата.",
+    "model": "Владелец — полный доступ. admin/trusted — отдельные роли, не владельцы и не доступ ко всем командам. Правило открывает указанную пользовательскую команду/модуль; группа объединяет правила. Права аккаунтов и возможности модулей — отдельно. Проверка: <code>{prefix}whois ID команда</code>.",
+    "forever": "Бессрочно",
+    "allowed": "<code>{command}</code>: разрешено в этом чате.",
+    "denied": "<code>{command}</code>: нет действующего доступа в этом чате или команда неизвестна."
   },
   "inline": {
     "form": "Форма Hotaru",
