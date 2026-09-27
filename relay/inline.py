@@ -902,7 +902,7 @@ class InlineManager:
             request = requests.get(token)
             return bool(
                 request is not None
-                and request[3] > time.monotonic()
+                and (request[3] is None or request[3] > time.monotonic())
                 and actor == getattr(request[2], "_hotaru_actor_id", getattr(request[2], "from_id", None))
                 and token not in self._chosen_pending
             )

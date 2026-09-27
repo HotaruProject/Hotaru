@@ -694,7 +694,6 @@
     },
     "file_missing": "module file is missing",
     "file_document": "module file must be a document",
-    "timeout": "Command {command} timed out after {seconds}s.",
     "unknown_capability": "unknown capability (denied)"
   },
   "acl": {

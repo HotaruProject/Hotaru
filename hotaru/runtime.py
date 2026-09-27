@@ -135,7 +135,6 @@ class Runtime:
     cap_host: CapabilityHost | None = None
     lexicon: Lexicon | None = None
     closed: bool = False
-    activity: int = 0
     _relaunch: bool = False
     _inline_forms: dict[str, tuple[str, list[list[dict[str, Any]]], bool]] | None = None
     _forms: dict[str, tuple[FormHandle, SimpleNamespace, str, object, dict[str, Any]]] | None = None
@@ -217,8 +216,6 @@ class Runtime:
             owner_id=self.config.owner_id,
             response_service=self.responses,
             form_sender=self._send_form,
-            command_timeout=self.config.command_timeout,
-            activity=lambda: self.activity,
         )
         self.kernel.security = self.security
         self.state = StateStore(self.config.state_path)
@@ -253,7 +250,6 @@ class Runtime:
         self.observatory = Observatory(Path("observatory/runtime/events.jsonl"))
         observatory_install(self.observatory)
         observatory_hook_stdio()
-        self.activity = 0
         self._relaunch = False
         self.tasks = self.kernel.tasks
         self.modules = ModuleManager(tasks=self.tasks)
@@ -284,12 +280,6 @@ class Runtime:
         self.app.on_cb(self._on_callback)
         self.event_router.attach_aux(self.app)
         return self.app
-
-
-    def note_activity(self) -> None:
-        """Bumped whenever a module does something, so a busy command is never timed out."""
-        self.activity += 1
-
     def request_restart(self) -> None:
         """Ask for a relaunch: re-exec can only happen in the main process, once it has shut down."""
         self._relaunch = True
@@ -538,6 +528,8 @@ class Runtime:
         return await self.restore_forms()
 
     async def unload_module_forms(self, module_id: str) -> int:
+        if self.cap_host is not None:
+            await self.cap_host.close_jobs(module_id)
         if self._forms is None or getattr(self, "closed", False):
             return 0
         handles: list[Any] = []
@@ -759,7 +751,9 @@ class Runtime:
                     token = secrets.token_urlsafe(10)
                     if self._input_requests is None:
                         self._input_requests = {}
-                    self._input_requests[token] = (button["handler"], button.get("payload"), command, time.monotonic() + float(button.get("input_ttl", 300)), str(button.get("input", "")), nonce)
+                    ttl = button.get("input_ttl")
+                    expiry = time.monotonic() + float(ttl) if isinstance(ttl, (int, float)) and float(ttl) > 0 else None
+                    self._input_requests[token] = (button["handler"], button.get("payload"), command, expiry, str(button.get("input", "")), nonce)
                     current.append({"text": button.get("text", ""), "switch_inline_query_current_chat": "hotaru-input:" + token + " "})
                     continue
                 if callable(button.get("handler")) and "callback" not in button:
@@ -939,7 +933,7 @@ class Runtime:
             key, _, value = text.partition(" ")
             token = key.split(":", 1)[1]
             request = (self._input_requests or {}).get(token)
-            if request is None or request[3] <= time.monotonic():
+            if request is None or request[3] is not None and request[3] <= time.monotonic():
                 if request is not None and self._input_requests is not None:
                     self._input_requests.pop(token, None)
                 await answer_tl(query, results=[], cache_time=0, is_personal=True)
@@ -1016,7 +1010,7 @@ class Runtime:
             return
         handler, payload, source, expiry, _placeholder = request[:5]
         form_nonce = request[5] if len(request) > 5 else None
-        if expiry <= time.monotonic():
+        if expiry is not None and expiry <= time.monotonic():
             if self._input_requests is not None:
                 self._input_requests.pop(token, None)
             return
@@ -1083,7 +1077,9 @@ class Runtime:
                     token = secrets.token_urlsafe(10)
                     if self._input_requests is None:
                         self._input_requests = {}
-                    self._input_requests[token] = (button["handler"], button.get("payload"), command, time.monotonic() + float(button.get("input_ttl", 300)), str(button.get("input", "")), nonce)
+                    ttl = button.get("input_ttl")
+                    expiry = time.monotonic() + float(ttl) if isinstance(ttl, (int, float)) and float(ttl) > 0 else None
+                    self._input_requests[token] = (button["handler"], button.get("payload"), command, expiry, str(button.get("input", "")), nonce)
                     current.append({"text": button.get("text", ""), "switch_inline_query_current_chat": "hotaru-input:" + token + " "})
                     continue
                 handle = button.get("callback_data")
@@ -2249,41 +2245,42 @@ class Runtime:
         state = self.state
         modules = self.modules
         restored: list[str] = []
-        async def restore() -> None:
-            for module_id in self._load_order(state.module_ids()[:256]):
-                namespace = state.namespace(module_id)
-                if modules.get(module_id) is not None:
-                    continue
-                consent = namespace.get("caps-consent")
-                source_path = namespace.get("sourcepath")
-                expected = self.relay_dir / f"{module_id}.hmod"
-                if not isinstance(source_path, str) or Path(source_path).absolute() != expected.absolute() or expected.is_symlink():
-                    state.delete_module(module_id)
-                    continue
-                if not isinstance(consent, str):
-                    expected.unlink(missing_ok=True)
-                    state.delete_module(module_id)
-                    continue
-                try:
-                    loaded = modules.loader.load(source_path)
-                    if loaded.manifest.module_id != module_id:
-                        raise ValueError("module id mismatch")
-                    if self._caps_fingerprint(loaded.manifest) != consent:
-                        raise ValueError("capabilities changed; !trust required")
-                    await self.activate_module(source_path)
-                except Exception as exc:
-                    Path(source_path).unlink(missing_ok=True)
-                    state.delete_module(module_id)
-                    if self.observatory is not None:
-                        self.observatory.emit("modules", "restore_error", module=module_id, error=type(exc).__name__, detail=str(exc)[:240])
-                    continue
-                restored.append(module_id)
-        try:
-            await asyncio.wait_for(restore(), timeout)
-        except asyncio.TimeoutError:
-            if self.observatory is not None:
-                self.observatory.emit("modules", "restore_timeout", restored=len(restored))
+        for module_id in self._load_order(state.module_ids()):
+            namespace = state.namespace(module_id)
+            if modules.get(module_id) is not None:
+                continue
+            consent = namespace.get("caps-consent")
+            source_path = namespace.get("sourcepath")
+            expected = self.relay_dir / f"{module_id}.hmod"
+            if not isinstance(source_path, str) or Path(source_path).absolute() != expected.absolute() or expected.is_symlink():
+                state.delete_module(module_id)
+                continue
+            if not isinstance(consent, str):
+                self._emit_restore_event("restore_skipped", module_id, "consent missing")
+                continue
+            try:
+                await asyncio.wait_for(self._restore_module(module_id, source_path, consent), timeout)
+            except asyncio.TimeoutError:
+                self._emit_restore_event("restore_timeout", module_id, "activation deadline exceeded")
+                continue
+            except Exception as exc:
+                self._emit_restore_event("restore_error", module_id, f"{type(exc).__name__}: {exc}"[:240])
+                continue
+            restored.append(module_id)
         return tuple(restored)
+
+    async def _restore_module(self, module_id: str, source_path: str, consent: str) -> None:
+        assert self.modules is not None
+        loaded = self.modules.loader.load(source_path)
+        if loaded.manifest.module_id != module_id:
+            raise ValueError("module id mismatch")
+        if self._caps_fingerprint(loaded.manifest) != consent:
+            raise ValueError("capabilities changed; !trust required")
+        await self.activate_module(source_path)
+
+    def _emit_restore_event(self, event: str, module_id: str, detail: str) -> None:
+        if self.observatory is not None:
+            self.observatory.emit("modules", event, module=module_id, detail=detail)
 
     def namesession(self) -> None:
         from .accounts import account_home, account_state_path, user_vault_path

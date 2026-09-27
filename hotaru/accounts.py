@@ -102,7 +102,7 @@ def account_config(config: Any, profile: AccountProfile) -> Any:
             'api-id': config.api_id, 'api-hash': config.api_hash,
             'bot-token': None, 'owner-id': profile.user_id, 'prefix': config.prefix,
             'session-name': profile.session_name, 'session-dir': str(profile.session_dir),
-            'backup-keep': config.backup_keep, 'command-timeout': config.command_timeout,
+            'backup-keep': config.backup_keep,
             'sandbox': config.sandbox,
         }
         for key, value in defaults.items():
@@ -186,7 +186,7 @@ class AccountManager:
         registry = StateStore(root.resolve() / 'sanctuary/state.sqlite3')
         manager = cls(registry, root)
         manager.owned = True
-        for key in ('api-id', 'api-hash', 'prefix', 'backup-keep', 'command-timeout', 'sandbox'):
+        for key in ('api-id', 'api-hash', 'prefix', 'backup-keep', 'sandbox'):
             if registry.get_setting(key) is None:
                 value = state.get_setting(key)
                 if value is not None:

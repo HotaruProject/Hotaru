@@ -648,7 +648,7 @@ async def _edit(call: Any, ctx: Any, text: str, buttons: Any) -> None:
         for button in row:
             if callable(button.get("handler")) and isinstance(button.get("input"), str):
                 token = secrets.token_urlsafe(10)
-                runtime._input_requests[token] = (button["handler"], button.get("payload"), origin, time.monotonic() + 300, button["input"], nonce)
+                runtime._input_requests[token] = (button["handler"], button.get("payload"), origin, None, button["input"], nonce)
                 tokens.append(token)
                 current.append({"text": button["text"], "switch_inline_query_current_chat": "hotaru-input:" + token + " "})
             else:

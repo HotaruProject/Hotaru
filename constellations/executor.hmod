@@ -16,7 +16,6 @@ import re
 import signal
 import sys
 import pty
-import textwrap
 import time
 import traceback
 from dataclasses import fields as _dc_fields
@@ -29,124 +28,22 @@ from goygram.sugar import extract_sent_message
 _ACTIVE_SH: dict[int, Any] = {}
 _ACTIVE_PY: dict[int, Any] = {}
 
-_TG_REPLACEMENTS: list[tuple[str, str]] = [
-    ("\u00a0", " "),
-    ("\u202f", " "),
-    ("\u2009", " "),
-    ("\u2019", "'"),
-    ("\u2018", "'"),
-    ("\u201c", '"'),
-    ("\u201d", '"'),
-    ("\u2013", "-"),
-    ("\u2014", "--"),
-    ("\u2026", "..."),
-    ("\u00b7", "."),
-    ("\u2022", "-"),
-    ("\ufeff", ""),
-    ("\u200b", ""),
-    ("\u200c", ""),
-    ("\u200d", ""),
-]
-
-_TG_MARKDOWN_PATTERNS: list[tuple[re.Pattern[str], str]] = [
-    (re.compile(r"\*([A-Za-z_][A-Za-z0-9_]*)\*"), r"__\1__"),
-]
-
-
-def _unescape_tg_code(code: str) -> str:
-    for bad, good in _TG_REPLACEMENTS:
-        code = code.replace(bad, good)
-    for pattern, replacement in _TG_MARKDOWN_PATTERNS:
-        code = pattern.sub(replacement, code)
-    return code
-
-
-_BLOCK_STARTERS = re.compile(
-    r"^(if |elif |else:|for |while |def |async def |class |try:|except|finally:|with )"
-)
-
-
-def _fix_indentation(code: str) -> str:
-    code = textwrap.dedent(code)
-    lines = code.splitlines()
-    result: list[str] = []
-    indent_next = False
-    current_indent = 0
-
-    for line in lines:
-        stripped = line.lstrip()
-        if not stripped:
-            result.append("")
-            indent_next = False
-            continue
-
-        if indent_next and not line[0].isspace():
-            result.append("    " * (current_indent + 1) + stripped)
-        else:
-            result.append(line)
-
-        ends_block = stripped.rstrip().endswith(":") and bool(_BLOCK_STARTERS.match(stripped))
-        if ends_block:
-            current_indent = (len(line) - len(stripped)) // 4
-        indent_next = ends_block
-
-    return "\n".join(result)
-
-
-def _sanitise_code(code: str) -> str:
-    code = _unescape_tg_code(code)
-    code = _fix_indentation(code)
-    return code
-
-
-def _wrap_eval_code(code: str) -> str:
-    code = code.strip()
-    if not code:
-        return "async def __executor_runner__():\n    pass"
-
-    try:
-        tree = ast.parse(code, mode="exec")
-    except SyntaxError:
-        try:
-            ast.parse(code, mode="eval")
-            return f"async def __executor_runner__():\n    return await _auto_await({code})"
-        except SyntaxError:
-            pass
-        indented = textwrap.indent(code, "    ")
-        return f"async def __executor_runner__():\n{indented}"
-
-    if not tree.body:
-        return "async def __executor_runner__():\n    pass"
-
-    if (
-        len(tree.body) == 1
-        and isinstance(tree.body[0], (ast.AsyncFunctionDef, ast.FunctionDef))
-    ):
-        fname = tree.body[0].name
-        indented = textwrap.indent(code, "    ")
-        return (
-            "async def __executor_runner__():\n"
-            f"{indented}\n"
-            f"    return await _auto_await({fname}())"
-        )
-
-    last = tree.body[-1]
-
-    if not isinstance(last, ast.Expr) or isinstance(last.value, (ast.Yield, ast.YieldFrom)):
-        indented = textwrap.indent(code, "    ")
-        return f"async def __executor_runner__():\n{indented}"
-
-    last_src = ast.unparse(last.value)
-
-    if len(tree.body) == 1:
-        return f"async def __executor_runner__():\n    return await _auto_await({last_src})"
-
-    preceding = ast.Module(body=tree.body[:-1], type_ignores=[])
-    head_src = ast.unparse(preceding)
-    head = textwrap.indent(head_src, "    ")
-    tail = f"    return await _auto_await({last_src})"
-    return f"async def __executor_runner__():\n{head}\n{tail}"
-
+def _wrap_eval_code(code: str) -> ast.Module:
+    tree = ast.parse(code, mode="exec")
+    body = tree.body or [ast.Pass()]
+    if len(body) == 1 and isinstance(body[0], (ast.AsyncFunctionDef, ast.FunctionDef)):
+        body.append(ast.Expr(value=ast.Call(func=ast.Name(id=body[0].name, ctx=ast.Load()), args=[], keywords=[])))
+    last = body[-1]
+    if isinstance(last, ast.Expr) and not isinstance(last.value, (ast.Yield, ast.YieldFrom)):
+        body[-1] = ast.Return(value=ast.Await(value=ast.Call(
+            func=ast.Name(id="_auto_await", ctx=ast.Load()), args=[last.value], keywords=[],
+        )))
+    runner = ast.AsyncFunctionDef(
+        name="__executor_runner__",
+        args=ast.arguments(posonlyargs=[], args=[], vararg=None, kwonlyargs=[], kw_defaults=[], kwarg=None, defaults=[]),
+        body=body, decorator_list=[], returns=None,
+    )
+    return ast.fix_missing_locations(ast.Module(body=[runner], type_ignores=[]))
 
 async def _auto_await(value: Any) -> Any:
     while asyncio.iscoroutine(value) or asyncio.isfuture(value):
@@ -163,13 +60,12 @@ def _u16(s: str) -> int:
 
 
 def _clean_code(text: str) -> str:
-    text = text.strip()
     if text.startswith("```") and text.endswith("```"):
-        lines = text.splitlines()
-        inner = "\n".join(lines[1:-1]) if len(lines) > 1 else text.strip("`")
-        return inner.strip()
-    if text.startswith("`") and text.endswith("`") and len(text) > 2:
-        return text[1:-1]
+        opening, separator, inner = text[3:-3].partition("\n")
+        if separator and opening.strip() in {"", "py", "python", "sh", "bash", "shell"}:
+            return inner
+        if not separator:
+            return text[3:-3]
     return text
 
 
@@ -1269,8 +1165,6 @@ async def command_sh(ctx: Any, invocation: Any) -> Any:
         )
         return
 
-    cmd = _unescape_tg_code(cmd)
-
     inv_msg_id = _msg_id(invocation.message)
 
     env = os.environ.copy()
@@ -1388,10 +1282,6 @@ async def command_py(ctx: Any, invocation: Any) -> Any:
         )
         return
 
-    raw_code = _sanitise_code(raw_code)
-
-    wrapped_code = _wrap_eval_code(raw_code)
-
     reply = await _get_reply(ctx, invocation)
 
     helpers = _build_py_helpers(ctx, invocation, reply)
@@ -1436,7 +1326,7 @@ async def command_py(ctx: Any, invocation: Any) -> Any:
         nonlocal result_val
         exec_scope = dict(env)
         try:
-            bytecode = compile(wrapped_code, "<executor>", "exec")
+            bytecode = compile(_wrap_eval_code(raw_code), "<executor>", "exec")
         except SyntaxError as exc:
             raise SyntaxError(f"SyntaxError: {exc.msg} (line {exc.lineno})") from None
         exec(bytecode, exec_scope)
@@ -1508,6 +1398,14 @@ async def command_kill(ctx: Any, invocation: Any) -> Any:
         task.cancel()
         killed = True
         _ACTIVE_PY.pop(target_id, None)
+
+    runtime = getattr(ctx, "runtime", None)
+    kernel = getattr(runtime, "kernel", None)
+    if kernel is not None and getattr(reply, "chat_id", None) is not None:
+        try:
+            killed = kernel.cancel(getattr(reply, "chat_id", None), target_id) or killed
+        except Exception:
+            pass
 
     if killed:
         await ctx.respond(ctx.t('kernel.executor.killed'), parse_mode="HTML")

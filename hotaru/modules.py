@@ -15,8 +15,6 @@ from typing import Any, cast
 
 from relay.firewall import trusted_scope
 
-from .i18n import SUPPORTED_LANGUAGES
-
 
 class ModuleValidationError(ValueError):
     pass
@@ -275,7 +273,7 @@ class HmodLoader:
         if fade and not fade.isidentifier():
             raise ModuleValidationError("manifest fade is invalid")
         for language, translation in cast('dict[object, object]', translations).items():
-            if language not in SUPPORTED_LANGUAGES or not isinstance(translation, dict):
+            if not isinstance(language, str) or not re.fullmatch(r"[A-Za-z]{2,8}(?:[-_][A-Za-z0-9]{1,8})*", language) or not isinstance(translation, dict):
                 raise ModuleValidationError("manifest translations are invalid")
             if "description" in translation and not isinstance(translation["description"], str):
                 raise ModuleValidationError("manifest translation description is invalid")

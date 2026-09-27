@@ -3,11 +3,10 @@ from __future__ import annotations
 import asyncio
 import inspect
 import logging
-import time
 from collections import OrderedDict
 from relay.denylist import is_blocked_peer
 from relay.firewall import module_scope
-from typing import Any, Callable, Protocol, cast
+from typing import Any, Protocol, cast
 
 from .commands import CommandInvocation, CommandParser
 from .registry import CommandRegistry, CommandSpec
@@ -17,8 +16,6 @@ from .access import AccessManager, Permission
 from .tasks import TaskLimitError, TaskSupervisor
 
 log = logging.getLogger(__name__)
-
-ACTIVITY_POLL = 0.2
 
 
 class SupportsGet(Protocol):
@@ -36,13 +33,9 @@ class Kernel:
         response_service: Any = None,
         form_sender: Any = None,
         seen_limit: int = 4096,
-        command_timeout: float = 60.0,
-        activity: Callable[[], int] | None = None,
     ) -> None:
         if seen_limit < 1:
             raise ValueError("seen_limit must be positive")
-        if command_timeout <= 0:
-            raise ValueError("command_timeout must be positive")
         self.registry = registry or CommandRegistry()
         self.inline_registry = InlineRegistry()
         self.parser = parser or CommandParser()
@@ -51,8 +44,6 @@ class Kernel:
         self.context_factory = context_factory
         self.response_service = response_service
         self.form_sender = form_sender
-        self.command_timeout = command_timeout
-        self.activity = activity or (lambda: 0)
         self.security: SecurityGate | None = None
         self.sandbox: Any = None
         self.tasks = TaskSupervisor()
@@ -196,13 +187,7 @@ class Kernel:
 
     async def _execute(self, spec: Any, message: Any, task: asyncio.Task[Any], context: Any = None) -> object | None:
         try:
-            result = await self._await_work(task)
-        except asyncio.TimeoutError:
-            if self.response_service is not None:
-                runtime = getattr(self.context_factory, "runtime", None)
-                text = runtime.t("runtime.timeout", seconds=round(self.command_timeout), command=spec.name) if runtime is not None else f"command timed out after {self.command_timeout:.0f}s: {spec.name}"
-                return await context.respond(text) if context is not None else await self.response_service.answer(message, text=text, output="auto")
-            return None
+            result = await task
         except asyncio.CancelledError:
             return None
         except Exception as exc:
@@ -226,24 +211,6 @@ class Kernel:
             if isinstance(result, str):
                 return await context.respond(result) if context is not None else await self.response_service.answer(message, text=result, output="auto")
         return cast(object, result)
-
-    async def _await_work(self, task: asyncio.Task[Any]) -> object | None:
-        """A command that is doing something gets all the time it needs: only an idle one times out."""
-        started = time.monotonic()
-        seen = self.activity()
-        try:
-            while True:
-                done, _ = await asyncio.wait({task}, timeout=ACTIVITY_POLL)
-                if done:
-                    return task.result()
-                if self.activity() != seen:
-                    return await task
-                if time.monotonic() - started >= self.command_timeout:
-                    raise asyncio.TimeoutError
-        finally:
-            if not task.done():
-                task.cancel()
-            await asyncio.gather(task, return_exceptions=True)
 
     async def _invoke(self, spec: Any, invocation: CommandInvocation, message: Any, context: Any = None) -> object:
         if self.sandbox is not None and spec.sandbox:
@@ -299,6 +266,13 @@ class Kernel:
 
     def running(self) -> int:
         return sum(1 for task in self._running.values() if not task.done())
+
+    def cancel(self, chat_id: int | None, message_id: int) -> bool:
+        task = self._running.get((chat_id, message_id))
+        if task is None or task.done():
+            return False
+        task.cancel()
+        return True
 
     async def cancel_all(self) -> None:
         tasks = [task for task in self._running.values() if not task.done()]

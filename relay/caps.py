@@ -15,7 +15,7 @@ import urllib.parse
 import urllib.request
 from functools import partial
 from types import SimpleNamespace
-from typing import Any, Callable, cast
+from typing import TYPE_CHECKING, Any, Callable, cast
 
 from .denylist import is_blocked_host, payload_hits_blocked
 from .firewall import trusted_scope
@@ -23,6 +23,9 @@ from hotaru.plainfmt import rich_to_plain
 from hotaru.capabilities import BehaviorEnvelope
 from goygram.sugar import html_to_entities
 from .rpc import rpcname
+
+if TYPE_CHECKING:
+    from .jobs import Job
 
 
 MT_READ_ONLY = frozenset({
@@ -55,7 +58,6 @@ MT_BLOCKED = frozenset({
     "account.registerdevice",
     "account.unregisterdevice",
     "account.updatedevicelocked",
-    "account.resetnotifysettings",
     "account.setaccountttl",
     "account.getpassword",
     "account.getpasswordsettings",
@@ -63,18 +65,8 @@ MT_BLOCKED = frozenset({
     "account.getauthorizations",
     "account.setglobalprivacysettings",
     "account.setprivacypremiumrequired",
-    "account.updateusername",
-    "account.updateprofile",
-    "account.updatestatus",
-    "account.updatenotifysettings",
     "account.setprivacy",
-    "account.setcontactsignupnotification",
-    "account.updateemojistatus",
-    "account.saveautodownloadsettings",
     "account.reportpeer",
-    "account.updatetheme",
-    "account.installwallpaper",
-    "account.savewallpaper",
     "payments.sendpaymentform",
     "payments.validaterequestedinfo",
     "payments.clearsavedinfo",
@@ -268,6 +260,7 @@ def _workspace_open(root: Path, name: str, flags: int) -> int:
 class CapabilityHost:
     def __init__(self, runtime: Any) -> None:
         self.runtime = runtime
+        self.jobs: dict[tuple[str, str, str], Job] = {}
 
     def _envelope(self, module_id: str, side_effect: str) -> Any:
         return BehaviorEnvelope(
@@ -295,7 +288,6 @@ class CapabilityHost:
         )
 
     async def call(self, module_id: str, capability: str, payload: dict[str, Any]) -> Any:
-        self.runtime.note_activity()
         if capability not in KNOWN:
             raise PermissionError(f"unknown capability: {capability}")
         meta = PROVIDERS[capability]
@@ -304,8 +296,12 @@ class CapabilityHost:
         elif capability == "fetch":
             return await self._fetch_op(module_id, payload)
         elif not self._allowed(module_id, capability):
+            if capability in {"net", "shell"}:
+                await self.close_jobs(module_id, capability)
             raise PermissionError(f"capability not granted to module: {capability}")
         with trusted_scope():
+            if capability in {"net", "shell"} and payload.get("op") in {"start", "poll", "cancel", "forget"}:
+                return await self._job_op(module_id, capability, payload)
             if capability == "mt":
                 return await self._mt_call(module_id, payload, meta)
             if capability == "files":
@@ -323,6 +319,44 @@ class CapabilityHost:
             if capability == "shell":
                 return await self._shell_op(module_id, payload, meta)
         raise PermissionError(f"capability not implemented: {capability}")
+
+    async def close_jobs(self, module_id: str, kind: str | None = None) -> None:
+        jobs = [self.jobs.pop(key) for key in list(self.jobs) if key[0] == module_id and (kind is None or key[1] == kind)]
+        for job in jobs:
+            job.task.cancel()
+        if jobs:
+            await asyncio.gather(*(job.task for job in jobs), return_exceptions=True)
+
+    async def _job_op(self, module_id: str, kind: str, payload: dict[str, Any]) -> Any:
+        from .jobs import Job
+        op = payload["op"]
+        if op == "start":
+            if sum(key[0] == module_id for key in self.jobs) >= 16:
+                raise PermissionError("active request limit")
+            if kind == "net":
+                self._check_net_target(str(payload.get("url", "")))
+            elif not isinstance(payload.get("command"), str) or not payload["command"].strip() or len(payload["command"]) > 16000:
+                raise PermissionError("shell requires a command up to 16000 characters")
+            key = secrets.token_hex(16)
+            workspace = self.runtime.config.state_path.parent / "workspaces" / module_id
+            self.jobs[module_id, kind, key] = Job(kind, dict(payload), self._check_net_target, workspace)
+            return {"id": key}
+        key = (module_id, kind, str(payload.get("id", "")))
+        job = self.jobs.get(key)
+        if job is None:
+            raise PermissionError("request unavailable")
+        if op in {"cancel", "forget"}:
+            self.jobs.pop(key)
+            job.task.cancel()
+            await asyncio.gather(job.task, return_exceptions=True)
+            return {"ok": True}
+        events: list[dict[str, str]] = []
+        while not job.events.empty():
+            events.append(job.events.get_nowait())
+        result = {"done": job.done, "result": job.result, "error": job.error, "events": events}
+        if kind == "shell":
+            result.update({name: (job.result or {}).get(name, "") for name in ("stdout", "stderr")})
+        return result
 
     async def _inline_op(self, module_id: str, payload: dict[str, Any], meta: Any) -> Any:
         if payload_hits_blocked(payload):
@@ -350,7 +384,7 @@ class CapabilityHost:
 
         async def _history(peer_value: Any, offset_id: int, limit: int) -> list[dict[str, Any]]:
             peer = await app.mt.resolve_peer(peer_value)
-            if payload_hits_blocked(peer):
+            if payload_hits_blocked({"peer": peer}):
                 raise PermissionError("resolved fetch target is a denied peer")
             result = await app.mt_messages_get_history(
                 peer=peer,
@@ -389,6 +423,8 @@ class CapabilityHost:
             return None
         if op == "entity":
             value = payload.get("value")
+            if payload_hits_blocked({"peer": value}):
+                raise PermissionError("fetch entity targets a denied peer")
             if value is None:
                 raise PermissionError("fetch entity requires a value")
             if isinstance(value, str) and value.lstrip("-").isdigit():
@@ -439,13 +475,15 @@ class CapabilityHost:
 
     async def _shell_op(self, module_id: str, payload: dict[str, Any], meta: dict[str, Any]) -> Any:
         command = payload.get("command")
-        if not isinstance(command, str) or not command.strip() or len(command) > 4000:
-            raise PermissionError("shell requires a non-empty command up to 4000 characters")
-        timeout = payload.get("timeout", 30)
+        if not isinstance(command, str) or not command.strip() or len(command) > 16000:
+            raise PermissionError("shell requires a non-empty command up to 16000 characters")
+        timeout = payload.get("timeout")
         try:
-            timeout = max(1, min(int(timeout), 120))
+            timeout = float(timeout) if timeout is not None else None
         except (TypeError, ValueError):
-            timeout = 30
+            timeout = None
+        if timeout is not None and timeout <= 0:
+            timeout = None
         workspace = self.runtime.config.state_path.parent / "workspaces" / module_id
         workspace.mkdir(parents=True, exist_ok=True)
         env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "HOME": str(workspace), "LANG": "C.UTF-8"}
@@ -470,7 +508,7 @@ class CapabilityHost:
         except subprocess.TimeoutExpired:
             raise PermissionError(f"shell command timed out after {timeout}s")
         output = (proc.stdout or "") + ("\n" + proc.stderr if proc.stderr else "")
-        return {"returncode": proc.returncode, "output": output[:16000], "cwd": str(workspace)}
+        return {"returncode": proc.returncode, "output": output, "cwd": str(workspace), "truncated": False}
 
     async def _mt_call(self, module_id: str, payload: dict[str, Any], meta: dict[str, Any]) -> Any:
         app = self.runtime.app
@@ -597,7 +635,15 @@ class CapabilityHost:
             raise PermissionError("net capability requires a url")
         self._check_net_target(url)
         data = payload.get("data")
-        timeout = payload.get("timeout", 10)
+        timeout = payload.get("timeout", 30)
+        try:
+            timeout = float(timeout)
+        except (TypeError, ValueError):
+            timeout = 30.0
+        if timeout <= 0:
+            timeout = None
+        limit = payload.get("max_bytes")
+        limit = int(limit) if isinstance(limit, (int, float)) and int(limit) > 0 else 8 * 1024 * 1024
         try:
             if data is not None:
                 body = json.dumps(data).encode()
@@ -618,9 +664,12 @@ class CapabilityHost:
                     return super().redirect_request(req, fp, code, msg, headers, newurl)
 
             opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), _PublicHTTPHandler(), _PublicHTTPSHandler(), _CheckedRedirect())
-            with opener.open(request, timeout=min(float(timeout), 15.0)) as response:
-                raw = response.read(1024 * 512)
-                return {"status": response.status, "body": raw.decode("utf-8", errors="replace")}
+            with opener.open(request, timeout=timeout) as response:
+                raw = response.read(limit + 1)
+                truncated = len(raw) > limit
+                if truncated:
+                    raw = raw[:limit]
+                return {"status": response.status, "body": raw.decode("utf-8", errors="replace"), "truncated": truncated}
         except PermissionError:
             raise
         except Exception as exc:

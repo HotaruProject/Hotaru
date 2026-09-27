@@ -21,6 +21,7 @@ HOTARU = {
 
 from typing import Any, Callable, Dict, List, Tuple, cast
 import html
+import re
 from hotaru.config import (
     BooleanValidator,
     ChoiceValidator,
@@ -248,7 +249,7 @@ def _parameter_form(ctx: Any, module_id: str, key: str, page: int = 0) -> Dict[s
             if typed is None:
                 return
             try:
-                coerced = field_obj.parse_input(str(typed).strip())
+                coerced = field_obj.parse_input(str(typed))
                 mod_config.set(k, coerced)
             except Exception as exc:
                 try:
@@ -384,7 +385,13 @@ async def command_conf(ctx: Any, invocation: Any) -> Any:
         return
 
     key = arg1
-    new_val = " ".join(args[2:]) if len(args) > 2 else None
+    raw = getattr(invocation, "raw_args", None)
+    if isinstance(raw, str):
+        match = re.match(r"\s*\S+\s+\S+([\s\S]*)", raw)
+        suffix = match[1] if match else ""
+        new_val = suffix[1:] if suffix else None
+    else:
+        new_val = " ".join(args[2:]) if len(args) > 2 else None
     runtime = ctx.runtime
     active = runtime.modules.get(module_id) if getattr(runtime, "modules", None) else None
     if not active or not getattr(active, "loaded", None) or not active.loaded.manifest.config_schema:

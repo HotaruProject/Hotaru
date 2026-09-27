@@ -359,7 +359,6 @@ class CallbackStore:
         self._prune()
         handle = self._seal()
         entry = _Entry(binding, value, consumed=False)
-        self._items[handle] = entry
         if self.connection is not None:
             chat_str = str(binding.chat_id) if binding.chat_id is not None else None
             val_str = json.dumps(value, ensure_ascii=False, default=str)
@@ -368,6 +367,8 @@ class CallbackStore:
                 (handle, str(binding.actor), chat_str, binding.message_id, val_str),
             )
             self.connection.commit()
+        self._items[handle] = entry
+        self._trim_cache()
         return handle
 
     def _load(self, handle: str) -> _Entry | None:
@@ -394,6 +395,7 @@ class CallbackStore:
                     consumed=is_consumed,
                 )
                 self._items[handle] = entry
+                self._trim_cache()
         return entry
 
     def peek(self, handle: str, binding: CallbackBinding) -> dict[str, Any]:
@@ -444,9 +446,10 @@ class CallbackStore:
             self._items.pop(key, None)
         if self.connection is not None:
             self.connection.execute("DELETE FROM callback_store WHERE consumed = 1")
-            self.connection.execute("DELETE FROM callback_store WHERE rowid IN (SELECT rowid FROM callback_store ORDER BY rowid DESC LIMIT -1 OFFSET ?)", (self.max_items - 1,))
             self.connection.commit()
-        while len(self._items) >= self.max_items:
+
+    def _trim_cache(self) -> None:
+        while self.connection is not None and len(self._items) > self.max_items:
             self._items.pop(next(iter(self._items)))
 
 
