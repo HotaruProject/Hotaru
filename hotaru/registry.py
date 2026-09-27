@@ -86,9 +86,6 @@ class CommandRegistry:
     def unregister_alias(self, alias: str) -> bool:
         return self._aliases.pop(alias.casefold(), None) is not None
 
-    def aliases(self) -> tuple[tuple[str, str], ...]:
-        return tuple(sorted(self._aliases.items()))
-
     def unregister(self, name: str, *, module_id: str | None = None) -> bool:
         key = name.casefold()
         current = self._items.get(key)
