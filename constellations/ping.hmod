@@ -3,6 +3,15 @@ HOTARU = {
     "version": "1.3.0",
     "commands": ["ping"],
     "capabilities": [],
+    "config_schema": {
+        "template": {
+            "type": "str",
+            "default": "",
+            "max_len": 3000,
+            "description": "HTML ping template: {latency} in ms, {uptime}. Empty = localized default; other braces are literal.",
+            "category": "General",
+        },
+    },
 }
 
 import time
@@ -18,12 +27,10 @@ async def command_ping(ctx: "ModuleContext", invocation: "CommandInvocation") ->
     await ctx.respond("...")
     ping_ms = (time.perf_counter_ns() - start) / 10**6
     uptime_s = max(0, int(time.monotonic() - ctx.runtime.started_at))
-    days, rem = divmod(uptime_s, 86400)
-    h, rem = divmod(rem, 3600)
-    m, s = divmod(rem, 60)
-    uptime = " ".join(f"{value} {unit}" for value, unit in ((days, "д"), (h, "ч"), (m, "мин"), (s, "с")) if value) or "0 с"
-    text = (
-        f"<b>Пинг</b> <code>{ping_ms:.3f} мс</code>\n"
-        f"<b>Аптайм</b> <code>{uptime}</code>"
+    uptime = ctx.tools.duration(uptime_s, ctx.i18n.language)
+    template = ctx.config.get("template").strip() or ctx.t(
+        "kernel.ping.template", "<b>Ping</b> <code>{latency} ms</code>\n<b>Uptime</b> <code>{uptime}</code>",
+        latency="{latency}", uptime="{uptime}",
     )
+    text = ctx.tools.render(template, latency=f"{ping_ms:.3f}", uptime=ctx.escape(uptime))
     await ctx.respond(text, parse_mode="HTML", output="edit")

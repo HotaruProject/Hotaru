@@ -421,6 +421,11 @@
     },
     "lg": "хвост логов:\n{lines}",
     "logger": {
+      "metric": "Метрика",
+      "count": "Количество",
+      "events": "События",
+      "sources": "Источники",
+      "log": "Журнал",
       "description": "Зеркало логов в топик",
       "mirror_on": "Зеркало логов включено",
       "mirror_off": "Зеркало логов выключено",
@@ -525,6 +530,7 @@
     },
     "ping": {
       "description": "Проверка отклика юзербота",
+      "template": "<b>Пинг</b> <code>{latency} мс</code>\n<b>Аптайм</b> <code>{uptime}</code>",
       "commands": {
         "ping": {
           "description": "Замер пинга юзербота"

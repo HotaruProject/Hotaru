@@ -438,6 +438,11 @@
       }
     },
     "logger": {
+      "metric": "Metric",
+      "count": "Count",
+      "events": "Events",
+      "sources": "Sources",
+      "log": "Log",
       "description": "Mirror logs to a topic",
       "mirror_on": "Log mirroring enabled",
       "mirror_off": "Log mirroring disabled",
@@ -525,6 +530,7 @@
     },
     "ping": {
       "description": "Userbot responsiveness check",
+      "template": "<b>Ping</b> <code>{latency} ms</code>\n<b>Uptime</b> <code>{uptime}</code>",
       "commands": {
         "ping": {
           "description": "Measure userbot ping"
