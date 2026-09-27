@@ -929,7 +929,7 @@ def _search_score(query: str, text: str) -> float:
                 score = 0.96
             elif len(term) >= 2 and word.startswith(term):
                 score = 0.9 + 0.03 * len(term) / len(word)
-            elif len(term) >= 4 and len(word) >= 4:
+            elif len(term) >= 3 and len(word) >= 4:
                 maximum = 1 if min(len(term), len(word)) < 8 else 2
                 distance = _search_distance(term, word, maximum)
                 if distance <= maximum:
