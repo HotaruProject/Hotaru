@@ -6,9 +6,9 @@ HOTARU = {
     "config_schema": {
         "template": {
             "type": "str",
-            "default": "",
+            "default": "<b>Пинг</b> <code>{latency} мс</code>\n<b>Аптайм</b> <code>{uptime}</code>",
             "max_len": 3000,
-            "description": "HTML ping template: {latency} in ms, {uptime}. Empty = localized default; other braces are literal.",
+            "description": "HTML ping template: {latency} in ms, {uptime}. Other braces are literal.",
             "category": "General",
         },
     },
