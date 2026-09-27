@@ -1,4 +1,7 @@
 from __future__ import annotations
+import asyncio
+import heapq
+import unicodedata
 import hashlib
 import html as _html_mod
 import json
@@ -889,7 +892,109 @@ def needs_callback(buttons: object) -> bool:
     return False
 
 
+def _search_normalize(text: str) -> str:
+    return " ".join(re.findall(r"[^\W_]+", unicodedata.normalize("NFKC", text).casefold().replace("ё", "е")))
+
+
+def _search_distance(left: str, right: str, maximum: int) -> int:
+    if abs(len(left) - len(right)) > maximum:
+        return maximum + 1
+    previous = list(range(len(right) + 1))
+    older = previous
+    for i, char in enumerate(left, 1):
+        current = [i] + [maximum + 1] * len(right)
+        for j in range(max(1, i - maximum), min(len(right), i + maximum) + 1):
+            current[j] = min(current[j - 1] + 1, previous[j] + 1, previous[j - 1] + (char != right[j - 1]))
+            if i > 1 and j > 1 and char == right[j - 2] and left[i - 2] == right[j - 1]:
+                current[j] = min(current[j], older[j - 2] + 1)
+        if min(current) > maximum:
+            return maximum + 1
+        older, previous = previous, current
+    return previous[-1]
+
+
+def _search_score(query: str, text: str) -> float:
+    if query == text:
+        return 1.0
+    words = text.split()
+    terms = sorted(set(query.split()), key=lambda term: (-len(term), term))
+    if not words or len(terms) > len(words):
+        return 0.0
+    scores = []
+    for term in terms:
+        best, index = 0.0, -1
+        for i, word in enumerate(words):
+            score = 0.0
+            if term == word:
+                score = 0.96
+            elif len(term) >= 2 and word.startswith(term):
+                score = 0.9 + 0.03 * len(term) / len(word)
+            elif len(term) >= 4 and len(word) >= 4:
+                maximum = 1 if min(len(term), len(word)) < 8 else 2
+                distance = _search_distance(term, word, maximum)
+                if distance <= maximum:
+                    score = 0.86 - 0.05 * distance
+            if score > best:
+                best, index = score, i
+        if index < 0:
+            return 0.0
+        scores.append(best)
+        words.pop(index)
+    return sum(scores) / len(scores)
+
+
+async def search(values: Any, query: str, *, key: Any = None, limit: int = 10, min_score: float = 0.76, layout: bool = True) -> list[dict[str, Any]]:
+    if not isinstance(query, str):
+        raise TypeError("query must be a string")
+    if not isinstance(limit, int) or isinstance(limit, bool) or limit < 0:
+        raise ValueError("limit must be a non-negative integer")
+    if not 0 <= min_score <= 1:
+        raise ValueError("min_score must be between 0 and 1")
+    if isinstance(values, (str, bytes)):
+        raise TypeError("values must be a collection, not a string")
+    original = _search_normalize(query)
+    if not original or not limit:
+        return []
+    variants = [original]
+    if layout:
+        en = "qwertyuiop[]asdfghjkl;'zxcvbnm,./`"
+        ru = "йцукенгшщзхъфывапролджэячсмитьбю.ё"
+        for source, target in ((en, ru), (ru, en)):
+            changed = _search_normalize(query.casefold().translate(str.maketrans(source, target)))
+            if changed and changed not in variants:
+                variants.append(changed)
+    heap: list[Any] = []
+    checkpoint = time.perf_counter()
+    for index, value in enumerate(values):
+        if time.perf_counter() - checkpoint >= 0.004:
+            await asyncio.sleep(0)
+            checkpoint = time.perf_counter()
+        raw = key(value) if callable(key) else value[key] if isinstance(key, str) else value
+        fields = raw if isinstance(raw, (list, tuple)) else (raw,)
+        best, matched, swapped = 0.0, "", False
+        for field in fields:
+            if not isinstance(field, str):
+                raise TypeError("search fields must be strings")
+            normalized = _search_normalize(field)
+            for variant in variants:
+                score = _search_score(variant, normalized)
+                if variant != original:
+                    score *= 0.98
+                if score > best:
+                    best, matched, swapped = score, field, variant != original
+        best = round(best, 6)
+        if best > 0 and best >= min_score:
+            hit = {"value": value, "score": round(best, 4), "matched": matched, "layout": swapped}
+            entry = (best, -index, hit)
+            if len(heap) < limit:
+                heapq.heappush(heap, entry)
+            elif entry[:2] > heap[0][:2]:
+                heapq.heapreplace(heap, entry)
+    return [entry[2] for entry in sorted(heap, reverse=True)]
+
+
 TOOLKIT_FUNCS = {
+    "search": search,
     "args_parse": args_parse,
     "args_raw": args_raw,
     "args_split": args_split,

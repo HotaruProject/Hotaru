@@ -63,19 +63,22 @@ async def _show_help(ctx: Any, invocation: Any) -> Any:
         return
 
     if invocation.args:
-        if len(invocation.args) != 1:
-            await ctx.respond(
-                ctx.t('kernel.help_ui.usage', prefix=_escape(runtime.config.prefix)),
-                parse_mode="HTML",
-            )
-            return
         if runtime.modules is None:
             await ctx.respond(ctx.t('kernel.help_ui.manager_unavailable'), parse_mode="HTML")
             return
 
-        module_id = invocation.args[0].casefold()
+        module_id = " ".join(invocation.args).casefold()
         active = runtime.modules.get(module_id)
         if active is None:
+            matches = await ctx.tools.search(
+                list(runtime.modules.items()), module_id,
+                key=lambda item: [item.loaded.manifest.module_id, item.loaded.manifest.localized(runtime.language(), item.loaded.manifest.description).get("description", ""), *item.loaded.manifest.commands],
+                limit=8,
+            )
+            if matches:
+                lines = [_module_line(runtime, hit["value"].loaded.manifest.module_id, hit["value"].loaded.manifest, False) for hit in matches]
+                await ctx.respond("".join(lines), parse_mode="HTML", rich=True, rich_fallback="bot")
+                return
             if runtime.state is not None and module_id in runtime.state.module_ids():
                 last_error = runtime.state.namespace(module_id).get("lasterror", ctx.t("common.none"))
                 await ctx.respond(

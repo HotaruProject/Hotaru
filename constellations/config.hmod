@@ -50,8 +50,9 @@ def _find_modules(ctx: Any) -> List[Any]:
     return items
 
 
-def _directory_form(ctx: Any) -> Dict[str, Any]:
-    modules = _find_modules(ctx)
+def _directory_form(ctx: Any, modules: Any = None) -> Dict[str, Any]:
+    if modules is None:
+        modules = _find_modules(ctx)
     if not modules:
         return {
             "text": "<b>Конфигурация</b>\n\nНастраиваемых модулей нет.",
@@ -66,6 +67,7 @@ def _directory_form(ctx: Any) -> Dict[str, Any]:
     for mod_id, _schema in modules:
         def make_handler(m: str) -> Any:
             async def handler(c: Any, p: Any) -> Any:
+                await c.answer()
                 await c.edit(**_module_form(ctx, m))
             return handler
 
@@ -304,6 +306,14 @@ async def command_conf(ctx: Any, invocation: Any) -> Any:
         return
 
     module_id = args[0].casefold()
+    candidates = _find_modules(ctx)
+    if not any(item[0] == module_id for item in candidates):
+        matches = await ctx.tools.search(candidates, " ".join(args), key=lambda item: item[0], limit=8)
+        if matches:
+            await ctx.respond(**_directory_form(ctx, [hit["value"] for hit in matches]))
+        else:
+            await ctx.respond(f"Модуль <code>{_escape(module_id)}</code> не найден.")
+        return
     if len(args) == 1:
         await ctx.respond(**_module_form(ctx, module_id))
         return
@@ -332,7 +342,12 @@ async def command_conf(ctx: Any, invocation: Any) -> Any:
     schema = ConfigSchema.from_manifest(active.loaded.manifest.config_schema)
     field = schema.get(key)
     if not field:
-        await ctx.respond(f"Параметр <code>{_escape(key)}</code> не найден.")
+        matches = await ctx.tools.search(list(schema.items()), key, key=lambda item: [item[0], item[1].description or ""], limit=8)
+        lines = [f"<code>{_escape(ctx.runtime.config.prefix)}conf {_escape(module_id)} {_escape(hit['value'][0])}</code>" for hit in matches]
+        text = f"Параметр <code>{_escape(key)}</code> не найден."
+        if lines:
+            text += "\n\n" + "\n".join(lines)
+        await ctx.respond(text)
         return
 
     if new_val is not None:
