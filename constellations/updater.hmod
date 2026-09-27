@@ -301,22 +301,6 @@ async def _finalize_restart(ctx: Any, pending: dict[str, Any]) -> None:
         except Exception as exc:
             _emit(ctx, "afterglow_error", attempt=attempt, error=type(exc).__name__)
         await asyncio.sleep(1)
-    completed_chats = {surfaces[index].get("chat_id") for index in done}
-    fallback_chats: set[int] = set()
-    for index, surface in enumerate(surfaces):
-        if index in done:
-            continue
-        chat_id = surface.get("chat_id")
-        if not isinstance(chat_id, int) or chat_id in completed_chats or chat_id in fallback_chats:
-            continue
-        fallback_chats.add(chat_id)
-        try:
-            await ctx.tg.call(
-                "messages.sendMessage",
-                {"peer": chat_id, "message": text, "random_id": int.from_bytes(os.urandom(8), "big") >> 1},
-            )
-        except Exception as exc:
-            _emit(ctx, "afterglow_send_error", error=type(exc).__name__, detail=str(exc)[:120])
     _emit(ctx, "afterglow_gave_up", done=len(done), total=len(surfaces))
 
 def _emit(ctx: Any, event: Any, **fields: Any) -> Any:
@@ -374,6 +358,7 @@ async def _run_update(ctx: Any) -> Any:
         return
     if update.conflicts:
         await say(ctx.t('kernel.updater.conflicts', path=_escape(str(update.recovery))))
+    ctx.state.set("notified_commit", update.after)
     await say(f"<b>{ctx.t('kernel.updater.restarting', commit=_escape(update.after[:7]))}</b>")
     pending = ctx.state.get("update_pending")
     if isinstance(pending, dict):
