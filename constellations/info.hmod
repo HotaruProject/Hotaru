@@ -29,9 +29,14 @@ HOTARU = {
 
 import subprocess
 import time
+from typing import TYPE_CHECKING, Dict, Union
+
+if TYPE_CHECKING:
+    from hotaru.commands import CommandInvocation
+    from hotaru.response import ModuleContext
 
 
-def _placeholders(ctx: Any) -> dict:
+def _placeholders(ctx: 'ModuleContext') -> Dict[str, Union[str, int]]:
     runtime = ctx.runtime
     version = "unknown"
     try:
@@ -58,7 +63,7 @@ def _placeholders(ctx: Any) -> dict:
     }
 
 
-async def command_info(ctx, invocation):
+async def command_info(ctx: 'ModuleContext', invocation: 'CommandInvocation') -> None:
     template = ctx.config.get("template")
     if not template:
         await ctx.respond("info: template is empty")

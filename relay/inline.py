@@ -7,7 +7,7 @@ import secrets
 import string
 import time
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable, cast
+from typing import Any, Awaitable, Callable, Mapping, cast
 
 from goygram import Session
 from goygram.errors import ConnectionClosedError
@@ -960,7 +960,8 @@ class InlineManager:
             from hotaru.security import AccessVerdict
 
             security = getattr(self.runtime, "security", None)
-            request = (getattr(self.runtime, "_input_requests", None) or {}).get(text.partition(" ")[0].split(":", 1)[1]) if text.startswith("hotaru-input:") else None
+            requests = cast('Mapping[str, tuple[object, ...]]', getattr(self.runtime, "_input_requests", None) or {})
+            request = requests.get(text.partition(" ")[0].split(":", 1)[1]) if text.startswith("hotaru-input:") else None
             authorized = request is not None and self.runtime._input_actor_matches(update, request[2])
             if security is None or security.check(update, transport="inline", authorized=authorized) is not AccessVerdict.ALLOW:
                 return

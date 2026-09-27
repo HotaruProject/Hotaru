@@ -6,7 +6,7 @@ from typing import Any
 from .layouts import prefix_variants, swap_layout
 
 
-def valid_prefix(prefix: str) -> bool:
+def valid_prefix(prefix: object) -> bool:
     return isinstance(prefix, str) and 1 <= len(prefix) <= 8 and prefix.isprintable() and not any(c.isspace() for c in prefix)
 
 

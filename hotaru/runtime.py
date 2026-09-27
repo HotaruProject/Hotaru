@@ -138,7 +138,7 @@ class Runtime:
     activity: int = 0
     _relaunch: bool = False
     _inline_forms: dict[str, tuple[str, list[list[dict[str, Any]]], bool]] | None = None
-    _forms: dict[str, tuple[Any, Any, str, Any, dict[str, Any]]] | None = None
+    _forms: dict[str, tuple[FormHandle, SimpleNamespace, str, object, dict[str, Any]]] | None = None
     _input_requests: dict[str, tuple[Any, ...]] | None = None
     _form_expiry: dict[str, float] | None = None
     _form_gc_task: asyncio.Task[None] | None = None
@@ -411,6 +411,9 @@ class Runtime:
             await command.delete()
         return cast('dict[str, Any]', sent) if isinstance(sent, dict) else sent
 
+    def get_form(self, key: str) -> tuple[FormHandle, SimpleNamespace, str, object, dict[str, Any]] | None:
+        return (self._forms or {}).get(key)
+
     def register_form(self, handle: Any, source: Any, text: str, buttons: Any, options: dict[str, Any]) -> None:
         if self._forms is None:
             self._forms = {}
@@ -420,7 +423,7 @@ class Runtime:
         if not isinstance(sent, dict) or not isinstance(sent.get("id"), int):
             raise RuntimeError("form delivery has no message identity")
         inline_id = (self._form_inline_ids or {}).get(key.split(":", 1)[1]) if key.startswith("inline:") else None
-        if key.startswith("inline:") and key.split(":", 1)[1] in (self._inline_forms or {}):
+        if key.startswith("inline:") and self._inline_forms is not None and key.split(":", 1)[1] in self._inline_forms:
             buttons = self._inline_forms[key.split(":", 1)[1]][1]
         source = SimpleNamespace(src="inline" if key.startswith("inline:") else "bot", chat_id=getattr(source, "chat_id", None), id=sent["id"], inline_message_id=inline_id)
         handle._source = source
@@ -471,6 +474,7 @@ class Runtime:
                     actor = options.get("callback_actor")
                     if not isinstance(actor, int):
                         actor = int(self.kernel.owner_id or 0)
+                    options["callback_actor"] = actor
                     for item in actions:
                         if not isinstance(item, dict):
                             continue
@@ -576,13 +580,15 @@ class Runtime:
         options.update(kwargs)
         options["delete_source"] = False
         actor = options.get("callback_actor")
-        rebound = []
-        for row in next_buttons or []:
-            current = []
+        rebound: list[list[dict[str, object]]] = []
+        for row in cast('list[dict[str, object] | list[dict[str, object]]]', next_buttons or []):
+            current: list[dict[str, object]] = []
             for button in row if isinstance(row, list) else [row]:
                 item = dict(button)
                 token = item.get("callback_data")
                 if isinstance(token, str) and self.callbacks is not None:
+                    if not isinstance(actor, (int, str)):
+                        raise CallbackDenied("callback identity is incomplete")
                     item["callback_data"] = self.callbacks.store.rebind(token, CallbackBinding(actor, None if source.src == "inline" else source.chat_id, 0 if source.src == "inline" else source.id), scope={"form_id": handle.key, "command": options.get("command")})
                 current.append(item)
             rebound.append(current)
@@ -981,7 +987,7 @@ class Runtime:
         form = (self._forms or {}).get(str(getattr(source, "_hotaru_form_id", "")))
         command = (form[4].get("command") if form is not None else None) or getattr(source, "_hotaru_command", None) or (self.kernel.command_name(getattr(source, "text", "") or "") if self.kernel is not None else None)
         spec = self.kernel.registry.resolve_name(command) if command and self.kernel is not None else None
-        return spec is not None and self.kernel._is_authorized(SimpleNamespace(from_id=actor, chat_id=getattr(source, "chat_id", None)), spec)
+        return spec is not None and self.kernel is not None and self.kernel.is_authorized(SimpleNamespace(from_id=actor, chat_id=getattr(source, "chat_id", None)), spec)
 
     async def _on_chosen_input(self, chosen: Any) -> None:
         text = str(getattr(chosen, "query", "") or "").strip()
@@ -1150,7 +1156,9 @@ class Runtime:
             return await bot.mt_messages_edit_inline_bot_message(**data)
 
     async def _drop_transfer(self, source: Any, inline_id: Any) -> bool:
-        if isinstance(inline_id, dict) and inline_id.get("_") == "inputBotInlineMessageID64" and type(inline_id.get("owner_id")) is int and inline_id["owner_id"] < 0:
+        target = cast('dict[str, object]', inline_id) if isinstance(inline_id, dict) else {}
+        owner = target.get("owner_id")
+        if target.get("_") == "inputBotInlineMessageID64" and type(owner) is int and owner < 0:
             try:
                 callback = SimpleNamespace(src="mt", app=self.app, inline_message_id=inline_id)
                 await CallbackContext(callback, self).delete()
