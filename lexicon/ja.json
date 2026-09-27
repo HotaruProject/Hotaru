@@ -694,7 +694,6 @@
     },
     "file_missing": "モジュールファイルが見つかりません",
     "file_document": "モジュールをファイルとして送信してください",
-    "timeout": "コマンド {command} が {seconds}秒でタイムアウトしました。",
     "unknown_capability": "不明な機能（拒否）"
   },
   "acl": {

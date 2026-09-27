@@ -158,20 +158,23 @@ def _sink(payload: Any) -> Any:
         return
     level = str(payload.get("level") or "info").lower()
     # Pass events whose numeric severity >= current floor (more severe = higher number).
-    if LEVELS.get(level, LEVELS["info"]) < _state.get("floor", _DEFAULT_FLOOR):
+    if LEVELS.get(level, LEVELS["info"]) < _level_floor(_state.get("config")):
         return
     queue = _state["queue"]
     if queue is None:
         return
     try:
         queue.put_nowait((time.monotonic(), payload))
-    except Exception:
-        pass
+    except asyncio.QueueFull:
+        _state["lost"] = _state.get("lost", 0) + 1
 
 
 async def hookup(ctx: Any) -> Any:
     _state["queue"] = asyncio.Queue(maxsize=500)
-    _state["floor"] = _level_floor(ctx.state)
+    _state["config"] = ctx.config
+    _state["lost"] = 0
+    _state["reported_lost"] = 0
+    _state["pending"] = []
     obs = _obs(ctx)
     if obs is not None:
         _state["sub"] = obs.subscribe(_sink)
@@ -191,7 +194,7 @@ async def unhook(ctx: Any) -> Any:
 
 
 async def task_pump(ctx: Any) -> Any:
-    if ctx.state.get("enabled", True) is False:
+    if ctx.state.get("enabled", True) is False or not ctx.config.get("auto_topic", True):
         return
     now = time.monotonic()
     topic_id = _state.get("topic_id")
@@ -210,25 +213,25 @@ async def task_pump(ctx: Any) -> Any:
             _emit(ctx, "topic_error", error=type(exc).__name__, detail=str(exc)[:160])
             return
     queue = _state.get("queue")
-    if queue is None or queue.empty():
+    if queue is None:
         return
-    await asyncio.sleep(3)
-    now = time.monotonic()
-    batch: List[Mapping[str, Any]] = []
-    while not queue.empty() and len(batch) < 40:
+    batch: List[Mapping[str, Any]] = _state["pending"]
+    limit = max(1, min(100, int(ctx.config.get("batch_size", 20))))
+    lost = _state.get("lost", 0)
+    if lost > _state.get("reported_lost", 0) and len(batch) < limit:
+        batch.append({"ts": time.time(), "level": "warn", "component": "logger", "event": "mirror_overflow", "lost": lost - _state.get("reported_lost", 0), "lost_total": lost})
+        _state["reported_lost"] = lost
+    while not queue.empty() and len(batch) < limit:
         try:
-            stamped, payload = queue.get_nowait()
-        except Exception:
+            _, payload = queue.get_nowait()
+        except asyncio.QueueEmpty:
             break
-        if now - stamped > 60.0:
-            continue
         batch.append(payload)
     if not batch:
         return
-    if topic_id is None:
-        return
     try:
-        await ctx.forum.send(topic_id, "", rich=_rich(ctx, batch))
+        await ctx.forum.send(topic_id, "", rich=_rich(ctx, batch[:limit]))
+        del batch[:limit]
         _state["failed"] = 0
     except Exception as exc:
         _state["topic_id"] = None
@@ -249,14 +252,14 @@ async def command_logs(ctx: Any, invocation: Any) -> Any:
         return
     if args and args[0].lower() in LEVELS and len(args) == 1:
         name = args[0].lower()
-        ctx.state.set("level", name)
-        _state["floor"] = LEVELS[name]
+        ctx.config.set("level", "warn" if name == "warning" else "fatal" if name == "critical" else name)
         await ctx.respond(f"<code>{ctx.t('kernel.logger.level_set', level=name)}</code>", parse_mode="HTML")
         return
     if args and args[0] in ("status", "st"):
         failed = _state.get("failed", 0)
         err = _state.get("last_error", "")
         text = ctx.t('kernel.logger.status', topic=_state.get('topic_id') or ctx.t('kernel.logger.pending'), failed=failed)
+        text += f" · lost={_state.get('lost', 0)} · queued={(_state['queue'].qsize() if _state.get('queue') is not None else 0) + len(_state.get('pending', []))}"
         if err:
             text += ctx.t('kernel.logger.status_error', error=html.escape(err, quote=False))
         await ctx.respond(f"<code>{html.escape(text, quote=False)}</code>", parse_mode="HTML")
@@ -272,9 +275,7 @@ async def command_logs(ctx: Any, invocation: Any) -> Any:
     if rest and rest[0].isdigit():
         rest = rest[1:]
     component = rest[0].lower() if rest else None
-    entries = obs.tail(lines=count, level=level)
-    if component is not None:
-        entries = [entry for entry in entries if str(entry.get("component") or "").lower() == component]
+    entries = obs.tail(lines=count, level=level, component=component)
     if not entries:
         await ctx.respond(ctx.t('kernel.logger.no_entries'), parse_mode="HTML")
         return

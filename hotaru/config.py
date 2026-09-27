@@ -745,7 +745,6 @@ _ENV_MAPPINGS: dict[str, tuple[str, ...]] = {
     "session-name": ("HOTARU_SESSION_NAME", "SESSION_NAME"),
     "session-dir": ("HOTARU_SESSION_DIR", "SESSION_DIR"),
     "backup-keep": ("HOTARU_BACKUP_KEEP", "BACKUP_KEEP"),
-    "command-timeout": ("HOTARU_COMMAND_TIMEOUT", "COMMAND_TIMEOUT"),
     "inline-enabled": ("HOTARU_INLINE_ENABLED", "INLINE_ENABLED"),
     "log-level": ("HOTARU_LOG_LEVEL", "LOG_LEVEL"),
     "environment": ("HOTARU_ENV", "ENVIRONMENT", "NODE_ENV"),
@@ -774,7 +773,6 @@ class RuntimeConfig:
     session_dir: Path
     state_path: Path
     backup_keep: int
-    command_timeout: float = 60.0
     inline_enabled: bool = True
     log_level: str = "INFO"
     environment: str = "production"
@@ -789,7 +787,7 @@ class RuntimeConfig:
         state = StateStore(path)
         try:
             values: dict[str, Any] = {}
-            for setting_key in ("api-id", "api-hash", "bot-token", "owner-id", "prefix", "session-name", "session-dir", "backup-keep", "command-timeout", "inline-enabled", "log-level", "environment", "sandbox"):
+            for setting_key in ("api-id", "api-hash", "bot-token", "owner-id", "prefix", "session-name", "session-dir", "backup-keep", "inline-enabled", "log-level", "environment", "sandbox"):
                 raw_env = _resolve_env(setting_key, dotenv) if discover else None
                 if raw_env is not None:
                     if setting_key == "api-id":
@@ -802,11 +800,6 @@ class RuntimeConfig:
                             val = int(raw_env)
                         except ValueError:
                             val = None
-                    elif setting_key == "command-timeout":
-                        try:
-                            val = float(raw_env)
-                        except ValueError:
-                            val = 60.0
                     elif setting_key == "inline-enabled":
                         try:
                             val = BooleanValidator().validate(raw_env)
@@ -838,8 +831,6 @@ class RuntimeConfig:
             if values.get("backup-keep") is None:
                 values["backup-keep"] = 7
                 state.set_setting("backup-keep", 7)
-            if values.get("command-timeout") is None:
-                values["command-timeout"] = 60.0
             if values.get("inline-enabled") is None:
                 values["inline-enabled"] = True
             if values.get("log-level") is None:
@@ -872,7 +863,6 @@ class RuntimeConfig:
                 session_dir=Path(str(values["session-dir"])),
                 state_path=Path(path),
                 backup_keep=int(values["backup-keep"]),
-                command_timeout=float(values["command-timeout"]),
                 inline_enabled=bool(values["inline-enabled"]),
                 log_level=str(values["log-level"]),
                 environment=str(values["environment"]),
@@ -913,7 +903,6 @@ class RuntimeConfig:
             "session_dir": str(self.session_dir),
             "state_path": str(self.state_path),
             "backup_keep": self.backup_keep,
-            "command_timeout": self.command_timeout,
             "inline_enabled": self.inline_enabled,
             "log_level": self.log_level,
             "environment": self.environment,
@@ -935,7 +924,6 @@ class RuntimeConfig:
         lines.append(f"SESSION_NAME={self.session_name}")
         lines.append(f"SESSION_DIR={self.session_dir}")
         lines.append(f"BACKUP_KEEP={self.backup_keep}")
-        lines.append(f"COMMAND_TIMEOUT={self.command_timeout}")
         lines.append(f"INLINE_ENABLED={str(self.inline_enabled).lower()}")
         lines.append(f"LOG_LEVEL={self.log_level}")
         lines.append(f"ENVIRONMENT={self.environment}")
@@ -960,13 +948,6 @@ CORE_SCHEMA = ConfigSchema({
         default=7,
         description="Number of database backups to retain",
         category="Maintenance",
-    ),
-    "command-timeout": ConfigField(
-        key="command-timeout",
-        validator=FloatValidator(default=60.0, minimum=1.0, maximum=600.0),
-        default=60.0,
-        description="Maximum seconds before command execution times out",
-        category="Execution",
     ),
     "inline-enabled": ConfigField(
         key="inline-enabled",

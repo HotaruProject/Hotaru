@@ -23,8 +23,6 @@ async def command_alias(ctx: Any, invocation: Any) -> Any:
     if not 1 <= len(alias) <= 32 or not alias.isidentifier():
         await ctx.respond(ctx.t('settings.alias_invalid'))
         return
-    if runtime.kernel.registry.resolve_name(alias) is None and command not in runtime.kernel.registry.names():
-        pass
     if runtime.kernel.registry.resolve_name(alias) is not None:
         await ctx.respond(ctx.t('settings.alias_exists', alias=alias))
         return
@@ -37,6 +35,7 @@ async def command_alias(ctx: Any, invocation: Any) -> Any:
     if alias in aliases:
         await ctx.respond(ctx.t('settings.alias_taken', alias=alias, command=aliases[alias], prefix=runtime.config.prefix))
         return
+    command = target.name
     aliases[alias] = command
     runtime.state.set_setting("user_aliases", aliases)
     runtime.kernel.registry.register_alias(alias, command)

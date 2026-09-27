@@ -694,7 +694,6 @@
     },
     "file_missing": "Файл модуля не знайдено",
     "file_document": "Надішли модуль файлом",
-    "timeout": "Команда {command} не завершилася за {seconds} с.",
     "unknown_capability": "невідома можливість (заборонена)"
   },
   "acl": {

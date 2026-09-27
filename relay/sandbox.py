@@ -383,6 +383,8 @@ def _cb_respond_call(data):
 
 
 class SandboxCallbackProxy:
+    def form_allowed(self, key):
+        return bool(_respond_call({"form": key, "op": "allowed"}))
     def __init__(self, cb_data):
         self._data = cb_data
 
@@ -501,6 +503,7 @@ class SandboxContext:
             id=self.message_id,
             is_me=self._msg.get("out", False),
             out=self._msg.get("out", False),
+            from_id=self._msg.get("from_id"),
         )
 
     @property
@@ -584,8 +587,14 @@ class SandboxContext:
         kwargs["rich"] = True
         return _respond_call({"content": html, "kwargs": kwargs})
 
-    async def inline_form(self, text, buttons=None, **kwargs):
-        return _respond_call({"content": text, "kwargs": {"buttons": buttons, "output": "inline", **kwargs}})
+    async def inline_form(self, text, buttons=None, form_handle=False, **kwargs):
+        return _respond_call({"content": text, "form_handle": bool(form_handle), "kwargs": {"buttons": buttons, "output": "inline", **kwargs}})
+
+    async def edit_form(self, key, text, buttons=None):
+        return _respond_call({"form": key, "op": "edit", "content": text, "buttons": buttons})
+
+    def form_allowed(self, key):
+        return bool(_respond_call({"form": key, "op": "allowed"}))
 
     @property
     def rich(self):
@@ -1604,6 +1613,8 @@ class ModuleSandbox:
             for key, field in config.schema.items() if field.template_fields is not None
         })
         payload.setdefault("language", context.i18n.language)
+        payload["from_id"] = getattr(source, "from_id", None)
+        payload["prefix"] = self.runtime.config.prefix
         async with self._roundtrip_lock(module_id):
             self._respond_contexts[module_id] = context
             if source is not None:
@@ -1722,7 +1733,6 @@ class ModuleSandbox:
                 process.stdin.flush()
 
     async def _serve_respond(self, module_id: str) -> None:
-        self.runtime.note_activity()
         pending = self._respond_pending.pop(module_id, [])
         source = self._respond_sources.get(module_id)
         for message in pending:
@@ -1740,7 +1750,6 @@ class ModuleSandbox:
                 process.stdin.flush()
 
     async def _serve_cb_respond(self, module_id: str) -> None:
-        self.runtime.note_activity()
         pending = self._cb_respond_pending.pop(module_id, [])
         callback = getattr(self, "_active_callback", {}).get(module_id)
         process = self._workers.get(module_id)
@@ -1764,10 +1773,10 @@ class ModuleSandbox:
                     if markup is not None:
                         if isinstance(markup, list):
                             with trusted_scope():
-                                kwargs["buttons"] = self._sandbox_buttons(module_id, markup, getattr(callback, "chat_id", None))
+                                kwargs["buttons"] = self._sandbox_buttons(module_id, markup, getattr(callback, "chat_id", None), getattr(callback, "from_id", None))
                         elif isinstance(markup, dict) and "inline_keyboard" in markup:
                             with trusted_scope():
-                                kwargs["buttons"] = self._sandbox_buttons(module_id, markup["inline_keyboard"], getattr(callback, "chat_id", None))
+                                kwargs["buttons"] = self._sandbox_buttons(module_id, markup["inline_keyboard"], getattr(callback, "chat_id", None), getattr(callback, "from_id", None))
                         else:
                             kwargs["reply_markup"] = markup
                     with trusted_scope():
@@ -1786,6 +1795,32 @@ class ModuleSandbox:
 
     async def _trusted_respond(self, module_id: str, source: Any, payload: dict[str, Any]) -> Any:
         from hotaru.response import FormHandle, Response
+        from types import SimpleNamespace
+        if "form" in payload:
+            from hotaru.runtime import Runtime
+            runtime = cast(Runtime, self.runtime)
+            entry = runtime.get_form(str(payload["form"]))
+            if not entry or entry[4].get("module_id") != module_id:
+                if payload.get("op") == "allowed":
+                    return False
+                raise PermissionError("module form is unavailable")
+            handle, form_source, _, _, options = entry
+            actor = options.get("callback_actor")
+            command = str(options.get("command") or "")
+            spec = self.runtime.kernel.registry.resolve_name(command)
+            allowed = bool(spec and spec.module_id == module_id and actor and self.runtime.kernel.is_authorized(SimpleNamespace(from_id=actor, chat_id=form_source.chat_id), spec))
+            if payload.get("op") == "allowed":
+                return allowed
+            if not allowed:
+                raise PermissionError("form command is no longer authorized")
+            if payload.get("op") != "edit":
+                raise PermissionError("unknown form operation")
+            buttons = payload.get("buttons")
+            if buttons is not None:
+                buttons = self._sandbox_buttons(module_id, buttons, form_source.chat_id, actor)
+            with trusted_scope():
+                await handle.edit(str(payload.get("content", "")), buttons=buttons)
+            return True
         if source is None:
             raise PermissionError("no message source is bound to this call")
         context = self._respond_contexts.get(module_id)
@@ -1796,7 +1831,7 @@ class ModuleSandbox:
         if kwargs.get("media") is not None or kwargs.get("file") is not None or payload.get("content") is not None and not isinstance(payload["content"], str):
             raise PermissionError("sandbox respond media must go through files capability")
         if kwargs.get("buttons"):
-            kwargs["buttons"] = self._sandbox_buttons(module_id, kwargs["buttons"], getattr(source, "chat_id", None))
+            kwargs["buttons"] = self._sandbox_buttons(module_id, kwargs["buttons"], getattr(source, "chat_id", None), getattr(source, "from_id", None))
         for key in ("module_options", "module_id", "callback_actor", "chat_id", "peer", "bot"):
             kwargs.pop(key, None)
         with trusted_scope():
@@ -1804,15 +1839,15 @@ class ModuleSandbox:
         if isinstance(result, Response):
             return result.message
         if isinstance(result, FormHandle):
-            return result.value
+            return result.key if payload.get("form_handle") else result.value
         if isinstance(result, list):
             return [item.message if isinstance(item, Response) else item for item in cast('list[object]', result)]
         return result
 
-    def _sandbox_buttons(self, module_id: str, buttons: Any, chat_id: Any) -> Any:
+    def _sandbox_buttons(self, module_id: str, buttons: Any, chat_id: Any, actor: Any = None) -> Any:
         with trusted_scope():
             router = getattr(self.runtime, "callbacks", None)
-            owner = getattr(getattr(self.runtime, "kernel", None), "owner_id", None)
+            owner = actor or getattr(getattr(self.runtime, "kernel", None), "owner_id", None)
             normalized: list[list[dict[str, Any]]] = []
             button_values = cast('list[Any]', buttons) if isinstance(buttons, list) else []
             rows: list[Any] = button_values if button_values and isinstance(button_values[0], list) else [buttons]

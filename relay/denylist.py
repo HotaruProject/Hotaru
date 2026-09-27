@@ -34,36 +34,52 @@ def is_blocked_peer(value: object) -> bool:
     return False
 
 
-_PEER_ATTRS = ("user_id", "chat_id", "peer_id", "channel_id", "from_id")
+_PEER_ATTRS = frozenset({"peer", "peers", "user", "users", "user_id", "user_ids", "chat_id", "peer_id", "from_id", "to_id", "to_peer", "from_peer", "saved_peer_id", "reply_to_peer_id", "receiver_id", "bot", "bot_id"})
 
 
 def payload_hits_blocked(payload: object) -> bool:
-    stack: list[object] = [payload]
+    stack: list[tuple[object, bool]] = [(payload, False)]
     visited = 0
-    while stack and visited < 4096:
-        item = stack.pop()
+    seen: set[tuple[int, bool]] = set()
+    while stack:
+        item, peer = stack.pop()
         visited += 1
-        if is_blocked_peer(item):
+        if visited + len(stack) > 4096:
+            raise ValueError("Telegram payload complexity limit exceeded")
+        if peer and is_blocked_peer(item):
             return True
+        if item is None or isinstance(item, (str, int, float, bool)):
+            continue
+        identity = (id(item), peer)
+        if identity in seen:
+            continue
+        seen.add(identity)
         if isinstance(item, dict):
-            for value in cast('dict[object, object]', item).values():
-                if is_blocked_peer(value):
-                    return True
-                stack.append(value)
+            fields = cast('dict[object, object]', item)
+            kind = str(fields.get("_", "")).lower()
+            for key, value in fields.items():
+                target = key in _PEER_ATTRS or key == "id" and kind in {"user", "userempty"}
+                if key == "chat_id" and kind in {"peerchat", "inputpeerchat"}:
+                    target = False
+                stack.append((value, target))
+                if visited + len(stack) > 4096:
+                    raise ValueError("Telegram payload complexity limit exceeded")
         elif isinstance(item, (list, tuple)):
-            for value in cast('list[object] | tuple[object, ...]', item):
-                if is_blocked_peer(value):
-                    return True
-                stack.append(value)
+            values = cast('list[object] | tuple[object, ...]', item)
+            if visited + len(stack) + len(values) > 4096:
+                raise ValueError("Telegram payload complexity limit exceeded")
+            stack.extend((value, peer) for value in values)
         elif isinstance(item, (bytes, bytearray)):
             try:
                 decoded = loads(bytes(item))
             except (ValueError, TypeError, RuntimeError):
                 continue
-            stack.append(decoded)
-        elif item is not None and not isinstance(item, (str, int, float, bool)):
+            stack.append((decoded, peer))
+        else:
+            fields = getattr(item, "__dict__", None)
+            if isinstance(fields, dict):
+                stack.append((cast('dict[object, object]', fields), peer))
             for attr in _PEER_ATTRS:
-                value = getattr(item, attr, None)
-                if is_blocked_peer(value):
-                    return True
-    return bool(stack)
+                attr_value: object = getattr(item, attr, None)
+                stack.append((attr_value, True))
+    return False
