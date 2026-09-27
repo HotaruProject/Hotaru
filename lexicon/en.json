@@ -432,6 +432,9 @@
         "rmalias": {
           "description": "Remove a command alias"
         },
+        "aliasls": {
+          "description": "List command aliases"
+        },
         "prefix": {
           "description": "Change command prefix"
         }
@@ -577,6 +580,8 @@
     "usage_rmalias": "Usage: {prefix}rmalias <alias>",
     "alias_removed": "Alias removed: {alias}",
     "alias_not_found": "Alias not found: {alias}",
+    "alias_list_empty": "No aliases yet",
+    "alias_list_title": "<b>Aliases</b>",
     "prefix_current": "Current prefix: {prefix}. Change: {prefix}prefix <character>",
     "prefix_invalid": "Prefix must contain 1 to 8 visible characters without whitespace.",
     "prefix_set": "Prefix changed to {prefix}",
@@ -584,6 +589,7 @@
     "commands": {
       "alias": "Create a command alias",
       "rmalias": "Remove a command alias",
+      "aliasls": "List command aliases",
       "prefix": "Change command prefix"
     }
   },

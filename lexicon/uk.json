@@ -429,6 +429,9 @@
         "rmalias": {
           "description": "Видалити аліас команди"
         },
+        "aliasls": {
+          "description": "Показати аліаси команд"
+        },
         "prefix": {
           "description": "Змінити префікс команд"
         }
@@ -556,6 +559,8 @@
     "usage_rmalias": "Використання: {prefix}rmalias <аліас>",
     "alias_removed": "Аліас видалено: {alias}",
     "alias_not_found": "Аліас не знайдено: {alias}",
+    "alias_list_empty": "Аліасів поки немає",
+    "alias_list_title": "<b>Аліаси</b>",
     "prefix_current": "Поточний префікс: {prefix}. Змінити: {prefix}prefix <символ>",
     "prefix_invalid": "Префікс: від 1 до 8 видимих символів без пробілів.",
     "prefix_set": "Префікс змінено на {prefix}",
@@ -563,6 +568,7 @@
     "commands": {
       "alias": "Створити аліас команди",
       "rmalias": "Видалити аліас команди",
+      "aliasls": "Показати аліаси команд",
       "prefix": "Змінити префікс команд"
     }
   },
