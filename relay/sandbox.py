@@ -75,6 +75,7 @@ except ImportError:
     resource = None
 import socket
 import sys
+import time
 from pathlib import Path
 from types import SimpleNamespace
 import re as _re
@@ -439,6 +440,16 @@ class SandboxContext:
         self.state = _StateProxy()
         self.tools = SimpleNamespace(**{k: v for k, v in (tools or {}).items()})
         self._msg = payload
+
+    @property
+    def uptime(self):
+        return max(0, int(time.monotonic() - self._msg["started_at"]))
+
+    def render_template(self, key, **values):
+        entry = self._msg.get("templates", {}).get(key)
+        if entry is None:
+            raise ValueError(f"{key}: no template_fields declared")
+        return self.tools.template_render(entry["value"], entry["fields"], values, legacy_braces=entry["legacy_braces"])
 
     @property
     def i18n(self):
@@ -1558,6 +1569,12 @@ class ModuleSandbox:
         return True
 
     async def call(self, module_id: str, command: str, args: list[str], payload: dict[str, Any], source: Any = None, target: str | None = None, context: Any = None) -> Any:
+        context = context or self.runtime.context_factory.create(module_id, source)
+        config = context.config
+        payload = dict(payload, started_at=self.runtime.started_at, templates={
+            key: {"value": config.get(key), "fields": field.template_fields, "legacy_braces": field.legacy_braces}
+            for key, field in config.schema.items() if field.template_fields is not None
+        })
         async with self._roundtrip_lock(module_id):
             if source is not None:
                 self._respond_sources[module_id] = source

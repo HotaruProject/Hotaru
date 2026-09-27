@@ -157,6 +157,8 @@ class HmodLoader:
             tree = ast.parse(source, filename=str(candidate), mode="exec")
             manifest = self._manifest(tree)
             compile(tree, str(candidate), "exec", flags=__future__.annotations.compiler_flag, dont_inherit=True)
+        except ModuleValidationError:
+            raise
         except (SyntaxError, ValueError, TypeError) as exc:
             raise ModuleValidationError("module failed validation") from exc
         digest = hashlib.sha256(source.encode("utf-8")).hexdigest()
@@ -224,6 +226,13 @@ class HmodLoader:
         config_schema = raw.get("config_schema", {})
         if not isinstance(config_schema, dict):
             raise ModuleValidationError("manifest config_schema must be a dictionary")
+
+        from .config import ConfigSchema, ConfigValidationError
+
+        try:
+            ConfigSchema.from_manifest(config_schema)
+        except (ConfigValidationError, ValueError, TypeError) as exc:
+            raise ModuleValidationError(f"manifest config_schema: {exc}") from exc
 
         translations = raw.get("lexicon", raw.get("translations", {}))
         if not isinstance(translations, dict):

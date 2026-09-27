@@ -537,6 +537,13 @@ class ModuleContext:
         return ModulesHelper(self)
 
     @property
+    def uptime(self) -> int:
+        return max(0, int(time.monotonic() - self.runtime.started_at))
+
+    def render_template(self, key: str, **values: Any) -> str:
+        return self.config.render(key, **values)
+
+    @property
     def config(self) -> Any:
         from .config import ModuleConfig
         schema = None
