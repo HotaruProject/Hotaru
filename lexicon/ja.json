@@ -418,7 +418,10 @@
         "config": {
           "description": "設定を開く"
         }
-      }
+      },
+      "template_fields": "利用可能なテンプレート変数",
+      "template_syntax": "{{name}}、数値書式 {{name:.2f}}、通常の波括弧には {{{{ / }}}} を使います。値はHTMLエスケープされます。",
+      "template_preview": "プレビュー（HTML、サンプル値）"
     },
     "settings": {
       "description": "別名とプレフィックスの管理",
@@ -541,7 +544,13 @@
         "ping": {
           "description": "ユーザーボットのpingを測定"
         }
-      }
+      },
+      "fields": {
+        "latency": "応答時間（ミリ秒）",
+        "uptime": "ユーザーボットの稼働時間（ゼロの単位を省略）",
+        "uptime_seconds": "ユーザーボットの稼働時間（秒）"
+      },
+      "example_uptime": "2時間 3分"
     }
   },
   "inline_commands_hint": "コマンドを選択 — 任意のチャットで @<bot> とコマンド名を入力",

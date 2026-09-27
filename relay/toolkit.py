@@ -424,7 +424,7 @@ def template_fields(raw: object) -> dict[str, dict[str, Any]]:
         if not isinstance(entry, dict):
             raise ValueError(f"{name}: field metadata must be a mapping")
         meta = cast('dict[str, Any]', entry)
-        if set(meta) - {"type", "description", "description_key", "example", "format"}:
+        if set(meta) - {"type", "description", "description_key", "example", "example_key", "format"}:
             raise ValueError(f"{name}: unknown template field metadata")
         kind = meta.get("type", "str")
         if kind not in ("str", "int", "float", "bool") or not _template_value(meta.get("example"), kind):
@@ -439,6 +439,9 @@ def template_fields(raw: object) -> dict[str, dict[str, Any]]:
         description_key = meta.get("description_key", "")
         if not isinstance(description_key, str) or len(description_key) > 200 or not (description or description_key):
             raise ValueError(f"{name}: a description or description_key is required")
+        example_key = meta.get("example_key", "")
+        if not isinstance(example_key, str) or len(example_key) > 200 or (example_key and kind != "str"):
+            raise ValueError(f"{name}: example_key requires a string field and a translation key")
         spec = meta.get("format", "")
         if not isinstance(spec, str):
             raise ValueError(f"{name}: format must be a string")
