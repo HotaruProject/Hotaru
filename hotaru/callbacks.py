@@ -5,6 +5,7 @@ import hashlib
 import inspect
 import json
 import secrets
+import time
 import types
 from dataclasses import dataclass
 from pathlib import Path
@@ -109,16 +110,6 @@ class CallbackContext:
             from hotaru.runtime import InputContext
             buttons = cast("list[Any]", kwargs.pop("buttons", []))
             kwargs.pop("kbd", None)
-            if not isinstance(getattr(self, "chat_id", None), int):
-                if runtime.state is not None:
-                    ref_chat = runtime.state.get_setting("inline-reference-chat")
-                    if isinstance(ref_chat, int):
-                        self.chat_id = ref_chat
-                if not isinstance(getattr(self, "chat_id", None), int) and runtime._form_msgs:
-                    for c_id, _ in runtime._form_msgs.values():
-                        if isinstance(c_id, int):
-                            self.chat_id = c_id
-                            break
             ctx = InputContext(runtime, self, None, "", None)
             ctx.inline_message_id = getattr(self, "inline_message_id", None)
             ctx.form_nonce = getattr(self, "form_nonce", None)
@@ -246,22 +237,13 @@ class CallbackContext:
             await self.answer()
         except Exception:
             pass
-        runtime = getattr(self._callback, "_hotaru_runtime", None)
+        runtime = getattr(self, "_hotaru_runtime", None)
         user_app = getattr(runtime, "app", None) if runtime is not None else None
         app = user_app or getattr(self, "app", None)
         chat_id = getattr(self, "chat_id", None)
         msg_id = getattr(self, "msg_id", None)
         if not isinstance(msg_id, int):
             msg_id = None
-        if not (isinstance(chat_id, int) and isinstance(msg_id, int)):
-            actor = getattr(self, "from_id", None)
-            stored = getattr(runtime, "_form_msgs", None) if runtime is not None else None
-            if isinstance(stored, dict) and actor in stored:
-                mapping = cast('dict[object, object]', stored)
-                chat_id, msg_id = cast('tuple[object, object]', mapping.pop(actor))
-            elif isinstance(stored, dict) and len(cast('dict[object, object]', stored)) == 1:
-                mapping = cast('dict[object, object]', stored)
-                chat_id, msg_id = cast('tuple[object, object]', mapping.pop(next(iter(mapping))))
         if isinstance(chat_id, int) and isinstance(msg_id, int) and app is not None:
             from relay.firewall import trusted_scope
             with trusted_scope():
@@ -291,6 +273,7 @@ class _Entry:
     binding: CallbackBinding
     value: dict[str, Any]
     consumed: bool = False
+    expires: float = 0.0
 
 
 def derive_key(seed: str) -> bytes:
@@ -304,12 +287,14 @@ class CallbackStore:
     def __init__(
         self,
         *,
-        ttl: float = 0.0,
+        ttl: float = 3600.0,
         max_items: int = 16384,
         secret: bytes | None = None,
         connection: Any = None,
         store: Any = None,
     ) -> None:
+        if ttl < 0 or max_items < 1:
+            raise ValueError("invalid callback limits")
         self.ttl = ttl
         self.max_items = max_items
         self._key = secret or _derive_key(secrets.token_hex(16))
@@ -336,6 +321,10 @@ class CallbackStore:
             "value TEXT NOT NULL, "
             "consumed INTEGER NOT NULL DEFAULT 0)"
         )
+        columns = {row[1] for row in self.connection.execute("PRAGMA table_info(callback_store)")}
+        if "expires" not in columns:
+            self.connection.execute("ALTER TABLE callback_store ADD COLUMN expires REAL NOT NULL DEFAULT 0")
+            self.connection.execute("UPDATE callback_store SET consumed = 1")
         self.connection.commit()
 
     def _seal(self) -> str:
@@ -355,26 +344,29 @@ class CallbackStore:
             return None
 
     def issue(self, binding: CallbackBinding, value: dict[str, Any], handle: str | None = None) -> str:
+        if handle is not None:
+            if self._load(handle) is None or not isinstance(self._unseal(handle), bytes):
+                raise CallbackDenied("callback is invalid")
+            return handle
         self._prune()
-        if handle is None:
-            handle = self._seal()
-        entry = _Entry(binding, value, consumed=False)
+        handle = self._seal()
+        entry = _Entry(binding, value, consumed=False, expires=time.time() + self.ttl if self.ttl else 0.0)
         self._items[handle] = entry
         if self.connection is not None:
             chat_str = str(binding.chat_id) if binding.chat_id is not None else None
             val_str = json.dumps(value, ensure_ascii=False, default=str)
             self.connection.execute(
-                "INSERT OR REPLACE INTO callback_store(handle, actor, chat_id, message_id, value, consumed) VALUES (?, ?, ?, ?, ?, 0)",
-                (handle, str(binding.actor), chat_str, binding.message_id, val_str),
+                "INSERT INTO callback_store(handle, actor, chat_id, message_id, value, consumed, expires) VALUES (?, ?, ?, ?, ?, 0, ?)",
+                (handle, str(binding.actor), chat_str, binding.message_id, val_str, entry.expires),
             )
             self.connection.commit()
         return handle
 
-    def peek(self, handle: str, binding: CallbackBinding) -> dict[str, Any]:
+    def _load(self, handle: str) -> _Entry | None:
         entry = self._items.get(handle)
         if entry is None and self.connection is not None:
             row = self.connection.execute(
-                "SELECT actor, chat_id, message_id, value, consumed FROM callback_store WHERE handle = ?",
+                "SELECT actor, chat_id, message_id, value, consumed, expires FROM callback_store WHERE handle = ?",
                 (handle,),
             ).fetchone()
             if row is not None:
@@ -392,15 +384,22 @@ class CallbackStore:
                     ),
                     val_data,
                     consumed=is_consumed,
+                    expires=float(row[5]),
                 )
                 self._items[handle] = entry
+        return entry
+
+    def peek(self, handle: str, binding: CallbackBinding) -> dict[str, Any]:
+        entry = self._load(handle)
         decoded = self._unseal(handle)
         if entry is None or not isinstance(decoded, bytes):
             raise CallbackDenied("callback is invalid")
         if entry.consumed:
             raise CallbackDenied("callback has already been used")
-        chat_ok = entry.binding.chat_id in (None, 0) or binding.chat_id in (None, 0) or str(entry.binding.chat_id) == str(binding.chat_id)
-        message_ok = entry.binding.message_id in (None, 0) or binding.message_id in (None, 0) or entry.binding.message_id == binding.message_id
+        if entry.expires and entry.expires <= time.time():
+            raise CallbackDenied("callback has expired")
+        chat_ok = entry.binding.chat_id in (None, 0) or str(entry.binding.chat_id) == str(binding.chat_id)
+        message_ok = entry.binding.message_id in (None, 0) or entry.binding.message_id == binding.message_id
         actor_ok = str(entry.binding.actor) == str(binding.actor)
         if not actor_ok or not chat_ok or not message_ok:
             raise CallbackDenied("callback is invalid")
@@ -409,10 +408,12 @@ class CallbackStore:
     def consume(self, handle: str, binding: CallbackBinding) -> dict[str, Any]:
         value = self.peek(handle, binding)
         entry = self._items[handle]
-        entry.consumed = True
         if self.connection is not None:
-            self.connection.execute("UPDATE callback_store SET consumed = 1 WHERE handle = ?", (handle,))
+            cursor = self.connection.execute("UPDATE callback_store SET consumed = 1 WHERE handle = ? AND consumed = 0", (handle,))
             self.connection.commit()
+            if cursor.rowcount != 1:
+                raise CallbackDenied("callback has already been used")
+        entry.consumed = True
         return value
 
     def unconsume(self, handle: str) -> None:
@@ -424,31 +425,23 @@ class CallbackStore:
             self.connection.commit()
 
     def rebind(self, handle: str, binding: CallbackBinding) -> str:
-        entry = self._items.get(handle)
-        if entry is None and self.connection is not None:
-            row = self.connection.execute(
-                "SELECT actor, chat_id, message_id, value, consumed FROM callback_store WHERE handle = ?",
-                (handle,),
-            ).fetchone()
-            if row is not None:
-                val_data = cast('dict[str, Any]', json.loads(row[3]))
-                entry = _Entry(binding, val_data, consumed=bool(row[4]))
-                self._items[handle] = entry
-        if entry is None or not isinstance(self._unseal(handle), bytes):
+        entry = self._load(handle)
+        if entry is None:
             raise CallbackDenied("callback is invalid")
-        if entry.consumed:
-            raise CallbackDenied("callback has already been used")
-        entry.consumed = True
-        if self.connection is not None:
-            self.connection.execute("UPDATE callback_store SET consumed = 1 WHERE handle = ?", (handle,))
-            self.connection.commit()
-        return self.issue(binding, entry.value)
+        value = self.consume(handle, entry.binding)
+        return self.issue(binding, value)
 
     def _prune(self) -> None:
-        if len(self._items) > self.max_items:
-            consumed_keys = [k for k, v in self._items.items() if v.consumed]
-            for k in consumed_keys[:len(self._items) - self.max_items]:
-                del self._items[k]
+        now = time.time()
+        stale = [key for key, entry in self._items.items() if entry.consumed or (entry.expires and entry.expires <= now)]
+        for key in stale:
+            self._items.pop(key, None)
+        if self.connection is not None:
+            self.connection.execute("DELETE FROM callback_store WHERE consumed = 1 OR (expires > 0 AND expires <= ?)", (now,))
+            self.connection.execute("DELETE FROM callback_store WHERE rowid IN (SELECT rowid FROM callback_store ORDER BY rowid DESC LIMIT -1 OFFSET ?)", (self.max_items - 1,))
+            self.connection.commit()
+        while len(self._items) >= self.max_items:
+            self._items.pop(next(iter(self._items)))
 
 
 class CallbackRouter:
@@ -520,6 +513,11 @@ class CallbackRouter:
             data = data.decode("utf-8", "replace")
         if not isinstance(data, str):
             raise CallbackDenied("callback payload is invalid")
+        value = self.store.peek(data, binding)
+        if not isinstance(value.get("module"), str) and self.runtime is not None:
+            access = getattr(self.runtime, "access", None)
+            if access is None or not access.is_owner(binding.actor):
+                raise CallbackDenied("callback requires owner access")
         value = self.store.consume(data, binding)
         handler = None
         if isinstance(value.get("module"), str):

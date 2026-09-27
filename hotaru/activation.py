@@ -263,6 +263,14 @@ class ModuleManager:
         is_kernel: bool = False,
     ) -> ActiveModule:
         loaded = self.loader.load(path)
+        from .registry import KERNEL_MODULES
+
+        if loaded.manifest.module_id in self._active:
+            raise ActivationError(f"module is already active: {loaded.manifest.module_id}")
+        if not is_kernel and loaded.manifest.module_id in KERNEL_MODULES:
+            raise ActivationError("kernel module identity is reserved")
+        if not is_kernel and sandbox is None:
+            raise ActivationError("external modules require a sandbox")
         requires = [str(item) for item in (getattr(loaded.manifest, "requires", ()) or ())]
         if requires and not is_kernel:
             import traceback; traceback.print_exc(); raise ActivationError(f"module requires third-party packages: {loaded.manifest.module_id}")

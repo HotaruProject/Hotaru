@@ -379,6 +379,10 @@ class ModuleStager:
 
     def stage(self, source: str | Path, destination: str | Path) -> LoadedModule:
         loaded = self.loader.load(source)
+        from .registry import KERNEL_MODULES
+
+        if loaded.manifest.module_id in KERNEL_MODULES:
+            raise ModuleValidationError("kernel module identity is reserved")
         root = Path(destination)
         if root.exists():
             if root.is_symlink() or not root.is_dir():

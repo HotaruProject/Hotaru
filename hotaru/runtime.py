@@ -261,7 +261,7 @@ class Runtime:
         observatory_hook_stdio()
         self.activity = 0
         self._relaunch = False
-        self.tasks = TaskSupervisor()
+        self.tasks = self.kernel.tasks
         self.modules = ModuleManager(tasks=self.tasks)
         self.modules.form_cleanup = self.unload_module_forms
         self.stager = ModuleStager(self.modules.loader)
@@ -909,6 +909,9 @@ class Runtime:
                     self._input_requests.pop(token, None)
                 await answer_tl(query, results=[], cache_time=0, is_personal=True)
                 return
+            if not self._input_actor_matches(query, request[2]):
+                await answer_tl(query, results=[], cache_time=0, is_personal=True)
+                return
             placeholder = str(request[4] or "")
             shown = value.strip() or placeholder or "OK"
             result = InlineObj.article(secrets.token_urlsafe(8), shown, "🔄", description=shown, parse_mode="HTML")
@@ -935,13 +938,24 @@ class Runtime:
         results = await self._dispatch_inline_command(text, query)
         await answer_tl(query, results=results, cache_time=0, is_personal=True)
 
+    def _input_actor_matches(self, event: Any, source: Any) -> bool:
+        actor = getattr(event, "from_id", None)
+        owner = getattr(source, "_hotaru_actor_id", getattr(source, "from_id", None))
+        if source is None:
+            owner = getattr(getattr(self.app, "session", None), "self_id", None) or getattr(self.kernel, "owner_id", None)
+        return type(actor) is int and actor > 0 and actor == owner
+
     async def _on_chosen_input(self, chosen: Any) -> None:
         text = str(getattr(chosen, "query", "") or "").strip()
         if text.startswith("hotaru-login:") and self.account_login is not None:
             await self.account_login.chosen(chosen)
             return
         if text.startswith("hotaru-form:"):
+            if not self._input_actor_matches(chosen, None):
+                return
             nonce = text.split(":", 1)[1]
+            if nonce not in (self._inline_forms or {}) or nonce in (self._form_inline_ids or {}):
+                return
             if self._form_inline_ids is None:
                 self._form_inline_ids = {}
             self._form_inline_ids[nonce] = getattr(chosen, "msg_id", None)
@@ -962,6 +976,10 @@ class Runtime:
             if self._input_requests is not None:
                 self._input_requests.pop(token, None)
             return
+        if not self._input_actor_matches(chosen, source):
+            return
+        if self._input_requests is not None:
+            self._input_requests.pop(token, None)
         ctx = InputContext(self, source, chosen, value, payload)
         ctx.form_nonce = form_nonce
         try:
@@ -1641,6 +1659,7 @@ class Runtime:
     def purge_module_data(self, module_id: str) -> None:
         module_id = module_id.casefold()
         if self.state is not None:
+            self.state.namespace(module_id)
             self.state.delete_module(module_id)
             workspace = self.state.path.parent / "workspaces" / module_id
             if workspace.is_dir():
@@ -1655,8 +1674,8 @@ class Runtime:
             if self._is_kernel_module(module_id):
                 return self.t('runtime.protected', module_id=module_id)
             active = self.modules.get(module_id)
-            namespace = self.state.namespace(module_id)
-            source_path = active.loaded.path if active is not None else Path(namespace.get("sourcepath", self.relay_dir / f"{module_id}.hmod"))
+            self.state.namespace(module_id)
+            source_path = active.loaded.path if active is not None else self.relay_dir / f"{module_id}.hmod"
             if not source_path.is_file():
                 return self.t('runtime.module_missing', module_id=module_id)
             try:
@@ -1757,8 +1776,9 @@ class Runtime:
                 return self.t('runtime.module_missing', module_id=module_id)
             old_path = active.loaded.path
             old_source = active.loaded.source
+            is_kernel = self._is_kernel_path(old_path)
             candidate = self.relay_dir / f"{module_id}.hmod"
-            reload_path = candidate if candidate.is_file() else old_path
+            reload_path = candidate if not is_kernel and candidate.is_file() else old_path
             if reload_path == candidate:
                 candidate_loaded = self.modules.loader.load(candidate)
                 if candidate_loaded.manifest.module_id != module_id:
@@ -1778,8 +1798,17 @@ class Runtime:
                 try:
                     if self.stager is None:
                         raise RuntimeError("module stager is unavailable")
-                    self.stager.stage_text(old_source, old_path.parent)
-                    await self.modules.activate_source(old_path, self.kernel, sandbox=self.sandbox)
+                    if is_kernel:
+                        import tempfile
+                        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=old_path.parent, delete=False) as rollback:
+                            rollback.write(old_source)
+                        try:
+                            os.replace(rollback.name, old_path)
+                        finally:
+                            Path(rollback.name).unlink(missing_ok=True)
+                    else:
+                        self.stager.stage_text(old_source, old_path.parent)
+                    await self.modules.activate_source(old_path, self.kernel, sandbox=self.sandbox, is_kernel=is_kernel)
                 except Exception:
                     return self.t('runtime.rollback_failed', error=type(exc).__name__)
                 if self.observatory is not None:
@@ -2189,9 +2218,12 @@ class Runtime:
                     continue
                 consent = namespace.get("caps-consent")
                 source_path = namespace.get("sourcepath")
-                if not isinstance(consent, str) or not isinstance(source_path, str):
-                    if isinstance(source_path, str):
-                        Path(source_path).unlink(missing_ok=True)
+                expected = self.relay_dir / f"{module_id}.hmod"
+                if not isinstance(source_path, str) or Path(source_path).absolute() != expected.absolute() or expected.is_symlink():
+                    state.delete_module(module_id)
+                    continue
+                if not isinstance(consent, str):
+                    expected.unlink(missing_ok=True)
                     state.delete_module(module_id)
                     continue
                 try:

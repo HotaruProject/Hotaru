@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import cast
+from goygram.ext import loads
 
 BLOCKED_HOSTS = ("my.telegram.org",)
 BLOCKED_PEER_IDS = (777000,)
@@ -10,7 +11,10 @@ BLOCKED_PEER_STRINGS = ("+777000", "777000")
 def is_blocked_host(hostname: str | None) -> bool:
     if not isinstance(hostname, str):
         return True
-    host = hostname.strip().lower().rstrip(".")
+    try:
+        host = hostname.strip().encode("idna").decode("ascii").lower().rstrip(".")
+    except UnicodeError:
+        return True
     if not host:
         return True
     return host in BLOCKED_HOSTS or any(host.endswith("." + blocked) for blocked in BLOCKED_HOSTS)
@@ -22,7 +26,11 @@ def is_blocked_peer(value: object) -> bool:
     if isinstance(value, int):
         return value in BLOCKED_PEER_IDS
     if isinstance(value, str):
-        return value.strip() in BLOCKED_PEER_STRINGS
+        value = value.strip()
+        try:
+            return int(value) in BLOCKED_PEER_IDS
+        except ValueError:
+            return value in BLOCKED_PEER_STRINGS
     return False
 
 
@@ -35,19 +43,27 @@ def payload_hits_blocked(payload: object) -> bool:
     while stack and visited < 4096:
         item = stack.pop()
         visited += 1
+        if is_blocked_peer(item):
+            return True
         if isinstance(item, dict):
             for value in cast('dict[object, object]', item).values():
                 if is_blocked_peer(value):
                     return True
                 stack.append(value)
         elif isinstance(item, (list, tuple)):
-            for value in cast('list[object]' | tuple[object, ...], item):
+            for value in cast('list[object] | tuple[object, ...]', item):
                 if is_blocked_peer(value):
                     return True
                 stack.append(value)
+        elif isinstance(item, (bytes, bytearray)):
+            try:
+                decoded = loads(bytes(item))
+            except (ValueError, TypeError, RuntimeError):
+                continue
+            stack.append(decoded)
         elif item is not None and not isinstance(item, (str, int, float, bool)):
             for attr in _PEER_ATTRS:
                 value = getattr(item, attr, None)
                 if is_blocked_peer(value):
                     return True
-    return False
+    return bool(stack)

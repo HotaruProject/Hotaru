@@ -241,7 +241,70 @@ def build_command(manager: tuple[str, list[str]], specs: list[str], *, upgrade: 
     return command
 
 
-async def run_install(command: list[str], timeout: float = 600.0) -> tuple[bool, str]:
+def _recover_goygram_build(output: str) -> bool:
+    text = output.lower()
+    build = bool(re.search(
+        r"(?:failed to build|failed building wheel for)\s+[`'\"]?goygram\b|"
+        r"building wheel for goygram[^\n]*(?:error|failed)|"
+        r"goygram[^\n/\\]*[/\\]ext_rust[/\\]cargo.toml", text,
+    ))
+    source = re.split(r"(?m)^(?:collecting|processing) ", text)[-1]
+    if re.search(r"\bgoygram\b", source.splitlines()[0] if source else "") and re.search(
+        r"(?:installing build dependencies|preparing metadata)[^\n]*(?:error|failed)", source,
+    ):
+        build = True
+    missing = re.search(
+        r"(?:can't find|cannot find|could not find|unable to find|no such file or directory)[^\n]*(?:rust compiler|rustc|cargo)|"
+        r"(?:rust|cargo)[^\n]*(?:not installed|not found|not on path|not in.{0,20}path)|"
+        r"linker [`'\"]?(?:cc|gcc|clang)[`'\"]? not found|"
+        r"(?:command|executable) [`'\"]?(?:cc|gcc|clang)[`'\"]?[^\n]*(?:no such file|not found)", text,
+    )
+    if not build or not missing or re.search(
+        r"failed to (?:download|fetch)|could not resolve|connection (?:refused|reset)|"
+        r"network is unreachable|certificate verify failed|\b(?:401|403)\b|"
+        r"no matching distribution|requires rustc|rustc[^\n]*not supported", text,
+    ):
+        return False
+    if os.environ.get("TERMUX_VERSION") or "/com.termux/" in os.environ.get("PREFIX", ""):
+        command = ["pkg", "install", "-y", "rust", "clang"]
+        privileged = False
+    else:
+        try:
+            release = dict(line.split("=", 1) for line in Path("/etc/os-release").read_text().splitlines() if "=" in line)
+        except OSError:
+            release = {}
+        distro = release.get("ID", "").strip('"')
+        commands = {
+            "debian": ["apt-get", "install", "-y", "rustc", "cargo", "build-essential"],
+            "ubuntu": ["apt-get", "install", "-y", "rustc", "cargo", "build-essential"],
+            "alpine": ["apk", "add", "rust", "cargo", "build-base"],
+            "fedora": ["dnf", "install", "-y", "rust", "cargo", "gcc"],
+            "arch": ["pacman", "-S", "--needed", "--noconfirm", "rust", "base-devel"],
+        }
+        command = commands.get(distro, []) if sys.platform.startswith("linux") else []
+        privileged = True
+    if not command or not shutil.which(command[0]):
+        print("goygram needs Rust/Cargo and a C linker; install the native toolchain for your platform and retry.", file=sys.stderr)
+        return False
+    if privileged and (not hasattr(os, "geteuid") or os.geteuid() != 0):
+        print("goygram build prerequisites require administrator installation: " + " ".join(command), file=sys.stderr)
+        return False
+    print("goygram: installing missing native build prerequisites: " + " ".join(command), file=sys.stderr)
+    try:
+        return subprocess.run(command, timeout=600).returncode == 0
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        print(f"goygram build prerequisites failed: {exc}", file=sys.stderr)
+        return False
+
+
+def run_project_install(command: list[str], *, cwd: Path | None = None, timeout: float = 600.0) -> subprocess.CompletedProcess[str]:
+    result = subprocess.run(command, cwd=cwd, capture_output=True, text=True, timeout=timeout)
+    if result.returncode and _recover_goygram_build((result.stdout or "") + (result.stderr or "")):
+        result = subprocess.run(command, cwd=cwd, capture_output=True, text=True, timeout=timeout)
+    return result
+
+
+async def run_install(command: list[str], timeout: float = 600.0, *, recover: bool = False) -> tuple[bool, str]:
     process = await asyncio.create_subprocess_exec(
         *command,
         stdout=asyncio.subprocess.PIPE,
@@ -256,10 +319,14 @@ async def run_install(command: list[str], timeout: float = 600.0) -> tuple[bool,
             pass
         raise DependencyError("dependency install timed out")
     output = raw.decode("utf-8", errors="replace")
+    if process.returncode and recover:
+        repaired = await asyncio.get_running_loop().run_in_executor(None, _recover_goygram_build, output)
+        if repaired:
+            return await run_install(command, timeout=timeout, recover=False)
     return process.returncode == 0, output
 
 
-async def ensure(requirements: list[str], *, on_log: Any=None, timeout: float = 600.0) -> dict[str, Any]:
+async def ensure(requirements: list[str], *, on_log: Any=None, timeout: float = 600.0, recover: bool = False) -> dict[str, Any]:
     if not requirements:
         return {"checked": 0, "installed": [], "upgraded": [], "manager": None, "resolved": {}}
     manager = find_env_manager()
@@ -287,7 +354,7 @@ async def ensure(requirements: list[str], *, on_log: Any=None, timeout: float = 
             await on_log(f"deps: installing {', '.join(specs)} via {manager[0]}")
         else:
             on_log(f"deps: installing {', '.join(specs)} via {manager[0]}")
-    ok, output = await run_install(command, timeout=timeout)
+    ok, output = await run_install(command, timeout=timeout, recover=recover)
     importlib.invalidate_caches()
     if not ok:
         tail = "\n".join(output.strip().splitlines()[-6:])
@@ -425,7 +492,7 @@ def _repair_environment_conflicts(requirements: Sequence[str]) -> None:
     if check.returncode == 0:
         return
     command = [sys.executable, "-m", "pip", "install", "--upgrade", "--upgrade-strategy", "eager", *requirements]
-    repair = subprocess.run(command, capture_output=True, text=True, timeout=600)
+    repair = run_project_install(command)
     if repair.returncode != 0:
         raise DependencyError(repair.stderr.strip() or repair.stdout.strip() or "dependency conflict repair failed")
     check = subprocess.run([sys.executable, "-m", "pip", "check"], capture_output=True, text=True)
@@ -449,13 +516,13 @@ def ensure_project(root: Path) -> dict[str, Any]:
             return {"changed": False, "manager": marker.get("manager"), "requirements": requirements}
         if locked and uv is not None:
             command = [uv, "sync", "--locked", "--no-dev", "--python", sys.executable]
-            result = subprocess.run(command, cwd=root, capture_output=True, text=True, timeout=600)
+            result = run_project_install(command, cwd=root)
             if result.returncode != 0:
                 raise DependencyError(result.stderr.strip() or result.stdout.strip() or "uv sync failed")
             manager_name = "uv"
             changed = True
         else:
-            result = asyncio.run(ensure(requirements))
+            result = asyncio.run(ensure(requirements, recover=True))
             manager_name = result.get("manager")
             changed = bool(result.get("installed") or result.get("upgraded"))
         if manager_name == "pip":

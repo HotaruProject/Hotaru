@@ -290,6 +290,7 @@ class InlineManager:
         self._cb_handlers: list[Callable[[Any], Awaitable[Any]]] = []
         self._pm_handlers: list[Callable[[Any], Awaitable[Any]]] = []
         self._chosen_handlers: list[Callable[[Any], Awaitable[Any]]] = []
+        self._chosen_pending: set[str] = set()
         self._stop = asyncio.Event()
         self.ready = asyncio.Event()
         self._create_attempts: list[float] = []
@@ -890,10 +891,38 @@ class InlineManager:
             except Exception:
                 pass
 
+    def _allows_form(self, event: Any, *, chosen: bool = False) -> bool:
+        text = str(getattr(event, "query", "") or "").strip()
+        actor = getattr(event, "from_id", None)
+        if type(actor) is not int or actor <= 0:
+            return False
+        if text.startswith("hotaru-input:"):
+            token = text.partition(" ")[0].split(":", 1)[1]
+            requests: dict[str, tuple[Any, ...]] = getattr(self.runtime, "_input_requests", None) or {}
+            request = requests.get(token)
+            return bool(
+                request is not None
+                and request[3] > time.monotonic()
+                and actor == getattr(request[2], "_hotaru_actor_id", getattr(request[2], "from_id", None))
+                and token not in self._chosen_pending
+            )
+        if text.startswith("hotaru-form:"):
+            nonce = text.split(":", 1)[1]
+            forms: dict[str, Any] = getattr(self.runtime, "_inline_forms", None) or {}
+            if actor != self._owner_id() or nonce not in forms:
+                return False
+            if chosen:
+                pending: dict[str, asyncio.Event] = getattr(self.runtime, "_form_chosen", None) or {}
+                ready = pending.get(nonce)
+                return ready is not None and not ready.is_set() and getattr(event, "msg_id", None) is not None
+        return True
+
     async def _dispatch_inline(self, query: Any) -> None:
+        if not self._allows_form(query):
+            return
         text = str(getattr(query, "query", ""))
         if self.runtime.observatory is not None and not text.startswith("hotaru-login:"):
-            self.runtime.observatory.emit("inline", "query_received", src=str(getattr(query, "src", "")), qid=str(getattr(query, "id", "")), text=text[:64])
+            self.runtime.observatory.emit("inline", "query_received", src=str(getattr(query, "src", "")), qid=str(getattr(query, "id", "")), length=len(text))
         for handler in tuple(self._handlers):
             try:
                 await handler(query)
@@ -932,12 +961,31 @@ class InlineManager:
     async def _dispatch_chosen(self, update: Any) -> None:
         if getattr(update, "update_type", None) != "updateBotInlineSend":
             return
-        for handler in tuple(self._chosen_handlers):
-            try:
-                await handler(update)
-            except Exception as exc:
-                if self.runtime.observatory is not None:
-                    self.runtime.observatory.emit("inline", "chosen_error", error=type(exc).__name__, detail=str(exc)[:240])
+        if not self._allows_form(update, chosen=True):
+            return
+        text = str(getattr(update, "query", "") or "").strip()
+        if not text.startswith("hotaru-login:"):
+            from hotaru.security import AccessVerdict
+
+            security = getattr(self.runtime, "security", None)
+            if security is None or security.check(update, transport="inline") is not AccessVerdict.ALLOW:
+                return
+        token = text.partition(" ")[0].split(":", 1)[1] if text.startswith("hotaru-input:") else None
+        if token is not None:
+            self._chosen_pending.add(token)
+        try:
+            for handler in tuple(self._chosen_handlers):
+                try:
+                    await handler(update)
+                except Exception as exc:
+                    if self.runtime.observatory is not None:
+                        self.runtime.observatory.emit("inline", "chosen_error", error=type(exc).__name__)
+        finally:
+            if token is not None:
+                requests = getattr(self.runtime, "_input_requests", None)
+                if requests is not None:
+                    requests.pop(token, None)
+                self._chosen_pending.discard(token)
 
     async def _dispatch_bot_pm(self, message: Any) -> None:
         security = getattr(self.runtime, "security", None)

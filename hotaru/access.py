@@ -290,7 +290,7 @@ class AccessManager:
                 try:
                     rule = TsecRule(
                         target_type=str(record.get("target_type", "")),
-                        target=str(record.get("target") or ""),
+                        target=int(str(record.get("target"))) if record.get("target_type") in {"user", "chat"} else str(record.get("target") or ""),
                         rule_type=str(record.get("rule_type", "")),
                         rule=str(record.get("rule", "")),
                         expires=float(cast(int | float | str, record.get("expires", 0.0) or 0.0)),
@@ -298,7 +298,7 @@ class AccessManager:
                     )
                     rule.validate()
                     rules.append(rule)
-                except AccessError:
+                except (AccessError, TypeError, ValueError):
                     continue
         self._tsec_cache = rules
         return rules
@@ -335,6 +335,16 @@ class AccessManager:
         self.save_tsec(rules)
 
     def remove_tsec(self, target_type: str, target: int | str, rule: str) -> bool:
+        if target_type == "sgroup":
+            group = self.sgroup(str(target))
+            if group is None:
+                return False
+            permissions = [perm for perm in group.permissions if rule not in {perm.get("rule"), "*"}]
+            if len(permissions) == len(group.permissions):
+                return False
+            group.permissions = permissions
+            self.save_sgroups(self.sgroups())
+            return True
         rules = self.tsec_rules()
         kept: list[TsecRule] = []
         removed = False
@@ -348,6 +358,16 @@ class AccessManager:
         return removed
 
     def remove_tsec_all(self, target_type: str, target: int | str | None) -> bool:
+        if target_type == "sgroup":
+            changed = False
+            groups = self.sgroups()
+            for name, group in groups.items():
+                if (target is None or target == "*" or str(target) == name) and group.permissions:
+                    group.permissions = []
+                    changed = True
+            if changed:
+                self.save_sgroups(groups)
+            return changed
         rules = self.tsec_rules()
         kept: list[TsecRule] = []
         removed = False

@@ -9,6 +9,7 @@ import os
 import re
 import secrets
 import sqlite3
+import stat
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -32,11 +33,36 @@ def apply_vault_key_env() -> None:
     os.environ["GOYGRAM_VAULT_KEY"] = key
 
 
+def _private_file(path: Path) -> int:
+    handle = os.open(path, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW | os.O_NONBLOCK, 0o600)
+    try:
+        info = os.fstat(handle)
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_nlink != 1:
+            raise OSError("private storage must be an owned regular file")
+        os.fchmod(handle, 0o600)
+        return handle
+    except BaseException:
+        os.close(handle)
+        raise
+
+
+def _prepare_database(path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.parent.is_symlink():
+        raise OSError("database directory must not be a symlink")
+    path.parent.chmod(0o700)
+    os.close(_private_file(path))
+    for suffix in ("-wal", "-shm", "-journal"):
+        sidecar = path.with_name(path.name + suffix)
+        if sidecar.exists() or sidecar.is_symlink():
+            os.close(_private_file(sidecar))
+
+
 def key_file_value() -> str:
     path = Path(os.environ.get("HOTARU_VAULT_KEY_FILE", "").strip() or DEFAULT_KEY_PATH)
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        handle = os.open(path, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+        handle = _private_file(path)
         with os.fdopen(handle, "r+", encoding="utf-8") as stream:
             fcntl.flock(handle, fcntl.LOCK_EX)
             raw = stream.read().strip()
@@ -160,8 +186,7 @@ class StateNamespace:
 class StateStore:
     def __init__(self, path: str | Path) -> None:
         self.path = Path(path)
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.path.parent.chmod(0o700)
+        _prepare_database(self.path)
         self.connection = sqlite3.connect(self.path)
         self.connection.execute("PRAGMA foreign_keys = ON")
         self.connection.execute("PRAGMA journal_mode = WAL")
@@ -324,8 +349,7 @@ class StateStore:
         dest = Path(path)
         if self.path.resolve() == dest.resolve():
             return
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.parent.chmod(0o700)
+        _prepare_database(dest)
         target = sqlite3.connect(dest)
         try:
             self.connection.commit()
