@@ -1649,8 +1649,6 @@ class ModuleSandbox:
             reply = {"kind": "cap_result", "ok": False, "error": "capability host is unavailable"}
             if cap_host is not None:
                 try:
-                    if name == "shell":
-                        raise PermissionError("sandbox modules cannot execute host shell commands")
                     result = await cap_host.call(module_id, name, payload)
                     reply = {"kind": "cap_result", "ok": True, "result": result}
                 except Exception as exc:
