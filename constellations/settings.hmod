@@ -1,7 +1,7 @@
 HOTARU = {
     "id": "settings",
     "version": "1.1.0",
-    "commands": ["alias", "rmalias", "aliasls", "prefix"],
+    "commands": ["alias", "rmalias", "lsalias", "prefix"],
     "capabilities": ["mt"],
 }
 
@@ -62,7 +62,7 @@ async def command_rmalias(ctx: Any, invocation: Any) -> Any:
         await ctx.respond(ctx.t('settings.alias_not_found', alias=alias))
 
 
-async def command_aliasls(ctx: Any, invocation: Any) -> Any:
+async def command_lsalias(ctx: Any, invocation: Any) -> Any:
     runtime = ctx.runtime
     if runtime is None:
         await ctx.respond(ctx.t('settings.runtime_unavailable'))
