@@ -1,11 +1,11 @@
 HOTARU = {
     "id": "settings",
-    "version": "1.0.0",
-    "commands": ["alias", "rmalias", "prefix"],
+    "version": "1.1.0",
+    "commands": ["alias", "rmalias", "aliasls", "prefix"],
     "capabilities": ["mt"],
 }
 
-from typing import Any
+from typing import Any, cast
 from dataclasses import replace
 
 
@@ -60,6 +60,23 @@ async def command_rmalias(ctx: Any, invocation: Any) -> Any:
         await ctx.respond(ctx.t('settings.alias_removed', alias=alias))
     else:
         await ctx.respond(ctx.t('settings.alias_not_found', alias=alias))
+
+
+async def command_aliasls(ctx: Any, invocation: Any) -> Any:
+    runtime = ctx.runtime
+    if runtime is None:
+        await ctx.respond(ctx.t('settings.runtime_unavailable'))
+        return
+    aliases = runtime.state.get_setting("user_aliases", {})
+    if not isinstance(aliases, dict) or not aliases:
+        await ctx.respond(ctx.t('settings.alias_list_empty'))
+        return
+    data = cast(Any, aliases)
+    prefix = runtime.config.prefix
+    lines = [ctx.t('settings.alias_list_title')]
+    for alias in sorted(data):
+        lines.append(f"<code>{prefix}{alias}</code> → <code>{prefix}{data[alias]}</code>")
+    await ctx.respond("<br>".join(lines), parse_mode="HTML")
 
 
 async def command_prefix(ctx: Any, invocation: Any) -> Any:
