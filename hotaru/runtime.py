@@ -615,27 +615,15 @@ class Runtime:
         return value
 
     async def delete_form(self, handle: Any) -> bool:
-        entry = (self._forms or {}).pop(handle.key, None)
-        if self._form_expiry is not None:
-            self._form_expiry.pop(handle.key, None)
+        from relay.rpc import delete_chat_msg
+        entry = (self._forms or {}).get(handle.key)
         if entry is None:
             return False
-        if self.state is not None:
-            self.state.connection.execute("DELETE FROM form_state WHERE form_id = ?", (handle.key,))
-            self.state.connection.commit()
         _, source, _, _, options = entry
-        if getattr(source, "src", None) == "inline" and self._inline_forms is not None:
-            self._inline_forms.pop(options.get("form_id", handle.key), None)
-        cleanup = options.get("on_unload")
-        if callable(cleanup):
-            value = cleanup(handle)
-            if asyncio.iscoroutine(value) or isinstance(value, asyncio.Future):
-                await value
         if getattr(source, "src", None) == "bot":
             chat_id = getattr(source, "chat_id", None)
             message_id = getattr(source, "id", None) or getattr(source, "message_id", None)
             if self.inline is not None and self.inline.bot_app is not None and chat_id is not None and isinstance(message_id, int):
-                from relay.rpc import delete_chat_msg
                 with trusted_scope():
                     await delete_chat_msg(self.inline.bot_app, chat_id, message_id)
         elif self.app is not None:
@@ -645,6 +633,20 @@ class Runtime:
                 with trusted_scope():
                     app = self.inline.bot_app if getattr(source, "src", None) == "bot" and self.inline is not None else self.app
                     await delete_chat_msg(app, chat_id, message_id)
+        if self.state is not None:
+            self.state.connection.execute("DELETE FROM form_state WHERE form_id = ?", (handle.key,))
+            self.state.connection.commit()
+        if self._forms is not None:
+            self._forms.pop(handle.key, None)
+        if self._form_expiry is not None:
+            self._form_expiry.pop(handle.key, None)
+        if getattr(source, "src", None) == "inline" and self._inline_forms is not None:
+            self._inline_forms.pop(options.get("form_id", handle.key), None)
+        cleanup = options.get("on_unload")
+        if callable(cleanup):
+            value = cleanup(handle)
+            if asyncio.iscoroutine(value) or isinstance(value, asyncio.Future):
+                await value
         return True
 
     def purge_forms(self) -> int:
