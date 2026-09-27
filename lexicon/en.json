@@ -522,6 +522,14 @@
       "shell": "developer shell commands in the module workspace with timeout and output limits",
       "logs": "write structured entries to the observatory log; always granted",
       "fetch": "read-only access to messages, entities and reply resolution; always granted"
+    },
+    "ping": {
+      "description": "Userbot responsiveness check",
+      "commands": {
+        "ping": {
+          "description": "Measure userbot ping"
+        }
+      }
     }
   },
   "commands": {
