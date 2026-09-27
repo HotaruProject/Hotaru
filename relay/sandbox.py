@@ -1648,6 +1648,7 @@ class ModuleSandbox:
                 process.stdin.flush()
 
     async def _serve_respond(self, module_id: str) -> None:
+        self.runtime.note_activity()
         pending = self._respond_pending.pop(module_id, [])
         source = self._respond_sources.get(module_id)
         for message in pending:
@@ -1665,6 +1666,7 @@ class ModuleSandbox:
                 process.stdin.flush()
 
     async def _serve_cb_respond(self, module_id: str) -> None:
+        self.runtime.note_activity()
         pending = self._cb_respond_pending.pop(module_id, [])
         callback = getattr(self, "_active_callback", {}).get(module_id)
         process = self._workers.get(module_id)

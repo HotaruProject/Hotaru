@@ -2,16 +2,19 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import time
 from collections import OrderedDict
 from relay.denylist import is_blocked_peer
 from relay.firewall import module_scope
-from typing import Any, Protocol, cast
+from typing import Any, Callable, Protocol, cast
 
 from .commands import CommandInvocation, CommandParser
 from .registry import CommandRegistry
 from .inline_registry import InlineRegistry
 from .security import AccessVerdict, SecurityGate
 from .access import AccessManager, Permission
+
+ACTIVITY_POLL = 0.2
 
 
 class SupportsGet(Protocol):
@@ -30,6 +33,7 @@ class Kernel:
         form_sender: Any = None,
         seen_limit: int = 4096,
         command_timeout: float = 60.0,
+        activity: Callable[[], int] | None = None,
     ) -> None:
         if seen_limit < 1:
             raise ValueError("seen_limit must be positive")
@@ -44,6 +48,7 @@ class Kernel:
         self.response_service = response_service
         self.form_sender = form_sender
         self.command_timeout = command_timeout
+        self.activity = activity or (lambda: 0)
         self.security: SecurityGate | None = None
         self.sandbox: Any = None
         self._seen: OrderedDict[tuple[str, int | str | None, int], None] = OrderedDict()
@@ -166,10 +171,8 @@ class Kernel:
 
     async def _execute(self, spec: Any, invocation: CommandInvocation, message: Any) -> object | None:
         try:
-            result = await asyncio.wait_for(
-                self._invoke(spec, invocation, message),
-                timeout=self.command_timeout,
-            )
+            task = asyncio.create_task(self._invoke(spec, invocation, message), name=f"hotaru:cmd:{spec.name}")
+            result = await self._await_work(task)
         except asyncio.TimeoutError:
             if self.response_service is not None:
                 runtime = getattr(self.context_factory, "runtime", None)
@@ -204,6 +207,20 @@ class Kernel:
             if isinstance(result, str):
                 return await self.response_service.answer(message, text=result, output="edit")
         return cast(object, result)
+
+    async def _await_work(self, task: asyncio.Task[Any]) -> object | None:
+        """A command that is doing something gets all the time it needs: only an idle one times out."""
+        started = time.monotonic()
+        seen = self.activity()
+        while True:
+            done, _ = await asyncio.wait({task}, timeout=ACTIVITY_POLL)
+            if done:
+                return task.result()
+            if self.activity() != seen:
+                return await task
+            if time.monotonic() - started >= self.command_timeout:
+                task.cancel()
+                raise asyncio.TimeoutError
 
     async def _invoke(self, spec: Any, invocation: CommandInvocation, message: Any) -> object:
         if self.sandbox is not None and spec.sandbox:
