@@ -89,38 +89,12 @@ def _restore_inline(stored: object) -> dict[str, Any] | None:
             mid[key] = int(stored[key])
     return mid
 
-def _add_surface(ctx: Any, surface: dict[str, Any]) -> None:
+def _remember_surface(ctx: Any, surface: dict[str, Any]) -> None:
     pending = ctx.state.get("update_pending")
     if not isinstance(pending, dict):
         pending = {}
     pending = cast('dict[str, Any]', pending)
-    raw_surfaces = pending.get("surfaces")
-    surfaces: list[Any] = cast('list[Any]', raw_surfaces) if isinstance(raw_surfaces, list) else []
-    if not surfaces and isinstance(pending.get("chat_id"), int):
-        legacy = {key: pending[key] for key in ("chat_id", "message_id", "inline_id", "own", "peer") if key in pending}
-        surfaces = [legacy]
-    merged = False
-    for index, existing in enumerate(surfaces):
-        if not isinstance(existing, dict):
-            continue
-        existing = cast('dict[str, Any]', existing)
-        if existing.get("chat_id") != surface.get("chat_id") or bool(existing.get("own")) != bool(surface.get("own")):
-            continue
-        if isinstance(surface.get("inline_id"), dict) and "inline_id" not in existing:
-            surfaces[index] = {**existing, **surface}
-            merged = True
-            break
-        if isinstance(surface.get("message_id"), int) and "message_id" not in existing:
-            surfaces[index] = {**existing, **surface}
-            merged = True
-            break
-        if "message_id" in existing and existing.get("message_id") == surface.get("message_id"):
-            surfaces[index] = {**existing, **surface}
-            merged = True
-            break
-    if not merged:
-        surfaces.append(dict(surface))
-    pending["surfaces"] = surfaces
+    pending["surfaces"] = [dict(surface)]
     for key in ("chat_id", "message_id", "inline_id", "own", "peer"):
         pending.pop(key, None)
     ctx.state.set("update_pending", pending)
@@ -135,9 +109,9 @@ def _pending_from_callback(ctx: Any, callback: Any) -> None:
         surface: dict[str, Any] = {"own": False, "inline_id": inline_id}
         if isinstance(chat_id, int):
             surface["chat_id"] = chat_id
-        _add_surface(ctx, surface)
+        _remember_surface(ctx, surface)
     elif isinstance(msg_id, int) and isinstance(chat_id, int):
-        _add_surface(ctx, {"chat_id": chat_id, "message_id": msg_id, "own": False})
+        _remember_surface(ctx, {"chat_id": chat_id, "message_id": msg_id, "own": False})
 
 
 def _rich(text: Any) -> Any:
@@ -449,7 +423,7 @@ async def command_upd(ctx: Any, invocation: Any) -> Any:
         except Exception:
             peer_hex = None
         surface["peer"] = peer_hex
-        _add_surface(ctx, surface)
+        _remember_surface(ctx, surface)
 
 async def task_poller(ctx: Any) -> Any:
     runtime = ctx.runtime
@@ -523,6 +497,6 @@ async def task_poller(ctx: Any) -> Any:
         if sent is None and message_body.get("_") == "updateShortSentMessage" and isinstance(message_body.get("id"), int):
             sent = message_body
     if sent is not None:
-        _add_surface(ctx, {"chat_id": int(owner), "message_id": int(sent["id"]), "own": False})
+        _remember_surface(ctx, {"chat_id": int(owner), "message_id": int(sent["id"]), "own": False})
     ctx.state.set("notified_commit", latest)
     _emit(ctx, "poller_notified", latest=latest[:12], sent=bool(sent))
