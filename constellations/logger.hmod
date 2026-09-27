@@ -97,19 +97,29 @@ def _fmt(payload: Mapping[str, Any]) -> str:
     return html.escape(" ".join(str(p) for p in parts if p), quote=False)
 
 
-def _rich(batch: List[Mapping[str, Any]]) -> dict[str, str]:
+def _rich(batch: List[Mapping[str, Any]]) -> dict[str, Any]:
     sources = {str(p.get("module") or p.get("component") or "-") for p in batch}
-    text = (
-        "<h1>📋 Hotaru log</h1>"
-        "<table><tr><th>metric</th><th>count</th></tr>"
-        f"<tr><td><b>events</b></td><td>{len(batch)}</td></tr>"
-        f"<tr><td><b>sources</b></td><td>{len(sources)}</td></tr></table>"
-        "<h2>log</h2>"
-    )
+    blocks: List[dict[str, Any]] = [
+        {"_": "pageBlockHeading1", "text": {"_": "textPlain", "text": "📋 Hotaru log"}},
+        {"_": "pageBlockParagraph", "text": {"_": "textPlain", "text": f"Events: {len(batch)} · Sources: {len(sources)}"}},
+    ]
     for payload in batch:
-        title = f"{payload.get('module') or payload.get('component') or '-'} / {payload.get('event') or '-'}"
-        text += f"<h3>{html.escape(title, quote=False)}</h3><pre>{_fmt(payload).replace(chr(10), '<br>')}</pre>"
-    return {"_": "inputRichMessageHTML", "html": text}
+        stamp = str(payload.get("time") or time.strftime("%Y-%m-%d %H:%M:%S %z", time.localtime(payload.get("ts") or 0)))
+        source = str(payload.get("component") or "-")
+        if payload.get("module") and payload["module"] != source:
+            source += f" / {payload['module']}"
+        title = f"{str(payload.get('level') or 'info').upper()} · {source} · {payload.get('event') or '-'}"
+        lines = [str(payload["msg"])] if payload.get("msg") is not None else []
+        for key in sorted(set(payload) - {"ts", "time", "level", "component", "module", "event", "msg"}):
+            if payload[key] is not None:
+                lines.append(f"{key}={payload[key]}")
+        blocks.extend([
+            {"_": "pageBlockParagraph", "text": {"_": "textPlain", "text": stamp}},
+            {"_": "pageBlockDetails", "title": {"_": "textPlain", "text": title}, "blocks": [
+                {"_": "pageBlockPreformatted", "text": {"_": "textPlain", "text": "\n".join(lines)}, "language": ""},
+            ]},
+        ])
+    return {"_": "inputRichMessage", "blocks": blocks}
 
 
 def _sink(payload: Any) -> Any:
