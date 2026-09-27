@@ -200,7 +200,7 @@ def _update_repository(root: str | os.PathLike[str]) -> UpdateResult:
         _git(repo, "bundle", "create", str(recovery / "repository.bundle"), "--all")
         ref = "refs/hotaru/backups/" + stamp
         _git(repo, "update-ref", ref, before)
-        _git(repo, "stash", "push", "--include-untracked", "--message", "hotaru-update-" + stamp, "--", ".", ":(exclude).hotaru")
+        _git(repo, "stash", "push", "--include-untracked", "--message", "hotaru-update-" + stamp, "--", ".")
         stash = _text(_git(repo, "rev-parse", "stash@{0}"))
         _atomic_json(recovery / "manifest.json", {
             "before": before,
