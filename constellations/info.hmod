@@ -1,6 +1,6 @@
 HOTARU = {
     "id": "info",
-    "version": "1.4.0",
+    "version": "1.4.1",
     "commands": ["info"],
     "capabilities": ["mt"],
     "config_schema": {
@@ -48,10 +48,8 @@ def _placeholders(ctx: 'ModuleContext') -> Dict[str, Union[str, int]]:
             version = out.stdout.decode().strip()
     except Exception:
         pass
-    uptime_s = time.monotonic()
-    h, rem = divmod(int(uptime_s), 3600)
-    m, s = divmod(rem, 60)
-    uptime = f"{h}h {m:02d}m {s:02d}s"
+    uptime_s = max(0, int(time.monotonic() - ctx.runtime.started_at))
+    uptime = ctx.tools.duration(uptime_s, ctx.i18n.language)
     modules = 0
     mod_mgr = getattr(runtime, "modules", None)
     if mod_mgr is not None and hasattr(mod_mgr, "items"):
