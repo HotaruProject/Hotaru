@@ -6,6 +6,7 @@ import json
 import os
 import shutil
 import subprocess
+from functools import lru_cache
 import sys
 import tarfile
 import tempfile
@@ -37,6 +38,13 @@ def _git(repo: Path, *args: str, check: bool = True, input_data: Optional[bytes]
         detail = (result.stderr or result.stdout).decode("utf-8", "replace").strip()
         raise UpdateError(detail or "git command failed")
     return result
+
+
+@lru_cache(maxsize=1)
+def current_commit() -> str:
+    """The rolling release id: the commit this checkout runs."""
+    root = Path(__file__).resolve().parent.parent
+    return _text(_git(root, "rev-parse", "--short", "HEAD", check=False)) or "unknown"
 
 
 def _text(result: subprocess.CompletedProcess[bytes]) -> str:

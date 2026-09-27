@@ -42,7 +42,7 @@
       "description": "Системні команди ядра Hotaru",
       "commands": {
         "ver": {
-          "description": "Версія Hotaru"
+          "description": "Показати поточний коміт"
         },
         "st": {
           "description": "Статус рантайму"

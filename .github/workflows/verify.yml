@@ -53,4 +53,3 @@ jobs:
           print(f"checking {len(targets)} targets (hotaru, relay, .hmod modules)")
           raise SystemExit(subprocess.run([sys.executable, "-m", "basedpyright", "--project", str(work / "pyrightconfig.json")], cwd=root).returncode)
           PY
-      - run: uv build

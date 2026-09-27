@@ -42,7 +42,7 @@
       "description": "Hotaru カーネルのシステムコマンド",
       "commands": {
         "ver": {
-          "description": "Hotaruのバージョン"
+          "description": "実行中のコミットを表示"
         },
         "st": {
           "description": "ランタイム状態"

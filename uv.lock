@@ -775,19 +775,13 @@ wheels = [
 
 [[package]]
 name = "hotaru"
-version = "0.1.5"
 source = { editable = "." }
 dependencies = [
     { name = "goygram" },
-    { name = "rich", version = "14.3.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.9'" },
-    { name = "rich", version = "15.0.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.9'" },
 ]
 
 [package.metadata]
-requires-dist = [
-    { name = "goygram", specifier = ">=0.8.11" },
-    { name = "rich", specifier = ">=13.7" },
-]
+requires-dist = [{ name = "goygram", specifier = ">=0.8.11" }]
 
 [[package]]
 name = "idna"
