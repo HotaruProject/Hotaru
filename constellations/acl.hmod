@@ -5,68 +5,148 @@ HOTARU = {
     "capabilities": ["mt"],
 }
 
-from typing import Any, List, Mapping, cast
-
-
+from typing import Any, Mapping, cast
+from types import SimpleNamespace
+from hotaru.access import AccessError, Permission, TsecRule, permission_from_label
+from hotaru.response import reply_message_id
 import html as _html
+import json
+import math
+import re
+import secrets
+import time
+
+ROLES = {"owner": Permission.OWNER, "admin": Permission.ADMIN, "trusted": Permission.TRUSTED, "everyone": Permission.EVERYONE}
+PAGE = 8
 
 def _escape(value: Any) -> Any:
     return _html.escape(str(value), quote=False)
 
-def _usage(ctx: Any) -> Any:
-    return ctx.t("acl.usage", prefix=_escape(ctx.runtime.config.prefix))
+def _usage(ctx: Any, name: str) -> str:
+    return ctx.t("acl.syntax." + name, prefix=_escape(ctx.runtime.config.prefix))
 
-async def _reply_sender_id(ctx: Any, invocation: Any) -> Any:
-    reply = None
+def _id(value: Any, signed: bool = False) -> int | None:
+    raw = str(value)
+    if re.fullmatch(r"-?[0-9]{1,19}" if signed else r"[0-9]{1,19}", raw):
+        uid = int(raw)
+        if uid and abs(uid) < 2 ** 63:
+            return uid
+    return None
+
+def _roles(ctx: Any, bits: Permission) -> str:
+    return " · ".join(ctx.t("acl.roles." + name) for name, value in ROLES.items() if bits & value) or ctx.t("acl.roles.none")
+
+def _role(ctx: Any, uid: int) -> str:
+    return ctx.t("acl.full_owner") if ctx.access_admin.is_owner(uid) else _roles(ctx, ctx.access_admin.permissions_of(uid))
+
+def _active(expires: Any) -> bool:
+    return isinstance(expires, (int, float)) and math.isfinite(expires) and (expires == 0 or expires > time.time())
+
+def _rules(ctx: Any, kind: str | None = None, target: Any = None) -> list[dict[str, Any]]:
+    rows = [{"kind": r.target_type, "target": r.target, "type": r.rule_type, "rule": r.rule, "expires": r.expires} for r in ctx.access_admin.tsec_rules()]
+    rows += [{"kind": "sgroup", "target": name, "type": p.get("rule_type"), "rule": p.get("rule"), "expires": p.get("expires", 0)} for name, group in ctx.access_admin.sgroups().items() for p in group.permissions]
+    return [r for r in rows if _active(r["expires"]) and (kind is None or r["kind"] == kind) and (target is None or str(r["target"]) == str(target))]
+
+def _rule_text(ctx: Any, rule: dict[str, Any], scope: bool = True) -> str:
+    text = f'<code>{_escape(rule["type"])}/{_escape(rule["rule"])}</code>'
+    if scope:
+        text = f'{ctx.t("acl.scopes." + rule["kind"])} <code>{_escape(rule["target"])}</code> · ' + text
+    if rule["expires"]:
+        text += " · " + ctx.tools.timestamp(rule["expires"], ctx.i18n.language)
+    return text
+
+def _command(ctx: Any, name: str) -> Any:
+    prefix = ctx.runtime.config.prefix
+    registry = ctx.runtime.kernel.registry
+    return registry.resolve_name(name) or registry.resolve_name(name.removeprefix(prefix) if prefix else name)
+
+def _target(kind: str, raw: Any) -> Any:
+    if kind in {"user", "chat"}:
+        return _id(raw, signed=kind == "chat")
+    if kind == "sgroup" and isinstance(raw, str) and raw.isalnum() and len(raw) <= 32:
+        return raw
+    return None
+
+async def _reply(ctx: Any) -> Any:
     fetch = getattr(ctx, "reply", None)
     if callable(fetch):
         try:
-            reply = await cast(Any, fetch())
+            return await cast(Any, fetch())
         except Exception:
-            reply = None
-    if reply is None or not hasattr(reply, "get"):
-        return None
-    from_peer = reply.get("from_id")
+            pass
+    return None
+
+def _sender(reply: Any) -> int | None:
+    from_peer = reply.get("from_id") if hasattr(reply, "get") else getattr(reply, "from_id", None)
     if isinstance(from_peer, dict):
         uid = cast(Mapping[str, object], from_peer).get("user_id")
-        if isinstance(uid, int):
-            return uid
-    if isinstance(from_peer, int):
-        return from_peer
-    return None
+        return _id(uid)
+    return _id(from_peer)
 
 async def _resolve_target_user(ctx: Any, invocation: Any, start: int = 0) -> Any:
     args = invocation.args[start:]
     if args:
         token = args[0]
-        if token.isdigit() and int(token) > 0:
-            return int(token), args[1:]
+        uid = _id(token)
+        if uid is not None:
+            return uid, args[1:]
         if token.startswith("@"):
             try:
                 user = await ctx.resolve(token)
+                if isinstance(user, dict) and any(kind in str(user.get("_", "")).lower() for kind in ("chat", "channel")):
+                    return None, args
                 uid = cast(Mapping[str, object], user).get("user_id", cast(Mapping[str, object], user).get("id")) if isinstance(user, dict) else getattr(user, "id", None)
-                if isinstance(uid, int) and uid > 0:
-                    return uid, args[1:]
+                if _id(uid) is not None:
+                    return _id(uid), args[1:]
             except Exception:
                 pass
-        return None, args
-    sender = await _reply_sender_id(ctx, invocation)
+            return None, args
+        if re.match(r"[-+0-9]", token):
+            return None, args
+    sender = _sender(await _reply(ctx))
     return (sender if isinstance(sender, int) and sender > 0 else None), args
 
 def _parse_duration(raw: Any) -> Any:
     raw = (raw or "").strip().lower()
     if not raw or raw in {"forever", "навсегда"}:
         return 0
-    multipliers = {"s": 1, "м": 60, "m": 60, "х": 60, "h": 3600, "ч": 3600, "d": 86400, "д": 86400, "w": 604800, "н": 604800}
-    suffix = raw[-1]
-    if suffix.isdigit():
-        return int(raw) * 60
-    if suffix not in multipliers:
+    match = re.fullmatch(r"([0-9]{1,10})([smhdwсмхчдн]?)", raw)
+    if not match:
         return None
-    body = raw[:-1]
-    if not body.isdigit():
-        return None
-    return int(body) * multipliers[suffix]
+    units = {"": 60, "s": 1, "с": 1, "м": 60, "m": 60, "х": 60, "h": 3600, "ч": 3600, "d": 86400, "д": 86400, "w": 604800, "н": 604800}
+    value = int(match[1]) * units[match[2]]
+    return value if 0 < value <= 3153600000 else None
+
+def _grant_rule(ctx: Any, kind: str, target: Any, rule_type: str, rule: str, duration: int) -> str:
+    target = _target(kind, target)
+    if target is None:
+        raise ValueError(ctx.t("acl.invalid_target"))
+    if rule_type == "command":
+        spec = _command(ctx, rule)
+        if spec is None:
+            raise ValueError(ctx.t("acl.unknown_command", command=_escape(rule)))
+        if spec.kernel:
+            raise ValueError(ctx.t("acl.kernel_rule"))
+        rule = spec.name
+    elif rule_type == "module":
+        specs = ctx.runtime.kernel.registry.spec_of(rule)
+        if not specs or any(s.kernel for s in specs):
+            raise ValueError(ctx.t("acl.kernel_rule"))
+    else:
+        raise ValueError(ctx.t("acl.bad_rule"))
+    expires = time.time() + duration if duration else 0
+    item = TsecRule(kind, target, rule_type, rule, expires)
+    item.validate()
+    if kind == "sgroup":
+        group = ctx.access_admin.sgroup(str(target))
+        if group is None:
+            raise ValueError(ctx.t("acl.group_missing", name=_escape(target)))
+        group.permissions[:] = [p for p in group.permissions if (p.get("rule_type"), p.get("rule")) != (rule_type, rule)]
+        group.permissions.append({"rule_type": rule_type, "rule": rule, "expires": expires})
+        ctx.access_admin.save_sgroups(ctx.access_admin.sgroups())
+    else:
+        ctx.access_admin.add_tsec(item)
+    return rule
 
 async def command_owls(ctx: Any, invocation: Any) -> Any:
     owners = ctx.access_admin.owners
@@ -74,9 +154,9 @@ async def command_owls(ctx: Any, invocation: Any) -> Any:
     await ctx.respond(ctx.t('acl.owners') + "<br>".join(rows), parse_mode="HTML")
 
 async def command_owadd(ctx: Any, invocation: Any) -> Any:
-    user_id, _rest = await _resolve_target_user(ctx, invocation)
-    if user_id is None:
-        await ctx.respond(_usage(ctx), parse_mode="HTML")
+    user_id, rest = await _resolve_target_user(ctx, invocation)
+    if user_id is None or rest:
+        await ctx.respond(_usage(ctx, "owadd"), parse_mode="HTML")
         return
     if user_id == ctx.access_admin.owner_id:
         await ctx.respond(ctx.t('acl.self_owner'), parse_mode="HTML")
@@ -91,9 +171,9 @@ async def command_owadd(ctx: Any, invocation: Any) -> Any:
     await ctx.respond(ctx.t("acl.owner_confirm", user_id=user_id), buttons=[[ctx.ui.danger(ctx.t("acl.confirm"), confirm, {"user_id": user_id}), ctx.ui.close(ctx.t("common.cancel"))]])
 
 async def command_owrm(ctx: Any, invocation: Any) -> Any:
-    user_id, _rest = await _resolve_target_user(ctx, invocation)
-    if user_id is None:
-        await ctx.respond(_usage(ctx), parse_mode="HTML")
+    user_id, rest = await _resolve_target_user(ctx, invocation)
+    if user_id is None or rest:
+        await ctx.respond(_usage(ctx, "owrm"), parse_mode="HTML")
         return
     try:
         removed = ctx.access_admin.remove_owner(user_id)
@@ -106,10 +186,13 @@ async def command_owrm(ctx: Any, invocation: Any) -> Any:
     )
 
 async def command_sgnew(ctx: Any, invocation: Any) -> Any:
-    if not invocation.args or not invocation.args[0].isalnum():
+    if len(invocation.args) != 1 or _target("sgroup", invocation.args[0]) is None:
         await ctx.respond(ctx.t('acl.bad_group'), parse_mode="HTML")
         return
     name = invocation.args[0]
+    if ctx.access_admin.sgroup(name) is not None:
+        await ctx.respond(ctx.t('acl.group_exists', name=_escape(name)), parse_mode="HTML")
+        return
     try:
         ctx.access_admin.create_sgroup(name)
     except Exception as exc:
@@ -118,8 +201,8 @@ async def command_sgnew(ctx: Any, invocation: Any) -> Any:
     await ctx.respond(ctx.t('acl.group_created', name=_escape(name)), parse_mode="HTML")
 
 async def command_sgdel(ctx: Any, invocation: Any) -> Any:
-    if not invocation.args:
-        await ctx.respond(_usage(ctx), parse_mode="HTML")
+    if len(invocation.args) != 1:
+        await ctx.respond(_usage(ctx, "sgdel"), parse_mode="HTML")
         return
     removed = ctx.access_admin.delete_sgroup(invocation.args[0])
     await ctx.respond(
@@ -132,19 +215,19 @@ async def command_sgls(ctx: Any, invocation: Any) -> Any:
     if not groups:
         await ctx.respond(ctx.t("acl.no_groups", prefix=_escape(ctx.runtime.config.prefix)), parse_mode="HTML")
         return
-    rows = [ctx.t('acl.group_item', name=_escape(g.name), users=len(g.users), rules=len(g.permissions)) for g in groups.values()]
+    rows = [ctx.t('acl.group_item', name=_escape(g.name), users=len(g.users), rules=len(_rules(ctx, "sgroup", g.name))) for g in groups.values()]
     await ctx.respond(ctx.t('acl.groups') + "<br>".join(rows), parse_mode="HTML")
 
 async def command_sg(ctx: Any, invocation: Any) -> Any:
-    if not invocation.args:
-        await ctx.respond(_usage(ctx), parse_mode="HTML")
+    if len(invocation.args) != 1:
+        await ctx.respond(_usage(ctx, "sg"), parse_mode="HTML")
         return
     group = ctx.access_admin.sgroup(invocation.args[0])
     if group is None:
         await ctx.respond(ctx.t('acl.group_missing', name=_escape(invocation.args[0])), parse_mode="HTML")
         return
     users = "<br>".join(f"▫️ <code>{uid}</code>" for uid in group.users) or ctx.t("common.none")
-    rules = "<br>".join(f"▫️ {_escape(p.get('rule_type'))}/{_escape(p.get('rule'))} — " + (ctx.tools.timestamp(p["expires"], ctx.i18n.language) if p.get("expires") else ctx.t("acl.forever")) for p in group.permissions) or ctx.t("common.none")
+    rules = "<br>".join(_rule_text(ctx, rule, False) for rule in _rules(ctx, "sgroup", group.name)) or ctx.t("common.none")
     await ctx.respond(
         ctx.t('acl.group_detail', name=_escape(group.name), users=users, rules=rules),
         parse_mode="HTML",
@@ -152,16 +235,16 @@ async def command_sg(ctx: Any, invocation: Any) -> Any:
 
 async def command_sgadd(ctx: Any, invocation: Any) -> Any:
     if not invocation.args:
-        await ctx.respond(_usage(ctx), parse_mode="HTML")
+        await ctx.respond(_usage(ctx, "sgadd"), parse_mode="HTML")
         return
     name = invocation.args[0]
     group = ctx.access_admin.sgroup(name)
     if group is None:
         await ctx.respond(ctx.t('acl.group_missing', name=_escape(name)), parse_mode="HTML")
         return
-    user_id, _rest = await _resolve_target_user(ctx, invocation, 1)
-    if user_id is None:
-        await ctx.respond(_usage(ctx), parse_mode="HTML")
+    user_id, rest = await _resolve_target_user(ctx, invocation, 1)
+    if user_id is None or rest:
+        await ctx.respond(_usage(ctx, "sgadd"), parse_mode="HTML")
         return
     if user_id in group.users:
         await ctx.respond(ctx.t('acl.member_exists', user_id=user_id, name=_escape(name)), parse_mode="HTML")
@@ -173,16 +256,16 @@ async def command_sgadd(ctx: Any, invocation: Any) -> Any:
 
 async def command_sgrm(ctx: Any, invocation: Any) -> Any:
     if not invocation.args:
-        await ctx.respond(_usage(ctx), parse_mode="HTML")
+        await ctx.respond(_usage(ctx, "sgrm"), parse_mode="HTML")
         return
     name = invocation.args[0]
     group = ctx.access_admin.sgroup(name)
     if group is None:
         await ctx.respond(ctx.t('acl.group_missing', name=_escape(name)), parse_mode="HTML")
         return
-    user_id, _rest = await _resolve_target_user(ctx, invocation, 1)
-    if user_id is None:
-        await ctx.respond(_usage(ctx), parse_mode="HTML")
+    user_id, rest = await _resolve_target_user(ctx, invocation, 1)
+    if user_id is None or rest:
+        await ctx.respond(_usage(ctx, "sgrm"), parse_mode="HTML")
         return
     if user_id not in group.users:
         await ctx.respond(ctx.t('acl.member_missing', user_id=user_id, name=_escape(name)), parse_mode="HTML")
@@ -193,12 +276,12 @@ async def command_sgrm(ctx: Any, invocation: Any) -> Any:
     await ctx.respond(ctx.t('acl.member_removed', user_id=user_id, name=_escape(name)), parse_mode="HTML")
 
 async def command_rule(ctx: Any, invocation: Any) -> Any:
-    if len(invocation.args) < 3:
-        await ctx.respond(_usage(ctx), parse_mode="HTML")
+    if not 3 <= len(invocation.args) <= 4:
+        await ctx.respond(_usage(ctx, "rule"), parse_mode="HTML")
         return
     kind = invocation.args[0].casefold()
     if kind not in {"user", "chat", "sgroup"}:
-        await ctx.respond(_usage(ctx), parse_mode="HTML")
+        await ctx.respond(_usage(ctx, "rule"), parse_mode="HTML")
         return
     target = invocation.args[1]
     rule_raw = invocation.args[2]
@@ -213,56 +296,21 @@ async def command_rule(ctx: Any, invocation: Any) -> Any:
     if rule_type not in {"command", "module"} or not rule:
         await ctx.respond(ctx.t('acl.bad_rule'), parse_mode="HTML")
         return
-    if rule_type == "command":
-        spec = ctx.runtime.kernel.registry.resolve_name(rule)
-        if spec is None or spec.kernel:
-            await ctx.respond(ctx.t("acl.kernel_rule"))
-            return
-        rule = spec.name
-    else:
-        specs = [spec for spec in ctx.runtime.kernel.registry.items() if spec.module_id == rule]
-        if not specs or any(spec.kernel for spec in specs):
-            await ctx.respond(ctx.t("acl.kernel_rule"))
-            return
-    if kind in {"user", "chat"} and (not target.lstrip("-").isdigit() or int(target) == 0 or kind == "user" and int(target) < 0):
-        await ctx.respond(ctx.t("acl.invalid_target"))
-        return
-    from hotaru.access import TsecRule
-    import time as _time
-    expires = _time.time() + duration if duration else 0
-    target_value = target
-    if kind == "user" and target.lstrip("-").isdigit():
-        target_value = int(target)
-    elif kind == "chat" and target.lstrip("-").isdigit():
-        target_value = int(target)
-    if kind == "sgroup" and ctx.access_admin.sgroup(target) is None:
-        await ctx.respond(ctx.t('acl.group_missing', name=_escape(target)), parse_mode="HTML")
-        return
-    if kind == "sgroup":
-        group = ctx.access_admin.sgroup(target)
-        group.permissions[:] = [item for item in group.permissions if (item.get("rule_type"), item.get("rule")) != (rule_type, rule)]
-        group.permissions.append({"rule_type": rule_type, "rule": rule, "expires": expires})
-        groups = ctx.access_admin.sgroups()
-        ctx.access_admin.save_sgroups(groups)
-        until = ctx.t('acl.duration', duration=_escape(invocation.args[3])) if duration else ""
-        await ctx.respond(ctx.t('acl.group_rule', target=_escape(target), kind=_escape(rule_type), rule=_escape(rule), until=until), parse_mode="HTML")
-        return
-    rule_obj = TsecRule(target_type=kind, target=target_value, rule_type=rule_type, rule=rule, expires=expires)
     try:
-        ctx.access_admin.add_tsec(rule_obj)
-    except Exception as exc:
-        await ctx.respond(ctx.t('acl.failed', error=_escape(exc)), parse_mode="HTML")
+        rule = _grant_rule(ctx, kind, target, rule_type, rule, duration)
+    except ValueError as exc:
+        await ctx.respond(str(exc), parse_mode="HTML")
         return
     until = ctx.t('acl.duration', duration=_escape(invocation.args[3])) if duration else ""
     await ctx.respond(ctx.t('acl.rule_added', kind=_escape(kind), target=_escape(target), type=_escape(rule_type), rule=_escape(rule), until=until), parse_mode="HTML")
 
 async def command_rulerm(ctx: Any, invocation: Any) -> Any:
-    if len(invocation.args) < 3:
-        await ctx.respond(_usage(ctx), parse_mode="HTML")
+    if len(invocation.args) != 3:
+        await ctx.respond(_usage(ctx, "rulerm"), parse_mode="HTML")
         return
     kind = invocation.args[0].casefold()
     if kind not in {"user", "chat", "sgroup"}:
-        await ctx.respond(_usage(ctx), parse_mode="HTML")
+        await ctx.respond(_usage(ctx, "rulerm"), parse_mode="HTML")
         return
     target = invocation.args[1]
     rule_raw = invocation.args[2]
@@ -274,9 +322,12 @@ async def command_rulerm(ctx: Any, invocation: Any) -> Any:
     else:
         _prefix = None
         rule_name = rule_raw
-    target_value = int(target) if target.lstrip("-").isdigit() else target
-    if _prefix == "command":
-        spec = ctx.runtime.kernel.registry.resolve_name(rule_name)
+    target_value = _target(kind, target)
+    if target_value is None:
+        await ctx.respond(ctx.t("acl.invalid_target"))
+        return
+    if _prefix in {None, "command"} and rule_name != "*":
+        spec = _command(ctx, rule_name)
         rule_name = spec.name if spec is not None else rule_name
     removed = ctx.access_admin.remove_tsec(kind, target_value, rule_name, _prefix)
     await ctx.respond(
@@ -285,15 +336,18 @@ async def command_rulerm(ctx: Any, invocation: Any) -> Any:
     )
 
 async def command_ruleclr(ctx: Any, invocation: Any) -> Any:
-    if not invocation.args:
-        await ctx.respond(_usage(ctx), parse_mode="HTML")
+    if not 1 <= len(invocation.args) <= 2:
+        await ctx.respond(_usage(ctx, "ruleclr"), parse_mode="HTML")
         return
     kind = invocation.args[0].casefold()
     if kind not in {"user", "chat", "sgroup"}:
-        await ctx.respond(_usage(ctx), parse_mode="HTML")
+        await ctx.respond(_usage(ctx, "ruleclr"), parse_mode="HTML")
         return
     target = invocation.args[1] if len(invocation.args) > 1 else None
-    target_value = int(target) if target is not None and target.lstrip("-").isdigit() else target
+    target_value = _target(kind, target) if target not in {None, "*"} else None
+    if target not in {None, "*"} and target_value is None:
+        await ctx.respond(ctx.t("acl.invalid_target"))
+        return
     async def confirm(call: Any, payload: Any) -> None:
         if not ctx.access_admin.is_owner(call.from_id):
             await call.answer(ctx.t("acl.no_permission"), alert=True)
@@ -303,82 +357,436 @@ async def command_ruleclr(ctx: Any, invocation: Any) -> Any:
     await ctx.respond(ctx.t("acl.clear_confirm", scope=_escape(f"{kind}: {target if target is not None else '*'}")), buttons=[[ctx.ui.danger(ctx.t("acl.confirm"), confirm, {"kind": kind, "target": target_value}), ctx.ui.close(ctx.t("common.cancel"))]])
 
 
+def _overview(ctx: Any) -> str:
+    access = ctx.access_admin
+    parts = [ctx.t("acl.owners") + ", ".join(f"<code>{uid}</code>" for uid in access.owners)]
+    entries = [entry for entry in access.store.items() if not access.is_owner(entry.user_id)]
+    if entries:
+        parts.append(ctx.t("acl.permissions") + "<br>".join(f"<code>{entry.user_id}</code> · {_roles(ctx, entry.permissions)}" for entry in entries[:PAGE]))
+        if len(entries) > PAGE:
+            parts.append(ctx.t("acl.more", count=len(entries) - PAGE))
+    parts.append(ctx.t("acl.counts", rules=len(_rules(ctx)), groups=len(access.sgroups())))
+    return "<br><br>".join(parts)
+
+def _user_text(ctx: Any, uid: int, chat: Any = None) -> str:
+    text = ctx.t("acl.user_detail", user_id=uid, permissions=_role(ctx, uid))
+    mt = getattr(ctx.runtime.app, "mt", None)
+    user = (getattr(mt, "entities", None) or {}).get(("user", uid)) or {}
+    name = " ".join(str(user.get(key) or "").strip() for key in ("first_name", "last_name")).strip()
+    if not name and user.get("username"):
+        name = "@" + str(user["username"])
+    if name:
+        text = f"<b>{_escape(name)}</b><br>" + text
+    if ctx.access_admin.is_owner(uid):
+        return text
+    groups = [g.name for g in ctx.access_admin.sgroups().values() if uid in g.users]
+    if groups:
+        text += ctx.t("acl.user_groups", groups=_escape(", ".join(groups)))
+    rules = [r for r in _rules(ctx) if (r["kind"] == "user" and r["target"] == uid) or (r["kind"] == "chat" and r["target"] == chat) or (r["kind"] == "sgroup" and r["target"] in groups)]
+    if rules:
+        text += "<br><br>" + ctx.t("acl.rules") + "<br>".join(_rule_text(ctx, rule) for rule in rules[:PAGE])
+        if len(rules) > PAGE:
+            text += "<br>" + ctx.t("acl.more", count=len(rules) - PAGE)
+    return text
+
+def _default(ctx: Any, name: str, bits: Permission) -> Any:
+    spec = _command(ctx, name)
+    if spec is None:
+        raise ValueError(ctx.t("acl.unknown_command", command=_escape(name)))
+    if spec.kernel:
+        raise ValueError(ctx.t("acl.kernel_rule"))
+    if bits == Permission.OWNER:
+        ctx.access_admin.clear_default(spec.module_id, spec.name)
+    else:
+        ctx.access_admin.set_default_permission(spec.module_id, spec.name, bits)
+    return spec
+
 async def command_perms(ctx: Any, invocation: Any) -> Any:
-    entries = ctx.access_admin.store.items()
-    from hotaru.access import permission_label
-    rows: List[str] = []
-    for entry in entries:
-        rows.append(
-            f"<code>{entry.user_id}</code> — <b>{_escape(permission_label(entry.permissions))}</b>"
-            + (f" <i>({_escape(entry.label)})</i>" if entry.label else "")
-        )
-    owners = ", ".join(f"<code>{uid}</code>" for uid in ctx.access_admin.owners)
-    await ctx.respond(ctx.t('acl.owners') + owners + "<br><br>" + ctx.t('acl.permissions') + "<br>".join(rows) + "<br><br>" + ctx.t("acl.model", prefix=_escape(ctx.runtime.config.prefix)), parse_mode="HTML")
+    if invocation.args:
+        return await command_whois(ctx, invocation)
+    data = {"view": "home", "chat": getattr(invocation.message, "chat_id", None)}
+    reply = await _reply(ctx)
+    if reply is not None or reply_message_id(invocation.message) is not None:
+        uid = _sender(reply)
+        if uid is None:
+            await ctx.respond(ctx.t("acl.invalid_target"), parse_mode="HTML")
+            return
+        data.update(view="user", uid=uid)
+    screen = _screen(ctx, data)
+    await ctx.respond(screen["text"], buttons=screen["buttons"], parse_mode="HTML")
 
 async def command_whois(ctx: Any, invocation: Any) -> Any:
-    if not invocation.args or not invocation.args[0].isdigit() or int(invocation.args[0]) <= 0:
-        await ctx.respond(_usage(ctx), parse_mode="HTML")
+    uid, args = await _resolve_target_user(ctx, invocation)
+    if uid is None or len(args) > 1:
+        await ctx.respond(_usage(ctx, "whois"), parse_mode="HTML")
         return
-    user_id = int(invocation.args[0])
-    from hotaru.access import permission_label
-    permissions = ctx.access_admin.permissions_of(user_id)
-    _labels = ctx.access_admin.user_labels(user_id)
-    rank = ctx.access_admin.rank_of(user_id)
-    groups = [g.name for g in ctx.access_admin.sgroups().values() if user_id in g.users]
-    groups_html = ctx.t('acl.user_groups', groups=_escape(', '.join(groups))) if groups else ""
-    detail = ctx.t('acl.user_detail', user_id=user_id, permissions=_escape(permission_label(permissions)), rank=rank, groups=groups_html)
-    for rule in ctx.access_admin.tsec_rules():
-        if rule.target_type == "user" and rule.target == user_id or rule.target_type == "chat" and rule.target == getattr(invocation.message, "chat_id", None):
-            detail += f"<br>{_escape(rule.target_type)}/{rule.target}: {_escape(rule.rule_type)}/{_escape(rule.rule)} — " + (ctx.tools.timestamp(rule.expires, ctx.i18n.language) if rule.expires else ctx.t("acl.forever"))
-    if len(invocation.args) > 1:
-        from types import SimpleNamespace
-        spec = ctx.runtime.kernel.registry.resolve_name(invocation.args[1])
-        allowed = spec is not None and ctx.runtime.kernel.is_authorized(SimpleNamespace(from_id=user_id, chat_id=getattr(invocation.message, "chat_id", None)), spec)
-        detail += "<br>" + ctx.t("acl.allowed" if allowed else "acl.denied", command=_escape(invocation.args[1]))
-    detail += "<br><br>" + ctx.t("acl.model", prefix=_escape(ctx.runtime.config.prefix))
-    await ctx.respond(
-        detail,
-        parse_mode="HTML",
-    )
+    chat = getattr(invocation.message, "chat_id", None)
+    text = _user_text(ctx, uid, chat)
+    if args:
+        spec = _command(ctx, args[0])
+        if spec is None:
+            text += "<br>" + ctx.t("acl.unknown_command", command=_escape(args[0]))
+        else:
+            allowed = ctx.runtime.kernel.is_authorized(SimpleNamespace(from_id=uid, chat_id=chat), spec)
+            text += "<br>" + ctx.t("acl.allowed" if allowed else "acl.denied", command=_escape(spec.name))
+    buttons = [[ctx.ui.button(ctx.t("acl.manage"), _action, {"view": "user", "uid": uid, "chat": chat})]]
+    await ctx.respond(text, buttons=buttons, parse_mode="HTML")
 
 async def command_perm(ctx: Any, invocation: Any) -> Any:
-    if len(invocation.args) < 2:
-        await ctx.respond(_usage(ctx), parse_mode="HTML")
+    cmd = invocation.args[0][8:] if invocation.args and invocation.args[0].startswith("command/") else None
+    uid, args = (None, invocation.args[1:]) if cmd is not None else await _resolve_target_user(ctx, invocation)
+    if (cmd is None and uid is None) or not 1 <= len(args) <= 2 or len(args) == 2 and args[1].casefold() != "remove":
+        await ctx.respond(_usage(ctx, "perm"), parse_mode="HTML")
         return
-    if not invocation.args[0].isdigit() or int(invocation.args[0]) <= 0:
-        await ctx.respond(_usage(ctx), parse_mode="HTML")
-        return
-    user_id = int(invocation.args[0])
-    label = invocation.args[1].casefold()
-    remove = len(invocation.args) > 2 and invocation.args[2].casefold() == "remove"
-    from hotaru.access import permission_from_label
+    remove = len(args) == 2
+    label = args[0].casefold()
     permission = permission_from_label(label)
     if permission is None:
         await ctx.respond(ctx.t("acl.bad_label", label=_escape(label)), parse_mode="HTML")
         return
-    if remove and user_id in ctx.access_admin.protected:
-        await ctx.respond(ctx.t('acl.no_permission'))
+    if cmd is not None:
+        try:
+            spec = _command(ctx, cmd)
+            bits = permission
+            if remove and spec:
+                bits = ctx.access_admin.default_permission(spec.module_id, spec.name) & ~permission or Permission.OWNER
+            spec = _default(ctx, cmd, bits)
+        except ValueError as exc:
+            await ctx.respond(str(exc), parse_mode="HTML")
+            return
+        await ctx.respond(ctx.t("acl.command_role", command=_escape(spec.name), role=_roles(ctx, bits)), parse_mode="HTML")
         return
-    if permission.name == "OWNER":
+    if remove and uid in ctx.access_admin.protected:
+        await ctx.respond(ctx.t("acl.no_permission"))
+        return
+    if permission == Permission.OWNER:
         await ctx.respond(ctx.t("acl.no_owner_grant", prefix=_escape(ctx.runtime.config.prefix)), parse_mode="HTML")
         return
-    if remove:
-        try:
-            ok = ctx.access_admin.store.revoke(user_id, permission)
-        except Exception as exc:
-            await ctx.respond(ctx.t("acl.no_permission") if str(exc) == "No permission." else ctx.t("acl.account_owner") if str(exc) == "account owner cannot be removed" else _escape(exc), parse_mode="HTML")
-            return
-        await ctx.respond(
-            ctx.t('acl.revoked', label=label, user_id=user_id) if ok else ctx.t('acl.nothing_revoke'),
-            parse_mode="HTML",
-        )
+    if ctx.access_admin.is_owner(uid):
+        await ctx.respond(ctx.t("acl.full_owner"), parse_mode="HTML")
         return
     try:
-        ctx.access_admin.store.grant(user_id, permission, label=label)
-    except Exception as exc:
-        await ctx.respond(ctx.t('acl.grant_failed', error=_escape(exc)), parse_mode="HTML")
+        if remove:
+            changed = ctx.access_admin.store.revoke(uid, permission)
+        else:
+            ctx.access_admin.store.grant(uid, permission)
+            changed = True
+    except AccessError:
+        await ctx.respond(ctx.t("acl.no_permission"))
         return
-    await ctx.respond(
-        ctx.t('acl.granted', label=label, user_id=user_id),
-        parse_mode="HTML",
-    )
+    text = ctx.t("acl.revoked" if remove else "acl.granted", label=_roles(ctx, permission), user_id=uid) if changed else ctx.t("acl.nothing_revoke")
+    await ctx.respond(text, parse_mode="HTML")
+
+def _screen(ctx: Any, data: dict[str, Any]) -> dict[str, Any]:
+    access = ctx.access_admin
+    view = data.get("view", "home")
+    chat = data.get("chat")
+    buttons = []
+    page = max(0, int(data.get("page", 0)))
+
+    def button(text: str, view: str, **args: Any) -> Any:
+        return ctx.ui.button(text, _action, {"view": view, "chat": chat, **args})
+
+    def field(text: str, op: str, placeholder: str, **args: Any) -> Any:
+        return ctx.ui.input(text, _input, {"input": op, "chat": chat, **args}, placeholder=placeholder)
+
+    def listing(items: list[Any]) -> None:
+        nonlocal page
+        pages = max(1, (len(items) + PAGE - 1) // PAGE)
+        page = min(page, pages - 1)
+        buttons.extend([items[i:i + 2] for i in range(page * PAGE, min((page + 1) * PAGE, len(items)), 2)])
+        nav = [ctx.ui.button(label, _action, {**data, "page": index}) for label, index in (("‹", page - 1), ("›", page + 1)) if 0 <= index < pages]
+        if nav:
+            buttons.append(nav)
+
+    text = ctx.t("acl.panel")
+    back = {"view": "home"}
+    if view == "home":
+        text = _overview(ctx)
+        buttons = [[button(ctx.t("acl.users"), "users"), button(ctx.t("acl.commands"), "commands")],
+                   [button(ctx.t("acl.groups_title"), "groups"), button(ctx.t("acl.rules_title"), "rules")]]
+    elif view == "users":
+        users = set(access.owners) | {e.user_id for e in access.store.items()}
+        users |= {uid for g in access.sgroups().values() for uid in g.users}
+        users |= {int(r["target"]) for r in _rules(ctx, "user")}
+        text = "<b>" + ctx.t("acl.users") + "</b>"
+        listing([button(str(uid), "user", uid=uid) for uid in sorted(users)])
+        buttons.append([field(ctx.t("acl.find_user"), "user", ctx.t("acl.user_hint"))])
+    elif view in {"user", "memberships"}:
+        uid = int(data["uid"])
+        text = _user_text(ctx, uid, chat)
+        back = {"view": "users"}
+        if view == "memberships":
+            back = {"view": "user", "uid": uid}
+            listing([button(("✓ " if uid in group.users else "") + name, "memberships", op="member", uid=uid, name=name, enabled=uid not in group.users) for name, group in sorted(access.sgroups().items())])
+        else:
+            if not access.is_owner(uid):
+                bits = access.permissions_of(uid)
+                buttons.append([button(("✓ " if bits & ROLES[name] else "") + ctx.t("acl.roles." + name), "user", op="role", uid=uid, role=name, enabled=not bool(bits & ROLES[name])) for name in ("admin", "trusted")])
+            if uid != access.owner_id and uid not in access.protected:
+                buttons.append([button(ctx.t("acl.remove_owner" if access.is_owner(uid) else "acl.add_owner"), "confirm", op="owner", uid=uid, enabled=not access.is_owner(uid))])
+            buttons.append([button(ctx.t("acl.groups_title"), "memberships", uid=uid), button(ctx.t("acl.rules_title"), "rules", kind="user", target=uid)])
+    elif view in {"groups", "members"}:
+        if view == "groups":
+            text = ctx.t("acl.groups")
+            listing([button(name, "group", name=name) for name in sorted(access.sgroups())])
+            buttons.append([field(ctx.t("acl.add"), "group", ctx.t("acl.group_hint"))])
+        else:
+            name = data["name"]
+            group = access.sgroup(name)
+            if group is None:
+                return _screen(ctx, {"view": "groups", "chat": chat})
+            text = ctx.t("acl.group_title", name=_escape(name))
+            listing([button("× " + str(uid), "members", op="member", uid=uid, name=name, enabled=False) for uid in sorted(group.users)])
+            buttons.append([field(ctx.t("acl.add"), "member", ctx.t("acl.user_hint"), name=name)])
+            back = {"view": "group", "name": name}
+    elif view == "group":
+        name = data["name"]
+        group = access.sgroup(name)
+        if group is None:
+            return _screen(ctx, {"view": "groups", "chat": chat})
+        text = ctx.t("acl.group_item", name=_escape(name), users=len(group.users), rules=len(_rules(ctx, "sgroup", name)))
+        buttons = [[button(ctx.t("acl.users"), "members", name=name), button(ctx.t("acl.rules_title"), "rules", kind="sgroup", target=name)],
+                   [button(ctx.t("acl.delete"), "confirm", op="delete_group", name=name)]]
+        back = {"view": "groups"}
+    elif view == "rules":
+        kind, target = data.get("kind"), data.get("target")
+        rules = _rules(ctx, kind, target)
+        text = ctx.t("acl.rules") + (f"<code>{_escape(target)}</code>" if target is not None else "")
+        items = []
+        for rule in rules:
+            label = f'{rule["type"]}/{rule["rule"]}' if kind else f'{rule["target"]} · {rule["rule"]}'
+            items.append(button(label, "rule", **rule))
+        listing(items)
+        if kind:
+            buttons.append([button(ctx.t("acl.add"), "types", kind=kind, target=target), button(ctx.t("acl.clear"), "confirm", op="clear_rules", kind=kind, target=target)])
+            back = {"view": "user", "uid": target} if kind == "user" else {"view": "group", "name": target} if kind == "sgroup" else {"view": "rules"}
+        else:
+            buttons.append([field(ctx.t("acl.add"), "scope", ctx.t("acl.scope_hint"))])
+    elif view == "rule":
+        text = _rule_text(ctx, data) + ("" if data.get("expires") else "<br>" + ctx.t("acl.forever"))
+        buttons = [[button(ctx.t("acl.delete"), "rules", op="delete_rule", kind=data["kind"], target=data["target"], type=data["type"], rule=data["rule"])]]
+        back = {"view": "rules", "kind": data["kind"], "target": data["target"]}
+    elif view == "types":
+        text = ctx.t("acl.choose_rule")
+        buttons = [[button(ctx.t("acl.commands"), "catalog", kind=data["kind"], target=data["target"], type="command"), button(ctx.t("acl.modules"), "catalog", kind=data["kind"], target=data["target"], type="module")]]
+        back = {"view": "rules", "kind": data["kind"], "target": data["target"]}
+    elif view in {"commands", "catalog"}:
+        registry = ctx.runtime.kernel.registry
+        specs = [spec for name in registry.names() if (spec := registry.resolve_name(name)) is not None and not spec.kernel]
+        names = sorted({spec.module_id if data.get("type") == "module" else spec.name for spec in specs})
+        text = "<b>" + ctx.t("acl.modules" if data.get("type") == "module" else "acl.commands") + "</b>"
+        listing([button(name, "command", name=name) if view == "commands" else button(name, "duration", kind=data["kind"], target=data["target"], type=data["type"], rule=name) for name in names])
+        if view == "catalog":
+            back = {"view": "types", "kind": data["kind"], "target": data["target"]}
+    elif view == "command":
+        spec = _command(ctx, data["name"])
+        if spec is None or spec.kernel:
+            return _screen(ctx, {"view": "commands", "chat": chat})
+        bits = access.default_permission(spec.module_id, spec.name)
+        text = ctx.t("acl.command_role", command=_escape(spec.name), role=_roles(ctx, bits))
+        if bits == Permission.EVERYONE:
+            text += "<br>" + ctx.t("acl.all_chats")
+        keys = [button(("✓ " if bits == value else "") + ctx.t("acl.roles." + name), "command", op="default", name=spec.name, role=name) for name, value in ROLES.items()]
+        buttons = [keys[:2], keys[2:]]
+        back = {"view": "commands"}
+    elif view == "duration":
+        text = ctx.t("acl.choose_duration") + "<br>" + _rule_text(ctx, {**data, "expires": 0}, False)
+        base = {key: data[key] for key in ("kind", "target", "type", "rule")}
+        keys = [button(ctx.t("acl.periods." + name), "rules", op="grant_rule", duration=value, **base) for name, value in (("hour", 3600), ("day", 86400), ("week", 604800), ("forever", 0))]
+        buttons = [keys[:2], keys[2:], [field(ctx.t("acl.custom"), "duration", "30m", **base)]]
+        back = {"view": "catalog", "kind": data["kind"], "target": data["target"], "type": data["type"]}
+    elif view == "confirm":
+        op = data["op"]
+        if op == "owner":
+            text = ctx.t("acl.owner_confirm" if data["enabled"] else "acl.owner_remove_confirm", user_id=data["uid"])
+            back = {"view": "user", "uid": data["uid"]}
+        elif op == "delete_group":
+            text = ctx.t("acl.group_delete_confirm", name=_escape(data["name"]))
+            back = {"view": "group", "name": data["name"]}
+        else:
+            text = ctx.t("acl.clear_confirm", scope=_escape(data["target"]))
+            back = {"view": "rules", "kind": data["kind"], "target": data["target"]}
+        buttons = [[ctx.ui.danger(ctx.t("acl.confirm"), _action, {**data, "view": back["view"], "confirmed": True})]]
+    if view != "home":
+        buttons.append([ctx.ui.button(ctx.t("common.back"), _action, {**back, "chat": chat}), ctx.ui.close(ctx.t("common.close"))])
+    else:
+        buttons.append([ctx.ui.close(ctx.t("common.close"))])
+    return {"text": text, "buttons": buttons}
+
+def _context(call: Any) -> Any:
+    runtime = getattr(call, "_hotaru_runtime", None) or getattr(call, "runtime", None)
+    source = getattr(call, "query", None) or call
+    if runtime is None or not runtime.access.is_owner(getattr(source, "from_id", None)):
+        return None
+    mid = getattr(call, "inline_message_id", None)
+    if mid is not None and not getattr(call, "_hotaru_form_id", None) and not getattr(call, "form_nonce", None):
+        for key, (_, origin, _, _, options) in (runtime._forms or {}).items():
+            if options.get("module_id") == "acl" and options.get("callback_actor") == source.from_id and getattr(origin, "inline_message_id", None) == mid:
+                call._hotaru_form_id = key
+                break
+    return runtime.context_factory.create("acl", source)
+
+async def _edit(call: Any, ctx: Any, text: str, buttons: Any) -> None:
+    runtime = ctx.runtime
+    key = getattr(call, "_hotaru_form_id", None)
+    nonce = getattr(call, "form_nonce", None)
+    entry = (runtime._forms or {}).get(key or ("inline:" + nonce if nonce else ""))
+    if entry is None:
+        await call.edit(text, buttons=buttons)
+        return
+    handle, source, _, _, options = entry
+    nonce = handle.key.split(":", 1)[-1]
+    actor = options.get("callback_actor")
+    origin = SimpleNamespace(src=source.src, chat_id=source.chat_id, id=source.id, from_id=actor)
+    if runtime._input_requests is None:
+        runtime._input_requests = {}
+    tokens = []
+    layout = []
+    for row in buttons:
+        current = []
+        for button in row:
+            if callable(button.get("handler")) and isinstance(button.get("input"), str):
+                token = secrets.token_urlsafe(10)
+                runtime._input_requests[token] = (button["handler"], button.get("payload"), origin, time.monotonic() + 300, button["input"], nonce)
+                tokens.append(token)
+                current.append({"text": button["text"], "switch_inline_query_current_chat": "hotaru-input:" + token + " "})
+            else:
+                current.append(button)
+        layout.append(current)
+    saved = dict(options)
+    try:
+        await runtime.edit_form(handle, text, buttons=layout, actions=runtime._form_actions(layout))
+    except BaseException:
+        options.clear()
+        options.update(saved)
+        for token in tokens:
+            runtime._input_requests.pop(token, None)
+        raise
+
+async def _action(call: Any, data: dict[str, Any]) -> None:
+    ctx = _context(call)
+    if ctx is None:
+        return
+    await call.answer()
+    ctx = _context(call)
+    if ctx is None:
+        return
+    store = ctx.runtime.callbacks.store
+    token = getattr(call, "data", None)
+    if isinstance(token, bytes):
+        token = token.decode("utf-8", "replace")
+    entry = store._load(token) if isinstance(token, str) else None
+    try:
+        await _apply(call, ctx, data)
+    except BaseException:
+        if entry is not None:
+            entry.consumed = False
+            store._items[token] = entry
+            if store.connection is not None:
+                binding = entry.binding
+                store.connection.execute("INSERT OR REPLACE INTO callback_store(handle, actor, chat_id, message_id, value, consumed) VALUES (?, ?, ?, ?, ?, 0)",
+                    (token, str(binding.actor), str(binding.chat_id) if binding.chat_id is not None else None, binding.message_id, json.dumps(entry.value)))
+                store.connection.commit()
+        raise
+
+async def _apply(call: Any, ctx: Any, data: dict[str, Any]) -> None:
+    data = dict(data)
+    op = data.pop("op", "")
+    access = ctx.access_admin
+    try:
+        if data.get("view") == "confirm":
+            data["op"] = op
+        elif op == "role":
+            uid, role = int(data["uid"]), ROLES[data["role"]]
+            if role not in {Permission.ADMIN, Permission.TRUSTED} or access.is_owner(uid):
+                raise AccessError("No permission.")
+            if data["enabled"]:
+                access.store.grant(uid, role)
+            else:
+                access.store.revoke(uid, role)
+        elif op == "owner" and data.pop("confirmed", False):
+            if data["enabled"]:
+                access.add_owner(int(data["uid"]))
+            else:
+                access.remove_owner(int(data["uid"]))
+        elif op == "member":
+            group = access.sgroup(data["name"])
+            if group is None:
+                raise ValueError(ctx.t("acl.group_missing", name=_escape(data["name"])))
+            uid = int(data["uid"])
+            if data["enabled"] and uid not in group.users:
+                group.users.append(uid)
+            elif not data["enabled"] and uid in group.users:
+                group.users.remove(uid)
+            access.save_sgroups(access.sgroups())
+        elif op == "delete_group" and data.pop("confirmed", False):
+            access.delete_sgroup(data["name"])
+            data = {"view": "groups", "chat": data.get("chat")}
+        elif op == "clear_rules" and data.pop("confirmed", False):
+            access.remove_tsec_all(data["kind"], data["target"])
+        elif op == "delete_rule":
+            access.remove_tsec(data["kind"], data["target"], data["rule"], data["type"])
+        elif op == "grant_rule":
+            _grant_rule(ctx, data["kind"], data["target"], data["type"], data["rule"], int(data["duration"]))
+        elif op == "default":
+            _default(ctx, data["name"], ROLES[data["role"]])
+    except AccessError:
+        await _edit(call, ctx, ctx.t("acl.no_permission"), [[ctx.ui.button(ctx.t("common.back"), _action, {"view": "home", "chat": data.get("chat")})]])
+        return
+    except ValueError as exc:
+        await _edit(call, ctx, str(exc), [[ctx.ui.button(ctx.t("common.back"), _action, {"view": "home", "chat": data.get("chat")})]])
+        return
+    await _edit(call, ctx, **_screen(ctx, data))
+
+async def _input(call: Any, payload: Any) -> None:
+    ctx = _context(call)
+    if ctx is None:
+        return
+    data = dict(call.payload or {})
+    raw = str(call.value or "").strip()
+    op = data.get("input")
+    try:
+        if op in {"user", "member"}:
+            uid, rest = await _resolve_target_user(ctx, SimpleNamespace(args=tuple(raw.split())))
+            ctx = _context(call)
+            if ctx is None:
+                return
+            if uid is None or rest:
+                raise ValueError(ctx.t("acl.invalid_target"))
+            if op == "member":
+                group = ctx.access_admin.sgroup(data["name"])
+                if group is None:
+                    raise ValueError(ctx.t("acl.group_missing", name=_escape(data["name"])))
+                if uid not in group.users:
+                    group.users.append(uid)
+                    ctx.access_admin.save_sgroups(ctx.access_admin.sgroups())
+                data["view"] = "members"
+            else:
+                data.update(view="user", uid=uid)
+        elif op == "group":
+            if _target("sgroup", raw) is None:
+                raise ValueError(ctx.t("acl.bad_group"))
+            if ctx.access_admin.sgroup(raw) is not None:
+                raise ValueError(ctx.t("acl.group_exists", name=_escape(raw)))
+            ctx.access_admin.create_sgroup(raw)
+            data.update(view="group", name=raw)
+        elif op == "scope":
+            args = raw.split()
+            if len(args) != 2 or _target(args[0], args[1]) is None:
+                raise ValueError(ctx.t("acl.scope_hint"))
+            if args[0] == "sgroup" and ctx.access_admin.sgroup(args[1]) is None:
+                raise ValueError(ctx.t("acl.group_missing", name=_escape(args[1])))
+            data.update(view="types", kind=args[0], target=_target(args[0], args[1]))
+        elif op == "duration":
+            duration = _parse_duration(raw)
+            if duration is None:
+                raise ValueError(ctx.t("acl.bad_duration"))
+            _grant_rule(ctx, data["kind"], data["target"], data["type"], data["rule"], duration)
+            data["view"] = "rules"
+        else:
+            return
+    except ValueError as exc:
+        await _edit(call, ctx, str(exc), [[ctx.ui.input(ctx.t("acl.retry"), _input, call.payload, placeholder=raw[:80])], [ctx.ui.button(ctx.t("common.back"), _action, {"view": "home", "chat": data.get("chat")})]])
+        return
+    await _edit(call, ctx, **_screen(ctx, data))

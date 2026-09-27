@@ -340,7 +340,7 @@ class Kernel:
     _is_authorized = is_authorized
 
     def _required_permission(self, message: Any, spec: CommandSpec | None = None) -> Permission:
-        from .access import DEFAULT_COMMAND_PERMISSION, PUBLIC_COMMAND_PERMISSION
+        from .access import DEFAULT_COMMAND_PERMISSION
         if spec is None:
             name = self.command_name(getattr(message, "text", None) or "")
             spec = self.registry.resolve_name(name) if name is not None else None
@@ -350,10 +350,7 @@ class Kernel:
             return DEFAULT_COMMAND_PERMISSION
         if self.access is None:
             return DEFAULT_COMMAND_PERMISSION
-        permission = self.access.default_permission(spec.module_id, spec.name)
-        if permission == PUBLIC_COMMAND_PERMISSION and self._is_group(message):
-            return DEFAULT_COMMAND_PERMISSION
-        return permission
+        return self.access.default_permission(spec.module_id, spec.name)
 
     @staticmethod
     def _is_blocked_peer(message: Any) -> bool:

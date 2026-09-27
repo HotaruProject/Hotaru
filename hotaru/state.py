@@ -51,11 +51,17 @@ def _prepare_database(path: Path) -> None:
     if path.parent.is_symlink():
         raise OSError("database directory must not be a symlink")
     path.parent.chmod(0o700)
-    os.close(_private_file(path))
-    for suffix in ("-wal", "-shm", "-journal"):
-        sidecar = path.with_name(path.name + suffix)
-        if sidecar.exists() or sidecar.is_symlink():
-            os.close(_private_file(sidecar))
+    for suffix in ("", "-wal", "-shm", "-journal"):
+        target = path.with_name(path.name + suffix)
+        try:
+            info = target.lstat()
+        except FileNotFoundError:
+            if not suffix:
+                os.close(_private_file(target))
+            continue
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_nlink != 1:
+            raise OSError("private storage must be an owned regular file")
+        target.chmod(0o600, follow_symlinks=False)
 
 
 def key_file_value() -> str:
