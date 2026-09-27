@@ -432,7 +432,7 @@
         "rmalias": {
           "description": "コマンドの別名を削除"
         },
-        "aliasls": {
+        "lsalias": {
           "description": "コマンドエイリアスの一覧を表示"
         },
         "prefix": {
@@ -577,7 +577,7 @@
     "commands": {
       "alias": "コマンドの別名を作成",
       "rmalias": "コマンドの別名を削除",
-      "aliasls": "コマンドエイリアスの一覧を表示",
+      "lsalias": "コマンドエイリアスの一覧を表示",
       "prefix": "コマンドのプレフィックスを変更"
     }
   },

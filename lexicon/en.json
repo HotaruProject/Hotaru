@@ -435,7 +435,7 @@
         "rmalias": {
           "description": "Remove a command alias"
         },
-        "aliasls": {
+        "lsalias": {
           "description": "List command aliases"
         },
         "prefix": {
@@ -598,7 +598,7 @@
     "commands": {
       "alias": "Create a command alias",
       "rmalias": "Remove a command alias",
-      "aliasls": "List command aliases",
+      "lsalias": "List command aliases",
       "prefix": "Change command prefix"
     }
   },
