@@ -1745,7 +1745,7 @@ class ModuleSandbox:
         if isinstance(result, FormHandle):
             return result.value
         if isinstance(result, list):
-            return [item.message if isinstance(item, Response) else item for item in result]
+            return [item.message if isinstance(item, Response) else item for item in cast('list[object]', result)]
         return result
 
     def _sandbox_buttons(self, module_id: str, buttons: Any, chat_id: Any) -> Any:

@@ -37,7 +37,6 @@ with trusted_scope():
     from hotaru.login import save_vault
     from relay.files import document, put
     from relay.inline_tl import answer_tl
-    from relay.rpc import delete_chat_msg
 
 
 RIGHTS = ('view', 'add', 'start', 'stop', 'restart', 'autostart', 'remove')

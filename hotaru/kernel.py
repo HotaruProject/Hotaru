@@ -167,7 +167,7 @@ class Kernel:
                     invocation = swapped
         if spec is None:
             return None
-        if not self._is_authorized(message, spec):
+        if not self.is_authorized(message, spec):
             return None
         if self.security is not None:
             verdict = self.security.check(message, transport="mt", module_id=spec.module_id, is_group=self._is_group(message), authorized=True)
@@ -316,7 +316,7 @@ class Kernel:
     def unregister_module_command(self, module_id: str, name: str) -> bool:
         return self.registry.unregister(name, module_id=module_id)
 
-    def _is_authorized(self, message: Any, spec: CommandSpec | None = None) -> bool:
+    def is_authorized(self, message: Any, spec: CommandSpec | None = None) -> bool:
         user_id = getattr(message, "from_id", None)
         if not isinstance(user_id, int):
             user_id = None
@@ -336,6 +336,8 @@ class Kernel:
         if bool(getattr(message, "is_me", False)):
             return True
         return self.owner_id is not None and user_id == self.owner_id
+
+    _is_authorized = is_authorized
 
     def _required_permission(self, message: Any, spec: CommandSpec | None = None) -> Permission:
         from .access import DEFAULT_COMMAND_PERMISSION, PUBLIC_COMMAND_PERMISSION

@@ -5,7 +5,10 @@ HOTARU = {
     "capabilities": ["mt"],
 }
 
-from typing import Any, List
+from typing import TYPE_CHECKING, Any, Callable, List
+
+if TYPE_CHECKING:
+    from hotaru.activation import ActiveModule
 
 __all__ = ["_plain_module_line", "_plain_section"]
 
@@ -70,9 +73,10 @@ async def _show_help(ctx: Any, invocation: Any) -> Any:
         module_id = " ".join(invocation.args).casefold()
         active = runtime.modules.get(module_id)
         if active is None:
+            module_key: Callable[['ActiveModule'], List[object]] = lambda item: [item.loaded.manifest.module_id, item.loaded.manifest.localized(runtime.language(), item.loaded.manifest.description).get("description", ""), *item.loaded.manifest.commands]
             matches = await ctx.tools.search(
                 list(runtime.modules.items()), module_id,
-                key=lambda item: [item.loaded.manifest.module_id, item.loaded.manifest.localized(runtime.language(), item.loaded.manifest.description).get("description", ""), *item.loaded.manifest.commands],
+                key=module_key,
                 limit=8,
             )
             if matches:

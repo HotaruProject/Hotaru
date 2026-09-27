@@ -8,7 +8,7 @@ import tempfile
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Literal, cast
+from typing import TYPE_CHECKING, Any, Callable, Literal, cast
 from collections.abc import Awaitable
 
 from goygram.errors import FloodWaitError, MessageNotModifiedError
@@ -35,6 +35,9 @@ from relay.toolkit import TOOLS, buttons_html, needs_form, needs_callback
 from .tl import as_tl
 
 log = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    from .runtime import Runtime
 
 
 OutputMode = Literal["edit", "reply", "auto"]
@@ -672,7 +675,10 @@ class ModuleContext:
             kwargs["output"] = "edit" if self._response_source is not None or self._outgoing else "reply"
         native = kwargs.pop("rich_message", None)
         if native is not None:
-            if not isinstance(native, dict) or native.get("_") not in {"inputRichMessage", "inputRichMessageHTML"}:
+            if not isinstance(native, dict):
+                raise ResponseError("expected a native Rich input")
+            native = cast('dict[str, object]', native)
+            if native.get("_") not in {"inputRichMessage", "inputRichMessageHTML"}:
                 raise ResponseError("expected a native Rich input")
             if native.get("_") == "inputRichMessageHTML":
                 return await self._deliver(text=str(native.get("html", "")), rich=True, **kwargs)
@@ -762,7 +768,7 @@ class ModuleContext:
             if buttons is not None:
                 norm_btns = self._normalize_buttons(buttons)
                 form_id = getattr(callback, "_hotaru_form_id", None)
-                entry = (getattr(self.runtime, "_forms", None) or {}).get(form_id)
+                entry = cast('Runtime', self.runtime).get_form(form_id) if self.runtime is not None and isinstance(form_id, str) else None
                 if entry is not None and self.callback_router is not None:
                     from .callbacks import CallbackBinding
                     for row in norm_btns:
@@ -1134,7 +1140,7 @@ class ModuleContext:
     async def _trusted_send_rich(self, html: Any, peer: Any, *, output: str = "reply", message_id: int | None = None, **kwargs: Any) -> Response:
         import secrets as _secrets
         app = self.runtime.app
-        rich_message = html if isinstance(html, dict) else {"_": "inputRichMessageHTML", **rich_html(html)}
+        rich_message = cast('dict[str, object]', html) if isinstance(html, dict) else {"_": "inputRichMessageHTML", **rich_html(html)}
         if output == "edit" and message_id is not None:
             with trusted_scope():
                 result = await app.mt_messages_edit_message( peer=peer, id=int(message_id), message="", rich_message=rich_message)

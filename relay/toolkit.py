@@ -920,7 +920,7 @@ def _search_score(query: str, text: str) -> float:
     terms = sorted(set(query.split()), key=lambda term: (-len(term), term))
     if not words or len(terms) > len(words):
         return 0.0
-    scores = []
+    scores: list[float] = []
     for term in terms:
         best, index = 0.0, -1
         for i, word in enumerate(words):
@@ -943,7 +943,7 @@ def _search_score(query: str, text: str) -> float:
     return sum(scores) / len(scores)
 
 
-async def search(values: Any, query: str, *, key: Any = None, limit: int = 10, min_score: float = 0.76, layout: bool = True) -> list[dict[str, Any]]:
+async def search(values: Any, query: object, *, key: Any = None, limit: object = 10, min_score: float = 0.76, layout: bool = True) -> list[dict[str, Any]]:
     if not isinstance(query, str):
         raise TypeError("query must be a string")
     if not isinstance(limit, int) or isinstance(limit, bool) or limit < 0:
@@ -970,7 +970,7 @@ async def search(values: Any, query: str, *, key: Any = None, limit: int = 10, m
             await asyncio.sleep(0)
             checkpoint = time.perf_counter()
         raw = key(value) if callable(key) else value[key] if isinstance(key, str) else value
-        fields = raw if isinstance(raw, (list, tuple)) else (raw,)
+        fields = cast('list[object] | tuple[object, ...]', raw) if isinstance(raw, (list, tuple)) else (raw,)
         best, matched, swapped = 0.0, "", False
         for field in fields:
             if not isinstance(field, str):

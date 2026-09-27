@@ -8,7 +8,10 @@ import secrets
 import types
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
+
+if TYPE_CHECKING:
+    from .runtime import Runtime
 
 from goygram.errors import EntityBoundsInvalidError
 from goygram import ext
@@ -104,7 +107,8 @@ class CallbackContext:
 
     async def edit(self, text: str, **kwargs: Any) -> Any:
         runtime = getattr(self, "_hotaru_runtime", getattr(self._callback, "_hotaru_runtime", None))
-        form = (getattr(runtime, "_forms", None) or {}).get(getattr(self, "_hotaru_form_id", None))
+        form_id = getattr(self, "_hotaru_form_id", None)
+        form = cast('Runtime', runtime).get_form(form_id) if runtime is not None and isinstance(form_id, str) else None
         if form is not None and runtime is not None:
             kwargs.pop("module_id", None)
             return await runtime.edit_form(form[0], text, **kwargs)
@@ -242,8 +246,9 @@ class CallbackContext:
         except Exception:
             pass
         runtime = getattr(self, "_hotaru_runtime", None)
-        form = (getattr(runtime, "_forms", None) or {}).get(getattr(self, "_hotaru_form_id", None))
-        if form is not None:
+        form_id = getattr(self, "_hotaru_form_id", None)
+        form = cast('Runtime', runtime).get_form(form_id) if runtime is not None and isinstance(form_id, str) else None
+        if form is not None and runtime is not None:
             return await runtime.delete_form(form[0])
         user_app = getattr(runtime, "app", None) if runtime is not None else None
         app = getattr(self, "app", None) or user_app
@@ -515,12 +520,13 @@ class CallbackRouter:
         if not isinstance(data, str):
             raise CallbackDenied("callback payload is invalid")
         value = self.store.peek(data, binding)
+        form = None
         if self.runtime is not None:
             from types import SimpleNamespace
             access = getattr(self.runtime, "access", None)
             module_id = value.get("module")
             form_id = value.get("form_id")
-            form = (getattr(self.runtime, "_forms", None) or {}).get(form_id)
+            form = cast('Runtime', self.runtime).get_form(form_id) if isinstance(form_id, str) else None
             if form_id and form is None:
                 raise CallbackDenied("form is no longer active")
             if form is not None:
@@ -530,8 +536,8 @@ class CallbackRouter:
                 if actual is None:
                     actual = getattr(callback, "msg_id", None)
                 if isinstance(expected, dict) and isinstance(actual, dict):
-                    expected = {key: expected.get(key) for key in ("dc_id", "id", "owner_id")}
-                    actual = {key: actual.get(key) for key in ("dc_id", "id", "owner_id")}
+                    expected = {key: cast('dict[str, object]', expected).get(key) for key in ("dc_id", "id", "owner_id")}
+                    actual = {key: cast('dict[str, object]', actual).get(key) for key in ("dc_id", "id", "owner_id")}
                 if expected is not None and actual != expected:
                     raise CallbackDenied("callback belongs to another form")
                 if expected is None and (str(binding.chat_id) != str(source.chat_id) or binding.message_id != source.id):
@@ -545,7 +551,7 @@ class CallbackRouter:
                 if spec is None or spec.kernel or spec.module_id != module_id or form is None:
                     raise CallbackDenied("callback requires current command access")
                 event = SimpleNamespace(from_id=binding.actor, chat_id=form[1].chat_id)
-                if not self.runtime.kernel._is_authorized(event, spec):
+                if not self.runtime.kernel.is_authorized(event, spec):
                     raise CallbackDenied("command access was revoked")
         security = getattr(self.runtime, "security", None)
         if security is not None:
@@ -603,23 +609,17 @@ class CallbackRouter:
                                     break
                         if handler is None:
                             saved_nonlocals: dict[str, Any] = {}
-                            raw_forms = getattr(self.runtime, "_forms", None)
-                            if isinstance(raw_forms, dict):
-                                forms_dict = cast('dict[str, Any]', raw_forms)
-                                for form_entry in ([form] if form is not None else []):
-                                    entry_tuple = cast('tuple[Any, ...]', form_entry) if isinstance(form_entry, (tuple, list)) else ()
-                                    if len(entry_tuple) >= 5 and isinstance(entry_tuple[4], dict):
-                                        form_opts = cast('dict[str, Any]', entry_tuple[4])
-                                        actions_list = cast('list[Any]', form_opts.get("actions", [])) if isinstance(form_opts.get("actions"), list) else []
-                                        for act in actions_list:
-                                            if isinstance(act, dict):
-                                                act_dict = cast('dict[str, Any]', act)
-                                                if str(act_dict.get("action_id", "")) == action_id:
-                                                    nl = act_dict.get("nonlocals")
-                                                    if isinstance(nl, dict):
-                                                        nl_dict = cast('dict[str, Any]', nl)
-                                                        saved_nonlocals.update(nl_dict)
-                                                    break
+                            if form is not None:
+                                form_opts = form[4]
+                                actions_list = cast('list[object]', form_opts.get("actions", [])) if isinstance(form_opts.get("actions"), list) else []
+                                for act in actions_list:
+                                    if isinstance(act, dict):
+                                        act_dict = cast('dict[str, object]', act)
+                                        if str(act_dict.get("action_id", "")) == action_id:
+                                            nl = act_dict.get("nonlocals")
+                                            if isinstance(nl, dict):
+                                                saved_nonlocals.update(cast('dict[str, object]', nl))
+                                            break
                             found_code = None
                             def _search_codes(code: Any) -> Any:
                                 for c in getattr(code, "co_consts", ()):

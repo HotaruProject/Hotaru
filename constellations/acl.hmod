@@ -44,7 +44,7 @@ async def _resolve_target_user(ctx: Any, invocation: Any, start: int = 0) -> Any
         if token.startswith("@"):
             try:
                 user = await ctx.resolve(token)
-                uid = user.get("user_id", user.get("id")) if isinstance(user, dict) else getattr(user, "id", None)
+                uid = cast(Mapping[str, object], user).get("user_id", cast(Mapping[str, object], user).get("id")) if isinstance(user, dict) else getattr(user, "id", None)
                 if isinstance(uid, int) and uid > 0:
                     return uid, args[1:]
             except Exception:
@@ -333,7 +333,7 @@ async def command_whois(ctx: Any, invocation: Any) -> Any:
     if len(invocation.args) > 1:
         from types import SimpleNamespace
         spec = ctx.runtime.kernel.registry.resolve_name(invocation.args[1])
-        allowed = spec is not None and ctx.runtime.kernel._is_authorized(SimpleNamespace(from_id=user_id, chat_id=getattr(invocation.message, "chat_id", None)), spec)
+        allowed = spec is not None and ctx.runtime.kernel.is_authorized(SimpleNamespace(from_id=user_id, chat_id=getattr(invocation.message, "chat_id", None)), spec)
         detail += "<br>" + ctx.t("acl.allowed" if allowed else "acl.denied", command=_escape(invocation.args[1]))
     detail += "<br><br>" + ctx.t("acl.model", prefix=_escape(ctx.runtime.config.prefix))
     await ctx.respond(

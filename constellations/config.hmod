@@ -19,12 +19,13 @@ HOTARU = {
     },
 }
 
-from typing import Any, Dict, List
+from typing import Any, Callable, Dict, List, Tuple
 import html
 from hotaru.config import (
     BooleanValidator,
     ChoiceValidator,
     ConfigSchema,
+    ConfigField,
     FloatValidator,
     IntegerValidator,
     ModuleConfig,
@@ -35,9 +36,9 @@ def _escape(value: Any) -> str:
     return html.escape(str(value), quote=False)
 
 
-def _find_modules(ctx: Any) -> List[Any]:
+def _find_modules(ctx: Any) -> List[Tuple[str, ConfigSchema]]:
     runtime = ctx.runtime
-    items: List[Any] = []
+    items: List[Tuple[str, ConfigSchema]] = []
     modules = getattr(runtime, "modules", None)
     if modules is not None and hasattr(modules, "items"):
         for mod in modules.items():
@@ -307,7 +308,8 @@ async def command_conf(ctx: Any, invocation: Any) -> Any:
     module_id = args[0].casefold()
     candidates = _find_modules(ctx)
     if not any(item[0] == module_id for item in candidates):
-        matches = await ctx.tools.search(candidates, module_id, key=lambda item: item[0], limit=1)
+        module_key: Callable[[Tuple[str, ConfigSchema]], str] = lambda item: item[0]
+        matches = await ctx.tools.search(candidates, module_id, key=module_key, limit=1)
         if not matches:
             await ctx.respond(f"Модуль <code>{_escape(module_id)}</code> не найден.")
             return
@@ -340,7 +342,8 @@ async def command_conf(ctx: Any, invocation: Any) -> Any:
     schema = ConfigSchema.from_manifest(active.loaded.manifest.config_schema)
     field = schema.get(key)
     if not field:
-        matches = await ctx.tools.search(list(schema.items()), key, key=lambda item: [item[0], item[1].description or ""], limit=1)
+        field_key: Callable[[Tuple[str, ConfigField]], List[str]] = lambda item: [item[0], item[1].description or ""]
+        matches = await ctx.tools.search(list(schema.items()), key, key=field_key, limit=1)
         if not matches:
             await ctx.respond(f"Параметр <code>{_escape(key)}</code> не найден.")
             return
