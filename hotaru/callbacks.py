@@ -301,14 +301,28 @@ _derive_key = derive_key
 
 
 class CallbackStore:
-    def __init__(self, *, ttl: float = 0.0, max_items: int = 16384, secret: bytes | None = None, connection: Any = None) -> None:
+    def __init__(
+        self,
+        *,
+        ttl: float = 0.0,
+        max_items: int = 16384,
+        secret: bytes | None = None,
+        connection: Any = None,
+        store: Any = None,
+    ) -> None:
         self.ttl = ttl
         self.max_items = max_items
         self._key = secret or _derive_key(secrets.token_hex(16))
-        self.connection = connection
+        self._connection = connection
+        self._store = store
         self._items: dict[str, _Entry] = {}
         if self.connection is not None:
             self._init_db()
+
+    @property
+    def connection(self) -> Any:
+        """The live connection: relocate() swaps it on the store, so a captured one would go stale."""
+        return self._store.connection if self._store is not None else self._connection
 
     def _init_db(self) -> None:
         if self.connection is None:
