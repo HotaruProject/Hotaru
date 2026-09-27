@@ -429,6 +429,9 @@ class StreamInterceptor(io.StringIO):
 
 
 def _get_raw_text(invocation: Any) -> str:
+    parsed = getattr(invocation, "raw_args", None)
+    if isinstance(parsed, str):
+        return parsed
     msg = getattr(invocation, "message", None)
     if msg is None:
         return " ".join(getattr(invocation, "args", []))

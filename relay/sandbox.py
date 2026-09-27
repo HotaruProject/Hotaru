@@ -1102,6 +1102,7 @@ def main():
                     invocation = SimpleNamespace(
                         name=req.get("command"),
                         args=tuple(args),
+                        raw_args=payload.get("raw_args", ""),
                         source=payload.get("source", "command"),
                         message_id=payload.get("message_id"),
                         chat_id=payload.get("chat_id"),

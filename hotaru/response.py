@@ -653,7 +653,7 @@ class ModuleContext:
                 kwargs["callback_actor"] = actor
         kwargs.setdefault("module_id", self.module_id)
         if self.runtime is not None and self.runtime.kernel is not None:
-            kwargs.setdefault("command", self.runtime.kernel.parser.command_name(getattr(self._source, "text", "") or ""))
+            kwargs.setdefault("command", self.runtime.kernel.command_name(getattr(self._source, "text", "") or ""))
         source = self._delivery_source
         kwargs.setdefault("delete_source", self._response_source is not None or self._outgoing)
         result = await self.form_sender(source, text, buttons or [], kwargs)
@@ -898,7 +898,7 @@ class ModuleContext:
         self_id = getattr(getattr(app, "session", None), "self_id", None)
         self._response_source = Obj(
             getattr(self._source, "src", "mt"),
-            {"kind": "msg", "msg_id": message_id, "chat_id": chat_id, "from_id": self_id, "is_me": True, "_hotaru_actor_id": getattr(self._source, "from_id", None), "_hotaru_command": self.runtime.kernel.parser.command_name(getattr(self._source, "text", "") or "") if getattr(self.runtime, "kernel", None) is not None else None},
+            {"kind": "msg", "msg_id": message_id, "chat_id": chat_id, "from_id": self_id, "is_me": True, "_hotaru_actor_id": getattr(self._source, "from_id", None), "_hotaru_command": self.runtime.kernel.command_name(getattr(self._source, "text", "") or "") if self.runtime is not None and self.runtime.kernel is not None else None},
             app,
         )
 

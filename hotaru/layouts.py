@@ -7,6 +7,10 @@ _EN_TO_RU = {en: ru for en, ru in zip(_EN_CHARS, _RU_CHARS)}
 _RU_TO_EN = {ru: en for en, ru in zip(_EN_CHARS, _RU_CHARS)}
 
 
+def prefix_variants(value: str) -> tuple[str, ...]:
+    return tuple(dict.fromkeys((value, value.translate(str.maketrans(_EN_TO_RU)), value.translate(str.maketrans(_RU_TO_EN)))))
+
+
 def swap_layout(value: str) -> str:
     out: list[str] = []
     for char in value:
