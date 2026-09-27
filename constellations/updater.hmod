@@ -25,7 +25,7 @@ def _escape(value: Any) -> Any:
     return _html.escape(str(value), quote=False)
 
 def _repo_dir(runtime: Any) -> Any:
-    return os.path.dirname(os.path.dirname(os.path.abspath(__file__))) if runtime is None else str(getattr(runtime, "root", "") or os.getcwd())
+    return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 def _git(runtime: Any, *args: Any) -> Any:
     repo = _repo_dir(runtime)
