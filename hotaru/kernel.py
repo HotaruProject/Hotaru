@@ -264,6 +264,7 @@ class Kernel:
             list(invocation.args),
             payload,
             source=message,
+            target=f"command_{spec.name}",
         )
         if isinstance(result, str):
             return result
