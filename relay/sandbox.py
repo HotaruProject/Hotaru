@@ -1463,9 +1463,14 @@ class ModuleSandbox:
                 str(self.runtime.config.session_dir / f"{self.runtime.config.session_name}.session"),
             ],
         }
+        home = os.environ.get("HOME") or os.path.expanduser("~")
+        cli_config = {
+            "GH_CONFIG_DIR": os.path.join(home, ".config", "gh"),
+            "GIT_CONFIG_GLOBAL": os.path.join(home, ".gitconfig"),
+        }
         if namespaces:
             argv = ["/usr/bin/python3", "-s", "-c", WORKER_SOURCE]
-            env = {"PATH": "/usr/bin:/bin", "HOME": "/tmp", "PYTHONPATH": "", "PYTHONHOME": "/opt/py"}
+            env = {"PATH": "/usr/bin:/bin", "HOME": "/tmp", "PYTHONPATH": "", "PYTHONHOME": "/opt/py", **cli_config}
             cwd = "/"
         else:
             argv = [self._python, "-s", "-S", "-c", WORKER_SOURCE]
@@ -1476,6 +1481,7 @@ class ModuleSandbox:
                 "PYTHONDONTWRITEBYTECODE": "1",
                 "TMPDIR": self._sandbox_base,
                 "LANG": "C.UTF-8",
+                **cli_config,
             }
             cwd = self._sandbox_base
         process = subprocess.Popen(
