@@ -1691,6 +1691,15 @@ class Runtime:
     async def _command_ld(self, invocation: Any) -> str | tuple[str, list[Any]]:
         if len(invocation.args) > 1:
             return self.t('runtime.usage_load', prefix=self.config.prefix)
+        if invocation.args:
+            candidate = invocation.args[0]
+            if not (
+                candidate.startswith("https://")
+                or "\n" in candidate
+                or candidate.lstrip().startswith("HOTARU")
+                or Path(candidate).is_file()
+            ):
+                return self.t('runtime.usage_load', prefix=self.config.prefix)
         temporary: Path | None = None
         try:
             if invocation.args:
@@ -1701,7 +1710,12 @@ class Runtime:
                 fd, raw_path = tempfile.mkstemp(prefix=".hotaru-download-", suffix=".hmod")
                 os.close(fd)
                 temporary = Path(raw_path)
-                await self._download_module_message(invocation.message, temporary)
+                try:
+                    await self._download_module_message(invocation.message, temporary)
+                except ValueError as exc:
+                    if str(exc) in (self.t('runtime.file_missing'), self.t('runtime.file_document')):
+                        return self.t('runtime.usage_load', prefix=self.config.prefix)
+                    raise
                 source = temporary
             loaded, action = await self.load_module(source)
         except Exception as exc:
