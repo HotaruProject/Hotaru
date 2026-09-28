@@ -32,7 +32,7 @@ from relay.sandbox import ModuleSandbox
 from relay.caps import CapabilityHost, describe as describe_caps
 from relay.rpc import delete_chat_msg
 from relay.firewall import install as install_firewall, trusted_scope
-from relay.emoji import set_premium, to_entities, to_rich
+from relay.emoji import has_emoji, set_premium, to_entities, to_rich
 from goygram.sugar import extract_sent_message
 from goygram import GoyGram, Session
 from goygram.types.kbd import kbd_to_tl
@@ -52,6 +52,7 @@ from .supervisor import ConnectionSupervisor
 from .tasks import TaskSupervisor
 
 IDLE_WORKER_SECONDS = 1800.0
+EMOJI_PAD = "\u200b"
 
 
 class InputContext:
@@ -319,6 +320,8 @@ class Runtime:
         owner = self.kernel.owner_id if self.kernel is not None else None
         if owner is None:
             raise RuntimeError("form owner is missing")
+        if has_emoji(text):
+            text = text + EMOJI_PAD
         options = dict(options or {})
         actor = getattr(command, "from_id", None)
         if not isinstance(actor, int):
@@ -440,6 +443,26 @@ class Runtime:
                 (key, record["module_id"], getattr(source, "src", "mt"), str(getattr(source, "chat_id", "")), getattr(source, "id", None), json.dumps(getattr(source, "inline_message_id", None)), text, json.dumps(buttons, ensure_ascii=False, default=str), json.dumps(record, ensure_ascii=False, default=str), deadline),
             )
             self.state.connection.commit()
+        if has_emoji(text):
+            self._schedule_emoji_refresh(key)
+
+    def _schedule_emoji_refresh(self, key: str) -> None:
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        loop.create_task(self._refresh_emoji(key))
+
+    async def _refresh_emoji(self, key: str) -> None:
+        entry = (self._forms or {}).get(key)
+        if entry is None:
+            return
+        handle, _, text, buttons, _ = entry
+        try:
+            await self.edit_form(handle, text, buttons=buttons)
+        except Exception as exc:
+            if self.observatory is not None:
+                self.observatory.emit("inline", "emoji_refresh_failed", level="error", error=type(exc).__name__)
 
     async def restore_forms(self) -> int:
         if self.state is None:
