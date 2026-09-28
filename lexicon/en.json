@@ -552,6 +552,15 @@
         "uptime_seconds": "Userbot runtime in seconds"
       },
       "example_uptime": "2 hours 3 minutes"
+    },
+    "info": {
+      "description": "Userbot info card",
+      "template": "<b>Hotaru</b> <code>{version}</code>\n\n<b>Uptime</b> · <code>{uptime}</code>\n<b>Modules</b> · <code>{modules}</code>",
+      "commands": {
+        "info": {
+          "description": "Show userbot info"
+        }
+      }
     }
   },
   "commands": {
