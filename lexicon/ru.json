@@ -552,6 +552,15 @@
         "uptime_seconds": "Время работы юзербота в секундах"
       },
       "example_uptime": "2 часа 3 минуты"
+    },
+    "info": {
+      "description": "Карточка юзербота",
+      "template": "<b>Hotaru</b> <code>{version}</code>\n\n<b>Аптайм</b> · <code>{uptime}</code>\n<b>Модули</b> · <code>{modules}</code>",
+      "commands": {
+        "info": {
+          "description": "Информация о юзерботе"
+        }
+      }
     }
   },
   "commands": {

@@ -1,16 +1,13 @@
 HOTARU = {
     "id": "info",
-    "version": "1.4.1",
+    "version": "1.5.0",
     "commands": ["info"],
     "capabilities": ["mt"],
     "config_schema": {
         "template": {
             "type": "str",
-            "default": (
-                "<b>Hotaru</b> <code>ff4a0e6</code>\n\n"
-                "<b>Аптайм</b> · <code>{uptime}</code>\n"
-                "<b>Модули</b> · <code>{modules}</code>"
-            ),
+            "default_key": "kernel.info.template",
+            "max_len": 3000,
             "description": "Шаблон .info, плейсхолдеры {version} {uptime} {modules}",
             "category": "General",
         },
