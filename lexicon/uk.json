@@ -558,6 +558,15 @@
         "uptime_seconds": "Час роботи юзербота в секундах"
       },
       "example_uptime": "2 години 3 хвилини"
+    },
+    "info": {
+      "description": "Картка юзербота",
+      "template": "<b>Hotaru</b> <code>{version}</code>\n\n<b>Аптайм</b> · <code>{uptime}</code>\n<b>Модулі</b> · <code>{modules}</code>",
+      "commands": {
+        "info": {
+          "description": "Інформація про юзербота"
+        }
+      }
     }
   },
   "inline_commands_hint": "Обери команду — введи @<бот> і її назву в будь-якому чаті",

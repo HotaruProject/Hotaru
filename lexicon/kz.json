@@ -558,6 +558,15 @@
         "uptime_seconds": "Юзерботтың жұмыс уақыты, секундпен"
       },
       "example_uptime": "2 сағат 3 минут"
+    },
+    "info": {
+      "description": "Юзербот ақпарат картасы",
+      "template": "<b>Hotaru</b> <code>{version}</code>\n\n<b>Жұмыс уақыты</b> · <code>{uptime}</code>\n<b>Модульдер</b> · <code>{modules}</code>",
+      "commands": {
+        "info": {
+          "description": "Юзербот туралы ақпарат"
+        }
+      }
     }
   },
   "inline_commands_hint": "Команданы таңда — кез келген чатта @<бот> және оның атын тер",
