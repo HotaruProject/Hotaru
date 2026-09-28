@@ -32,7 +32,24 @@
       "shared_prefix": "Current command prefix",
       "shared_uptime": "Runtime uptime in seconds",
       "template_syntax": "Use {{name}}, numeric {{name:.2f}}, and {{{{ / }}}} for literal braces. Values are HTML-escaped.",
-      "template_preview": "Preview (HTML, example values)"
+      "template_preview": "Preview (HTML, example values)",
+      "title": "⚙️ Settings",
+      "title_short": "settings",
+      "pick": "Pick a module:",
+      "empty": "No module has settings yet.",
+      "missing": "Module <code>{module}</code> has no settings or is not loaded.",
+      "param_missing": "Parameter <code>{name}</code> not found.",
+      "reset_all": "↺ Reset all",
+      "reset_confirm": "Reset every parameter of <b>{module}</b> to its default?",
+      "reset_yes": "Reset",
+      "reset_done": "Defaults restored",
+      "value": "Value",
+      "default": "Default",
+      "type": "Type",
+      "restart": "Takes effect after a restart.",
+      "new_value": "new value for {name}",
+      "copy": "⧉ Copy",
+      "field_unavailable": "Template field unavailable or not exported: {name}"
     },
     "power": {
       "already_stopped": "Userbot is already stopped.",
@@ -218,7 +235,17 @@
       "manager_unavailable": "<b>Module manager unavailable</b>",
       "usage": "<b>Usage:</b> <code>{prefix}hlp</code> or <code>{prefix}hlp &lt;module&gt;</code>",
       "disabled": "<b>Module disabled:</b> <code>{module}</code><br><i>Error: {error}</i>",
-      "missing": "<b>Module not found:</b> <code>{module}</code>"
+      "missing": "<b>Module not found:</b> <code>{module}</code>",
+      "title": "Hotaru · help",
+      "summary": "{count} modules · prefix <code>{prefix}</code>",
+      "pick": "Tap a module to see its commands.",
+      "kernel_badge": "core",
+      "user_badge": "installed",
+      "no_commands": "No commands",
+      "settings": "⚙️ Settings",
+      "search_prompt": "module or command",
+      "results": "Results for «{query}»",
+      "aliases": "Aliases"
     },
     "accounts": {
       "description": "Account management",
@@ -469,7 +496,12 @@
           "description": "Userbot logs with a file"
         }
       },
-      "pending": "pending"
+      "pending": "pending",
+      "config_fields": {
+        "level": "Minimum log level to record",
+        "batch_size": "Log events per message",
+        "auto_topic": "Manage the logs topic in the forum automatically"
+      }
     },
     "executor": {
       "heading": "<b>Executor</b> | <code>{elapsed:.1f}ms</code>",
@@ -551,7 +583,10 @@
         "uptime": "Userbot runtime, nonzero units only",
         "uptime_seconds": "Userbot runtime in seconds"
       },
-      "example_uptime": "2 hours 3 minutes"
+      "example_uptime": "2 hours 3 minutes",
+      "config_fields": {
+        "template": "Text of the ping reply"
+      }
     },
     "info": {
       "description": "Userbot info card",
@@ -560,6 +595,9 @@
         "info": {
           "description": "Show userbot info"
         }
+      },
+      "config_fields": {
+        "template": "Text of the info card"
       }
     }
   },
@@ -703,7 +741,8 @@
     },
     "file_missing": "module file is missing",
     "file_document": "module file must be a document",
-    "unknown_capability": "unknown capability (denied)"
+    "unknown_capability": "unknown capability (denied)",
+    "loading_module": "Loading {module_id}…"
   },
   "acl": {
     "owners": "<b>Owners</b><br>",
@@ -834,5 +873,29 @@
       "404": "Not found",
       "500": "Internal error"
     }
+  },
+  "ui": {
+    "close": "✕ Close",
+    "back": "‹ Back",
+    "expired": "This menu has expired. Run the command again.",
+    "stale": "The menu has just changed, press again.",
+    "denied": "This button is not for you.",
+    "failed": "Something went wrong: {error}",
+    "flood": "Telegram asks to wait {seconds} s.",
+    "slow_down": "Too fast, wait a second.",
+    "inline_unavailable": "<i>The inline menu is unavailable in this chat, so this is plain text.</i>",
+    "input_send": "Send: {value}",
+    "input_send_secret": "Send ({count} characters, hidden)",
+    "input_hint": "Type the value after the space",
+    "reply_hint": "Long or multi-line text: reply to this message.",
+    "search": "🔍 Search",
+    "edit": "✎ Edit",
+    "reset": "↺ Default",
+    "on": "On",
+    "off": "Off",
+    "error": "⚠️ {error}",
+    "saved": "Saved",
+    "empty": "empty",
+    "nothing_found": "Nothing found for «{query}»."
   }
 }

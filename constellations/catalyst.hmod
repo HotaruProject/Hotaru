@@ -1,11 +1,13 @@
 HOTARU = {
     "id": "catalyst",
-    "version": "1.2.0",
+    "version": "1.3.0",
     "commands": ['ld', 'ul', 'rl', 'ex', 'rs', 'resetdb'],
     "capabilities": [],
 }
 
 from typing import Any, Tuple, cast
+
+CONSENT_TTL = 3600
 
 async def command_ld(ctx: Any, invocation: Any) -> Any:
     runtime = ctx.runtime
@@ -14,8 +16,8 @@ async def command_ld(ctx: Any, invocation: Any) -> Any:
         return
     result = await runtime._command_ld(invocation)
     if isinstance(result, tuple):
-        text, buttons = cast(Tuple[Any, Any], result)
-        await ctx.respond(text, buttons=buttons)
+        text, rows = cast(Tuple[Any, Any], result)
+        await ctx.screens.show(ctx.screens.screen(text, rows, ttl=CONSENT_TTL))
     else:
         await ctx.respond(result)
 

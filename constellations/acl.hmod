@@ -1,6 +1,6 @@
 HOTARU = {
     "id": "acl",
-    "version": "2.0.1",
+    "version": "3.0.0",
     "commands": ["perms", "perm", "whois", "owadd", "owrm", "owls", "sgls", "sg", "sgnew", "sgdel", "sgadd", "sgrm", "rule", "rulerm", "ruleclr"],
     "capabilities": ["mt"],
 }
@@ -10,10 +10,8 @@ from types import SimpleNamespace
 from hotaru.access import AccessError, Permission, TsecRule, permission_from_label
 from hotaru.response import reply_message_id
 import html as _html
-import json
 import math
 import re
-import secrets
 import time
 
 ROLES = {"owner": Permission.OWNER, "admin": Permission.ADMIN, "trusted": Permission.TRUSTED, "everyone": Permission.EVERYONE}
@@ -163,14 +161,16 @@ async def command_owadd(ctx: Any, invocation: Any) -> Any:
     if user_id == ctx.access_admin.owner_id:
         await ctx.respond(ctx.t('acl.self_owner'), parse_mode="HTML")
         return
-    async def confirm(call: Any, payload: Any) -> None:
-        if not ctx.access_admin.is_owner(call.from_id):
-            await call.answer(ctx.t("acl.no_permission"), alert=True)
-            return
-        user_id = int(payload["user_id"])
-        added = ctx.access_admin.add_owner(user_id)
-        await call.edit(ctx.t('acl.owner_added' if added else 'acl.owner_exists', user_id=user_id), buttons=[])
-    await ctx.respond(ctx.t("acl.owner_confirm", user_id=user_id), buttons=[[ctx.ui.danger(ctx.t("acl.confirm"), confirm, {"user_id": user_id}), ctx.ui.close(ctx.t("common.cancel"))]])
+    k = ctx.screens
+    await ctx.screens.show(k.screen(ctx.t("acl.owner_confirm", user_id=user_id), [[k.danger(ctx.t("acl.confirm"), confirm_owner, user_id=user_id), k.close(ctx.t("common.cancel"))]]))
+
+async def confirm_owner(ctx: Any, nav: Any) -> Any:
+    if not ctx.access_admin.is_owner(nav.actor):
+        return ctx.t("acl.no_permission")
+    user_id = nav.int("user_id")
+    added = ctx.access_admin.add_owner(user_id)
+    k = ctx.screens
+    return k.screen(ctx.t('acl.owner_added' if added else 'acl.owner_exists', user_id=user_id), [[k.button(ctx.t("acl.manage"), action, view="user", uid=user_id), k.close()]])
 
 async def command_owrm(ctx: Any, invocation: Any) -> Any:
     user_id, rest = await _resolve_target_user(ctx, invocation)
@@ -350,13 +350,16 @@ async def command_ruleclr(ctx: Any, invocation: Any) -> Any:
     if target not in {None, "*"} and target_value is None:
         await ctx.respond(ctx.t("acl.invalid_target"))
         return
-    async def confirm(call: Any, payload: Any) -> None:
-        if not ctx.access_admin.is_owner(call.from_id):
-            await call.answer(ctx.t("acl.no_permission"), alert=True)
-            return
-        removed = ctx.access_admin.remove_tsec_all(payload["kind"], payload["target"])
-        await call.edit(ctx.t('acl.rules_cleared') if removed else ctx.t('acl.nothing_clear'), buttons=[])
-    await ctx.respond(ctx.t("acl.clear_confirm", scope=_escape(f"{kind}: {target if target is not None else '*'}")), buttons=[[ctx.ui.danger(ctx.t("acl.confirm"), confirm, {"kind": kind, "target": target_value}), ctx.ui.close(ctx.t("common.cancel"))]])
+    k = ctx.screens
+    prompt = ctx.t("acl.clear_confirm", scope=_escape(f"{kind}: {target if target is not None else '*'}"))
+    await ctx.screens.show(k.screen(prompt, [[k.danger(ctx.t("acl.confirm"), confirm_clear, kind=kind, target=target_value), k.close(ctx.t("common.cancel"))]]))
+
+async def confirm_clear(ctx: Any, nav: Any) -> Any:
+    if not ctx.access_admin.is_owner(nav.actor):
+        return ctx.t("acl.no_permission")
+    removed = ctx.access_admin.remove_tsec_all(nav.arg("kind"), nav.arg("target"))
+    k = ctx.screens
+    return k.screen(ctx.t('acl.rules_cleared') if removed else ctx.t('acl.nothing_clear'), [k.footer()])
 
 
 def _overview(ctx: Any) -> str:
@@ -407,7 +410,7 @@ def _default(ctx: Any, name: str, bits: Permission) -> Any:
 async def command_perms(ctx: Any, invocation: Any) -> Any:
     if invocation.args:
         return await command_whois(ctx, invocation)
-    data = {"view": "home", "chat": getattr(invocation.message, "chat_id", None)}
+    data: dict[str, Any] = {"view": "home", "chat": getattr(invocation.message, "chat_id", None)}
     reply = await _reply(ctx)
     if reply is not None or reply_message_id(invocation.message) is not None:
         uid = _sender(reply)
@@ -415,8 +418,7 @@ async def command_perms(ctx: Any, invocation: Any) -> Any:
             await ctx.respond(ctx.t("acl.invalid_target"), parse_mode="HTML")
             return
         data.update(view="user", uid=uid)
-    screen = _screen(ctx, data)
-    await ctx.respond(screen["text"], buttons=screen["buttons"], parse_mode="HTML")
+    await ctx.screens.show(_screen(ctx, data))
 
 async def command_whois(ctx: Any, invocation: Any) -> Any:
     uid, args = await _resolve_target_user(ctx, invocation)
@@ -432,8 +434,8 @@ async def command_whois(ctx: Any, invocation: Any) -> Any:
         else:
             allowed = ctx.runtime.kernel.is_authorized(SimpleNamespace(from_id=uid, chat_id=chat), spec)
             text += "<br>" + ctx.t("acl.allowed" if allowed else "acl.denied", command=_escape(spec.name))
-    buttons = [[ctx.ui.button(ctx.t("acl.manage"), _action, {"view": "user", "uid": uid, "chat": chat})]]
-    await ctx.respond(text, buttons=buttons, parse_mode="HTML")
+    k = ctx.screens
+    await ctx.screens.show(k.screen(text, [[k.primary(ctx.t("acl.manage"), action, view="user", uid=uid, chat=chat), k.close()]]))
 
 async def command_perm(ctx: Any, invocation: Any) -> Any:
     cmd = invocation.args[0][8:] if invocation.args and invocation.args[0].startswith("command/") else None
@@ -480,60 +482,58 @@ async def command_perm(ctx: Any, invocation: Any) -> Any:
     text = ctx.t("acl.revoked" if remove else "acl.granted", label=_roles(ctx, permission), user_id=uid) if changed else ctx.t("acl.nothing_revoke")
     await ctx.respond(text, parse_mode="HTML")
 
-def _screen(ctx: Any, data: dict[str, Any]) -> dict[str, Any]:
+def _screen(ctx: Any, data: dict[str, Any]) -> Any:
+    k = ctx.screens
     access = ctx.access_admin
     view = data.get("view", "home")
     chat = data.get("chat")
-    buttons: list[list[Any]] = []
+    rows: list[list[Any]] = []
     page = max(0, int(data.get("page", 0)))
 
-    def button(text: str, view: str, **args: Any) -> Any:
-        return ctx.ui.button(text, _action, {"view": view, "chat": chat, **args})
+    def button(text: str, view: str, style: Any = None, **args: Any) -> Any:
+        return k.button(text, action, style=style, view=view, chat=chat, **args)
 
     def field(text: str, op: str, placeholder: str, **args: Any) -> Any:
-        return ctx.ui.input(text, _input, {"input": op, "chat": chat, **args}, placeholder=placeholder)
+        return k.input(text, on_input, placeholder, input=op, chat=chat, **args)
 
     def listing(items: list[Any]) -> None:
-        nonlocal page
-        pages = max(1, (len(items) + PAGE - 1) // PAGE)
-        page = min(page, pages - 1)
-        buttons.extend([items[i:i + 2] for i in range(page * PAGE, min((page + 1) * PAGE, len(items)), 2)])
-        nav = [ctx.ui.button(label, _action, {**data, "page": index}) for label, index in (("‹", page - 1), ("›", page + 1)) if 0 <= index < pages]
-        if nav:
-            buttons.append(nav)
+        shown, current, pages = k.page(items, page, PAGE)
+        rows.extend(k.grid(shown, 2))
+        rows.append(k.pager(action, current, pages, **{key: value for key, value in data.items() if key != "page"}))
 
     text = ctx.t("acl.panel")
-    back = {"view": "home"}
+    back: dict[str, Any] = {"view": "home"}
     if view == "home":
         text = _overview(ctx)
-        buttons = [[button(ctx.t("acl.users"), "users"), button(ctx.t("acl.commands"), "commands")],
-                   [button(ctx.t("acl.groups_title"), "groups"), button(ctx.t("acl.rules_title"), "rules")]]
+        rows = [[button(ctx.t("acl.users"), "users"), button(ctx.t("acl.commands"), "commands")],
+                [button(ctx.t("acl.groups_title"), "groups"), button(ctx.t("acl.rules_title"), "rules")]]
     elif view == "users":
         users = set(access.owners) | {e.user_id for e in access.store.items()}
         users |= {uid for g in access.sgroups().values() for uid in g.users}
         users |= {int(r["target"]) for r in _rules(ctx, "user")}
         text = "<b>" + ctx.t("acl.users") + "</b>"
         listing([button(str(uid), "user", uid=uid) for uid in sorted(users)])
-        buttons.append([field(ctx.t("acl.find_user"), "user", ctx.t("acl.user_hint"))])
+        rows.append([field(ctx.t("acl.find_user"), "user", ctx.t("acl.user_hint"))])
     elif view in {"user", "memberships"}:
         uid = int(data["uid"])
         text = _user_text(ctx, uid, chat)
         back = {"view": "users"}
         if view == "memberships":
             back = {"view": "user", "uid": uid}
-            listing([button(("✓ " if uid in group.users else "") + name, "memberships", op="member", uid=uid, name=name, enabled=uid not in group.users) for name, group in sorted(access.sgroups().items())])
+            listing([button(k.check(name, uid in group.users), "memberships", op="member", uid=uid, name=name, enabled=uid not in group.users) for name, group in sorted(access.sgroups().items())])
         else:
             if not access.is_owner(uid):
                 bits = access.permissions_of(uid)
-                buttons.append([button(("✓ " if bits & ROLES[name] else "") + ctx.t("acl.roles." + name), "user", op="role", uid=uid, role=name, enabled=not bool(bits & ROLES[name])) for name in ("admin", "trusted")])
+                rows.append([button(k.check(ctx.t("acl.roles." + name), bool(bits & ROLES[name])), "user", "success" if bits & ROLES[name] else None, op="role", uid=uid, role=name, enabled=not bool(bits & ROLES[name])) for name in ("admin", "trusted")])
             if uid != access.owner_id and uid not in access.protected:
-                buttons.append([button(ctx.t("acl.remove_owner" if access.is_owner(uid) else "acl.add_owner"), "confirm", op="owner", uid=uid, enabled=not access.is_owner(uid))])
-            buttons.append([button(ctx.t("acl.groups_title"), "memberships", uid=uid), button(ctx.t("acl.rules_title"), "rules", kind="user", target=uid)])
+                owner = access.is_owner(uid)
+                rows.append([button(ctx.t("acl.remove_owner" if owner else "acl.add_owner"), "confirm", "danger" if owner else None, op="owner", uid=uid, enabled=not owner)])
+            rows.append([button(ctx.t("acl.groups_title"), "memberships", uid=uid), button(ctx.t("acl.rules_title"), "rules", kind="user", target=uid)])
     elif view in {"groups", "members"}:
         if view == "groups":
             text = ctx.t("acl.groups")
             listing([button(name, "group", name=name) for name in sorted(access.sgroups())])
-            buttons.append([field(ctx.t("acl.add"), "group", ctx.t("acl.group_hint"))])
+            rows.append([field(ctx.t("acl.add"), "group", ctx.t("acl.group_hint"))])
         else:
             name = data["name"]
             group = access.sgroup(name)
@@ -541,7 +541,7 @@ def _screen(ctx: Any, data: dict[str, Any]) -> dict[str, Any]:
                 return _screen(ctx, {"view": "groups", "chat": chat})
             text = ctx.t("acl.group_title", name=_escape(name))
             listing([button("× " + str(uid), "members", op="member", uid=uid, name=name, enabled=False) for uid in sorted(group.users)])
-            buttons.append([field(ctx.t("acl.add"), "member", ctx.t("acl.user_hint"), name=name)])
+            rows.append([field(ctx.t("acl.add"), "member", ctx.t("acl.user_hint"), name=name)])
             back = {"view": "group", "name": name}
     elif view == "group":
         name = data["name"]
@@ -549,8 +549,8 @@ def _screen(ctx: Any, data: dict[str, Any]) -> dict[str, Any]:
         if group is None:
             return _screen(ctx, {"view": "groups", "chat": chat})
         text = ctx.t("acl.group_item", name=_escape(name), users=len(group.users), rules=len(_rules(ctx, "sgroup", name)))
-        buttons = [[button(ctx.t("acl.users"), "members", name=name), button(ctx.t("acl.rules_title"), "rules", kind="sgroup", target=name)],
-                   [button(ctx.t("acl.delete"), "confirm", op="delete_group", name=name)]]
+        rows = [[button(ctx.t("acl.users"), "members", name=name), button(ctx.t("acl.rules_title"), "rules", kind="sgroup", target=name)],
+                [button(ctx.t("acl.delete"), "confirm", "danger", op="delete_group", name=name)]]
         back = {"view": "groups"}
     elif view == "rules":
         kind, target = data.get("kind"), data.get("target")
@@ -562,17 +562,17 @@ def _screen(ctx: Any, data: dict[str, Any]) -> dict[str, Any]:
             items.append(button(label, "rule", **rule))
         listing(items)
         if kind:
-            buttons.append([button(ctx.t("acl.add"), "types", kind=kind, target=target), button(ctx.t("acl.clear"), "confirm", op="clear_rules", kind=kind, target=target)])
+            rows.append([button(ctx.t("acl.add"), "types", "primary", kind=kind, target=target), button(ctx.t("acl.clear"), "confirm", "danger", op="clear_rules", kind=kind, target=target)])
             back = {"view": "user", "uid": target} if kind == "user" else {"view": "group", "name": target} if kind == "sgroup" else {"view": "rules"}
         else:
-            buttons.append([field(ctx.t("acl.add"), "scope", ctx.t("acl.scope_hint"))])
+            rows.append([field(ctx.t("acl.add"), "scope", ctx.t("acl.scope_hint"))])
     elif view == "rule":
         text = _rule_text(ctx, data) + ("" if data.get("expires") else "<br>" + ctx.t("acl.forever"))
-        buttons = [[button(ctx.t("acl.delete"), "rules", op="delete_rule", kind=data["kind"], target=data["target"], type=data["type"], rule=data["rule"])]]
+        rows = [[button(ctx.t("acl.delete"), "rules", "danger", op="delete_rule", kind=data["kind"], target=data["target"], type=data["type"], rule=data["rule"])]]
         back = {"view": "rules", "kind": data["kind"], "target": data["target"]}
     elif view == "types":
         text = ctx.t("acl.choose_rule")
-        buttons = [[button(ctx.t("acl.commands"), "catalog", kind=data["kind"], target=data["target"], type="command"), button(ctx.t("acl.modules"), "catalog", kind=data["kind"], target=data["target"], type="module")]]
+        rows = [[button(ctx.t("acl.commands"), "catalog", kind=data["kind"], target=data["target"], type="command"), button(ctx.t("acl.modules"), "catalog", kind=data["kind"], target=data["target"], type="module")]]
         back = {"view": "rules", "kind": data["kind"], "target": data["target"]}
     elif view in {"commands", "catalog"}:
         registry = ctx.runtime.kernel.registry
@@ -590,14 +590,14 @@ def _screen(ctx: Any, data: dict[str, Any]) -> dict[str, Any]:
         text = ctx.t("acl.command_role", command=_escape(spec.name), role=_roles(ctx, bits))
         if bits == Permission.EVERYONE:
             text += "<br>" + ctx.t("acl.all_chats")
-        keys = [button(("✓ " if bits == value else "") + ctx.t("acl.roles." + name), "command", op="default", name=spec.name, role=name) for name, value in ROLES.items()]
-        buttons = [keys[:2], keys[2:]]
+        keys = [button(k.radio(ctx.t("acl.roles." + name), bits == value), "command", "success" if bits == value else None, op="default", name=spec.name, role=name) for name, value in ROLES.items()]
+        rows = [keys[:2], keys[2:]]
         back = {"view": "commands"}
     elif view == "duration":
         text = ctx.t("acl.choose_duration") + "<br>" + _rule_text(ctx, {**data, "expires": 0}, False)
         base = {key: data[key] for key in ("kind", "target", "type", "rule")}
         keys = [button(ctx.t("acl.periods." + name), "rules", op="grant_rule", duration=value, **base) for name, value in (("hour", 3600), ("day", 86400), ("week", 604800), ("forever", 0))]
-        buttons = [keys[:2], keys[2:], [field(ctx.t("acl.custom"), "duration", "30m", **base)]]
+        rows = [keys[:2], keys[2:], [field(ctx.t("acl.custom"), "duration", "30m", **base)]]
         back = {"view": "catalog", "kind": data["kind"], "target": data["target"], "type": data["type"]}
     elif view == "confirm":
         op = data["op"]
@@ -610,96 +610,23 @@ def _screen(ctx: Any, data: dict[str, Any]) -> dict[str, Any]:
         else:
             text = ctx.t("acl.clear_confirm", scope=_escape(data["target"]))
             back = {"view": "rules", "kind": data["kind"], "target": data["target"]}
-        buttons = [[ctx.ui.danger(ctx.t("acl.confirm"), _action, {**data, "view": back["view"], "confirmed": True})]]
-    if view != "home":
-        buttons.append([ctx.ui.button(ctx.t("common.back"), _action, {**back, "chat": chat}), ctx.ui.close(ctx.t("common.close"))])
-    else:
-        buttons.append([ctx.ui.close(ctx.t("common.close"))])
-    return {"text": text, "buttons": buttons}
+        rows = [[k.danger(ctx.t("acl.confirm"), action, **{**data, "view": back["view"], "confirmed": True})]]
+    rows.append(k.footer(action, **{**back, "chat": chat}) if view != "home" else k.footer())
+    return k.screen(text, rows)
 
-def _context(call: Any) -> Any:
-    runtime = getattr(call, "_hotaru_runtime", None) or getattr(call, "runtime", None)
-    source = getattr(call, "query", None) or call
-    if runtime is None or not runtime.access.is_owner(getattr(source, "from_id", None)):
-        return None
-    mid = getattr(call, "inline_message_id", None)
-    if mid is not None and not getattr(call, "_hotaru_form_id", None) and not getattr(call, "form_nonce", None):
-        forms: dict[str, Any] = runtime._forms or {}
-        for key, (_, origin, _, _, options) in forms.items():
-            if options.get("module_id") == "acl" and options.get("callback_actor") == source.from_id and getattr(origin, "inline_message_id", None) == mid:
-                call._hotaru_form_id = key
-                break
-    return runtime.context_factory.create("acl", source)
+def _allowed(ctx: Any, nav: Any) -> bool:
+    return bool(ctx.access_admin.is_owner(nav.actor))
 
-async def _edit(call: Any, ctx: Any, text: str, buttons: Any) -> None:
-    runtime = ctx.runtime
-    forms: dict[str, Any] = runtime._forms or {}
-    key = getattr(call, "_hotaru_form_id", None)
-    nonce = getattr(call, "form_nonce", None)
-    entry = forms.get(key or ("inline:" + nonce if nonce else ""))
-    if entry is None:
-        await call.edit(text, buttons=buttons)
-        return
-    handle, source, _, _, options = entry
-    nonce = handle.key.split(":", 1)[-1]
-    actor = options.get("callback_actor")
-    origin = SimpleNamespace(src=source.src, chat_id=source.chat_id, id=source.id, from_id=actor)
-    stored: Any = runtime._input_requests
-    if stored is None:
-        stored = {}
-        runtime._input_requests = stored
-    requests: dict[str, Any] = stored
-    tokens: list[str] = []
-    layout: list[list[Any]] = []
-    for row in buttons:
-        current: list[Any] = []
-        for button in row:
-            if callable(button.get("handler")) and isinstance(button.get("input"), str):
-                token = secrets.token_urlsafe(10)
-                requests[token] = (button["handler"], button.get("payload"), origin, None, button["input"], nonce)
-                tokens.append(token)
-                current.append({"text": button["text"], "switch_inline_query_current_chat": "hotaru-input:" + token + " "})
-            else:
-                current.append(button)
-        layout.append(current)
-    saved: dict[str, Any] = dict(options)
-    try:
-        await runtime.edit_form(handle, text, buttons=layout, actions=runtime._form_actions(layout))
-    except BaseException:
-        options.clear()
-        options.update(saved)
-        for token in tokens:
-            requests.pop(token, None)
-        raise
+def _error(ctx: Any, data: dict[str, Any], message: str) -> Any:
+    view = {key: value for key, value in data.items() if key not in {"op", "confirmed", "input"}}
+    if view.get("view") in {None, "confirm"}:
+        view["view"] = "home"
+    return _screen(ctx, view).with_notice(ctx.t("ui.error", error=message))
 
-async def _action(call: Any, data: dict[str, Any]) -> None:
-    ctx = _context(call)
-    if ctx is None:
-        return
-    await call.answer()
-    ctx = _context(call)
-    if ctx is None:
-        return
-    store = ctx.runtime.callbacks.store
-    token = getattr(call, "data", None)
-    if isinstance(token, bytes):
-        token = token.decode("utf-8", "replace")
-    entry = store._load(token) if isinstance(token, str) else None
-    try:
-        await _apply(call, ctx, data)
-    except BaseException:
-        if entry is not None:
-            entry.consumed = False
-            store._items[token] = entry
-            if store.connection is not None:
-                binding = entry.binding
-                store.connection.execute("INSERT OR REPLACE INTO callback_store(handle, actor, chat_id, message_id, value, consumed) VALUES (?, ?, ?, ?, ?, 0)",
-                    (token, str(binding.actor), str(binding.chat_id) if binding.chat_id is not None else None, binding.message_id, json.dumps(entry.value)))
-                store.connection.commit()
-        raise
-
-async def _apply(call: Any, ctx: Any, data: dict[str, Any]) -> None:
-    data = dict(data)
+async def action(ctx: Any, nav: Any) -> Any:
+    if not _allowed(ctx, nav):
+        return ctx.t("acl.no_permission")
+    data = dict(nav.args)
     op = data.pop("op", "")
     access = ctx.access_admin
     try:
@@ -740,27 +667,20 @@ async def _apply(call: Any, ctx: Any, data: dict[str, Any]) -> None:
         elif op == "default":
             _default(ctx, data["name"], ROLES[data["role"]])
     except AccessError:
-        await _edit(call, ctx, ctx.t("acl.no_permission"), [[ctx.ui.button(ctx.t("common.back"), _action, {"view": "home", "chat": data.get("chat")})]])
-        return
+        return _error(ctx, data, ctx.t("acl.no_permission"))
     except ValueError as exc:
-        await _edit(call, ctx, str(exc), [[ctx.ui.button(ctx.t("common.back"), _action, {"view": "home", "chat": data.get("chat")})]])
-        return
-    await _edit(call, ctx, **_screen(ctx, data))
+        return _error(ctx, data, str(exc))
+    return _screen(ctx, data)
 
-async def _input(call: Any, payload: Any) -> None:
-    ctx = _context(call)
-    if ctx is None:
-        return
-    data = dict(call.payload or {})
-    raw = str(call.value or "").strip()
-    op = data.get("input")
+async def on_input(ctx: Any, nav: Any) -> Any:
+    if not _allowed(ctx, nav):
+        return None
+    data = dict(nav.args)
+    raw = str(nav.value or "").strip()
+    op = data.pop("input", None)
     try:
         if op in {"user", "member"}:
             uid, rest = await _resolve_target_user(ctx, SimpleNamespace(args=tuple(raw.split())))
-            fresh = _context(call)
-            if fresh is None:
-                return
-            ctx = fresh
             if uid is None or rest:
                 raise ValueError(ctx.t("acl.invalid_target"))
             if op == "member":
@@ -794,8 +714,7 @@ async def _input(call: Any, payload: Any) -> None:
             _grant_rule(ctx, data["kind"], data["target"], data["type"], data["rule"], duration)
             data["view"] = "rules"
         else:
-            return
+            return None
     except ValueError as exc:
-        await _edit(call, ctx, str(exc), [[ctx.ui.input(ctx.t("acl.retry"), _input, call.payload, placeholder=raw[:80])], [ctx.ui.button(ctx.t("common.back"), _action, {"view": "home", "chat": data.get("chat")})]])
-        return
-    await _edit(call, ctx, **_screen(ctx, data))
+        return _error(ctx, {**data, "view": {"user": "users", "member": "members", "group": "groups", "scope": "rules", "duration": "duration"}.get(str(op), "home")}, str(exc))
+    return _screen(ctx, data)

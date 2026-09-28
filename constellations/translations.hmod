@@ -1,11 +1,11 @@
 HOTARU = {
     "id": "translations",
-    "version": "1.1.0",
+    "version": "2.0.0",
     "commands": ["lang", "language"],
     "capabilities": []
 }
 
-from typing import Any, Callable, List, Mapping, Optional, cast
+from typing import Any, Callable, List
 
 
 NATIVE_LABELS = {
@@ -22,37 +22,27 @@ def _escape(value: Any) -> Any:
     return html.escape(str(value), quote=False)
 
 
-def _screen(ctx: Any) -> Any:
-    runtime = ctx.runtime
-    current = runtime.language()
+def home(ctx: Any, nav: Any = None) -> Any:
+    k = ctx.screens
+    current = ctx.runtime.language()
+    options = [
+        k.button(k.radio(NATIVE_LABELS[language], language == current), select, style="success" if language == current else None, language=language)
+        for language in ("ru", "en", "kz", "uk", "ja")
+    ]
+    rows = k.grid(options, 2)
+    rows.append(k.footer())
+    title = _escape(ctx.t('commands.lang.description'))
+    text = f"<b>🌐 {title}</b>\n{_escape(ctx.t('commands.lang.current', language=NATIVE_LABELS[current]))}"
+    return k.screen(text, rows)
 
-    async def select(callback: Any, payload: Any) -> Any:
-        selected = cast(Optional[str], cast(Mapping[str, object], payload).get("language")) if isinstance(payload, dict) else None
-        runtime.set_language(selected)
-        screen = _screen(ctx)
-        await ctx.respond(
-            screen["text"],
-            buttons=screen["buttons"],
-            callback=callback,
-            parse_mode="HTML",
-        )
 
-    buttons: List[Any] = []
-    for language in ("ru", "en", "kz", "uk", "ja"):
-        marker = "✓ " if language == current else ""
-        buttons.append(
-            ctx.ui.button(
-                f"{marker}{NATIVE_LABELS[language]}",
-                select,
-                {"language": language},
-            )
-        )
-    rows = ctx.ui.grid(*buttons, columns=2)
-    rows.append([ctx.ui.close(ctx.t('common.close'))])
-    return {
-        "text": f"<b>{ctx.t('commands.lang.description')}</b>\n<i>{ctx.t('commands.lang.current', language=_escape(NATIVE_LABELS[current]))}</i>",
-        "buttons": rows,
-    }
+def select(ctx: Any, nav: Any) -> Any:
+    language = str(nav.arg("language"))
+    if language != ctx.runtime.language():
+        ctx.runtime.set_language(language)
+    screen = home(ctx)
+    screen.toast = NATIVE_LABELS.get(language, language)
+    return screen
 
 
 async def _show(ctx: Any) -> Any:
@@ -68,13 +58,7 @@ async def _show(ctx: Any) -> Any:
         return
     if not runtime.lexicon._validate_language(runtime.language()):
         runtime.set_language("en")
-    screen = _screen(ctx)
-    await ctx.respond(
-        screen["text"],
-        buttons=screen["buttons"],
-        inline=True,
-        parse_mode="HTML",
-    )
+    await ctx.screens.show(home(ctx))
 
 
 async def command_lang(ctx: Any, invocation: Any) -> Any:

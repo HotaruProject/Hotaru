@@ -51,8 +51,23 @@ def degrade(entities: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return result
 
 
+_QUOTE_OPEN = re.compile(r"<blockquote(\s+expandable)?\s*>", re.IGNORECASE)
+
+
+def _collapse(html: str, entities: list[dict[str, Any]]) -> None:
+    flags = [bool(match.group(1)) for match in _QUOTE_OPEN.finditer(html)]
+    if not any(flags):
+        return
+    quotes = sorted((entity for entity in entities if entity.get("_") == "messageEntityBlockquote"), key=lambda entity: cast(int, entity["offset"]))
+    for entity, collapsed in zip(quotes, flags):
+        if collapsed:
+            entity["collapsed"] = True
+
+
 def to_entities(text: str) -> tuple[str, list[dict[str, Any]]]:
-    plain, entities = html_to_entities(str(text))
+    html = str(text)
+    plain, entities = html_to_entities(_QUOTE_OPEN.sub("<blockquote>", html))
+    _collapse(html, entities)
     if _premium or not entities:
         return plain, entities
     return plain, degrade(entities)

@@ -1,6 +1,6 @@
 HOTARU = {
     "id": "executor",
-    "version": "3.3.10",
+    "version": "3.4.0",
     "commands": ["sh", "py", "kill"],
     "capabilities": ["mt", "files", "net", "state"],
 }
@@ -188,60 +188,14 @@ class OutputUpdater:
         pages.append("\n\n".join(cur))
         return pages
 
-    def _nav(self, idx: int) -> list[Any]:
-        ui = getattr(self.ctx, "ui", None)
-        if ui is None:
-            return []
-        n = max(len(self._pages), 1)
-        if n <= 1:
-            return []
-        return [
-            [
-                ui.button("<", self._on_page, (idx - 1) % n),
-                ui.button(">", self._on_page, (idx + 1) % n),
-            ],
-            [ui.button("x", self._on_del)],
-        ]
-
-    def _kbd(self, buttons: list[Any] | None) -> dict[str, Any] | None:
-        if not buttons:
-            return None
-        rows: list[list[dict[str, Any]]] = []
-        for row in buttons:
-            clean: list[dict[str, Any]] = []
-            for b in row:
-                b = cast('dict[str, Any]', b)
-                item = {"text": str(b.get("text", ""))}
-                if b.get("callback_data") is not None:
-                    item["callback_data"] = b["callback_data"]
-                elif b.get("url"):
-                    item["url"] = b["url"]
-                clean.append(item)
-            rows.append(clean)
-        return {"inline_keyboard": rows}
-
-    async def _on_page(self, call: Any, payload: Any) -> None:
-        n = max(len(self._pages), 1)
-        idx = int(payload) % n if payload is not None else 0
-        self._page = idx
-        text = self._pages[idx] if self._pages else ""
-        await call.edit(text, kbd=self._kbd(self._nav(idx)))
-        try:
-            await call.answer()
-        except Exception:
-            pass
-
-    async def _on_del(self, call: Any, payload: Any) -> None:
-        try:
-            await call.answer()
-        except Exception:
-            pass
-        await call.delete()
-
-    async def _deliver(self, text: str, buttons: list[Any] | None, final: bool) -> None:
+    async def _deliver(self, text: str, final: bool) -> None:
+        if final and len(self._pages) > 1:
+            try:
+                await self.ctx.screens.show(_output_screen(self.ctx, _keep_pages(self.ctx, self._pages), self._pages, 0), fallback=False)
+                return
+            except Exception:
+                pass
         kwargs: dict[str, Any] = {"parse_mode": "HTML", "rich": False}
-        if buttons:
-            kwargs["buttons"] = buttons
         if self.msg:
             kwargs["output"] = "edit"
         try:
@@ -267,7 +221,6 @@ class OutputUpdater:
                 self._pages = self._pages_from(sections, None)
                 self._page = 0
                 text = self._pages[0]
-                buttons = self._nav(0)
             else:
                 elapsed = (time.perf_counter() - self.start_time) * 1000
                 parts = [self.ctx.t('kernel.executor.heading', elapsed=elapsed)]
@@ -278,8 +231,7 @@ class OutputUpdater:
                         continue
                     parts.append(self._fmt_entry(title, content, is_code, lang))
                 text = "\n\n".join(parts)
-                buttons = None
-            await self._deliver(text, buttons, final)
+            await self._deliver(text, final)
 
     async def update(self, new_text: str, force: bool = False, wait: bool = False) -> None:
         if self.closed:
@@ -311,6 +263,38 @@ class OutputUpdater:
     async def finish(self, sections: list[Any] | None = None, returncode: int | None = None) -> None:
         self.closed = True
         await self._send(sections, returncode=returncode, final=True)
+
+
+KEPT_OUTPUTS = 8
+
+
+def _keep_pages(ctx: Any, pages: list[str]) -> str:
+    """Paged output lives in module state so its buttons survive a restart."""
+    import secrets
+    kept: list[Any] = [entry for entry in _outputs(ctx) if len(entry) == 2]
+    key = secrets.token_hex(4)
+    kept.append([key, pages])
+    ctx.state.set("outputs", kept[-KEPT_OUTPUTS:])
+    return key
+
+
+def _outputs(ctx: Any) -> list[list[Any]]:
+    raw = ctx.state.get("outputs", [])
+    return [cast('list[Any]', entry) for entry in cast('list[Any]', raw) if isinstance(entry, list)] if isinstance(raw, list) else []
+
+
+def _output_screen(ctx: Any, key: str, pages: list[str], page: int) -> Any:
+    k = ctx.screens
+    page = max(0, min(page, len(pages) - 1))
+    return k.screen(pages[page], [k.pager(output_page, page, len(pages), id=key), [k.close()]])
+
+
+def output_page(ctx: Any, nav: Any) -> Any:
+    key = nav.arg("id")
+    pages: Any = next((entry[1] for entry in _outputs(ctx) if entry and entry[0] == key), None)
+    if not isinstance(pages, list) or not pages:
+        return ctx.t("ui.expired")
+    return _output_screen(ctx, str(key), [str(page) for page in cast('list[Any]', pages)], nav.int("page"))
 
 
 class StreamInterceptor(io.StringIO):

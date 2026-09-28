@@ -35,7 +35,7 @@ from relay.firewall import install as install_firewall, trusted_scope
 from relay.emoji import has_emoji, set_premium, to_entities, to_rich
 from goygram.sugar import extract_sent_message
 from goygram import GoyGram, Session
-from goygram.types.kbd import kbd_to_tl
+from .markup import kbd_to_tl
 from goygram.security import bootstrap_session
 
 log = logging.getLogger(__name__)
@@ -46,6 +46,7 @@ from .activation import ModuleManager
 from .observatory import Observatory, hook_stdio as observatory_hook_stdio, install as observatory_install
 from .registry import Handler
 from .response import FormHandle, ModuleContextFactory, ResponseService, reply_message_id
+from .screens import Screen, ScreenEngine
 from .security import SecurityGate
 from .state import StateStore
 from .supervisor import ConnectionSupervisor
@@ -89,7 +90,7 @@ class InputContext:
         return await self.runtime._edit_input_form(self, text, buttons, kwargs)
 
     async def delete(self) -> bool:
-        if not await self.runtime._drop_transfer(self.source, self.inline_message_id):
+        if not await self.runtime.drop_transfer(self.source, self.inline_message_id):
             raise RuntimeError("input transfer could not be deleted")
         return True
 
@@ -123,6 +124,7 @@ class Runtime:
     stager: ModuleStager | None = None
     responses: ResponseService | None = None
     callbacks: CallbackRouter | None = None
+    screens: ScreenEngine | None = None
     observatory: Observatory | None = None
     backups: BackupService | None = None
     context_factory: ModuleContextFactory | None = None
@@ -240,11 +242,13 @@ class Runtime:
             self.state.set_setting("callback_secret", cb_secret)
         cb_key = derive_key(cb_secret)
         self.callbacks = CallbackRouter(CallbackStore(secret=cb_key, store=self.state), runtime=self)
+        self.screens = ScreenEngine(self, cb_secret)
+        self.context_factory.screens = self.screens
         self.cap_host = CapabilityHost(self)
         self.context_factory.cap_host = self.cap_host
         self.context_factory.callback_router = self.callbacks
-        self.callbacks.register("caps_confirm", self._caps_confirm)
-        self.callbacks.register("caps_cancel", self._caps_cancel)
+        self.screens.register("caps_confirm", self._caps_confirm)
+        self.screens.register("caps_cancel", self._caps_cancel)
         self.callbacks.register("restore_confirm", self._restore_confirm)
         self.event_router = EventRouter(self._event_error)
         self.backups = BackupService()
@@ -277,6 +281,7 @@ class Runtime:
         self.inline.on_chosen(self._on_chosen_input)
         self.callbacks.register("help_page", self._help_page)
         self.callbacks.register("module_detail", self._module_detail)
+        self.kernel.reply_hook = self.screens.on_message
         self.kernel.attach(self.app)
         self.app.on_cb(self._on_callback)
         self.event_router.attach_aux(self.app)
@@ -294,6 +299,8 @@ class Runtime:
             callback._hotaru_runtime = self
         except Exception:
             pass
+        if self.screens is not None and self.screens.owns(getattr(callback, "data", None)):
+            return await self.screens.dispatch(callback)
         try:
             return await self.callbacks.dispatch(callback)
         except CallbackDenied:
@@ -303,7 +310,7 @@ class Runtime:
                 pass
             return None
 
-    async def _send_form(self, command: Any, text: str, buttons: list[Any], options: dict[str, Any] | None = None) -> Any:
+    async def _inline_ready(self) -> None:
         if self.inline is None:
             raise RuntimeError("inline bot form transport is unavailable")
         if self.inline.info is None:
@@ -317,6 +324,10 @@ class Runtime:
             raise RuntimeError("inline bot polling is not ready") from exc
         if self.inline.info is None or self.inline.bot_app is None:
             raise RuntimeError("inline bot form transport is not ready")
+
+    async def _send_form(self, command: Any, text: str, buttons: list[Any], options: dict[str, Any] | None = None) -> Any:
+        await self._inline_ready()
+        assert self.inline is not None
         owner = self.kernel.owner_id if self.kernel is not None else None
         if owner is None:
             raise RuntimeError("form owner is missing")
@@ -850,9 +861,41 @@ class Runtime:
             pass
         if self.observatory is not None:
             self.observatory.emit("inline", "form_queued", nonce=nonce, chat=chat_id, rows=len(inline_buttons))
+        sent_result, result = await self._send_inline_result(chat_id, nonce, reply_to, options.get("topic_id"))
+        try:
+            await asyncio.wait_for(cast('dict[str, asyncio.Event]', self._form_chosen)[nonce].wait(), 5.0)
+        except asyncio.TimeoutError:
+            pass
+        if options.get("delete_source", True) and chat_id is not None and bool(getattr(command, "is_me", False) or getattr(command, "out", False)):
+            try:
+                await self._delete_inline_source(command, chat_id, message_id)
+            except Exception as exc:
+                if self.observatory is not None:
+                    self.observatory.emit("response", "source_cleanup_failed", error=type(exc).__name__)
+        sent = extract_sent_message(sent_result)
+        if isinstance(sent, dict) and isinstance(sent.get("id"), int):
+            if self._form_msgs is None:
+                self._form_msgs = {}
+            actor = options.get("callback_actor")
+            if not isinstance(actor, int):
+                actor = int(getattr(self.kernel, "owner_id", 0) or 0)
+            self._form_msgs[actor] = (chat_id, int(sent["id"]))
+            if self.state is not None and isinstance(chat_id, int):
+                self.state.set_setting("inline-reference-chat", chat_id)
+                self.state.set_setting("inline-reference-message", int(sent["id"]))
+            return sent
+        return cast('dict[str, Any]', result) if isinstance(result, dict) else result
+
+    async def _send_inline_result(self, chat_id: Any, nonce: str, reply_to: Any, topic_id: Any) -> tuple[Any, Any]:
+        if self.inline is None or self.inline.info is None or self.app is None:
+            raise RuntimeError("inline insertion transport is not ready")
+        if self._form_chosen is None:
+            self._form_chosen = {}
+        self._form_chosen.setdefault(nonce, asyncio.Event()).clear()
         with trusted_scope():
             bot = await self.app.mt.resolve_peer("@" + self.inline.info.username)
             peer = await self.app.mt.resolve_peer(chat_id)
+        result: Any
         try:
             result = await self.app.mt_messages_get_inline_bot_results(
                 bot=bot,
@@ -884,12 +927,7 @@ class Runtime:
         results = cast('dict[str, Any]', body).get("results") if isinstance(body, dict) else None
         if not isinstance(query_id, (int, str)) or not isinstance(results, list) or not results:
             raise RuntimeError("inline bot returned no form result")
-        if self._form_chosen is None:
-            self._form_chosen = {}
-        ready = self._form_chosen.setdefault(nonce, asyncio.Event())
-        ready.clear()
         reply_param: dict[str, Any] | None = None
-        topic_id = options.get("topic_id")
         if isinstance(reply_to, int):
             reply_param = {"_": "inputReplyToMessage", "reply_to_msg_id": reply_to}
             if isinstance(topic_id, int):
@@ -903,30 +941,52 @@ class Runtime:
             query_id=query_id,
             id=cast('dict[str, Any]', cast('list[Any]', results)[0]).get("id"),
             clear_draft=True,
+            hide_via=True,
         )
+        return sent_result, cast(Any, result)
+
+    async def deliver_inline(self, command: Any, text: str, rows: list[list[dict[str, Any]]], *, rich: bool = False, reply_to: int | None = None) -> tuple[dict[str, Any] | None, Any]:
+        """Insert a ready keyboard into the command's chat via the inline bot; returns (sent message, inline id)."""
+        await self._inline_ready()
+        chat_id = getattr(command, "chat_id", None)
+        message_id = getattr(command, "id", None) or getattr(command, "message_id", None)
+        if chat_id is None or self.app is None:
+            raise RuntimeError("inline insertion target is missing")
+        outgoing = bool(getattr(command, "is_me", False) or getattr(command, "out", False))
+        if reply_to is None:
+            reply_to = reply_message_id(command)
+        if reply_to is None and not outgoing and isinstance(message_id, int):
+            reply_to = message_id
+        topic_id = None
+        for key in ("message_thread_id", "topic_id", "topic"):
+            value = command.get(key) if hasattr(command, "get") else getattr(command, key, None)
+            if isinstance(value, int):
+                topic_id = value
+                break
+        if has_emoji(text):
+            text = text + EMOJI_PAD
+        nonce = secrets.token_urlsafe(12)
+        if self._inline_forms is None:
+            self._inline_forms = {}
+        self._inline_forms[nonce] = (text, rows, rich)
         try:
-            await asyncio.wait_for(ready.wait(), 5.0)
-        except asyncio.TimeoutError:
-            pass
-        if options.get("delete_source", True) and chat_id is not None and bool(getattr(command, "is_me", False) or getattr(command, "out", False)):
+            sent_result, _ = await self._send_inline_result(chat_id, nonce, reply_to, topic_id)
+            try:
+                await asyncio.wait_for(cast('dict[str, asyncio.Event]', self._form_chosen)[nonce].wait(), 5.0)
+            except asyncio.TimeoutError:
+                if self.observatory is not None:
+                    self.observatory.emit("screens", "chosen_timeout")
+        finally:
+            self._inline_forms.pop(nonce, None)
+            (self._form_chosen or {}).pop(nonce, None)
+        inline_id = (self._form_inline_ids or {}).pop(nonce, None)
+        if outgoing and isinstance(message_id, int):
             try:
                 await self._delete_inline_source(command, chat_id, message_id)
             except Exception as exc:
                 if self.observatory is not None:
                     self.observatory.emit("response", "source_cleanup_failed", error=type(exc).__name__)
-        sent = extract_sent_message(sent_result)
-        if isinstance(sent, dict) and isinstance(sent.get("id"), int):
-            if self._form_msgs is None:
-                self._form_msgs = {}
-            actor = options.get("callback_actor")
-            if not isinstance(actor, int):
-                actor = int(getattr(self.kernel, "owner_id", 0) or 0)
-            self._form_msgs[actor] = (chat_id, int(sent["id"]))
-            if self.state is not None and isinstance(chat_id, int):
-                self.state.set_setting("inline-reference-chat", chat_id)
-                self.state.set_setting("inline-reference-message", int(sent["id"]))
-            return sent
-        return cast('dict[str, Any]', result) if isinstance(result, dict) else result
+        return extract_sent_message(sent_result), inline_id
 
     async def _delete_inline_source(self, command: Any, chat_id: int | str, message_id: int) -> None:
         if getattr(command, "src", None) == "bot":
@@ -940,8 +1000,8 @@ class Runtime:
 
     async def _on_inline_query(self, query: Any) -> None:
         text = (query.query or "").strip()
-        if text.startswith('hotaru-login:') and self.account_login is not None:
-            await self.account_login.inline(query)
+        if self.screens is not None and self.screens.owns(text):
+            await self.screens.input_query(query, text)
             return
         if self.security is not None:
             from .security import AccessVerdict
@@ -1009,8 +1069,8 @@ class Runtime:
 
     async def _on_chosen_input(self, chosen: Any) -> None:
         text = str(getattr(chosen, "query", "") or "").strip()
-        if text.startswith("hotaru-login:") and self.account_login is not None:
-            await self.account_login.chosen(chosen)
+        if self.screens is not None and self.screens.owns(text):
+            await self.screens.input_chosen(chosen, text)
             return
         if text.startswith("hotaru-form:"):
             if not self._input_actor_matches(chosen, None):
@@ -1067,7 +1127,7 @@ class Runtime:
         finally:
             if self._input_requests is not None:
                 self._input_requests.pop(token, None)
-        await self._drop_transfer(source, ctx.inline_message_id)
+        await self.drop_transfer(source, ctx.inline_message_id)
 
     async def _edit_input_form(self, ctx: InputContext, text: str, buttons: Any, options: dict[str, Any]) -> Any:
         if buttons and isinstance(buttons[0], dict):
@@ -1175,7 +1235,7 @@ class Runtime:
         with trusted_scope():
             return await bot.mt_messages_edit_inline_bot_message(**data)
 
-    async def _drop_transfer(self, source: Any, inline_id: Any) -> bool:
+    async def drop_transfer(self, source: Any, inline_id: Any) -> bool:
         target = cast('dict[str, object]', inline_id) if isinstance(inline_id, dict) else {}
         owner = target.get("owner_id")
         if target.get("_") == "inputBotInlineMessageID64" and type(owner) is int and owner < 0:
@@ -1381,6 +1441,8 @@ class Runtime:
             callback._hotaru_runtime = self
         except Exception:
             pass
+        if self.screens is not None and self.screens.owns(getattr(callback, "data", None)):
+            return await self.screens.dispatch(callback)
         try:
             return await self.callbacks.dispatch(callback)
         except CallbackDenied as exc:
@@ -1743,6 +1805,8 @@ class Runtime:
 
     def purge_module_data(self, module_id: str) -> None:
         module_id = module_id.casefold()
+        if self.screens is not None:
+            self.screens.drop_module(module_id)
         if self.state is not None:
             self.state.namespace(module_id)
             self.state.delete_module(module_id)
@@ -1961,48 +2025,35 @@ class Runtime:
         if self.state is not None:
             self.state.namespace(module_id).set("caps-consent", fingerprint)
 
-    async def _render_caps_screen(self, module_id: str, manifest: Any, source: str, chat_id: int | str | None, message_id: int) -> tuple[str, list[list[dict[str, str]]]] | str:
-        if self.callbacks is None or self.kernel is None or self.kernel.owner_id is None or chat_id is None:
+    async def _render_caps_screen(self, module_id: str, manifest: Any, source: str, chat_id: int | str | None, message_id: int) -> tuple[str, list[list[dict[str, Any]]]] | str:
+        if self.screens is None or self.kernel is None or self.kernel.owner_id is None or chat_id is None:
             lines = [self.t('runtime.caps_request', module_id=module_id, version=manifest.version)]
             lines.append(describe_caps(manifest.capabilities, self.t) or self.t("common.none"))
             lines.append(self.t('runtime.caps_retry'))
             return "\n".join(lines)
         text = self.t("runtime.caps_request", module_id=module_id, version=manifest.version) + "\n" + (describe_caps(manifest.capabilities, self.t) or self.t("common.none"))
-        confirm_handle = self.callbacks.store.issue(
-            CallbackBinding(self.kernel.owner_id, chat_id, 0),
-            {"action": "caps_confirm", "payload": {"module": module_id, "source": source}},
-        )
-        cancel_handle = self.callbacks.store.issue(
-            CallbackBinding(self.kernel.owner_id, chat_id, 0),
-            {"action": "caps_cancel", "payload": {"module": module_id}},
-        )
         return (
             text,
             [
                 [
-                    {"text": self.t('common.confirm'), "callback_data": confirm_handle},
-                    {"text": self.t('common.cancel'), "callback_data": cancel_handle},
+                    self.screens.kernel_button(self.t('common.confirm'), "caps_confirm", style="success", module=module_id, source=source),
+                    self.screens.kernel_button(self.t('common.cancel'), "caps_cancel", style="danger", module=module_id),
                 ],
             ],
         )
 
-    async def _caps_cancel(self, callback: Any, payload: Any) -> object:
-        if not isinstance(payload, dict):
-            await callback.answer(self.t('runtime.invalid_request'), alert=True)
-            return None
-        module_id = str(cast('dict[str, Any]', payload).get("module", "")).casefold()
-        await callback.answer(self.t('runtime.cancelled'))
-        return await callback.edit(self.t('runtime.module_cancelled', module_id=module_id))
+    async def _caps_cancel(self, nav: Any) -> object:
+        module_id = str(nav.arg("module", "")).casefold()
+        return Screen(self.t('runtime.module_cancelled', module_id=module_id), toast=self.t('runtime.cancelled'))
 
-    async def _caps_confirm(self, callback: Any, payload: Any) -> object:
-        if not isinstance(payload, dict) or self.modules is None or self.state is None or self.stager is None:
-            await callback.answer(self.t('runtime.invalid_request'), alert=True)
-            return None
-        module_id = str(cast('dict[str, Any]', payload).get("module", "")).casefold()
-        source = cast('dict[str, Any]', payload).get("source")
+    async def _caps_confirm(self, nav: Any) -> object:
+        if self.modules is None or self.state is None or self.stager is None:
+            return self.t('runtime.invalid_request')
+        module_id = str(nav.arg("module", "")).casefold()
+        source = nav.arg("source")
         if not isinstance(source, str):
-            await callback.answer(self.t('runtime.source_missing'), alert=True)
-            return await callback.edit(self.t('runtime.module_missing', module_id=module_id))
+            return Screen(self.t('runtime.module_missing', module_id=module_id), toast=self.t('runtime.source_missing'), alert=True)
+        await nav.toast(self.t('runtime.loading_module', module_id=module_id))
         try:
             loaded, action = await self.load_module(source)
             if action == "confirm":
@@ -2013,15 +2064,8 @@ class Runtime:
         except Exception as exc:
             if self.observatory is not None:
                 self.observatory.emit("modules", "activation_error", module=module_id, error=type(exc).__name__, detail=str(exc)[:240])
-            await callback.answer(self.t('runtime.activation_failed'), alert=True)
-            return await callback.edit(self.t('runtime.load_error', error=type(exc).__name__, detail=str(exc)[:120]))
-        await callback.answer(self.t('runtime.module_loaded'))
-        text = self.t('runtime.loaded', module_id=module_id, version=loaded.manifest.version)
-        if getattr(callback, "inline_message_id", None) and getattr(callback, "app", None) is not None:
-            inline_mid = callback.inline_message_id
-            id_field: dict[str, Any] = cast('dict[str, Any]', inline_mid) if isinstance(inline_mid, dict) else {"_": "inputBotInlineMessageID", "raw": inline_mid}
-            return await callback.app.mt_messages_edit_inline_bot_message( id=id_field, message=text)
-        return await callback.edit(text)
+            return Screen(self.t('runtime.load_error', error=type(exc).__name__, detail=str(exc)[:120]))
+        return Screen(self.t('runtime.loaded', module_id=module_id, version=loaded.manifest.version))
 
     def create_backup(self) -> Path:
         if self.backups is None or self.state is None or self.modules is None:
