@@ -92,10 +92,12 @@ async def _resolve_target_user(ctx: Any, invocation: Any, start: int = 0) -> Any
             return uid, args[1:]
         if token.startswith("@"):
             try:
-                user = await ctx.resolve(token)
-                if isinstance(user, dict) and any(kind in str(user.get("_", "")).lower() for kind in ("chat", "channel")):
+                user: Any = await ctx.resolve(token)
+                fallback = getattr(user, "id", None)
+                entry = cast(Mapping[str, object], user) if isinstance(user, dict) else None
+                if entry is not None and any(kind in str(entry.get("_", "")).lower() for kind in ("chat", "channel")):
                     return None, args
-                uid = cast(Mapping[str, object], user).get("user_id", cast(Mapping[str, object], user).get("id")) if isinstance(user, dict) else getattr(user, "id", None)
+                uid = entry.get("user_id", entry.get("id")) if entry is not None else fallback
                 if _id(uid) is not None:
                     return _id(uid), args[1:]
             except Exception:
@@ -371,7 +373,8 @@ def _overview(ctx: Any) -> str:
 def _user_text(ctx: Any, uid: int, chat: Any = None) -> str:
     text = ctx.t("acl.user_detail", user_id=uid, permissions=_role(ctx, uid))
     mt = getattr(ctx.runtime.app, "mt", None)
-    user = (getattr(mt, "entities", None) or {}).get(("user", uid)) or {}
+    entities: dict[Any, dict[str, Any]] = getattr(mt, "entities", None) or {}
+    user = entities.get(("user", uid)) or {}
     name = " ".join(str(user.get(key) or "").strip() for key in ("first_name", "last_name")).strip()
     if not name and user.get("username"):
         name = "@" + str(user["username"])
@@ -481,7 +484,7 @@ def _screen(ctx: Any, data: dict[str, Any]) -> dict[str, Any]:
     access = ctx.access_admin
     view = data.get("view", "home")
     chat = data.get("chat")
-    buttons = []
+    buttons: list[list[Any]] = []
     page = max(0, int(data.get("page", 0)))
 
     def button(text: str, view: str, **args: Any) -> Any:
@@ -553,7 +556,7 @@ def _screen(ctx: Any, data: dict[str, Any]) -> dict[str, Any]:
         kind, target = data.get("kind"), data.get("target")
         rules = _rules(ctx, kind, target)
         text = ctx.t("acl.rules") + (f"<code>{_escape(target)}</code>" if target is not None else "")
-        items = []
+        items: list[Any] = []
         for rule in rules:
             label = f'{rule["type"]}/{rule["rule"]}' if kind else f'{rule["target"]} · {rule["rule"]}'
             items.append(button(label, "rule", **rule))
@@ -621,7 +624,8 @@ def _context(call: Any) -> Any:
         return None
     mid = getattr(call, "inline_message_id", None)
     if mid is not None and not getattr(call, "_hotaru_form_id", None) and not getattr(call, "form_nonce", None):
-        for key, (_, origin, _, _, options) in (runtime._forms or {}).items():
+        forms: dict[str, Any] = runtime._forms or {}
+        for key, (_, origin, _, _, options) in forms.items():
             if options.get("module_id") == "acl" and options.get("callback_actor") == source.from_id and getattr(origin, "inline_message_id", None) == mid:
                 call._hotaru_form_id = key
                 break
@@ -629,9 +633,10 @@ def _context(call: Any) -> Any:
 
 async def _edit(call: Any, ctx: Any, text: str, buttons: Any) -> None:
     runtime = ctx.runtime
+    forms: dict[str, Any] = runtime._forms or {}
     key = getattr(call, "_hotaru_form_id", None)
     nonce = getattr(call, "form_nonce", None)
-    entry = (runtime._forms or {}).get(key or ("inline:" + nonce if nonce else ""))
+    entry = forms.get(key or ("inline:" + nonce if nonce else ""))
     if entry is None:
         await call.edit(text, buttons=buttons)
         return
@@ -639,29 +644,32 @@ async def _edit(call: Any, ctx: Any, text: str, buttons: Any) -> None:
     nonce = handle.key.split(":", 1)[-1]
     actor = options.get("callback_actor")
     origin = SimpleNamespace(src=source.src, chat_id=source.chat_id, id=source.id, from_id=actor)
-    if runtime._input_requests is None:
-        runtime._input_requests = {}
-    tokens = []
-    layout = []
+    stored: Any = runtime._input_requests
+    if stored is None:
+        stored = {}
+        runtime._input_requests = stored
+    requests: dict[str, Any] = stored
+    tokens: list[str] = []
+    layout: list[list[Any]] = []
     for row in buttons:
-        current = []
+        current: list[Any] = []
         for button in row:
             if callable(button.get("handler")) and isinstance(button.get("input"), str):
                 token = secrets.token_urlsafe(10)
-                runtime._input_requests[token] = (button["handler"], button.get("payload"), origin, None, button["input"], nonce)
+                requests[token] = (button["handler"], button.get("payload"), origin, None, button["input"], nonce)
                 tokens.append(token)
                 current.append({"text": button["text"], "switch_inline_query_current_chat": "hotaru-input:" + token + " "})
             else:
                 current.append(button)
         layout.append(current)
-    saved = dict(options)
+    saved: dict[str, Any] = dict(options)
     try:
         await runtime.edit_form(handle, text, buttons=layout, actions=runtime._form_actions(layout))
     except BaseException:
         options.clear()
         options.update(saved)
         for token in tokens:
-            runtime._input_requests.pop(token, None)
+            requests.pop(token, None)
         raise
 
 async def _action(call: Any, data: dict[str, Any]) -> None:
@@ -749,9 +757,10 @@ async def _input(call: Any, payload: Any) -> None:
     try:
         if op in {"user", "member"}:
             uid, rest = await _resolve_target_user(ctx, SimpleNamespace(args=tuple(raw.split())))
-            ctx = _context(call)
-            if ctx is None:
+            fresh = _context(call)
+            if fresh is None:
                 return
+            ctx = fresh
             if uid is None or rest:
                 raise ValueError(ctx.t("acl.invalid_target"))
             if op == "member":
