@@ -61,6 +61,10 @@ _TG_EMOJI = re.compile(r'<tg-emoji emoji-id="(\d+)">(.*?)</tg-emoji>', re.DOTALL
 _PROTECTED_HTML = re.compile(r"<(pre|code)\b.*?</\1>", re.DOTALL | re.IGNORECASE)
 
 
+def has_emoji(html: str) -> bool:
+    return bool(_TG_EMOJI.search(str(html)))
+
+
 def _emoji_links(html: str) -> str:
     def replace(match: re.Match[str]) -> str:
         return f'<a href="tg://emoji?id={match.group(1)}">{match.group(2)}</a>'
