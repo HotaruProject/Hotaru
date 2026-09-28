@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any, cast
 
 from .emoji import to_entities
-from goygram.types.kbd import kbd_to_tl
+from hotaru.markup import kbd_to_tl
 
 _MEDIA_KINDS = {"photo", "video", "mpeg4_gif", "audio", "voice", "document", "gif"}
 
