@@ -558,6 +558,15 @@
         "uptime_seconds": "ユーザーボットの稼働時間（秒）"
       },
       "example_uptime": "2時間 3分"
+    },
+    "info": {
+      "description": "ユーザーボットの情報カード",
+      "template": "<b>Hotaru</b> <code>{version}</code>\n\n<b>アップタイム</b> · <code>{uptime}</code>\n<b>モジュール</b> · <code>{modules}</code>",
+      "commands": {
+        "info": {
+          "description": "ユーザーボットの情報"
+        }
+      }
     }
   },
   "inline_commands_hint": "コマンドを選択 — 任意のチャットで @<bot> とコマンド名を入力",
