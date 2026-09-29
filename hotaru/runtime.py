@@ -907,10 +907,6 @@ class Runtime:
             id=cast('dict[str, Any]', cast('list[Any]', results)[0]).get("id"),
             clear_draft=True,
         )
-        try:
-            await asyncio.wait_for(ready.wait(), 5.0)
-        except asyncio.TimeoutError:
-            pass
         if options.get("delete_source", True) and chat_id is not None and bool(getattr(command, "is_me", False) or getattr(command, "out", False)):
             try:
                 await self._delete_inline_source(command, chat_id, message_id)

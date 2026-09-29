@@ -544,6 +544,11 @@ class CallbackRouter:
                 actual = getattr(callback, "inline_message_id", None)
                 if actual is None:
                     actual = getattr(callback, "msg_id", None)
+                if expected is None and isinstance(actual, dict):
+                    expected = (getattr(self.runtime, "_form_inline_ids", None) or {}).get(str(form_id).split(":", 1)[-1])
+                    if expected is None:
+                        source.inline_message_id = actual
+                        expected = actual
                 if isinstance(expected, dict) and isinstance(actual, dict):
                     expected = {key: cast('dict[str, object]', expected).get(key) for key in ("dc_id", "id", "owner_id")}
                     actual = {key: cast('dict[str, object]', actual).get(key) for key in ("dc_id", "id", "owner_id")}
