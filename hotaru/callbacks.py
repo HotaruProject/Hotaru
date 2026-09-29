@@ -535,6 +535,8 @@ class CallbackRouter:
             form_id = value.get("form_id")
             form = cast('Runtime', self.runtime).get_form(form_id) if isinstance(form_id, str) else None
             if form_id and form is None:
+                if getattr(self.runtime, "observatory", None) is not None:
+                    self.runtime.observatory.emit("callbacks", "form_missing", "debug", form_id=str(form_id), nonce_live=str(form_id).split(":", 1)[-1] in (getattr(self.runtime, "_inline_forms", None) or {}), forms=len(getattr(self.runtime, "_forms", None) or {}))
                 raise CallbackDenied("form is no longer active")
             if form is not None:
                 source = form[1]

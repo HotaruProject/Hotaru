@@ -414,6 +414,8 @@ class Runtime:
         actions = self._form_actions(buttons)
         sent = extract_sent_message(handle.value)
         if not isinstance(sent, dict) or not isinstance(sent.get("id"), int):
+            if self.observatory is not None:
+                self.observatory.emit("runtime", "form_identity_missing", "debug", key=key, value_type=type(handle.value).__name__)
             raise RuntimeError("form delivery has no message identity")
         inline_id = (self._form_inline_ids or {}).get(key.split(":", 1)[1]) if key.startswith("inline:") else None
         if key.startswith("inline:") and self._inline_forms is not None and key.split(":", 1)[1] in self._inline_forms:
@@ -926,7 +928,11 @@ class Runtime:
             if self.state is not None and isinstance(chat_id, int):
                 self.state.set_setting("inline-reference-chat", chat_id)
                 self.state.set_setting("inline-reference-message", int(sent["id"]))
+            if self.observatory is not None:
+                self.observatory.emit("inline", "form_sent", "debug", nonce=nonce, sent_id=int(sent["id"]), chosen=nonce in (self._form_inline_ids or {}), shape=type(sent_result).__name__)
             return sent
+        if self.observatory is not None:
+            self.observatory.emit("inline", "form_sent", "debug", nonce=nonce, sent_id=None, chosen=nonce in (self._form_inline_ids or {}), shape=type(sent_result).__name__)
         return cast('dict[str, Any]', result) if isinstance(result, dict) else result
 
     async def _delete_inline_source(self, command: Any, chat_id: int | str, message_id: int) -> None:
