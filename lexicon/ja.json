@@ -209,7 +209,9 @@
       "settings": "⚙️ 設定",
       "search_prompt": "モジュールまたはコマンド",
       "results": "「{query}」の結果",
-      "aliases": "エイリアス"
+      "aliases": "エイリアス",
+      "count": "モジュール {count} 件",
+      "prefix": "プレフィックス {prefix}"
     },
     "accounts": {
       "description": "アカウント管理",
@@ -354,7 +356,11 @@
         "no_user": "ログインでユーザーを取得できませんでした。",
         "wrong_account": "アカウントが違います。ユーザー {uid} が必要です。",
         "unknown": "操作を完了できませんでした。"
-      }
+      },
+      "field": {
+        "autostart": "自動起動"
+      },
+      "title": "アカウント"
     },
     "acl": {
       "description": "権限管理",
@@ -452,10 +458,13 @@
       "restart": "再起動後に反映されます。",
       "new_value": "{name} の新しい値",
       "copy": "⧉ コピー",
-      "field_unavailable": "テンプレート項目が利用できないかエクスポートされていません: {name}"
+      "field_unavailable": "テンプレート項目が利用できないかエクスポートされていません: {name}",
+      "param": "パラメーター",
+      "about": "各パラメーターの説明",
+      "changed": "変更: {count}"
     },
     "settings": {
-      "description": "別名とプレフィックスの管理",
+      "description": "モジュール設定、プレフィックス、エイリアス",
       "commands": {
         "alias": {
           "description": "コマンドの別名を作成"
@@ -468,6 +477,15 @@
         },
         "prefix": {
           "description": "コマンドのプレフィックスを変更"
+        },
+        "settings": {
+          "description": "設定を開く"
+        },
+        "conf": {
+          "description": "設定を開く"
+        },
+        "config": {
+          "description": "設定を開く"
         }
       }
     },

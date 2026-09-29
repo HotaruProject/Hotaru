@@ -1,11 +1,11 @@
 HOTARU = {
     "id": "settings",
-    "version": "1.1.0",
-    "commands": ["alias", "rmalias", "lsalias", "prefix"],
-    "capabilities": ["mt"],
+    "version": "3.1.0",
+    "commands": ["settings", "conf", "config", "alias", "rmalias", "lsalias", "prefix"],
+    "capabilities": ["mt", "state"],
 }
 
-from typing import Any, cast
+from typing import Any, Callable, Dict, List, Optional, Tuple, cast
 from dataclasses import replace
 
 
@@ -96,3 +96,391 @@ async def command_prefix(ctx: Any, invocation: Any) -> Any:
     runtime.kernel.parser.prefix = new_prefix
     runtime.config = replace(runtime.config, prefix=new_prefix)
     await ctx.respond(ctx.t('settings.prefix_set', prefix=new_prefix))
+
+
+import html
+import re
+from hotaru import icons
+from hotaru.screens import bare
+from hotaru.config import (
+    BooleanValidator,
+    ChoiceValidator,
+    ConfigField,
+    ConfigSchema,
+    FloatValidator,
+    IntegerValidator,
+    ModuleConfig,
+    SecretValidator,
+    StringValidator,
+)
+
+_per_page = 3
+_preview = 60
+_input_limit = 200
+
+
+def _escape(value: Any) -> str:
+    return html.escape(str(value), quote=False)
+
+
+def _modules(ctx: Any) -> List[Tuple[str, Any, ConfigSchema]]:
+    items: List[Tuple[str, Any, ConfigSchema]] = []
+    for active in ctx.runtime.modules.items():
+        manifest = getattr(getattr(active, "loaded", None), "manifest", None)
+        if manifest is not None and getattr(manifest, "config_schema", None):
+            schema = ConfigSchema.from_manifest(manifest.config_schema)
+            if len(schema) > 0:
+                items.append((str(manifest.module_id), manifest, schema))
+    return sorted(items, key=lambda item: item[0].casefold())
+
+
+def _open(ctx: Any, module_id: str) -> Optional[Tuple[Any, ConfigSchema, ModuleConfig]]:
+    active = ctx.runtime.modules.get(module_id)
+    manifest = getattr(getattr(active, "loaded", None), "manifest", None)
+    if manifest is None or not manifest.config_schema:
+        return None
+    schema = ConfigSchema.from_manifest(manifest.config_schema)
+    return manifest, schema, ModuleConfig(module_id, ctx.runtime.state.namespace(module_id), schema, translate=ctx.t)
+
+
+def _describe(ctx: Any, manifest: Any, field: ConfigField) -> str:
+    localized = manifest.localized(ctx.runtime.language()).get("config_fields")
+    if isinstance(localized, dict):
+        described = cast(Dict[str, Any], localized).get(field.key)
+        if described:
+            return str(described)
+    return ctx.t(f"kernel.{manifest.module_id}.config_fields.{field.key}", "") or field.description
+
+
+def _shown(ctx: Any, field: ConfigField, value: Any, limit: int = _preview) -> str:
+    if isinstance(field.validator, BooleanValidator):
+        return f"<code>{_escape(ctx.t('ui.on' if value else 'ui.off'))}</code>"
+    text = field.format_value(value)
+    if text in {"", "(empty)"}:
+        return f"<i>{_escape(ctx.t('ui.empty'))}</i>"
+    return f"<code>{_escape(ctx.tools.truncate(text, limit))}</code>"
+
+
+def _is_default(config: ModuleConfig, key: str) -> bool:
+    return config.get(key) == config.default(key)
+
+
+def _missing(ctx: Any, module_id: str) -> Any:
+    return home(ctx).with_notice(ctx.t("ui.error", error=ctx.t("kernel.config.missing", module=_escape(module_id))))
+
+
+def home(ctx: Any, nav: Any = None) -> Any:
+    k = ctx.screens
+    modules = _modules(ctx)
+    lines = [k.banner(), f"{k.icon('settings')} <b>{_escape(bare(ctx.t('kernel.config.title')))}</b>" + (f"  {k.badge(str(len(modules)), 'primary')}" if modules else "")]
+    lines.append(f"<code>{_escape(ctx.runtime.config.prefix)}prefix</code> · <code>{_escape(ctx.runtime.config.prefix)}alias</code> · <code>{_escape(ctx.runtime.config.prefix)}lsalias</code>")
+    if not modules:
+        lines.append(f"<i>{_escape(ctx.t('kernel.config.empty'))}</i>")
+        return k.screen("\n".join(lines), [k.footer()])
+    for module_id, manifest, schema in modules:
+        description = str(manifest.localized(ctx.runtime.language(), manifest.description).get("description", "") or "")
+        line = f"{k.icon(icons.module(module_id))} {k.tap(module_id, module, id=module_id)} {k.badge(str(len(schema)))}"
+        lines.append(line + (f" <i>{_escape(ctx.tools.truncate(description, 48))}</i>" if description else ""))
+    return k.screen("\n".join(lines), [k.footer()])
+
+
+def _module_screen(ctx: Any, module_id: str, origin: Optional[str]) -> Any:
+    k = ctx.screens
+    opened = _open(ctx, module_id)
+    if opened is None:
+        return _missing(ctx, module_id)
+    manifest, schema, config = opened
+    changed = 0
+    entries: List[str] = []
+    notes: List[str] = []
+    for key, field in schema.items():
+        default = _is_default(config, key)
+        changed += not default
+        mark = "" if default else " " + k.icon("edit")
+        entries.append(f"{k.tap(key, param, id=module_id, key=key, origin=origin)}{mark}  {_shown(ctx, field, config.get(key), 32)}")
+        description = _describe(ctx, manifest, field)
+        if description:
+            notes.append(f"<li><b>{_escape(key)}</b> — {_escape(ctx.tools.truncate(description, 160))}</li>")
+    head = f"{k.icon(icons.module(module_id))} <b>{_escape(module_id)}</b>  {k.badge(_escape(ctx.t('kernel.config.title_short')))}"
+    if changed:
+        head += " " + k.badge(ctx.t("kernel.config.changed", "changed: {count}", count=changed), "primary")
+    lines = [head, "\n".join(entries)]
+    if notes:
+        lines.append(k.details(f"{k.icon('info')} {_escape(ctx.t('kernel.config.about'))}", f"<ul>{''.join(notes)}</ul>"))
+    rows: List[List[Any]] = []
+    if changed:
+        rows.append([k.button(ctx.t("kernel.config.reset_all"), confirm_reset, icon="undo", id=module_id, origin=origin)])
+    if origin == "help" and ctx.runtime.modules.get("help") is not None:
+        rows.append([k.link(ctx.t("common.back"), "help", "module", icon="back", id=module_id), k.close()])
+    else:
+        rows.append(k.footer(home))
+    return k.screen("\n".join(lines), rows)
+
+
+def module(ctx: Any, nav: Any) -> Any:
+    return _module_screen(ctx, str(nav.arg("id")), nav.arg("origin"))
+
+
+def confirm_reset(ctx: Any, nav: Any) -> Any:
+    k = ctx.screens
+    module_id = str(nav.arg("id"))
+    text = ctx.t("kernel.config.reset_confirm", module=_escape(module_id))
+    return k.screen(f"{k.icon('warning')} {text}", [[
+        k.danger(ctx.t("kernel.config.reset_yes"), reset_all, icon="undo", id=module_id, origin=nav.arg("origin")),
+        k.button(ctx.t("common.cancel"), module, icon="close", id=module_id, origin=nav.arg("origin")),
+    ]])
+
+
+def reset_all(ctx: Any, nav: Any) -> Any:
+    opened = _open(ctx, str(nav.arg("id")))
+    if opened is not None:
+        opened[2].reset()
+    screen = _module_screen(ctx, str(nav.arg("id")), nav.arg("origin"))
+    screen.toast = ctx.t("kernel.config.reset_done")
+    return screen
+
+
+def _template_block(ctx: Any, module_id: str, field: ConfigField, value: Any, page: int) -> Tuple[str, int, int]:
+    runtime = ctx.runtime
+    fields = {name: dict(meta) for name, meta in cast(Dict[str, Dict[str, Any]], field.template_fields).items()}
+    fields.update(runtime.modules.template_catalog(module_id))
+    for meta in fields.values():
+        if meta.get("example_key"):
+            meta["example"] = ctx.t(meta["example_key"], str(meta["example"]))
+    names = list(fields)
+    shown, page, pages = ctx.screens.page(names, page, _per_page)
+    entries: List[str] = []
+    for name in shown:
+        meta = fields[name]
+        description = meta.get("description", "")
+        if isinstance(description, dict):
+            localized = cast(Dict[str, str], description)
+            description = localized.get(ctx.i18n.language) or localized.get("en") or next(iter(localized.values()), "")
+        if meta.get("description_key"):
+            description = ctx.t(meta["description_key"], str(description) or name)
+        example = ctx.tools.truncate(ctx.tools.template_render("{" + name + "}", {name: meta}), 60)
+        entries.append(f"<code>{{{_escape(name)}}}</code> · {_escape(meta['type'])} — {_escape(ctx.tools.truncate(str(description), 100))}\n→ <code>{_escape(example)}</code>")
+    title = ctx.t("kernel.config.template_fields")
+    counter = f" · {page + 1}/{pages}" if pages > 1 else ""
+    syntax = _escape(ctx.t("kernel.config.template_syntax"))
+    block = f"<blockquote expandable><b>{_escape(title)}</b>{counter}\n" + "\n".join(entries) + f"\n\n<i>{syntax}</i></blockquote>"
+    try:
+        used = ctx.tools.template_names(value, legacy_braces=field.legacy_braces)
+        for name in used:
+            if "/" in name and name not in fields:
+                raise ValueError(ctx.t("kernel.config.field_unavailable", name=name))
+        preview = ctx.tools.template_render(value, {name: meta for name, meta in fields.items() if name in used or name in cast(Dict[str, Any], field.template_fields)}, legacy_braces=field.legacy_braces)
+    except ValueError as exc:
+        preview = str(exc)
+    label = _escape(ctx.t("kernel.config.template_preview"))
+    block += f"\n<b>{label}</b>\n<blockquote expandable>{_preview_html(ctx.tools.truncate(preview, 600))}</blockquote>"
+    return block, page, pages
+
+
+def _preview_html(preview: str) -> str:
+    """Show the rendered template as it will look, unless it cannot sit inside a quote."""
+    from relay.emoji import to_entities
+    if re.search(r"<\s*/?\s*(blockquote|pre)\b", preview, re.IGNORECASE):
+        return _escape(preview)
+    try:
+        to_entities(preview)
+    except Exception:
+        return _escape(preview)
+    return preview
+
+
+def _param_screen(ctx: Any, module_id: str, key: str, origin: Optional[str], page: int = 0) -> Any:
+    k = ctx.screens
+    opened = _open(ctx, module_id)
+    if opened is None:
+        return _missing(ctx, module_id)
+    manifest, schema, config = opened
+    field = schema.get(key)
+    if field is None:
+        return _module_screen(ctx, module_id, origin).with_notice(ctx.t("ui.error", error=ctx.t("kernel.config.param_missing", name=_escape(key))))
+    value = config.get(key)
+    default = config.default(key)
+    validator = field.validator
+    args = {"id": module_id, "key": key, "origin": origin}
+    lines = [f"{k.icon(icons.module(module_id))} {_escape(module_id)} › <b>{_escape(key)}</b>"]
+    description = _describe(ctx, manifest, field)
+    if description:
+        lines.append(f"<i>{_escape(description)}</i>")
+    long_value = field.template_fields is not None or len(field.format_value(value)) > _preview
+    facts: List[List[str]] = []
+    if not (long_value and not field.secret):
+        facts.append([_escape(ctx.t("kernel.config.value")), _shown(ctx, field, value)])
+    if not _is_default(config, key):
+        facts.append([_escape(ctx.t("kernel.config.default")), _shown(ctx, field, default)])
+    if not isinstance(validator, (BooleanValidator, ChoiceValidator)):
+        facts.append([_escape(ctx.t("kernel.config.type")), f"<code>{_escape(validator.name)}</code>"])
+    if facts:
+        lines.append(k.table(facts, keys=True))
+    if long_value and not field.secret:
+        lines.append(f"{_escape(ctx.t('kernel.config.value'))}\n<blockquote expandable>{_escape(field.format_value(value)) or '—'}</blockquote>")
+    if field.requires_restart:
+        lines.append(f"<i>{_escape(ctx.t('kernel.config.restart'))}</i>")
+    rows: List[List[Any]] = []
+    pages = 1
+    if field.template_fields is not None:
+        block, page, pages = _template_block(ctx, module_id, field, value, page)
+        lines.append("\n" + block)
+    edit = k.input(ctx.t("ui.edit"), set_value, ctx.t("kernel.config.new_value", name=key), style="primary", icon="edit", **args)
+    if isinstance(validator, BooleanValidator):
+        lines.append(k.row(
+            k.tap(k.radio(ctx.t("ui.on"), bool(value)), set_bool, style="success" if value else None, value=True, **args),
+            k.tap(k.radio(ctx.t("ui.off"), not value), set_bool, style="danger" if not value else None, value=False, **args),
+        ))
+    elif isinstance(validator, ChoiceValidator):
+        options = [k.tap(k.radio(str(option), str(option).casefold() == str(value).casefold()), set_choice, style="success" if str(option).casefold() == str(value).casefold() else None, index=index, **args) for index, option in enumerate(validator.options)]
+        width = 3 if len(options) > 4 else 2
+        lines.append("".join(k.row(*options[index:index + width]) for index in range(0, len(options), width)))
+    elif isinstance(validator, (IntegerValidator, FloatValidator)):
+        steps = (-10, -1, 1, 10) if isinstance(validator, IntegerValidator) else (-1.0, -0.1, 0.1, 1.0)
+        current = value if isinstance(value, (int, float)) else validator.default
+        row: List[str] = []
+        for step in steps:
+            target = round(current + step, 6)
+            low = validator.minimum is not None and target < validator.minimum
+            high = validator.maximum is not None and target > validator.maximum
+            label = f"{'+' if step > 0 else '−'}{abs(step):g}"
+            row.append(k.badge("·") if low or high else k.tap(label, step_value, style=None, step=step, **args))
+        row.insert(2, k.badge(f"{current:g}", "primary"))
+        lines.append(k.row(*row, align="center"))
+        rows.append([edit])
+    else:
+        rows.append([edit])
+    if pages > 1:
+        rows.append(k.pager(param, page, pages, **args))
+    extra: List[Any] = []
+    text_value = field.format_value(value)
+    if not field.secret and not isinstance(validator, (BooleanValidator, ChoiceValidator, SecretValidator)) and 0 < len(text_value) <= 256:
+        extra.append(k.copy(ctx.t("kernel.config.copy"), text_value, icon="copy"))
+    if not _is_default(config, key):
+        extra.append(k.button(ctx.t("ui.reset"), reset_value, icon="undo", **args))
+    if extra:
+        rows.append(extra)
+    if not isinstance(validator, (BooleanValidator, ChoiceValidator)) and (field.template_fields is not None or _max_len(validator) > _input_limit):
+        lines.append(f"{k.icon('idea')} <i>{_escape(ctx.t('ui.reply_hint'))}</i>")
+    rows.append(k.footer(module, id=module_id, origin=origin))
+    return k.screen("\n".join(line for line in lines if line), rows)
+
+
+def _max_len(validator: Any) -> int:
+    inner = getattr(validator, "inner", validator)
+    if not isinstance(inner, StringValidator):
+        return 0
+    value = getattr(inner, "max_len", None)
+    return int(value) if isinstance(value, int) else 10 ** 6
+
+
+def param(ctx: Any, nav: Any) -> Any:
+    return _param_screen(ctx, str(nav.arg("id")), str(nav.arg("key")), nav.arg("origin"), nav.int("page"))
+
+
+def _store(ctx: Any, nav: Any, apply: Callable[[ConfigField, ModuleConfig], None]) -> Any:
+    module_id, key, origin = str(nav.arg("id")), str(nav.arg("key")), nav.arg("origin")
+    opened = _open(ctx, module_id)
+    field = opened[1].get(key) if opened is not None else None
+    if opened is None or field is None:
+        return _param_screen(ctx, module_id, key, origin)
+    try:
+        apply(field, opened[2])
+    except Exception as exc:
+        screen = _param_screen(ctx, module_id, key, origin)
+        message = ctx.t("ui.error", error=_escape(exc))
+        if nav.is_input:
+            return screen.with_notice(message)
+        screen.toast, screen.alert = str(exc), True
+        return screen
+    screen = _param_screen(ctx, module_id, key, origin)
+    if nav.is_input:
+        screen.with_notice("✓ " + _escape(ctx.t("ui.saved")))
+    return screen
+
+
+def set_bool(ctx: Any, nav: Any) -> Any:
+    return _store(ctx, nav, lambda field, config: config.set(field.key, bool(nav.arg("value"))))
+
+
+def set_choice(ctx: Any, nav: Any) -> Any:
+    def apply(field: ConfigField, config: ModuleConfig) -> None:
+        options = list(cast(ChoiceValidator, field.validator).options)
+        config.set(field.key, options[nav.int("index")])
+    return _store(ctx, nav, apply)
+
+
+def step_value(ctx: Any, nav: Any) -> Any:
+    def apply(field: ConfigField, config: ModuleConfig) -> None:
+        current = config.get(field.key)
+        base = current if isinstance(current, (int, float)) else field.validator.default
+        target = base + nav.arg("step")
+        config.set(field.key, int(target) if isinstance(field.validator, IntegerValidator) else round(float(target), 6))
+    return _store(ctx, nav, apply)
+
+
+def set_value(ctx: Any, nav: Any) -> Any:
+    return _store(ctx, nav, lambda field, config: config.set(field.key, field.parse_input(str(nav.value or ""))))
+
+
+def reset_value(ctx: Any, nav: Any) -> Any:
+    return _store(ctx, nav, lambda field, config: config.reset(field.key))
+
+
+async def command_conf(ctx: Any, invocation: Any) -> Any:
+    args = list(invocation.args) if invocation and getattr(invocation, "args", None) else []
+    if not args:
+        await ctx.screens.show(home(ctx))
+        return
+
+    module_id = args[0].casefold()
+    candidates = _modules(ctx)
+    if not any(item[0] == module_id for item in candidates):
+        module_key: Callable[[Tuple[str, Any, ConfigSchema]], str] = lambda item: item[0]
+        matches = await ctx.tools.search(candidates, module_id, key=module_key, limit=1)
+        if not matches:
+            await ctx.respond(ctx.t("kernel.config.missing", module=_escape(module_id)))
+            return
+        module_id = matches[0]["value"][0]
+    if len(args) == 1:
+        await ctx.screens.show(_module_screen(ctx, module_id, None))
+        return
+
+    opened = _open(ctx, module_id)
+    if opened is None:
+        await ctx.respond(ctx.t("kernel.config.missing", module=_escape(module_id)))
+        return
+    _, schema, config = opened
+    if args[1].casefold() == "reset":
+        config.reset()
+        await ctx.screens.show(_module_screen(ctx, module_id, None))
+        return
+
+    key = args[1]
+    raw = getattr(invocation, "raw_args", None)
+    if isinstance(raw, str):
+        match = re.match(r"\s*\S+\s+\S+([\s\S]*)", raw)
+        suffix = match[1] if match else ""
+        new_val = suffix[1:] if suffix else None
+    else:
+        new_val = " ".join(args[2:]) if len(args) > 2 else None
+    field = schema.get(key)
+    if not field:
+        field_key: Callable[[Tuple[str, ConfigField]], List[str]] = lambda item: [item[0], item[1].description or ""]
+        matches = await ctx.tools.search(list(schema.items()), key, key=field_key, limit=1)
+        if not matches:
+            await ctx.respond(ctx.t("kernel.config.param_missing", name=_escape(key)))
+            return
+        key, field = matches[0]["value"]
+
+    screen = None
+    if new_val is not None:
+        try:
+            config.set(key, field.parse_input(new_val))
+        except Exception as exc:
+            screen = _param_screen(ctx, module_id, key, None).with_notice(ctx.t("ui.error", error=_escape(exc)))
+    await ctx.screens.show(screen or _param_screen(ctx, module_id, key, None))
+
+
+command_settings = command_conf
+command_config = command_conf

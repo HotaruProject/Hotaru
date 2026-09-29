@@ -80,9 +80,18 @@ def has_emoji(html: str) -> bool:
     return bool(_TG_EMOJI.search(str(html)))
 
 
+_button_re = re.compile(r"<tg-button\s[^>]*>.*?</tg-button>", re.DOTALL | re.IGNORECASE)
+
+
 def _emoji_links(html: str) -> str:
     def replace(match: re.Match[str]) -> str:
         return f'<a href="tg://emoji?id={match.group(1)}">{match.group(2)}</a>'
+
+    def plain(match: re.Match[str]) -> str:
+        # Button labels may not hold links: keep the fallback character only.
+        return _TG_EMOJI.sub(lambda emoji: emoji.group(2), match.group(0))
+
+    html = _button_re.sub(plain, html)
 
     parts: list[str] = []
     pos = 0
