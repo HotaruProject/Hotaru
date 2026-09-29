@@ -51,6 +51,20 @@ def _markup_of(result: dict[str, Any]) -> dict[str, Any] | None:
     return _kbd(markup)
 
 
+def _clamp_tail(plain: str, ents: list[dict[str, Any]]) -> tuple[str, list[dict[str, Any]]]:
+    tail = plain.rstrip()
+    if tail == plain or not ents:
+        return plain, ents
+    end = len(tail.encode("utf-16-le")) // 2
+    out: list[dict[str, Any]] = []
+    for ent in ents:
+        offset = int(ent["offset"])
+        length = min(offset + int(ent["length"]), end) - offset
+        if length > 0:
+            out.append({**ent, "offset": offset, "length": length})
+    return tail, out
+
+
 def _send_message(result: dict[str, Any], content: dict[str, Any], kind: str) -> dict[str, Any]:
     rich = content.get("rich_message")
     if isinstance(rich, dict):
@@ -69,6 +83,7 @@ def _send_message(result: dict[str, Any], content: dict[str, Any], kind: str) ->
         media: dict[str, Any] = {"_": "inputBotInlineMessageMediaAuto", "message": text}
         if str(result.get("parse_mode", "")).lower() == "html" or str(content.get("parse_mode", "")).lower() == "html":
             plain, ents = to_entities(text)
+            plain, ents = _clamp_tail(plain, ents)
             if ents:
                 media["message"] = plain
                 media["entities"] = ents
@@ -81,6 +96,7 @@ def _send_message(result: dict[str, Any], content: dict[str, Any], kind: str) ->
         text_payload["no_webpage"] = True
     if str(content.get("parse_mode", "")).lower() == "html" or str(result.get("parse_mode", "")).lower() == "html":
         plain, ents = to_entities(text)
+        plain, ents = _clamp_tail(plain, ents)
         if ents:
             text_payload["message"] = plain
             text_payload["entities"] = ents
