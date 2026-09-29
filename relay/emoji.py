@@ -53,9 +53,19 @@ def degrade(entities: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 def to_entities(text: str) -> tuple[str, list[dict[str, Any]]]:
     plain, entities = html_to_entities(str(text))
-    if _premium or not entities:
+    if not (_premium or not entities):
+        entities = degrade(entities)
+    tail = plain.rstrip()
+    if tail == plain or not entities:
         return plain, entities
-    return plain, degrade(entities)
+    end = len(tail.encode("utf-16-le")) // 2
+    kept: list[dict[str, Any]] = []
+    for entity in entities:
+        offset = cast(int, entity["offset"])
+        length = min(offset + cast(int, entity["length"]), end) - offset
+        if length > 0:
+            kept.append({**entity, "offset": offset, "length": length})
+    return tail, kept
 
 _TG_EMOJI = re.compile(r'<tg-emoji emoji-id="(\d+)">(.*?)</tg-emoji>', re.DOTALL)
 _PROTECTED_HTML = re.compile(r"<(pre|code)\b.*?</\1>", re.DOTALL | re.IGNORECASE)
