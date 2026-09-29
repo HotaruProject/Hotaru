@@ -232,7 +232,7 @@ class Runtime:
         self.access = AccessManager(self.config.owner_id, AccessStore(self.state))
         self.security.set_access(self.access)
         self.kernel.access = self.access
-        
+
         user_aliases = self.state.get_setting("user_aliases", {})
         for alias, command in user_aliases.items():
             self.kernel.registry.register_alias(alias, command)
@@ -290,7 +290,6 @@ class Runtime:
         self.event_router.attach_aux(self.app)
         return self.app
     def request_restart(self) -> None:
-        """Ask for a relaunch: re-exec can only happen in the main process, once it has shut down."""
         self._relaunch = True
 
     async def _on_callback(self, callback: Any) -> object | None:
@@ -2017,8 +2016,6 @@ class Runtime:
                     except OSError:
                         pass
             return self.t('runtime.exported', file_name=file_name)
-
-
 
 
     def _caps_fingerprint(self, manifest: Any) -> str:

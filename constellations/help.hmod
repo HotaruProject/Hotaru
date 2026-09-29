@@ -28,7 +28,6 @@ def _is_kernel(runtime: Any, module_id: str) -> bool:
 
 
 def _catalog(runtime: Any) -> List[Tuple[str, Any, bool]]:
-    """Kernel modules first, then installed ones, each sorted by id."""
     items = [(item.loaded.manifest.module_id, item.loaded.manifest) for item in runtime.modules.items()]
     rows = [(module_id, manifest, _is_kernel(runtime, module_id)) for module_id, manifest in items]
     return sorted(rows, key=lambda row: (not row[2], row[0].casefold()))
@@ -93,12 +92,12 @@ def _card(ctx: Any, module_id: str, actor: Any, back: Any, **back_args: Any) -> 
     title = f"{k.icon('text')} <b>{_escape(ctx.t('kernel.help_ui.commands'))}</b> · {len(commands)}"
     body = "\n".join(commands) or f"<i>{_escape(ctx.t('kernel.help_ui.no_commands'))}</i>"
     if len(commands) > _open_limit:
-        lines.append("\n" + k.details(title, body))
+        lines[-1] += k.details(title, body)
     else:
-        lines.append(f"\n{title}\n{body}")
+        lines.append(f"{title}\n{body}")
     if manifest.capabilities:
-        capabilities = "".join(f"<li>{_escape(ctx.t(f'kernel.capabilities.{item}', item))}</li>" for item in manifest.capabilities)
-        lines.append(k.details(f"{k.icon('lock')} <b>{_escape(ctx.t('kernel.help_ui.capabilities'))}</b> · {len(manifest.capabilities)}", f"<ul>{capabilities}</ul>"))
+        capabilities = "\n".join(f"• {_escape(ctx.t(f'kernel.capabilities.{item}', item))}" for item in manifest.capabilities)
+        lines[-1] += k.details(f"{k.icon('lock')} <b>{_escape(ctx.t('kernel.help_ui.capabilities'))}</b> · {len(manifest.capabilities)}", capabilities)
     rows: List[List[Any]] = []
     if getattr(manifest, "config_schema", None) and runtime.modules.get("settings") is not None and runtime.access.is_owner(actor):
         rows.append([k.link(ctx.t("kernel.help_ui.settings"), "settings", "module", style="primary", icon="settings", id=module_id, origin="help")])

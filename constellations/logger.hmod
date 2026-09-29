@@ -43,9 +43,6 @@ import time
 
 TOPIC_TITLE = "Logs"
 
-# Standard production log levels — numeric value matches Python logging convention.
-# Higher = more severe; filter passes events with level >= floor.
-# ALL (0) captures everything including custom trace-level events.
 LEVELS = {
     "all":      0,
     "debug":    10,
@@ -56,7 +53,6 @@ LEVELS = {
     "critical": 50,
     "fatal":    50,
 }
-# Canonical names shown in help / status (excludes aliases)
 LEVEL_NAMES = ["all", "debug", "info", "warn", "error", "fatal"]
 _DEFAULT_FLOOR = LEVELS["info"]
 
@@ -157,7 +153,6 @@ def _sink(payload: Any) -> Any:
     ):
         return
     level = str(payload.get("level") or "info").lower()
-    # Pass events whose numeric severity >= current floor (more severe = higher number).
     if LEVELS.get(level, LEVELS["info"]) < _level_floor(_state.get("config")):
         return
     queue = _state["queue"]

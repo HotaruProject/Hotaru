@@ -79,7 +79,6 @@ def rows_of(markup: Any) -> list[list[Any]] | None:
 
 
 def kbd_to_tl(markup: Any) -> dict[str, Any] | None:
-    # goygram's kbd_to_tl drops styles, icons and disabled buttons
     if isinstance(markup, dict) and cast('dict[str, Any]', markup).get("_") in {"replyInlineMarkup", "replyKeyboardMarkup", "replyKeyboardHide", "replyForceReply"}:
         return cast('dict[str, Any]', markup)
     rows = rows_of(markup)

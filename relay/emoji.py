@@ -98,7 +98,6 @@ def _emoji_links(html: str) -> str:
         return f'<a href="tg://emoji?id={match.group(1)}">{match.group(2)}</a>'
 
     def plain(match: re.Match[str]) -> str:
-        # no links inside button labels
         return _TG_EMOJI.sub(lambda emoji: emoji.group(2), match.group(0))
 
     html = _button.sub(plain, html)
