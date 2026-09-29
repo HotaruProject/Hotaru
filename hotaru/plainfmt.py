@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from html import escape
 from html.parser import HTMLParser
 
-_KEEP = {"b", "strong", "i", "em", "u", "ins", "s", "del", "code", "pre", "spoiler", "tg-spoiler", "blockquote", "a", "br"}
+_KEEP = {"b", "strong", "i", "em", "u", "ins", "s", "del", "code", "pre", "spoiler", "tg-spoiler", "blockquote", "a", "br", "tg-emoji"}
 
 
 class _Converter(HTMLParser):
@@ -28,8 +29,7 @@ class _Converter(HTMLParser):
             if self.out and self.out[-1] not in ("\n", "<br>", '<blockquote expandable="true">') and any(self.out):
                 self.out.insert(-1, "\n")
         elif tag in ("tg-emoji", "tg-time", "tg-button", "button", "tg-button-row"):
-            if tag == "tg-emoji":
-                self.skip = True
+            pass
         elif tag in ("ul", "ol"):
             self.lists.append((tag, 0))
         elif tag == "li":
@@ -49,7 +49,7 @@ class _Converter(HTMLParser):
             self._emit("<blockquote>")
         elif tag in ("img", "video"):
             src = at.get("src", "")
-            self._emit(f'<a href="{src}">{src}</a>' if src else "")
+            self._emit(f'<a href="{escape(src)}">{escape(src, quote=False)}</a>' if src else "")
         elif tag == "tg-map":
             self._emit("[map]")
         elif tag == "tg-math":
@@ -71,8 +71,7 @@ class _Converter(HTMLParser):
         elif tag == "summary":
             self._emit("</b><br>")
         elif tag in ("tg-emoji", "tg-time", "tg-button", "button", "tg-button-row"):
-            if tag == "tg-emoji":
-                self.skip = False
+            pass
         elif tag in ("ul", "ol"):
             if self.lists:
                 self.lists.pop()
@@ -97,7 +96,7 @@ class _Converter(HTMLParser):
     def handle_data(self, data: str) -> None:
         if self.skip:
             return
-        self._emit(data)
+        self._emit(escape(data, quote=False))
 
 
 def rich_to_plain(html: str) -> str:

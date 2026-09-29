@@ -1,54 +1,162 @@
 HOTARU = {
     "id": "help",
-    "version": "1.1.1",
+    "version": "2.0.0",
     "commands": ["hlp", "help"],
     "capabilities": ["mt"],
 }
 
-from typing import TYPE_CHECKING, Any, Callable, List
+from typing import Any, Callable, List, Tuple
 
-if TYPE_CHECKING:
-    from hotaru.activation import ActiveModule
+from hotaru import icons
 
-__all__ = ["_plain_module_line", "_plain_section"]
+_page_size = 15
+_open_limit = 8
 
 
-
-def _escape(value: Any) -> Any:
+def _escape(value: Any) -> str:
     import html
     return html.escape(str(value), quote=False)
 
 
-def _command_line(prefix: Any, commands: Any) -> Any:
-    if not commands:
-        return ""
-    return " ( " + " | ".join(
-        f"<code>{_escape(prefix)}{_escape(command)}</code>"
-        for command in commands
-    ) + " )"
+def _description(runtime: Any, manifest: Any) -> str:
+    return str(manifest.localized(runtime.language(), manifest.description).get("description", "") or "")
 
 
-def _module_line(runtime: Any, module_id: Any, manifest: Any, kernel: Any) -> Any:
+def _is_kernel(runtime: Any, module_id: str) -> bool:
+    bindings = getattr(runtime.modules, "_bindings", {})
+    return module_id in bindings and bool(bindings[module_id][2])
+
+
+def _catalog(runtime: Any) -> List[Tuple[str, Any, bool]]:
+    items = [(item.loaded.manifest.module_id, item.loaded.manifest) for item in runtime.modules.items()]
+    rows = [(module_id, manifest, _is_kernel(runtime, module_id)) for module_id, manifest in items]
+    return sorted(rows, key=lambda row: (not row[2], row[0].casefold()))
+
+
+def _entry(ctx: Any, module_id: str, manifest: Any, fn: Any, **args: Any) -> str:
+    k = ctx.screens
+    description = _description(ctx.runtime, manifest)
+    line = k.icon(icons.module(module_id)) + " " + k.tap(module_id, fn, id=module_id, **args)
+    return line + (f" <i>{_escape(ctx.tools.truncate(description, 48))}</i>" if description else "")
+
+
+def home(ctx: Any, nav: Any = None) -> Any:
+    k = ctx.screens
+    runtime = ctx.runtime
+    catalog = _catalog(runtime)
+    items, page, pages = k.page(catalog, nav.int("page") if nav is not None else 0, _page_size)
+    kernel_count = sum(1 for row in catalog if row[2])
+    lines = [
+        k.wordmark() + "  " + k.badge(ctx.t("kernel.help_ui.count", "{count} modules", count=len(catalog)), "primary")
+        + " " + k.badge(ctx.t("kernel.help_ui.prefix", "prefix {prefix}", prefix=runtime.config.prefix)),
+    ]
+    user_count = len(catalog) - kernel_count
+    for kernel in (True, False):
+        entries = [_entry(ctx, module_id, manifest, module, page=page) for module_id, manifest, is_kernel in items if is_kernel == kernel]
+        if not entries:
+            continue
+        title = ctx.t("kernel.help_ui.kernel_modules" if kernel else "kernel.help_ui.user_modules")
+        summary = f"{k.icon('kernel' if kernel else 'module')} <b>{_escape(title)}</b> · {kernel_count if kernel else user_count}"
+        lines.append(k.details(summary, "\n".join(entries), open=not kernel or user_count == 0))
+    rows = [k.pager(home, page, pages)]
+    rows.append([k.input(ctx.t("ui.search"), search, ctx.t("kernel.help_ui.search_prompt"), icon="search"), k.close()])
+    return k.screen("\n".join(lines), rows)
+
+
+def _card(ctx: Any, module_id: str, actor: Any, back: Any, **back_args: Any) -> Any:
+    k = ctx.screens
+    runtime = ctx.runtime
+    active = runtime.modules.get(module_id)
+    if active is None:
+        return home(ctx).with_notice(ctx.t("ui.error", error=ctx.t("kernel.help_ui.missing", module=_escape(module_id))))
+    manifest = active.loaded.manifest
     prefix = runtime.config.prefix
-    marker = "4974681956907221809" if kernel else "4974508259839836856"
-    name = f'<tg-emoji emoji-id="{marker}">▪️</tg-emoji> <code>{_escape(module_id)}</code>'
-    commands = _command_line(prefix, manifest.commands)
-    description = manifest.localized(runtime.language(), manifest.description).get("description", "")
-    suffix = f"<br><i>{_escape(description)}</i>" if description else ""
-    return f"<p>{suffix[4:] + '<br>' if suffix else ''}{name}{commands}</p>"
+    kernel = _is_kernel(runtime, module_id)
+    badge = ctx.t("kernel.help_ui.kernel_badge" if kernel else "kernel.help_ui.user_badge")
+    lines = [
+        f"{k.icon(icons.module(module_id))} <b>{_escape(module_id)}</b>  "
+        + k.badge(f"v{manifest.version}") + " " + k.badge(badge, "primary" if kernel else "success"),
+    ]
+    description = _description(runtime, manifest)
+    if description:
+        lines.append(f"<i>{_escape(description)}</i>")
+    commands: List[str] = []
+    for command in manifest.commands:
+        details = manifest.command_details(command, runtime.language())
+        usage = details.get("usage", "")
+        shown = usage if usage and usage != f"{prefix}{command}" else f"{prefix}{command}"
+        line = f"<code>{_escape(shown)}</code> " + k.tap_copy("", f"{prefix}{command}")
+        if details.get("description"):
+            line += f" <i>{_escape(details['description'])}</i>"
+        commands.append(line)
+    title = f"{k.icon('text')} <b>{_escape(ctx.t('kernel.help_ui.commands'))}</b> · {len(commands)}"
+    body = "\n".join(commands) or f"<i>{_escape(ctx.t('kernel.help_ui.no_commands'))}</i>"
+    if len(commands) > _open_limit:
+        lines.append("\n" + k.details(title, body))
+    else:
+        lines.append(f"\n{title}\n{body}")
+    if manifest.capabilities:
+        capabilities = "".join(f"<li>{_escape(ctx.t(f'kernel.capabilities.{item}', item))}</li>" for item in manifest.capabilities)
+        lines.append(k.details(f"{k.icon('lock')} <b>{_escape(ctx.t('kernel.help_ui.capabilities'))}</b> · {len(manifest.capabilities)}", f"<ul>{capabilities}</ul>"))
+    rows: List[List[Any]] = []
+    if getattr(manifest, "config_schema", None) and runtime.modules.get("config") is not None and runtime.access.is_owner(actor):
+        rows.append([k.link(ctx.t("kernel.help_ui.settings"), "config", "module", style="primary", icon="settings", id=module_id, origin="help")])
+    rows.append(k.footer(back, **back_args))
+    return k.screen("\n".join(lines), rows)
 
 
-def _plain_module_line(runtime: Any, module_id: Any, manifest: Any) -> Any:
-    commands = _command_line(runtime.config.prefix, manifest.commands)
-    description = manifest.localized(runtime.language(), manifest.description).get("description", "")
-    suffix = f"<br><i>{_escape(description)}</i>" if description else ""
-    return f"{suffix[4:] + '<br>' if suffix else ''}<code>{_escape(module_id)}</code>{commands}"
+def module(ctx: Any, nav: Any) -> Any:
+    return _card(ctx, str(nav.arg("id")), nav.actor, home, page=nav.int("page"))
 
 
-def _plain_section(lines: Any) -> Any:
-    if not lines:
-        return ""
-    return f"<blockquote>{'<br>'.join(lines)}</blockquote>"
+def _matches(ctx: Any, query: str) -> Any:
+    key: Callable[[Tuple[str, Any, bool]], List[object]] = lambda row: [row[0], _description(ctx.runtime, row[1]), *row[1].commands]
+    return ctx.tools.search(_catalog(ctx.runtime), query, key=key, limit=12)
+
+
+async def search(ctx: Any, nav: Any) -> Any:
+    query = str(nav.value or nav.arg("q") or "").strip()
+    k = ctx.screens
+    hits: List[Any] = await _matches(ctx, query) if query else []
+    if len(hits) == 1:
+        return _card(ctx, hits[0]["value"][0], nav.actor, search, q=query)
+    if not hits:
+        return home(ctx).with_notice(f"{k.icon('search')} " + ctx.t("ui.nothing_found", query=_escape(query)))
+    lines = [f"{k.icon('search')} <b>{_escape(ctx.t('kernel.help_ui.results', query=query))}</b>  " + k.badge(str(len(hits)))]
+    lines += [_entry(ctx, hit["value"][0], hit["value"][1], found, q=query) for hit in hits]
+    rows = [[k.input(ctx.t("ui.search"), search, ctx.t("kernel.help_ui.search_prompt"), icon="search")], k.footer(home)]
+    return k.screen("\n".join(lines), rows)
+
+
+def found(ctx: Any, nav: Any) -> Any:
+    return _card(ctx, str(nav.arg("id")), nav.actor, search, q=nav.arg("q"))
+
+
+async def _show_help(ctx: Any, invocation: Any) -> Any:
+    runtime = ctx.runtime
+    if runtime is None:
+        await ctx.respond(ctx.t('kernel.help_ui.unavailable'), parse_mode="HTML")
+        return
+    if runtime.modules is None:
+        await ctx.respond(ctx.t('kernel.help_ui.manager_unavailable'), parse_mode="HTML")
+        return
+    if not invocation.args:
+        await ctx.screens.show(home(ctx))
+        return
+    query = " ".join(invocation.args).casefold()
+    actor = getattr(invocation.message, "from_id", None)
+    if runtime.modules.get(query) is not None:
+        await ctx.screens.show(_card(ctx, query, actor, home))
+        return
+    hits = await _matches(ctx, query)
+    if hits:
+        await ctx.screens.show(_card(ctx, hits[0]["value"][0], actor, home))
+        return
+    if runtime.state is not None and query in runtime.state.module_ids():
+        last_error = runtime.state.namespace(query).get("lasterror", ctx.t("common.none"))
+        await ctx.respond(ctx.t('kernel.help_ui.disabled', module=_escape(query), error=_escape(last_error)), parse_mode="HTML")
+        return
+    await ctx.respond(ctx.t('kernel.help_ui.missing', module=_escape(query)), parse_mode="HTML")
 
 
 async def command_hlp(ctx: Any, invocation: Any) -> Any:
@@ -57,112 +165,3 @@ async def command_hlp(ctx: Any, invocation: Any) -> Any:
 
 async def command_help(ctx: Any, invocation: Any) -> Any:
     await _show_help(ctx, invocation)
-
-
-async def _show_help(ctx: Any, invocation: Any) -> Any:
-    runtime = ctx.runtime
-    if runtime is None:
-        await ctx.respond(ctx.t('kernel.help_ui.unavailable'), parse_mode="HTML")
-        return
-
-    if invocation.args:
-        if runtime.modules is None:
-            await ctx.respond(ctx.t('kernel.help_ui.manager_unavailable'), parse_mode="HTML")
-            return
-
-        module_id = " ".join(invocation.args).casefold()
-        active = runtime.modules.get(module_id)
-        if active is None:
-            module_key: Callable[['ActiveModule'], List[object]] = lambda item: [item.loaded.manifest.module_id, item.loaded.manifest.localized(runtime.language(), item.loaded.manifest.description).get("description", ""), *item.loaded.manifest.commands]
-            matches = await ctx.tools.search(
-                list(runtime.modules.items()), module_id,
-                key=module_key,
-                limit=8,
-            )
-            if matches:
-                active = matches[0]["value"]
-                module_id = active.loaded.manifest.module_id
-        if active is None:
-            if runtime.state is not None and module_id in runtime.state.module_ids():
-                last_error = runtime.state.namespace(module_id).get("lasterror", ctx.t("common.none"))
-                await ctx.respond(
-                    ctx.t('kernel.help_ui.disabled', module=_escape(module_id), error=_escape(last_error)),
-                    parse_mode="HTML",
-                )
-            else:
-                await ctx.respond(
-                    ctx.t('kernel.help_ui.missing', module=_escape(module_id)),
-                    parse_mode="HTML",
-                )
-            return
-
-        manifest = active.loaded.manifest
-        localized = manifest.localized(runtime.language(), manifest.description)
-        description = localized.get("description", manifest.description)
-        _commands = _command_line(runtime.config.prefix, manifest.commands)
-        capabilities = ", ".join(_escape(ctx.t(f"kernel.capabilities.{item}", item)) for item in manifest.capabilities) or ctx.t("common.none")
-        text = (
-            f'<b>{_escape(manifest.module_id)}</b> <i>v{_escape(manifest.version)}</i>'
-        )
-        if description:
-            text += f"<br><i>{_escape(description)}</i>"
-        command_lines: List[str] = []
-        for command in manifest.commands:
-            details = manifest.command_details(command, runtime.language())
-            command_description = details.get("description", "")
-            line = f"<code>{_escape(runtime.config.prefix)}{_escape(command)}</code>"
-            if command_description:
-                line += f" — {_escape(command_description)}"
-            command_lines.append(line)
-        cmd_title = _escape(ctx.t('kernel.help_ui.commands'))
-        cap_title = _escape(ctx.t('kernel.help_ui.capabilities'))
-        text += f"<details><summary>{cmd_title}</summary><p>{'<br>'.join(command_lines) or ctx.t('common.none')}</p></details>"
-        text += f"<details><summary>{cap_title}</summary><p>{capabilities}</p></details>"
-        await ctx.respond(text, parse_mode="HTML", rich=True, rich_fallback="bot")
-        return
-
-    kernel_modules: List[str] = []
-    user_modules: List[str] = []
-
-    if runtime.modules is not None:
-        active = {item.loaded.manifest.module_id: item for item in runtime.modules.items()}
-
-        for module_id in sorted(active, key=str.casefold):
-            item = active[module_id]
-            manifest = item.loaded.manifest
-            is_kernel = (
-                module_id in runtime.modules._bindings
-                and runtime.modules._bindings[module_id][2]
-            )
-            line = _module_line(runtime, module_id, manifest, is_kernel)
-            if is_kernel:
-                kernel_modules.append(line)
-            else:
-                user_modules.append(line)
-    else:
-        for name in sorted(runtime.kernel.registry.names(), key=str.casefold):
-            user_modules.append(
-                f'<p><tg-emoji emoji-id="4974508259839836856">▪️</tg-emoji> '
-                f'<code>{_escape(runtime.config.prefix)}{_escape(name)}</code></p>'
-            )
-
-    total = len(kernel_modules) + len(user_modules)
-    title = _escape(ctx.t('kernel.help_ui.module_count', count=total))
-    kernel_title = _escape(ctx.t('kernel.help_ui.kernel_modules'))
-    user_title = _escape(ctx.t('kernel.help_ui.user_modules'))
-    text = f"<b>{title}</b>"
-
-    if kernel_modules:
-        text += (
-            f"<details><summary>{kernel_title} ({len(kernel_modules)})</summary>"
-            + "".join(kernel_modules)
-            + "</details>"
-        )
-    if user_modules:
-        text += (
-            f"<details><summary>{user_title} ({len(user_modules)})</summary>"
-            + "".join(user_modules)
-            + "</details>"
-        )
-
-    await ctx.respond(text=text, parse_mode="HTML", rich=True, rich_fallback="bot")

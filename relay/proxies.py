@@ -13,7 +13,7 @@ from .firewall import trusted_scope
 from goygram.sugar import extract_sent_message
 from . import emoji
 from .emoji import to_entities, to_rich
-from goygram.types.kbd import kbd_to_tl
+from hotaru.markup import kbd_to_tl
 
 
 def _data(value: object) -> dict[str, Any] | None:

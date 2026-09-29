@@ -17,7 +17,7 @@ from goygram.errors import EntityBoundsInvalidError
 from goygram import ext
 from relay.firewall import module_scope
 from relay.emoji import to_entities, to_rich
-from goygram.types.kbd import kbd_to_tl
+from .markup import kbd_to_tl
 from relay.rpc import delete_chat_msg
 
 
@@ -68,7 +68,7 @@ class CallbackContext:
         return await self._callback.answer(text, alert=alert, **kwargs)
 
     @staticmethod
-    async def _edit_inline(app: Any, id_field: dict[str, Any], message: str, data: dict[str, Any]) -> Any:
+    async def edit_inline(app: Any, id_field: dict[str, Any], message: str, data: dict[str, Any]) -> Any:
         from relay.firewall import trusted_scope
 
         if data.get('reply_markup') == {'_': 'replyInlineMarkup', 'rows': []}:
@@ -180,7 +180,7 @@ class CallbackContext:
                     data["rich_message"] = {"_": "inputRichMessageHTML", **to_rich(text)}
                 from relay.firewall import trusted_scope
                 with trusted_scope():
-                    return await self._edit_inline(target_app, inline_id, "" if use_rich else plain, data)
+                    return await self.edit_inline(target_app, inline_id, "" if use_rich else plain, data)
             log["branch"] = "editMessage"
             log["bot"] = False
             _cb_log(log)
@@ -218,7 +218,7 @@ class CallbackContext:
                     data["rich_message"] = {"_": "inputRichMessageHTML", **to_rich(text)}
                 from relay.firewall import trusted_scope
                 with trusted_scope():
-                    return await self._edit_inline(target_app, bot_inline_id, "" if use_rich else plain, data)
+                    return await self.edit_inline(target_app, bot_inline_id, "" if use_rich else plain, data)
         if isinstance(chat_id, int) and isinstance(msg_id, int):
             user_app = app or getattr(runtime, "app", None)
             if user_app is not None:
