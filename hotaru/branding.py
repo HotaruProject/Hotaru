@@ -7,6 +7,8 @@ import time
 from pathlib import Path
 from typing import Any, cast
 
+from goygram import ext
+
 from relay.emoji import to_rich
 from relay.files import document, put
 from relay.firewall import trusted_scope
@@ -74,6 +76,8 @@ class Branding:
             result = await app.mt_messages_upload_media(peer={"_": "inputPeerSelf"}, media=media)
         if not isinstance(result, dict):
             result = result.to_dict()
+        result = cast(dict[str, Any], result)
+        result = result.get("result", result)
         source: Any = cast(dict[str, Any], result)["photo" if kind == "photo" else "document"]
         if not isinstance(source, dict):
             source = source.to_dict()
@@ -128,7 +132,9 @@ class Branding:
                 return
             with trusted_scope():
                 peer = await app.mt.resolve_peer("@" + info.username)
-            if not isinstance(peer, dict):
+            if isinstance(peer, bytes):
+                peer = ext.deserialize_constructor(peer)
+            elif not isinstance(peer, dict):
                 peer = peer.to_dict()
             peer = cast(dict[str, Any], peer)
             if peer.get("_") != "inputPeerUser" or peer.get("user_id") != info.bot_id:

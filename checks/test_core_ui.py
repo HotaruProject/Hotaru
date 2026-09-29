@@ -155,9 +155,9 @@ class Artwork(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         def uploaded(**kw):
             kind = "photo" if kw["media"]["_"] == "inputMediaUploadedPhoto" else "document"
-            return {kind: {"id": 100, "access_hash": 200, "file_reference": b"test"}}
+            return {"ok": True, "result": {kind: {"id": 100, "access_hash": 200, "file_reference": b"test"}}}
         self.app = types.SimpleNamespace(
-            mt=types.SimpleNamespace(resolve_peer=AsyncMock(return_value={"_": "inputPeerUser", "user_id": 22, "access_hash": 3})),
+            mt=types.SimpleNamespace(resolve_peer=AsyncMock(return_value=ext.serialize_constructor("inputPeerUser", {"user_id": 22, "access_hash": 3}))),
             charged_upload=AsyncMock(return_value={"id": 1, "parts": 1, "name": "asset", "md5": ""}),
             mt_messages_upload_media=AsyncMock(side_effect=uploaded),
             mt_channels_edit_photo=AsyncMock(), mt_photos_upload_profile_photo=AsyncMock(),
