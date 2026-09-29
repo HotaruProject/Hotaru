@@ -39,16 +39,20 @@ def _git(runtime: Any, *args: Any) -> Any:
         raise RuntimeError(result.stderr.strip() or result.stdout.strip() or "git failed")
     return result.stdout
 
+def _branch(runtime: Any) -> Any:
+    name = _git(runtime, "rev-parse", "--abbrev-ref", "HEAD").strip()
+    return name if name and name != "HEAD" else "main"
+
 def _fetch_origin(runtime: Any) -> Any:
-    _git(runtime, "fetch", "origin", "main")
+    _git(runtime, "fetch", "origin", _branch(runtime))
 
 def _current_commit(runtime: Any) -> Any:
     return _git(runtime, "rev-parse", "HEAD").strip()
 
 def _latest_commit(runtime: Any) -> Any:
-    origin_main = _git(runtime, "rev-parse", "origin/main").strip()
-    _git(runtime, "cat-file", "-e", origin_main + "^{commit}")
-    return origin_main
+    latest = _git(runtime, "rev-parse", "origin/" + _branch(runtime)).strip()
+    _git(runtime, "cat-file", "-e", latest + "^{commit}")
+    return latest
 
 def _changelog(runtime: Any) -> Any:
     current = _current_commit(runtime)

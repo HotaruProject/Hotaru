@@ -51,11 +51,11 @@ def degrade(entities: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return result
 
 
-_QUOTE_OPEN = re.compile(r"<blockquote(\s+expandable)?\s*>", re.IGNORECASE)
+_quote = re.compile(r"<blockquote(\s+expandable)?\s*>", re.IGNORECASE)
 
 
 def _collapse(html: str, entities: list[dict[str, Any]]) -> None:
-    flags = [bool(match.group(1)) for match in _QUOTE_OPEN.finditer(html)]
+    flags = [bool(match.group(1)) for match in _quote.finditer(html)]
     if not any(flags):
         return
     quotes = sorted((entity for entity in entities if entity.get("_") == "messageEntityBlockquote"), key=lambda entity: cast(int, entity["offset"]))
@@ -66,11 +66,21 @@ def _collapse(html: str, entities: list[dict[str, Any]]) -> None:
 
 def to_entities(text: str) -> tuple[str, list[dict[str, Any]]]:
     html = str(text)
-    plain, entities = html_to_entities(_QUOTE_OPEN.sub("<blockquote>", html))
+    plain, entities = html_to_entities(_quote.sub("<blockquote>", html))
     _collapse(html, entities)
-    if _premium or not entities:
+    if not (_premium or not entities):
+        entities = degrade(entities)
+    tail = plain.rstrip()
+    if tail == plain or not entities:
         return plain, entities
-    return plain, degrade(entities)
+    end = len(tail.encode("utf-16-le")) // 2
+    kept: list[dict[str, Any]] = []
+    for entity in entities:
+        offset = cast(int, entity["offset"])
+        length = min(offset + cast(int, entity["length"]), end) - offset
+        if length > 0:
+            kept.append({**entity, "offset": offset, "length": length})
+    return tail, kept
 
 _TG_EMOJI = re.compile(r'<tg-emoji emoji-id="(\d+)">(.*?)</tg-emoji>', re.DOTALL)
 _PROTECTED_HTML = re.compile(r"<(pre|code)\b.*?</\1>", re.DOTALL | re.IGNORECASE)
@@ -80,7 +90,7 @@ def has_emoji(html: str) -> bool:
     return bool(_TG_EMOJI.search(str(html)))
 
 
-_button_re = re.compile(r"<tg-button\s[^>]*>.*?</tg-button>", re.DOTALL | re.IGNORECASE)
+_button = re.compile(r"<tg-button\s[^>]*>.*?</tg-button>", re.DOTALL | re.IGNORECASE)
 
 
 def _emoji_links(html: str) -> str:
@@ -88,10 +98,10 @@ def _emoji_links(html: str) -> str:
         return f'<a href="tg://emoji?id={match.group(1)}">{match.group(2)}</a>'
 
     def plain(match: re.Match[str]) -> str:
-        # Button labels may not hold links: keep the fallback character only.
+        # no links inside button labels
         return _TG_EMOJI.sub(lambda emoji: emoji.group(2), match.group(0))
 
-    html = _button_re.sub(plain, html)
+    html = _button.sub(plain, html)
 
     parts: list[str] = []
     pos = 0
