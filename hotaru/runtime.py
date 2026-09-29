@@ -414,6 +414,8 @@ class Runtime:
         actions = self._form_actions(buttons)
         sent = extract_sent_message(handle.value)
         if not isinstance(sent, dict) or not isinstance(sent.get("id"), int):
+            if self.observatory is not None:
+                self.observatory.emit("runtime", "form_identity_missing", "debug", key=key, value_type=type(handle.value).__name__)
             raise RuntimeError("form delivery has no message identity")
         inline_id = (self._form_inline_ids or {}).get(key.split(":", 1)[1]) if key.startswith("inline:") else None
         if key.startswith("inline:") and self._inline_forms is not None and key.split(":", 1)[1] in self._inline_forms:
@@ -595,6 +597,7 @@ class Runtime:
         options.update(kwargs)
         options["delete_source"] = False
         actor = options.get("callback_actor")
+        inline_form = source.src == "inline" or str(handle.key).startswith("inline:")
         rebound: list[list[dict[str, object]]] = []
         for row in cast('list[dict[str, object] | list[dict[str, object]]]', next_buttons or []):
             current: list[dict[str, object]] = []
@@ -604,11 +607,11 @@ class Runtime:
                 if isinstance(token, str) and self.callbacks is not None:
                     if not isinstance(actor, (int, str)):
                         raise CallbackDenied("callback identity is incomplete")
-                    item["callback_data"] = self.callbacks.store.rebind(token, CallbackBinding(actor, None if source.src == "inline" else source.chat_id, 0 if source.src == "inline" else source.id), scope={"form_id": handle.key, "command": options.get("command")})
+                    item["callback_data"] = self.callbacks.store.rebind(token, CallbackBinding(actor, None if inline_form else source.chat_id, 0 if inline_form else source.id), scope={"form_id": handle.key, "command": options.get("command")})
                 current.append(item)
             rebound.append(current)
         next_buttons = rebound
-        if source.src == "inline":
+        if inline_form:
             inline_id = getattr(source, "inline_message_id", None) or (self._form_inline_ids or {}).get(str(handle.key).split(":", 1)[-1])
             if inline_id is None:
                 raise RuntimeError("inline form edit identity is unavailable")
@@ -904,10 +907,6 @@ class Runtime:
             id=cast('dict[str, Any]', cast('list[Any]', results)[0]).get("id"),
             clear_draft=True,
         )
-        try:
-            await asyncio.wait_for(ready.wait(), 5.0)
-        except asyncio.TimeoutError:
-            pass
         if options.get("delete_source", True) and chat_id is not None and bool(getattr(command, "is_me", False) or getattr(command, "out", False)):
             try:
                 await self._delete_inline_source(command, chat_id, message_id)
@@ -925,7 +924,11 @@ class Runtime:
             if self.state is not None and isinstance(chat_id, int):
                 self.state.set_setting("inline-reference-chat", chat_id)
                 self.state.set_setting("inline-reference-message", int(sent["id"]))
+            if self.observatory is not None:
+                self.observatory.emit("inline", "form_sent", "debug", nonce=nonce, sent_id=int(sent["id"]), chosen=nonce in (self._form_inline_ids or {}), shape=type(sent_result).__name__)
             return sent
+        if self.observatory is not None:
+            self.observatory.emit("inline", "form_sent", "debug", nonce=nonce, sent_id=None, chosen=nonce in (self._form_inline_ids or {}), shape=type(sent_result).__name__)
         return cast('dict[str, Any]', result) if isinstance(result, dict) else result
 
     async def _delete_inline_source(self, command: Any, chat_id: int | str, message_id: int) -> None:

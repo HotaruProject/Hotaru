@@ -185,9 +185,11 @@ def _update_repository(root: str | os.PathLike[str]) -> UpdateResult:
     resumed = _resume_interrupted(repo)
     if resumed is not None:
         return resumed
-    _git(repo, "fetch", "--prune", "origin", "+refs/heads/main:refs/remotes/origin/main")
+    name = _text(_git(repo, "rev-parse", "--abbrev-ref", "HEAD")).strip()
+    branch = name if name and name != "HEAD" else "main"
+    _git(repo, "fetch", "--prune", "origin", "+refs/heads/" + branch + ":refs/remotes/origin/" + branch)
     before = _text(_git(repo, "rev-parse", "HEAD"))
-    target = _text(_git(repo, "rev-parse", "origin/main"))
+    target = _text(_git(repo, "rev-parse", "origin/" + branch))
     _git(repo, "cat-file", "-e", target + "^{commit}")
     if before == target:
         return UpdateResult(before, target, None, False, [], False)
