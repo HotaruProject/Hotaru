@@ -39,6 +39,40 @@ class InlineBotInfo:
     bot_id: int
 
 
+def _token_in(message: dict[str, Any]) -> str | None:
+    import json
+
+    parts = message.get("parts")
+    for part in cast('list[Any]', parts) if isinstance(parts, list) else [message]:
+        if not isinstance(part, dict):
+            continue
+        item = cast('dict[str, Any]', part)
+        texts = [str(item.get("message") or "")]
+        entities = item.get("entities")
+        for entity in cast('list[Any]', entities) if isinstance(entities, list) else []:
+            if isinstance(entity, dict) and isinstance(cast('dict[str, Any]', entity).get("url"), str):
+                texts.append(cast('dict[str, Any]', entity)["url"])
+        markup = item.get("reply_markup")
+        rows = cast('dict[str, Any]', markup).get("rows") if isinstance(markup, dict) else None
+        for row in cast('list[Any]', rows) if isinstance(rows, list) else []:
+            buttons = cast('dict[str, Any]', row).get("buttons") if isinstance(row, dict) else None
+            for button in cast('list[Any]', buttons) if isinstance(buttons, list) else []:
+                texts.append(json.dumps(button, default=str))
+        for text in texts:
+            match = TOKEN_RE.search(text)
+            if match is not None:
+                return match.group(0)
+    return None
+
+
+def _merge(messages: list[dict[str, Any]]) -> dict[str, Any]:
+    merged = dict(messages[-1])
+    merged["message"] = "\n".join(str(item.get("message") or "") for item in messages)
+    merged["reply_markup"] = next((item.get("reply_markup") for item in reversed(messages) if item.get("reply_markup")), None)
+    merged["parts"] = messages
+    return merged
+
+
 class BotFatherConversation:
     def __init__(self, app: Any, *, timeout: float = 30.0) -> None:
         self.app = app
@@ -116,9 +150,12 @@ class BotFatherConversation:
             return isinstance(user_id, int) and user_id == self._self_id
         return False
 
-    async def response(self, *, since: int | None = None) -> dict[str, Any]:
+    async def response(self, *, since: int | None = None, settle: float = 1.5) -> dict[str, Any]:
+        # botfather may answer one step with several messages
         floor = since if since is not None else self._last_id
         deadline = time.monotonic() + self.timeout
+        found: dict[int, dict[str, Any]] = {}
+        quiet_at: float | None = None
         while time.monotonic() < deadline:
             result = await self.app.mt_messages_get_history(
                 peer=self._peer,
@@ -139,13 +176,17 @@ class BotFatherConversation:
                 message_id = message_dict.get("id", 0)
                 if not isinstance(message_id, int) or message_id <= floor:
                     continue
-                if self._is_mine(message_dict):
-                    self._last_id = max(self._last_id, message_id)
-                    continue
                 self._last_id = max(self._last_id, message_id)
-                return message_dict
-            await asyncio.sleep(1.0)
-        raise InlineError("BotFather response timeout")
+                if self._is_mine(message_dict) or message_id in found:
+                    continue
+                found[message_id] = message_dict
+                quiet_at = time.monotonic() + settle
+            if found and quiet_at is not None and time.monotonic() >= quiet_at:
+                break
+            await asyncio.sleep(0.5)
+        if not found:
+            raise InlineError("BotFather response timeout")
+        return _merge([found[key] for key in sorted(found)])
 
     async def drain(self) -> None:
         for _ in range(4):
@@ -182,7 +223,9 @@ class BotFatherConversation:
         except InlineError:
             await self._delete(mine_id)
             raise
-        await self._delete(mine_id, reply.get("id", 0))
+        parts = reply.get("parts")
+        ids = [cast('dict[str, Any]', item).get("id", 0) for item in cast('list[Any]', parts)] if isinstance(parts, list) else [reply.get("id", 0)]
+        await self._delete(mine_id, *ids)
         return reply
 
 class BotFatherGuard:
@@ -530,6 +573,12 @@ class InlineManager:
         wanted = None
         if state is not None:
             wanted = state.get_setting("inline-bot-username") or state.get_setting("inline-bot-username-wanted")
+        if isinstance(wanted, str) and wanted.strip():
+            wanted = wanted.strip().lstrip("@")
+            if not wanted.lower().endswith("bot"):
+                wanted += "_bot"
+        else:
+            wanted = None
         candidates: list[tuple[str, str]] = []
         try:
             async with BotFatherGuard(self.runtime.app), BotFatherConversation(self.runtime.app) as conv:
@@ -553,25 +602,27 @@ class InlineManager:
                             continue
                         if wanted and candidate.casefold() == str(wanted).casefold():
                             candidates.append((text, candidate))
+                        elif not wanted and candidate.casefold().startswith("hotaru_"):
+                            candidates.append((text, candidate))
                 for button_text, candidate in candidates:
                     token = await self._fetch_token(conv, button_text)
                     if token is None:
                         continue
                     bot_id = int(token.split(":", 1)[0])
                     return InlineBotInfo(token, candidate, bot_id)
-        except InlineError:
-            return None
-        except Exception:
-            return None
+                if candidates:
+                    raise InlineError("existing bot found but its token could not be read")
+        except InlineError as exc:
+            raise InlineError(f"bot discovery failed: {exc}") from exc
+        except Exception as exc:
+            raise InlineError(f"bot discovery failed: {type(exc).__name__}") from exc
         return None
 
     async def _fetch_token(self, conv: BotFatherConversation, username_button: str) -> str | None:
         try:
             await conv.ask("/token")
             answer = await conv.ask(username_button)
-            text = answer.get("message", "")
-            match = TOKEN_RE.search(text)
-            return match.group(0) if match else None
+            return _token_in(answer)
         except Exception:
             return None
 
@@ -609,14 +660,18 @@ class InlineManager:
                 continue
             seen.add(username)
             response = await conv.ask(username)
-            text = response.get("message", "")
-            lowered = text.lower()
+            token = _token_in(response)
+            if token is not None:
+                return username, token
+            lowered = str(response.get("message", "")).lower()
+            if "done" in lowered or "congratulations" in lowered:
+                token = await self._fetch_token(conv, "@" + username)
+                if token is not None:
+                    return username, token
+                raise InlineError(f"bot @{username} was created but its token could not be read")
             if "sorry" in lowered or "taken" in lowered or "invalid" in lowered or "occupied" in lowered:
                 continue
-            match = TOKEN_RE.search(text)
-            if match is None:
-                continue
-            return username, match.group(0)
+            raise InlineError("unexpected BotFather reply while choosing a username: " + lowered.splitlines()[0][:120] if lowered else "empty BotFather reply")
         raise InlineError("could not allocate a bot username")
 
     async def _configure(self, conv: BotFatherConversation, username: str) -> None:
