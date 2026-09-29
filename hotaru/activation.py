@@ -383,7 +383,7 @@ class ModuleManager:
                 break
             except Exception as exc:
                 if not failed:
-                    log.error("module task failed: %s", type(exc).__name__)
+                    log.error("module task failed: %s (%s)", type(exc).__name__, module_id, exc_info=True)
                 failed = True
                 await asyncio.sleep(interval)
 
