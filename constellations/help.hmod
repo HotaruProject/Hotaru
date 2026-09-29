@@ -57,7 +57,7 @@ def home(ctx: Any, nav: Any = None) -> Any:
         if not entries:
             continue
         title = ctx.t("kernel.help_ui.kernel_modules" if kernel else "kernel.help_ui.user_modules")
-        summary = f"{k.icon('bolt' if kernel else 'folder')} <b>{_escape(title)}</b> · {kernel_count if kernel else user_count}"
+        summary = f"{k.icon('kernel' if kernel else 'module')} <b>{_escape(title)}</b> · {kernel_count if kernel else user_count}"
         lines.append(k.details(summary, "\n".join(entries), open=not kernel or user_count == 0))
     rows = [k.pager(home, page, pages)]
     rows.append([k.input(ctx.t("ui.search"), search, ctx.t("kernel.help_ui.search_prompt"), icon="search"), k.close()])
@@ -100,7 +100,7 @@ def _card(ctx: Any, module_id: str, actor: Any, back: Any, **back_args: Any) -> 
         capabilities = "".join(f"<li>{_escape(ctx.t(f'kernel.capabilities.{item}', item))}</li>" for item in manifest.capabilities)
         lines.append(k.details(f"{k.icon('lock')} <b>{_escape(ctx.t('kernel.help_ui.capabilities'))}</b> · {len(manifest.capabilities)}", f"<ul>{capabilities}</ul>"))
     rows: List[List[Any]] = []
-    if getattr(manifest, "config_schema", None) and runtime.modules.get("config") is not None and runtime.access.is_owner(actor):
+    if getattr(manifest, "config_schema", None) and runtime.modules.get("settings") is not None and runtime.access.is_owner(actor):
         rows.append([k.link(ctx.t("kernel.help_ui.settings"), "settings", "module", style="primary", icon="settings", id=module_id, origin="help")])
     rows.append(k.footer(back, **back_args))
     return k.screen("\n".join(lines), rows)
