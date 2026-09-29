@@ -110,6 +110,11 @@ class CallbackContext:
         form = cast('Runtime', runtime).get_form(form_id) if runtime is not None and isinstance(form_id, str) else None
         if form is not None and runtime is not None:
             kwargs.pop("module_id", None)
+            raw_kbd = kwargs.pop("reply_markup", kwargs.pop("kbd", None))
+            if raw_kbd is not None and kwargs.get("buttons") is None:
+                markup_buttons = cast('dict[str, Any]', raw_kbd).get("inline_keyboard") if isinstance(raw_kbd, dict) else raw_kbd
+                if markup_buttons is not None:
+                    kwargs["buttons"] = markup_buttons
             return await runtime.edit_form(form[0], text, **kwargs)
 
         raw_buttons = kwargs.get("buttons")
@@ -530,6 +535,8 @@ class CallbackRouter:
             form_id = value.get("form_id")
             form = cast('Runtime', self.runtime).get_form(form_id) if isinstance(form_id, str) else None
             if form_id and form is None:
+                if getattr(self.runtime, "observatory", None) is not None:
+                    self.runtime.observatory.emit("callbacks", "form_missing", "debug", form_id=str(form_id), nonce_live=str(form_id).split(":", 1)[-1] in (getattr(self.runtime, "_inline_forms", None) or {}), forms=len(getattr(self.runtime, "_forms", None) or {}))
                 raise CallbackDenied("form is no longer active")
             if form is not None:
                 source = form[1]
@@ -537,6 +544,12 @@ class CallbackRouter:
                 actual = getattr(callback, "inline_message_id", None)
                 if actual is None:
                     actual = getattr(callback, "msg_id", None)
+                if expected is None and isinstance(actual, dict):
+                    live = cast("dict[str, Any]", getattr(self.runtime, "_form_inline_ids", None) or {})
+                    stored = cast("dict[str, Any] | None", live.get(str(form_id).split(":", 1)[-1]))
+                    expected = stored if stored is not None else cast("dict[str, Any]", actual)
+                    if stored is None:
+                        source.inline_message_id = expected
                 if isinstance(expected, dict) and isinstance(actual, dict):
                     expected = {key: cast('dict[str, object]', expected).get(key) for key in ("dc_id", "id", "owner_id")}
                     actual = {key: cast('dict[str, object]', actual).get(key) for key in ("dc_id", "id", "owner_id")}

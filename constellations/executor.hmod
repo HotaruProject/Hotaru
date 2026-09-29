@@ -149,42 +149,36 @@ class OutputUpdater:
         elapsed = (time.perf_counter() - self.start_time) * 1000
         head = self.ctx.t('kernel.executor.heading', elapsed=elapsed)
         limit = 4096
-        room = max(64, limit - _u16(head) - 2)
-        blocks: list[str] = []
         entries = list(sections)
         if returncode is not None:
             entries.append(("result", self.ctx.t('kernel.executor.exit_code', returncode=returncode), False))
+        pages: list[str] = []
+        cur: list[str] = [head]
+        size = _u16(head)
         for entry in entries:
             title, content, is_code = entry[0], entry[1], entry[2]
             lang = entry[3] if len(entry) > 3 else None
             if content is None or content == "":
                 continue
             text = str(content)
-            html = self._fmt_entry(title, text, is_code, lang)
-            if _u16(html) <= room:
-                blocks.append(html)
-                continue
+            overhead = _u16(self._fmt_entry(title, "", is_code, lang))
             i = 0
             n = len(text)
             while i < n:
-                take = min(n - i, room)
-                h = self._fmt_entry(title, text[i:i + take], is_code, lang)
-                while _u16(h) > room and take > 1:
-                    take = max(1, take * room // _u16(h))
-                    h = self._fmt_entry(title, text[i:i + take], is_code, lang)
-                blocks.append(h)
+                space = limit - size - 2
+                if space - overhead < 64 and len(cur) > 1:
+                    pages.append("\n\n".join(cur))
+                    cur = [head]
+                    size = _u16(head)
+                    continue
+                take = min(n - i, max(1, space - overhead))
+                block = self._fmt_entry(title, text[i:i + take], is_code, lang)
+                while take > 1 and _u16(block) > space:
+                    take = max(1, take * max(1, space - overhead) // max(1, _u16(block) - overhead))
+                    block = self._fmt_entry(title, text[i:i + take], is_code, lang)
+                cur.append(block)
+                size += 2 + _u16(block)
                 i += take
-        pages: list[str] = []
-        cur = [head]
-        size = _u16(head)
-        for block in blocks:
-            add = 2 + _u16(block)
-            if cur != [head] and size + add > limit:
-                pages.append("\n\n".join(cur))
-                cur = [head]
-                size = _u16(head)
-            cur.append(block)
-            size += add
         pages.append("\n\n".join(cur))
         return pages
 
