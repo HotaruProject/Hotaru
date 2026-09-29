@@ -21,6 +21,7 @@ from collections.abc import Awaitable
 
 from .capabilities import CapabilityBroker
 from .backup import BackupService
+from .branding import Branding
 from .callbacks import CallbackBinding, CallbackContext, CallbackDenied, CallbackRouter, CallbackStore, derive_key
 from .config import RuntimeConfig
 from .commands import CommandParser
@@ -127,6 +128,7 @@ class Runtime:
     screens: ScreenEngine | None = None
     observatory: Observatory | None = None
     backups: BackupService | None = None
+    branding: Branding | None = None
     context_factory: ModuleContextFactory | None = None
     tasks: TaskSupervisor | None = None
     event_router: EventRouter | None = None
@@ -252,6 +254,7 @@ class Runtime:
         self.callbacks.register("restore_confirm", self._restore_confirm)
         self.event_router = EventRouter(self._event_error)
         self.backups = BackupService()
+        self.branding = Branding(self)
         self.observatory = Observatory(Path("observatory/runtime/events.jsonl"))
         observatory_install(self.observatory)
         observatory_hook_stdio()
@@ -1041,7 +1044,7 @@ class Runtime:
             form_text, buttons, rich = form
             result = InlineObj.article("hotaru-form", self.t("inline.form"), form_text, parse_mode="HTML")
             if rich:
-                result["input_message_content"] = {"rich_message": {"_": "inputRichMessageHTML", **to_rich(form_text)}}
+                result["input_message_content"] = {"rich_message": await self.branding.rich(form_text) if self.branding is not None else {"_": "inputRichMessageHTML", **to_rich(form_text)}}
             if buttons:
                 result["reply_markup"] = {"inline_keyboard": buttons}
             await answer_tl(query, results=[result], cache_time=0, is_personal=True)

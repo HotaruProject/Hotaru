@@ -1,27 +1,15 @@
-"""Screens: restart-safe inline menus.
-
-A screen is plain data (text + button rows) returned by a module-level
-function.  Buttons do not carry closures: each one points at a function
-*name* inside a module namespace plus JSON-safe arguments, stored per form in
-SQLite.  The callback data itself is a struct-packed, HMAC-signed reference
-
-    "~" + b64url(pack("<BIHB", version, form, generation, button) + tag[:8])
-
-which is 23 ASCII characters, far below Telegram's 64-byte limit.  Menus
-therefore survive restarts, expire in one place, and every press is answered.
-
-Handlers look like ``async def view(ctx, nav) -> Screen | str | None``: a
-Screen redraws the message, a string becomes a toast, None only acknowledges.
-"""
+"""Persistent inline menus with encrypted callbacks."""
 from __future__ import annotations
 
 import asyncio
 import base64
 import hashlib
 import hmac
+import html as _html
 import inspect
 import json
 import logging
+import re
 import secrets
 import struct
 import time
@@ -32,26 +20,69 @@ from typing import TYPE_CHECKING, Any, Awaitable, Callable, Dict, List, Optional
 
 from goygram.errors import FloodWaitError, MessageIdInvalidError, MessageNotModifiedError
 from goygram.sugar import extract_sent_message
-from relay.emoji import has_emoji, to_entities, to_rich
+from relay.emoji import has_emoji, premium, to_entities, to_rich
 from relay.firewall import module_scope, trusted_scope
 from relay.rpc import delete_chat_msg
 
-from .markup import COPY_LIMIT, kbd_to_tl
+from . import icons
+from .callback_codec import open_callback, seal_callback
+from .markup import COPY_LIMIT, ROW_LIMIT, kbd_to_tl
+from .plainfmt import rich_to_plain
 
 if TYPE_CHECKING:
     from .runtime import Runtime
 
 log = logging.getLogger(__name__)
 
-MARK = "~"
-VERSION = 1
-_PACK = struct.Struct("<BIHB")
-_TAG = 8
-TOAST_LIMIT = 200
-DEFAULT_TTL = 7 * 86400.0
-KERNEL = "@kernel"
-INPUT_ARTICLE = "🔄"
-_CACHE = 256
+_prefix = "~"
+_version = 1
+_pack = struct.Struct("<BIHB")
+_tag = 8
+_toast_limit = 200
+_ttl = 7 * 86400.0
+_kernel_id = "@kernel"
+_input_title = "🔄"
+_cache_size = 256
+_styles = {"primary", "danger", "success", "link"}
+_tap_re = re.compile(r'<tg-button(\s[^>]*?)\sdata-hs="([A-Za-z0-9_-]+)"([^>]*)>')
+_rich_re = re.compile(r"<(?:table|tg-button|tg-button-row|details|h[1-6]|hr|footer|ul|ol|aside|tg-time|tg-math|mark|sup|sub|img|video)\b", re.IGNORECASE)
+
+
+def _esc(value: Any) -> str:
+    return _html.escape(str(value), quote=False)
+
+
+def _attr(value: Any) -> str:
+    return _html.escape(str(value), quote=True)
+
+
+def _style(style: Optional[str]) -> str:
+    if not style:
+        return ""
+    if style not in _styles:
+        raise ScreenError(f"unknown button style: {style}")
+    return f' style="{style}"'
+
+
+def is_rich(text: str) -> bool:
+    return bool(_rich_re.search(text))
+
+
+_mark_re = re.compile(r"^[^\w\s<]+\s+")
+
+
+def bare(text: str) -> str:
+    """Strip the fallback symbol when an icon is present."""
+    return _mark_re.sub("", text, count=1)
+
+
+def _decorate(item: Dict[str, Any], style: Optional[str], icon: Optional[str]) -> Dict[str, Any]:
+    if style:
+        item["style"] = style
+    if icon:
+        item["icon"] = icon
+        item["text"] = bare(str(item.get("text", "")))
+    return item
 
 
 class ScreenError(RuntimeError):
@@ -96,7 +127,7 @@ class Form:
         return self.touched + self.ttl < time.time()
 
 
-def _clip(text: Optional[str], limit: int = TOAST_LIMIT) -> Optional[str]:
+def _clip(text: Optional[str], limit: int = _toast_limit) -> Optional[str]:
     if text is None:
         return None
     text = str(text)
@@ -166,13 +197,7 @@ class Nav:
         await self.engine.close(self.form)
 
     def ref(self, *, follow: bool = False) -> "ScreenRef":
-        """A handle for redrawing this form later, from a background task.
-
-        By default it is pinned to the screen this press is about to render:
-        once the user presses anything else the handle goes stale and its
-        edits are skipped.  ``follow=True`` ignores navigation (for flows
-        that own the whole form, such as a login wizard).
-        """
+        """Pin background edits to this screen; follow=True ignores navigation."""
         return ScreenRef(self.engine, self.form.id, None if follow else (self.form.gen + 1) & 0xFFFF)
 
 
@@ -188,17 +213,7 @@ class ScreenRef:
         return form is not None and not form.expired and (self.gen is None or form.gen == self.gen)
 
     async def edit(self, screen: Screen) -> bool:
-        form = self.engine.load(self.form_id)
-        if form is None:
-            return False
-        async with self.engine._lock(form):
-            form = self.engine.load(self.form_id)
-            if form is None or (self.gen is not None and form.gen != self.gen):
-                return False
-            await self.engine._render(form, screen)
-            if self.gen is not None:
-                self.gen = form.gen
-            return True
+        return await self.engine.edit_ref(self, screen)
 
     async def close(self) -> None:
         form = self.engine.load(self.form_id)
@@ -218,6 +233,11 @@ class Kit:
         return str(translate(key, default, **params)) if callable(translate) else default.format(**params)
 
     @staticmethod
+    def banner(name: str = "brand") -> str:
+        from .branding import banner
+        return banner(name)
+
+    @staticmethod
     def screen(text: str, rows: Optional[List[List[Dict[str, Any]]]] = None, **options: Any) -> Screen:
         return Screen(text, [row for row in (rows or []) if row], **options)
 
@@ -233,60 +253,55 @@ class Kit:
             raise ScreenError(f"screen handler must be a module-level function: {name}")
         return {"m": module_of(fn), "f": name}
 
-    def button(self, text: str, fn: Any, *, style: Optional[str] = None, **args: Any) -> Dict[str, Any]:
-        return self._go(text, fn, style, args)
 
-    def _go(self, text: str, fn: Any, style: Optional[str], args: Dict[str, Any]) -> Dict[str, Any]:
+    def button(self, text: str, fn: Any, *, style: Optional[str] = None, icon: Optional[str] = None, **args: Any) -> Dict[str, Any]:
+        return self._go(text, fn, style, args, icon)
+
+    def _go(self, text: str, fn: Any, style: Optional[str], args: Dict[str, Any], icon: Optional[str] = None) -> Dict[str, Any]:
         item: Dict[str, Any] = {"text": text, "k": "go", **self._target(fn), "a": _json_safe(args)}
-        if style:
-            item["style"] = style
-        return item
+        return _decorate(item, style, icon)
 
     go = button
 
-    def primary(self, text: str, fn: Any, **args: Any) -> Dict[str, Any]:
-        return self.button(text, fn, style="primary", **args)
+    def primary(self, text: str, fn: Any, *, icon: Optional[str] = None, **args: Any) -> Dict[str, Any]:
+        return self.button(text, fn, style="primary", icon=icon, **args)
 
-    def success(self, text: str, fn: Any, **args: Any) -> Dict[str, Any]:
-        return self.button(text, fn, style="success", **args)
+    def success(self, text: str, fn: Any, *, icon: Optional[str] = None, **args: Any) -> Dict[str, Any]:
+        return self.button(text, fn, style="success", icon=icon, **args)
 
-    def danger(self, text: str, fn: Any, **args: Any) -> Dict[str, Any]:
-        return self.button(text, fn, style="danger", **args)
+    def danger(self, text: str, fn: Any, *, icon: Optional[str] = None, **args: Any) -> Dict[str, Any]:
+        return self.button(text, fn, style="danger", icon=icon, **args)
 
-    def input(self, text: str, fn: Any, placeholder: str = "", *, style: Optional[str] = None, secret: bool = False, **args: Any) -> Dict[str, Any]:
+    def input(self, text: str, fn: Any, placeholder: str = "", *, style: Optional[str] = None, icon: Optional[str] = None, secret: bool = False, **args: Any) -> Dict[str, Any]:
         """A button that asks for text; ``secret`` keeps the typed value out of the result title."""
         item: Dict[str, Any] = {"text": text, "k": "input", "p": placeholder, **self._target(fn), "a": _json_safe(args)}
-        if style:
-            item["style"] = style
         if secret:
             item["s"] = True
-        return item
+        return _decorate(item, style, icon)
 
     @staticmethod
-    def url(text: str, url: str) -> Dict[str, Any]:
-        return {"text": text, "url": url}
+    def url(text: str, url: str, *, icon: Optional[str] = None) -> Dict[str, Any]:
+        return _decorate({"text": text, "url": url}, None, icon)
 
     @staticmethod
-    def copy(text: str, value: str) -> Dict[str, Any]:
-        return {"text": text, "copy_text": str(value)[:COPY_LIMIT] or " "}
+    def copy(text: str, value: str, *, icon: Optional[str] = "copy") -> Dict[str, Any]:
+        return _decorate({"text": text, "copy_text": str(value)[:COPY_LIMIT] or " "}, None, icon)
 
     @staticmethod
-    def label(text: str) -> Dict[str, Any]:
-        return {"text": text, "disabled": True}
+    def label(text: str, *, icon: Optional[str] = None) -> Dict[str, Any]:
+        return _decorate({"text": text, "disabled": True}, None, icon)
 
     @staticmethod
-    def link(text: str, module_id: str, fn: str, *, style: Optional[str] = None, **args: Any) -> Dict[str, Any]:
+    def link(text: str, module_id: str, fn: str, *, style: Optional[str] = None, icon: Optional[str] = None, **args: Any) -> Dict[str, Any]:
         """A button into another module's screen; only owners may follow it."""
         item: Dict[str, Any] = {"text": text, "k": "go", "m": module_id, "f": fn, "a": _json_safe(args)}
-        if style:
-            item["style"] = style
-        return item
+        return _decorate(item, style, icon)
 
     def close(self, text: Optional[str] = None) -> Dict[str, Any]:
-        return {"text": text or self._t("ui.close", "✕ Close"), "k": "close"}
+        return _decorate({"text": text or self._t("common.close", "Close"), "k": "close"}, None, "close")
 
     def back(self, fn: Any, text: Optional[str] = None, **args: Any) -> Dict[str, Any]:
-        return self.button(text or self._t("ui.back", "‹ Back"), fn, **args)
+        return self.button(text or self._t("common.back", "Back"), fn, icon="back", **args)
 
     def footer(self, back: Any = None, **args: Any) -> List[Dict[str, Any]]:
         row: List[Dict[str, Any]] = []
@@ -301,7 +316,6 @@ class Kit:
         return [items[index:index + columns] for index in range(0, len(items), columns)]
 
     def pager(self, fn: Any, page: int, pages: int, **args: Any) -> List[Dict[str, Any]]:
-        """``‹  2 / 5  ›`` with fixed positions, so the row never jumps."""
         if pages <= 1:
             return []
         left = self._go("‹", fn, None, {**args, "page": page - 1}) if page > 0 else self.label("·")
@@ -321,6 +335,89 @@ class Kit:
     @staticmethod
     def check(text: str, selected: bool) -> str:
         return ("✓ " if selected else "") + text
+
+
+    esc = staticmethod(_esc)
+
+    @staticmethod
+    def icon(name: Optional[str]) -> str:
+        if not name:
+            return ""
+        return icons.emoji(name) if premium() else _esc(icons.fallback(name))
+
+    @staticmethod
+    def wordmark() -> str:
+        return icons.wordmark() if premium() else "<b>HOTARU</b>"
+
+    @classmethod
+    def _label(cls, text: str, icon: Optional[str], style: Optional[str] = None) -> str:
+        if style in {"primary", "success", "danger"} and premium():
+            icon = None  # a coloured icon would vanish on a coloured button
+        mark = cls.icon(icon)
+        body = _esc(bare(text) if mark else text)
+        return f"{mark} {body}" if mark and body else (mark or body or " ")
+
+    def _spec(self, kind: str, fn: Any, args: Dict[str, Any], **extra: Any) -> str:
+        spec: Dict[str, Any] = {"k": kind, "a": _json_safe(args), **extra}
+        if kind != "close":
+            spec.update(self._target(fn))
+        raw = json.dumps(spec, ensure_ascii=False, separators=(",", ":")).encode()
+        return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+
+    def tap(self, text: str, fn: Any, *, style: Optional[str] = "link", icon: Optional[str] = None, **args: Any) -> str:
+        """A callback button inside the text; ``link`` renders it as a plain link."""
+        return f'<tg-button type="callback_data"{_style(style)} data-hs="{self._spec("go", fn, args)}">{self._label(text, icon, style)}</tg-button>'
+
+    def tap_input(self, text: str, fn: Any, placeholder: str = "", *, style: Optional[str] = None, icon: Optional[str] = None, secret: bool = False, **args: Any) -> str:
+        extra: Dict[str, Any] = {"p": placeholder}
+        if secret:
+            extra["s"] = True
+        return f'<tg-button type="switch_inline_query_current_chat"{_style(style)} data-hs="{self._spec("input", fn, args, **extra)}">{self._label(text, icon, style)}</tg-button>'
+
+    def tap_close(self, text: Optional[str] = None, *, style: Optional[str] = None) -> str:
+        label = text or self._t("common.close", "Close")
+        return f'<tg-button type="callback_data"{_style(style)} data-hs="{self._spec("close", None, {})}">{self._label(label, "close")}</tg-button>'
+
+    @classmethod
+    def tap_url(cls, text: str, url: str, *, style: Optional[str] = None, icon: Optional[str] = None) -> str:
+        return f'<tg-button type="url"{_style(style)} url="{_attr(url)}">{cls._label(text, icon, style)}</tg-button>'
+
+    @classmethod
+    def tap_copy(cls, text: str, value: str, *, icon: Optional[str] = "copy") -> str:
+        return f'<tg-button type="copy_text" text="{_attr(str(value)[:COPY_LIMIT] or " ")}">{cls._label(text, icon)}</tg-button>'
+
+    @classmethod
+    def badge(cls, text: str, style: Optional[str] = None, *, icon: Optional[str] = None) -> str:
+        return f'<tg-button type="disabled"{_style(style if style != "link" else None)}>{cls._label(text, icon, style)}</tg-button>'
+
+    @staticmethod
+    def row(*buttons: str, align: str = "left") -> str:
+        """A row of in-text buttons; more than eight wrap into further rows."""
+        items = [item for item in buttons if item]
+        return "".join(f'<tg-button-row align="{align}">' + "".join(items[index:index + ROW_LIMIT]) + "</tg-button-row>" for index in range(0, len(items), ROW_LIMIT))
+
+    @staticmethod
+    def table(rows: List[List[Any]], *, head: Optional[List[Any]] = None, caption: Optional[str] = None, bordered: bool = True, striped: bool = False, compact: bool = True, keys: bool = False, align: Optional[List[Optional[str]]] = None) -> str:
+        """A table; cells are HTML.  ``keys`` makes the first column a header column."""
+        flags = "".join(f" {name}" for name, on in (("bordered", bordered), ("striped", striped), ("compact", compact)) if on)
+        parts = [f"<table{flags}>"]
+        if caption:
+            parts.append(f"<caption>{caption}</caption>")
+        if head:
+            parts.append("<tr>" + "".join(f"<th>{cell}</th>" for cell in head) + "</tr>")
+        for row in rows:
+            cells: List[str] = []
+            for index, cell in enumerate(row):
+                side = align[index] if align and index < len(align) else None
+                attr = f' align="{side}"' if side else ""
+                tag = "th" if keys and index == 0 else "td"
+                cells.append(f"<{tag}{attr}>{cell}</{tag}>")
+            parts.append("<tr>" + "".join(cells) + "</tr>")
+        return "".join(parts) + "</table>"
+
+    @staticmethod
+    def details(summary: str, body: str, *, open: bool = False) -> str:
+        return f"<details{' open' if open else ''}><summary>{summary}</summary>{body}</details>"
 
     async def show(self, screen: Screen, **options: Any) -> Any:
         if self.engine is None:
@@ -344,7 +441,6 @@ class ScreenEngine:
         self._targets: Optional[set[tuple[str, int]]] = None
         self._ready = False
 
-    # storage -----------------------------------------------------------
 
     @property
     def _db(self) -> Any:
@@ -364,6 +460,13 @@ class ScreenEngine:
                 "rich INTEGER NOT NULL DEFAULT 0, touched REAL NOT NULL, ttl REAL NOT NULL, language TEXT)"
             )
             db.execute("CREATE INDEX IF NOT EXISTS screen_forms_message ON screen_forms(chat, message_id)")
+            # Keep old config menus working after the merge.
+            for form_id, raw in db.execute("SELECT id, actions FROM screen_forms WHERE module = 'config'").fetchall():
+                actions = json.loads(raw or "[]")
+                for action in actions:
+                    if action.get("m") == "config":
+                        action["m"] = "settings"
+                db.execute("UPDATE screen_forms SET module = 'settings', actions = ? WHERE id = ?", (json.dumps(actions, ensure_ascii=False), form_id))
             db.commit()
             self._ready = True
         return db
@@ -378,13 +481,13 @@ class ScreenEngine:
             touched=float(row[12]), ttl=float(row[13]), language=row[14],
         )
 
-    _COLUMNS = "id,module,actor,command,chat,message_id,inline_id,bot,gen,actions,text,rich,touched,ttl,language"
+    _columns = "id,module,actor,command,chat,message_id,inline_id,bot,gen,actions,text,rich,touched,ttl,language"
 
     def load(self, form_id: int) -> Optional[Form]:
         form = self._cache.get(form_id)
         if form is not None:
             return form
-        row = self._ensure().execute(f"SELECT {self._COLUMNS} FROM screen_forms WHERE id = ?", (form_id,)).fetchone()
+        row = self._ensure().execute(f"SELECT {self._columns} FROM screen_forms WHERE id = ?", (form_id,)).fetchone()
         if row is None:
             return None
         form = self._row(row)
@@ -393,7 +496,7 @@ class ScreenEngine:
 
     def _remember(self, form: Form) -> None:
         self._cache[form.id] = form
-        while len(self._cache) > _CACHE:
+        while len(self._cache) > _cache_size:
             self._cache.pop(next(iter(self._cache)))
 
     def _save(self, form: Form) -> None:
@@ -447,39 +550,42 @@ class ScreenEngine:
         except Exception:
             return default.format(**params)
 
-    # tokens ------------------------------------------------------------
 
     def encode(self, form_id: int, gen: int, index: int) -> str:
-        body = _PACK.pack(VERSION, form_id, gen & 0xFFFF, index)
-        tag = hmac.new(self._key, body, hashlib.sha256).digest()[:_TAG]
-        return MARK + base64.urlsafe_b64encode(body + tag).decode("ascii").rstrip("=")
+        body = _pack.pack(_version, form_id, gen & 0xFFFF, index)
+        return _prefix + seal_callback(self._key, body, aad=b"hotaru-screens")
 
     def decode(self, token: Any) -> Optional[tuple[int, int, int]]:
         if isinstance(token, (bytes, bytearray)):
             token = bytes(token).decode("ascii", "replace")
-        if not isinstance(token, str) or not token.startswith(MARK) or len(token) > 40:
+        if not isinstance(token, str) or not token.startswith(_prefix) or len(token) > 64:
             return None
+        if len(token) == 49:
+            body = open_callback(self._key, token[1:], aad=b"hotaru-screens")
+            if body is None or len(body) != _pack.size:
+                return None
+            version, form_id, gen, index = _pack.unpack(body)
+            return (form_id, gen, index) if version == _version else None
         try:
             raw = base64.urlsafe_b64decode(token[1:] + "=" * (-len(token[1:]) % 4))
         except Exception:
             return None
-        if len(raw) != _PACK.size + _TAG:
+        if len(raw) != _pack.size + _tag:
             return None
-        body, tag = raw[:_PACK.size], raw[_PACK.size:]
-        if not hmac.compare_digest(tag, hmac.new(self._key, body, hashlib.sha256).digest()[:_TAG]):
+        body, tag = raw[:_pack.size], raw[_pack.size:]
+        if not hmac.compare_digest(tag, hmac.new(self._key, body, hashlib.sha256).digest()[:_tag]):
             return None
-        version, form_id, gen, index = _PACK.unpack(body)
-        if version != VERSION:
+        version, form_id, gen, index = _pack.unpack(body)
+        if version != _version:
             return None
         return form_id, gen, index
 
     @staticmethod
     def owns(data: Any) -> bool:
         if isinstance(data, (bytes, bytearray)):
-            return bytes(data[:1]) == MARK.encode()
-        return isinstance(data, str) and data.startswith(MARK)
+            return bytes(data[:1]) == _prefix.encode()
+        return isinstance(data, str) and data.startswith(_prefix)
 
-    # compile -----------------------------------------------------------
 
     def register(self, name: str, handler: Callable[..., Any]) -> None:
         """Kernel-level handler, addressed as ``{"m": "@kernel", "f": name}``."""
@@ -489,7 +595,7 @@ class ScreenEngine:
         return ScreenRef(self, form.id, None if follow else form.gen)
 
     def kernel_button(self, text: str, name: str, *, style: Optional[str] = None, **args: Any) -> Dict[str, Any]:
-        item: Dict[str, Any] = {"text": text, "k": "go", "m": KERNEL, "f": name, "a": _json_safe(args)}
+        item: Dict[str, Any] = {"text": text, "k": "go", "m": _kernel_id, "f": name, "a": _json_safe(args)}
         if style:
             item["style"] = style
         return item
@@ -507,6 +613,13 @@ class ScreenEngine:
                     button["style"] = spec["style"]
                 if spec.get("icon_custom_emoji_id"):
                     button["icon_custom_emoji_id"] = spec["icon_custom_emoji_id"]
+                icon = icons.get(spec.get("icon"))
+                if icon is not None:
+                    if premium():
+                        if not spec.get("style"):
+                            button["icon_custom_emoji_id"] = str(icon[0])
+                    else:
+                        button["text"] = f"{icon[1]} {button['text']}".strip()
                 if kind in {"go", "input", "close"}:
                     if len(actions) > 255:
                         raise ScreenError("a screen can hold at most 256 actions")
@@ -535,6 +648,32 @@ class ScreenEngine:
         text = screen.text
         if screen.notice:
             text = f"{screen.notice}\n\n{text}"
+
+        def swap(match: "re.Match[str]") -> str:
+            if len(actions) > 255:
+                raise ScreenError("a screen can hold at most 256 actions")
+            try:
+                raw = match.group(2)
+                spec = cast(Dict[str, Any], json.loads(base64.urlsafe_b64decode(raw + "=" * (-len(raw) % 4))))
+            except Exception as exc:
+                raise ScreenError("malformed in-text button") from exc
+            kind = str(spec.get("k"))
+            if kind not in {"go", "input", "close"}:
+                raise ScreenError("malformed in-text button")
+            action: Dict[str, Any] = {"k": kind}
+            if kind != "close":
+                action.update(m=spec.get("m") or form.module, f=spec["f"], a=spec.get("a") or {})
+            if kind == "input":
+                action["p"] = str(spec.get("p") or "")
+                if spec.get("s"):
+                    action["s"] = True
+            token = self.encode(form.id, gen, len(actions))
+            actions.append(action)
+            target = f'query="{token} "' if kind == "input" else f'data="{token}"'
+            return f"<tg-button{match.group(1)} {target}{match.group(3)}>"
+
+        text = _tap_re.sub(swap, text)
+        screen.rich = bool(screen.rich or is_rich(text))
         return text, rows, actions, gen
 
     def _commit(self, form: Form, text: str, actions: List[Dict[str, Any]], gen: int, screen: Screen) -> None:
@@ -563,7 +702,12 @@ class ScreenEngine:
             self._targets = {(str(row[0]), int(row[1])) for row in rows}
         return self._targets
 
-    # delivery ----------------------------------------------------------
+
+    async def _rich(self, text: str) -> Dict[str, Any]:
+        branding = getattr(self.runtime, "branding", None)
+        if branding is not None:
+            return await branding.rich(text)
+        return {"_": "inputRichMessageHTML", **to_rich(text)}
 
     def _actor_of(self, source: Any) -> int:
         for value in (getattr(source, "_hotaru_actor_id", None), getattr(source, "from_id", None)):
@@ -573,7 +717,6 @@ class ScreenEngine:
         return int(owner or 0)
 
     async def show(self, ctx: Any, screen: Screen, *, reply_to: Optional[int] = None, fallback: bool = True, ttl: Optional[float] = None) -> Optional[Form]:
-        """Deliver a screen in answer to a command, through the inline bot."""
         source = getattr(ctx, "_delivery_source", None) or getattr(ctx, "message", None)
         module_id = str(getattr(ctx, "module_id", "") or "")
         if source is None or not module_id:
@@ -581,13 +724,7 @@ class ScreenEngine:
         return await self.open(module_id, source, screen, reply_to=reply_to, respond=ctx.respond if fallback else None, ttl=ttl)
 
     async def open(self, module_id: str, source: Any, screen: Screen, *, reply_to: Optional[int] = None, respond: Optional[Callable[..., Any]] = None, ttl: Optional[float] = None) -> Optional[Form]:
-        """Deliver a screen into ``source.chat_id``; ``source`` stands for the command.
-
-        ``source`` needs ``chat_id`` and ``from_id`` (the actor); ``id`` is the
-        command message, if any, and ``_hotaru_command`` names the command
-        whose permissions guard the buttons.  Without ``respond`` a delivery
-        failure is raised instead of falling back to plain text.
-        """
+        """Open in source.chat_id; respond provides the delivery fallback."""
         runtime = self.runtime
         if getattr(source, "src", None) == "bot":
             chat = getattr(source, "chat_id", None)
@@ -595,7 +732,7 @@ class ScreenEngine:
         command = self._command_of(source)
         actor = self._actor_of(source)
         chat = getattr(source, "chat_id", None)
-        form = self._create(module_id, actor, command, chat, bot=False, ttl=float(ttl or screen.ttl or DEFAULT_TTL))
+        form = self._create(module_id, actor, command, chat, bot=False, ttl=float(ttl or screen.ttl or _ttl))
         text, rows, actions, gen = self._compile(form, screen)
         try:
             sent, inline_id = await runtime.deliver_inline(source, text, rows, rich=screen.rich, reply_to=reply_to)
@@ -608,7 +745,7 @@ class ScreenEngine:
             if observatory is not None:
                 observatory.emit("screens", "delivery_failed", module=module_id, error=type(exc).__name__, detail=str(exc)[:200])
             hint = self._t("ui.inline_unavailable", "<i>Inline menu is unavailable here, showing plain text.</i>")
-            await respond(f"{text}\n\n{hint}", parse_mode="HTML")
+            await respond(f"{rich_to_plain(text) if screen.rich else text}\n\n{hint}", parse_mode="HTML")
             return None
         form.message_id = sent.get("id") if isinstance(sent, dict) and isinstance(sent.get("id"), int) else None
         form.inline_id = inline_id if isinstance(inline_id, dict) else None
@@ -628,15 +765,18 @@ class ScreenEngine:
             log.debug("screen repaint failed: %s", type(exc).__name__)
 
     async def send(self, module_id: str, chat_id: Any, screen: Screen, *, actor: Optional[int] = None, command: Optional[str] = None, ttl: Optional[float] = None) -> Form:
-        """Send a screen from the inline bot itself (e.g. to the owner's PM)."""
         bot_app = self._bot_app()
         owner = getattr(getattr(self.runtime, "kernel", None), "owner_id", None)
-        form = self._create(module_id, int(actor or owner or 0), command, chat_id, bot=True, ttl=float(ttl or screen.ttl or DEFAULT_TTL))
+        form = self._create(module_id, int(actor or owner or 0), command, chat_id, bot=True, ttl=float(ttl or screen.ttl or _ttl))
         text, rows, actions, gen = self._compile(form, screen)
-        plain, entities = to_entities(text)
-        data: Dict[str, Any] = {"peer": chat_id, "message": plain, "random_id": secrets.randbits(63), "no_webpage": True}
-        if entities:
-            data["entities"] = entities
+        data: Dict[str, Any] = {"peer": chat_id, "random_id": secrets.randbits(63), "no_webpage": True}
+        if screen.rich:
+            data.update(message="", rich_message=await self._rich(text))
+        else:
+            plain, entities = to_entities(text)
+            data["message"] = plain
+            if entities:
+                data["entities"] = entities
         markup = kbd_to_tl({"inline_keyboard": rows})
         if markup is not None and markup.get("rows"):
             data["reply_markup"] = markup
@@ -673,7 +813,6 @@ class ScreenEngine:
         return kernel.command_name(getattr(source, "text", "") or "") if kernel is not None else None
 
     async def edit(self, form: Form, screen: Screen) -> None:
-        """Redraw a form outside of a button press (progress, timers...)."""
         async with self._lock(form):
             await self._render(form, screen)
 
@@ -681,6 +820,19 @@ class ScreenEngine:
         text, rows, actions, gen = self._compile(form, screen)
         await self._edit_message(form, text, rows, screen.rich)
         self._commit(form, text, actions, gen, screen)
+
+    async def edit_ref(self, ref: ScreenRef, screen: Screen) -> bool:
+        form = self.load(ref.form_id)
+        if form is None:
+            return False
+        async with self._lock(form):
+            form = self.load(ref.form_id)
+            if form is None or form.expired or (ref.gen is not None and form.gen != ref.gen):
+                return False
+            await self._render(form, screen)
+            if ref.gen is not None:
+                ref.gen = form.gen
+            return True
 
     async def _edit_message(self, form: Form, text: str, rows: List[List[Dict[str, Any]]], rich: bool) -> None:
         from .callbacks import CallbackContext
@@ -692,7 +844,7 @@ class ScreenEngine:
         elif form.inline_id is None:
             data["reply_markup"] = {"_": "replyInlineMarkup", "rows": []}
         if rich:
-            data["rich_message"] = {"_": "inputRichMessageHTML", **to_rich(text)}
+            data["rich_message"] = await self._rich(text)
             plain = ""
         else:
             plain, entities = to_entities(text)
@@ -750,7 +902,6 @@ class ScreenEngine:
             lock = self._locks[form.id] = asyncio.Lock()
         return lock
 
-    # access ------------------------------------------------------------
 
     def _allowed(self, form: Form, actor: Any, action: Dict[str, Any]) -> bool:
         runtime = self.runtime
@@ -760,7 +911,7 @@ class ScreenEngine:
         if access is not None and access.is_owner(actor):
             return True
         target = str(action.get("m") or form.module)
-        if actor != form.actor or target != form.module or target == KERNEL or not form.command:
+        if actor != form.actor or target != form.module or target == _kernel_id or not form.command:
             return False
         kernel = runtime.kernel
         if kernel is None:
@@ -773,7 +924,7 @@ class ScreenEngine:
     def _handler(self, action: Dict[str, Any], form: Form) -> Callable[..., Any]:
         module_id = str(action.get("m") or form.module)
         name = str(action.get("f") or "")
-        if module_id == KERNEL:
+        if module_id == _kernel_id:
             handler = self._kernel.get(name)
         else:
             modules = getattr(self.runtime, "modules", None)
@@ -788,7 +939,7 @@ class ScreenEngine:
     async def _invoke(self, form: Form, action: Dict[str, Any], event: Any, nav: Nav) -> Any:
         handler = self._handler(action, form)
         module_id = str(action.get("m") or form.module)
-        if module_id == KERNEL:
+        if module_id == _kernel_id:
             result = handler(nav)
         else:
             factory = getattr(self.runtime, "context_factory", None)
@@ -798,11 +949,10 @@ class ScreenEngine:
             with module_scope(module_id):
                 result = handler(ctx, nav)
         if inspect.isawaitable(result):
-            with module_scope(module_id if module_id != KERNEL else ""):
+            with module_scope(module_id if module_id != _kernel_id else ""):
                 result = await result
         return result
 
-    # button presses ----------------------------------------------------
 
     async def dispatch(self, callback: Any) -> None:
         decoded = self.decode(getattr(callback, "data", None))
@@ -862,7 +1012,7 @@ class ScreenEngine:
             await self._finish(form, action, nav, result)
 
     async def _finish(self, form: Form, action: Dict[str, Any], nav: Nav, result: Any) -> None:
-        """Redraw first, then answer: the button spinner lasts exactly until the menu has changed."""
+        """Redraw before dismissing the button spinner."""
         if isinstance(result, Screen):
             if self.load(form.id) is None:
                 await nav.answer(result.toast, alert=result.alert)
@@ -909,7 +1059,6 @@ class ScreenEngine:
         if observatory is not None:
             observatory.emit("screens", "handler_failed", level="error", module=form.module, handler=str(action.get("f")), error=type(exc).__name__, detail=str(exc)[:240], tb=traceback.format_exc()[-4000:])
 
-    # text input --------------------------------------------------------
 
     def _input_action(self, token: str) -> Optional[tuple[Form, Dict[str, Any]]]:
         decoded = self.decode(token)
@@ -937,7 +1086,7 @@ class ScreenEngine:
                 title = self._t("ui.input_send", "Send: {value}", value=_clip(value, 60)) if value else str(found[1].get("p") or self._t("ui.input_hint", "Type a value"))
             description = str(found[1].get("p") or "") if value else self._t("ui.input_hint", "Type a value")
             if value:
-                results.append(InlineObj.article(secrets.token_urlsafe(8), title, INPUT_ARTICLE, description=description, parse_mode="HTML"))
+                results.append(InlineObj.article(secrets.token_urlsafe(8), title, _input_title, description=description, parse_mode="HTML"))
         await answer_tl(query, results=results, cache_time=0, is_personal=True)
 
     async def input_chosen(self, chosen: Any, text: str) -> None:
@@ -983,11 +1132,7 @@ class ScreenEngine:
             pass
 
     async def on_message(self, message: Any) -> bool:
-        """A reply to a menu message is taken as input for its first input button.
-
-        This is how values longer than an inline query (about 220 characters),
-        or multi-line ones, get into a screen.
-        """
+        """Use replies for long or multiline input."""
         from .response import reply_message_id
 
         text = getattr(message, "text", None)
@@ -997,7 +1142,7 @@ class ScreenEngine:
             return False
         if (str(chat), int(target)) not in self._reply_targets():
             return False
-        row = self._ensure().execute(f"SELECT {self._COLUMNS} FROM screen_forms WHERE chat = ? AND message_id = ? AND bot = 0", (str(chat), target)).fetchone()
+        row = self._ensure().execute(f"SELECT {self._columns} FROM screen_forms WHERE chat = ? AND message_id = ? AND bot = 0", (str(chat), target)).fetchone()
         if row is None:
             return False
         form = self._row(row)

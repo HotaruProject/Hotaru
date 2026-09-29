@@ -1,0 +1,96 @@
+HOTARU = {
+    "id": "backups",
+    "version": "1.0.0",
+    "commands": ["backup"],
+    "capabilities": ["mt", "state", "files"],
+    "tasks": {"send": {"interval": 60, "autostart": True}},
+    "config_schema": {
+        "enabled": {"type": "bool", "default": True, "description": "Send automatic backups"},
+        "interval_hours": {"type": "int", "default": 24, "minimum": 1, "maximum": 720, "description": "Hours between backups"},
+    },
+    "lexicon": {
+        "en": {"description": "Send backups to the service forum", "commands": {"backup": {"description": "Send a backup or manage automatic backups"}}},
+        "ru": {"description": "Отправка бекапов в служебный чат", "commands": {"backup": {"description": "Отправить бекап или настроить автоотправку"}}},
+    },
+}
+
+import asyncio
+import html
+import time
+from typing import Any
+
+_lock = asyncio.Lock()
+
+
+def _text(ctx: Any, en: str, ru: str) -> str:
+    return ru if ctx.runtime.language() == "ru" else en
+
+
+def home(ctx: Any, nav: Any = None) -> Any:
+    k = ctx.screens
+    enabled = ctx.config.get("enabled", True)
+    hours = ctx.config.get("interval_hours", 24)
+    last = ctx.state.get("last_sent", 0)
+    status = _text(ctx, "Enabled", "Включено") if enabled else _text(ctx, "Disabled", "Выключено")
+    text = k.banner() + f"{k.icon('folder')} <b>{_text(ctx, 'Backups', 'Бекапы')}</b>\n{status} · {hours} {_text(ctx, 'hours', 'ч.')}"
+    if last:
+        text += "\n" + _text(ctx, "Last sent: ", "Последняя отправка: ") + time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime(last))
+    text += "\n" + _text(ctx, "Destination: Backups topic in the service chat.", "Куда: топик Backups в служебном чате.")
+    return k.screen(text, [
+        [k.button(_text(ctx, 'Send now', 'Отправить сейчас'), send_now)],
+        [k.button(_text(ctx, 'Disable' if enabled else 'Enable', 'Выключить' if enabled else 'Включить'), toggle)],
+        k.footer(),
+    ])
+
+
+def toggle(ctx: Any, nav: Any) -> Any:
+    ctx.config.set("enabled", not ctx.config.get("enabled", True))
+    return home(ctx)
+
+
+async def _send(ctx: Any, *, automatic: bool = False) -> bool:
+    async with _lock:
+        now = time.time()
+        if automatic:
+            if not ctx.config.get("enabled", True):
+                return False
+            if now - ctx.state.get("last_sent", 0) < ctx.config.get("interval_hours", 24) * 3600:
+                return False
+        topic = await ctx.forum.ensure_topic("Backups")
+        if topic is None:
+            raise RuntimeError(_text(ctx, "Service chat is not ready", "Служебный чат ещё не готов"))
+        archive = ctx.runtime.create_backup()
+        await ctx.forum.send_file(topic, str(archive), _text(ctx, "Hotaru backup", "Бекап Hotaru"), file_name=archive.name)
+        # Only a successful delivery moves the schedule forward.
+        ctx.state.set("last_sent", time.time())
+        return True
+
+
+async def send_now(ctx: Any, nav: Any) -> Any:
+    try:
+        await _send(ctx)
+    except Exception as exc:
+        return home(ctx).with_notice(_text(ctx, "Backup failed: ", "Не удалось отправить бекап: ") + html.escape(str(exc)))
+    return home(ctx).with_notice(_text(ctx, "Backup sent", "Бекап отправлен"))
+
+
+async def task_send(ctx: Any) -> None:
+    ready = getattr(ctx.runtime, "_forum_ready", None)
+    if ready is None or not ready.is_set():
+        return
+    await _send(ctx, automatic=True)
+
+
+async def command_backup(ctx: Any, invocation: Any) -> None:
+    args = list(invocation.args)
+    if args == ["now"]:
+        screen = await send_now(ctx, None)
+    elif args in (["on"], ["off"]):
+        ctx.config.set("enabled", args[0] == "on")
+        screen = home(ctx)
+    elif not args:
+        screen = home(ctx)
+    else:
+        await ctx.respond(f"<code>{html.escape(ctx.runtime.config.prefix)}backup [now|on|off]</code>", parse_mode="HTML")
+        return
+    await ctx.screens.show(screen)

@@ -49,7 +49,10 @@
       "restart": "Takes effect after a restart.",
       "new_value": "new value for {name}",
       "copy": "⧉ Copy",
-      "field_unavailable": "Template field unavailable or not exported: {name}"
+      "field_unavailable": "Template field unavailable or not exported: {name}",
+      "param": "Parameter",
+      "about": "What the parameters mean",
+      "changed": "changed: {count}"
     },
     "power": {
       "already_stopped": "Userbot is already stopped.",
@@ -245,7 +248,9 @@
       "settings": "⚙️ Settings",
       "search_prompt": "module or command",
       "results": "Results for «{query}»",
-      "aliases": "Aliases"
+      "aliases": "Aliases",
+      "count": "{count} modules",
+      "prefix": "prefix {prefix}"
     },
     "accounts": {
       "description": "Account management",
@@ -390,7 +395,11 @@
         "no_user": "Login returned no user.",
         "wrong_account": "Wrong account; expected user {uid}.",
         "unknown": "Could not complete this action."
-      }
+      },
+      "field": {
+        "autostart": "Autostart"
+      },
+      "title": "Accounts"
     },
     "acl": {
       "description": "Access control",
@@ -458,7 +467,7 @@
       "lg": "Show recent log entries"
     },
     "settings": {
-      "description": "Alias and prefix management",
+      "description": "Module settings, prefix and aliases",
       "commands": {
         "alias": {
           "description": "Create a command alias"
@@ -471,6 +480,15 @@
         },
         "prefix": {
           "description": "Change command prefix"
+        },
+        "settings": {
+          "description": "Open settings"
+        },
+        "conf": {
+          "description": "Open settings"
+        },
+        "config": {
+          "description": "Open settings"
         }
       }
     },
