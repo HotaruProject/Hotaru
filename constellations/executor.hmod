@@ -1,6 +1,6 @@
 HOTARU = {
     "id": "executor",
-    "version": "3.3.10",
+    "version": "3.3.11",
     "commands": ["sh", "py", "kill"],
     "capabilities": ["mt", "files", "net", "state"],
 }
@@ -57,6 +57,25 @@ def _escape(value: str) -> str:
 
 def _u16(s: str) -> int:
     return len(s.encode("utf-16-le")) // 2
+
+
+def _trace(exc: BaseException) -> str:
+    frames = traceback.extract_tb(exc.__traceback__)
+    internal = frames[0].filename if frames else ""
+    line = None
+    while frames and frames[0].filename == internal:
+        frames.pop(0)
+    if frames and frames[0].name == "__executor_runner__":
+        line = frames[0].lineno
+        frames.pop(0)
+    head = f"{type(exc).__name__}: {exc}"
+    if not frames:
+        return head + (f" (line {line})" if line else "")
+    return "".join([
+        "Traceback (most recent call last):\n",
+        *traceback.format_list(frames),
+        *traceback.format_exception_only(type(exc), exc),
+    ])
 
 
 def _clean_code(text: str) -> str:
@@ -1139,7 +1158,29 @@ def _kill_group(process: Any) -> None:
             pass
 
 
+async def _fail(ctx: Any, exc: BaseException) -> None:
+    text = _trace(exc)
+    print(text, file=sys.stderr)
+    title = ctx.t('kernel.executor.section.traceback')
+    try:
+        await ctx.respond(
+            f"<b>{_escape(str(title))}</b>\n<pre>{_escape(text)}</pre>",
+            parse_mode="HTML", rich=False,
+        )
+    except Exception:
+        pass
+
+
 async def command_sh(ctx: Any, invocation: Any) -> Any:
+    try:
+        return await _sh_run(ctx, invocation)
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:
+        await _fail(ctx, exc)
+
+
+async def _sh_run(ctx: Any, invocation: Any) -> Any:
     raw = _get_raw_text(invocation)
     skip_output = False
     if match := re.match(r"^(?:-so|--skip-output)(?:\s+|$)", raw):
@@ -1257,6 +1298,15 @@ async def command_sh(ctx: Any, invocation: Any) -> Any:
 
 
 async def command_py(ctx: Any, invocation: Any) -> Any:
+    try:
+        return await _py_run(ctx, invocation)
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:
+        await _fail(ctx, exc)
+
+
+async def _py_run(ctx: Any, invocation: Any) -> Any:
     raw = _get_raw_text(invocation)
     skip_output = False
     if match := re.match(r"^(?:-so|--skip-output)(?:\s+|$)", raw):
@@ -1346,8 +1396,8 @@ async def command_py(ctx: Any, invocation: Any) -> Any:
             await eval_task
     except asyncio.CancelledError:
         error_trace = ctx.t('kernel.executor.cancelled')
-    except Exception:
-        error_trace = traceback.format_exc()
+    except Exception as exc:
+        error_trace = _trace(exc)
     finally:
         if inv_msg_id and inv_msg_id in _ACTIVE_PY:
             del _ACTIVE_PY[inv_msg_id]
