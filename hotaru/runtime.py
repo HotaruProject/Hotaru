@@ -595,6 +595,7 @@ class Runtime:
         options.update(kwargs)
         options["delete_source"] = False
         actor = options.get("callback_actor")
+        inline_form = source.src == "inline" or str(handle.key).startswith("inline:")
         rebound: list[list[dict[str, object]]] = []
         for row in cast('list[dict[str, object] | list[dict[str, object]]]', next_buttons or []):
             current: list[dict[str, object]] = []
@@ -604,11 +605,11 @@ class Runtime:
                 if isinstance(token, str) and self.callbacks is not None:
                     if not isinstance(actor, (int, str)):
                         raise CallbackDenied("callback identity is incomplete")
-                    item["callback_data"] = self.callbacks.store.rebind(token, CallbackBinding(actor, None if source.src == "inline" else source.chat_id, 0 if source.src == "inline" else source.id), scope={"form_id": handle.key, "command": options.get("command")})
+                    item["callback_data"] = self.callbacks.store.rebind(token, CallbackBinding(actor, None if inline_form else source.chat_id, 0 if inline_form else source.id), scope={"form_id": handle.key, "command": options.get("command")})
                 current.append(item)
             rebound.append(current)
         next_buttons = rebound
-        if source.src == "inline":
+        if inline_form:
             inline_id = getattr(source, "inline_message_id", None) or (self._form_inline_ids or {}).get(str(handle.key).split(":", 1)[-1])
             if inline_id is None:
                 raise RuntimeError("inline form edit identity is unavailable")

@@ -110,6 +110,11 @@ class CallbackContext:
         form = cast('Runtime', runtime).get_form(form_id) if runtime is not None and isinstance(form_id, str) else None
         if form is not None and runtime is not None:
             kwargs.pop("module_id", None)
+            raw_kbd = kwargs.pop("reply_markup", kwargs.pop("kbd", None))
+            if raw_kbd is not None and kwargs.get("buttons") is None:
+                markup_buttons = cast('dict[str, Any]', raw_kbd).get("inline_keyboard") if isinstance(raw_kbd, dict) else raw_kbd
+                if markup_buttons is not None:
+                    kwargs["buttons"] = markup_buttons
             return await runtime.edit_form(form[0], text, **kwargs)
 
         raw_buttons = kwargs.get("buttons")
