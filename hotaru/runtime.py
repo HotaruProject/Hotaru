@@ -2085,8 +2085,9 @@ class Runtime:
         module_paths = [active.loaded.path for active in self.modules.items()]
         stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ")
         destination = self.config.state_path.parent / "backups" / f"{stamp}.hbk"
-        result = self.backups.create(destination, state_path=self.config.state_path, module_paths=module_paths, metadata={"reason": "operator"})
-        removed = self.backups.prune(destination.parent, keep=self.config.backup_keep)
+        with trusted_scope():
+            result = self.backups.create(destination, state_path=self.config.state_path, module_paths=module_paths, metadata={"reason": "operator"})
+            removed = self.backups.prune(destination.parent, keep=self.config.backup_keep)
         if self.observatory is not None:
             self.observatory.emit("backup", "created", files=len(module_paths) + 1, removed=len(removed))
         return result

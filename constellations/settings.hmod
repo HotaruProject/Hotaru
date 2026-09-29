@@ -200,13 +200,13 @@ def _module_screen(ctx: Any, module_id: str, origin: Optional[str]) -> Any:
         entries.append(f"{k.tap(key, param, id=module_id, key=key, origin=origin)}{mark}  {_shown(ctx, field, config.get(key), 32)}")
         description = _describe(ctx, manifest, field)
         if description:
-            notes.append(f"<li><b>{_escape(key)}</b> — {_escape(ctx.tools.truncate(description, 160))}</li>")
+            notes.append(f"• <b>{_escape(key)}</b> — {_escape(ctx.tools.truncate(description, 160))}")
     head = f"{k.icon(icons.module(module_id))} <b>{_escape(module_id)}</b>  {k.badge(_escape(ctx.t('kernel.config.title_short')))}"
     if changed:
         head += " " + k.badge(ctx.t("kernel.config.changed", "changed: {count}", count=changed), "primary")
-    lines = [head, "\n".join(entries)]
+    text = head + "\n" + "\n".join(entries)
     if notes:
-        lines.append(k.details(f"{k.icon('info')} {_escape(ctx.t('kernel.config.about'))}", f"<ul>{''.join(notes)}</ul>"))
+        text += k.details(f"{k.icon('info')} {_escape(ctx.t('kernel.config.about'))}", "\n".join(notes))
     rows: List[List[Any]] = []
     if changed:
         rows.append([k.button(ctx.t("kernel.config.reset_all"), confirm_reset, icon="undo", id=module_id, origin=origin)])
@@ -214,7 +214,7 @@ def _module_screen(ctx: Any, module_id: str, origin: Optional[str]) -> Any:
         rows.append([k.link(ctx.t("common.back"), "help", "module", icon="back", id=module_id), k.close()])
     else:
         rows.append(k.footer(home))
-    return k.screen("\n".join(lines), rows)
+    return k.screen(text, rows)
 
 
 def module(ctx: Any, nav: Any) -> Any:

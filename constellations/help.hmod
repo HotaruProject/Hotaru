@@ -61,7 +61,7 @@ def home(ctx: Any, nav: Any = None) -> Any:
         lines.append(k.details(summary, "\n".join(entries), open=not kernel or user_count == 0))
     rows = [k.pager(home, page, pages)]
     rows.append([k.input(ctx.t("ui.search"), search, ctx.t("kernel.help_ui.search_prompt"), icon="search"), k.close()])
-    return k.screen("\n".join(lines), rows)
+    return k.screen("".join(lines), rows)
 
 
 def _card(ctx: Any, module_id: str, actor: Any, back: Any, **back_args: Any) -> Any:

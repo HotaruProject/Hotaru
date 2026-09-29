@@ -147,6 +147,39 @@ class Backups(unittest.IsolatedAsyncioTestCase):
         self.ctx.runtime.create_backup.assert_not_called()
 
 
+class BackupStorage(unittest.TestCase):
+    @unittest.skipIf(sys.platform == "win32", "runtime requires POSIX")
+    def test_backup_reads_protected_modules(self):
+        import tempfile
+        import zipfile
+        from hotaru.backup import BackupService
+        from hotaru.runtime import Runtime
+        from relay.firewall import install, module_scope
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            state = root / "state.sqlite3"
+            db = sqlite3.connect(state)
+            db.execute("create table module_state (key text)")
+            db.close()
+            source = root / "account" / "test.hmod"
+            source.parent.mkdir()
+            source.write_text('HOTARU = {"id": "test", "version": "1.0.0"}')
+            install(source.parent)
+            runtime = types.SimpleNamespace(
+                state=object(), backups=BackupService(), observatory=None,
+                config=types.SimpleNamespace(state_path=state, backup_keep=3),
+                modules=types.SimpleNamespace(items=lambda: [types.SimpleNamespace(loaded=types.SimpleNamespace(path=source))]),
+            )
+            with module_scope("backups"):
+                with self.assertRaises(PermissionError):
+                    source.read_bytes()
+                archive = Runtime.create_backup(runtime)
+            with zipfile.ZipFile(archive) as backup:
+                self.assertEqual(backup.read("modules/test.hmod"), source.read_bytes())
+                self.assertIn("state/state.sqlite3", backup.namelist())
+
+
 class Artwork(unittest.IsolatedAsyncioTestCase):
     @classmethod
     def setUpClass(cls):
