@@ -199,7 +199,19 @@
       "manager_unavailable": "<b>モジュール管理を利用できません</b>",
       "usage": "<b>使い方:</b> <code>{prefix}hlp</code> または <code>{prefix}hlp &lt;モジュール&gt;</code>",
       "disabled": "<b>モジュールは無効です:</b> <code>{module}</code><br><i>エラー: {error}</i>",
-      "missing": "<b>モジュールが見つかりません:</b> <code>{module}</code>"
+      "missing": "<b>モジュールが見つかりません:</b> <code>{module}</code>",
+      "title": "Hotaru · ヘルプ",
+      "summary": "モジュール {count} 件 · プレフィックス <code>{prefix}</code>",
+      "pick": "モジュールをタップするとコマンドを表示します。",
+      "kernel_badge": "コア",
+      "user_badge": "追加",
+      "no_commands": "コマンドなし",
+      "settings": "⚙️ 設定",
+      "search_prompt": "モジュールまたはコマンド",
+      "results": "「{query}」の結果",
+      "aliases": "エイリアス",
+      "count": "モジュール {count} 件",
+      "prefix": "プレフィックス {prefix}"
     },
     "accounts": {
       "description": "アカウント管理",
@@ -344,7 +356,11 @@
         "no_user": "ログインでユーザーを取得できませんでした。",
         "wrong_account": "アカウントが違います。ユーザー {uid} が必要です。",
         "unknown": "操作を完了できませんでした。"
-      }
+      },
+      "field": {
+        "autostart": "自動起動"
+      },
+      "title": "アカウント"
     },
     "acl": {
       "description": "権限管理",
@@ -425,7 +441,27 @@
       "shared_prefix": "現在のコマンド接頭辞",
       "shared_uptime": "起動後の経過秒数",
       "template_syntax": "{{name}}、数値書式 {{name:.2f}}、通常の波括弧には {{{{ / }}}} を使います。値はHTMLエスケープされます。",
-      "template_preview": "プレビュー（HTML、サンプル値）"
+      "template_preview": "プレビュー（HTML、サンプル値）",
+      "title": "⚙️ 設定",
+      "title_short": "設定",
+      "pick": "モジュールを選択:",
+      "empty": "設定を持つモジュールはまだありません。",
+      "missing": "モジュール <code>{module}</code> には設定がないか、読み込まれていません。",
+      "param_missing": "パラメーター <code>{name}</code> が見つかりません。",
+      "reset_all": "↺ すべてリセット",
+      "reset_confirm": "<b>{module}</b> のすべてのパラメーターを既定値に戻しますか？",
+      "reset_yes": "リセット",
+      "reset_done": "既定値に戻しました",
+      "value": "値",
+      "default": "既定値",
+      "type": "型",
+      "restart": "再起動後に反映されます。",
+      "new_value": "{name} の新しい値",
+      "copy": "⧉ コピー",
+      "field_unavailable": "テンプレート項目が利用できないかエクスポートされていません: {name}",
+      "param": "パラメーター",
+      "about": "各パラメーターの説明",
+      "changed": "変更: {count}"
     },
     "settings": {
       "description": "別名とプレフィックスの管理",
@@ -475,7 +511,12 @@
           "description": "ユーザーボットのログとファイル"
         }
       },
-      "pending": "待機中"
+      "pending": "待機中",
+      "config_fields": {
+        "level": "記録するログの最低レベル",
+        "batch_size": "1 メッセージあたりのログ件数",
+        "auto_topic": "フォーラムのログトピックを自動管理"
+      }
     },
     "executor": {
       "heading": "<b>実行</b> | <code>{elapsed:.1f} ミリ秒</code>",
@@ -557,7 +598,10 @@
         "uptime": "ユーザーボットの稼働時間（ゼロの単位を省略）",
         "uptime_seconds": "ユーザーボットの稼働時間（秒）"
       },
-      "example_uptime": "2時間 3分"
+      "example_uptime": "2時間 3分",
+      "config_fields": {
+        "template": "ping の返信テキスト"
+      }
     },
     "info": {
       "description": "ユーザーボットの情報カード",
@@ -566,6 +610,9 @@
         "info": {
           "description": "ユーザーボットの情報"
         }
+      },
+      "config_fields": {
+        "template": "info カードのテキスト"
       }
     }
   },
@@ -703,7 +750,8 @@
     },
     "file_missing": "モジュールファイルが見つかりません",
     "file_document": "モジュールをファイルとして送信してください",
-    "unknown_capability": "不明な機能（拒否）"
+    "unknown_capability": "不明な機能（拒否）",
+    "loading_module": "{module_id} を読み込み中…"
   },
   "acl": {
     "owners": "<b>オーナー</b><br>",
@@ -834,5 +882,29 @@
       "404": "見つかりません",
       "500": "内部エラーです"
     }
+  },
+  "ui": {
+    "close": "✕ 閉じる",
+    "back": "‹ 戻る",
+    "expired": "このメニューは期限切れです。コマンドをもう一度実行してください。",
+    "stale": "メニューが更新されました。もう一度押してください。",
+    "denied": "このボタンはあなた用ではありません。",
+    "failed": "問題が発生しました: {error}",
+    "flood": "Telegram から {seconds} 秒待つよう求められました。",
+    "slow_down": "操作が速すぎます。少し待ってください。",
+    "inline_unavailable": "<i>このチャットではインラインメニューを使えないため、テキストで表示しています。</i>",
+    "input_send": "送信: {value}",
+    "input_send_secret": "送信（{count} 文字・非表示）",
+    "input_hint": "スペースの後に値を入力してください",
+    "reply_hint": "長い・複数行のテキストはこのメッセージに返信してください。",
+    "search": "🔍 検索",
+    "edit": "✎ 編集",
+    "reset": "↺ 既定値",
+    "on": "オン",
+    "off": "オフ",
+    "error": "⚠️ {error}",
+    "saved": "保存しました",
+    "empty": "空",
+    "nothing_found": "「{query}」に一致するものはありません。"
   }
 }

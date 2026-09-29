@@ -921,7 +921,7 @@ class InlineManager:
         if not self._allows_form(query):
             return
         text = str(getattr(query, "query", ""))
-        if self.runtime.observatory is not None and not text.startswith("hotaru-login:"):
+        if self.runtime.observatory is not None:
             self.runtime.observatory.emit("inline", "query_received", src=str(getattr(query, "src", "")), qid=str(getattr(query, "id", "")), length=len(text))
         for handler in tuple(self._handlers):
             try:
@@ -956,7 +956,8 @@ class InlineManager:
         if not self._allows_form(update, chosen=True):
             return
         text = str(getattr(update, "query", "") or "").strip()
-        if not text.startswith("hotaru-login:"):
+        screens = getattr(self.runtime, "screens", None)
+        if screens is None or not screens.owns(text):
             from hotaru.security import AccessVerdict
 
             security = getattr(self.runtime, "security", None)
