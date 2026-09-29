@@ -40,11 +40,6 @@ Screen tokens take 49 bytes of the 64-byte Telegram limit. Existing HMAC
 references remain accepted for old menus, with the same actor, message,
 generation and expiration checks. Stored `config` screens migrate to `settings`.
 
-Run `python -m unittest discover -s checks -v` for regression checks without
-logging into Telegram. GoyGram may download the official schema when its local
-cache is empty. Real-client rendering and profile changes still require a
-running, authenticated Hotaru instance.
-
 Protocol references: [rich messages](https://core.telegram.org/bots/api#inputrichmessagemedia),
 [bot profile photos](https://core.telegram.org/method/photos.uploadProfilePhoto),
 [official TL schema](https://github.com/telegramdesktop/tdesktop/blob/dev/Telegram/SourceFiles/mtproto/scheme/api.tl).

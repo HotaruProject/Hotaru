@@ -61,7 +61,6 @@ async def _send(ctx: Any, *, automatic: bool = False) -> bool:
             raise RuntimeError(_text(ctx, "Service chat is not ready", "Служебный чат ещё не готов"))
         archive = ctx.runtime.create_backup()
         await ctx.forum.send_file(topic, str(archive), _text(ctx, "Hotaru backup", "Бекап Hotaru"), file_name=archive.name)
-        # Only a successful delivery moves the schedule forward.
         ctx.state.set("last_sent", time.time())
         return True
 

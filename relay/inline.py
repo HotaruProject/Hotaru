@@ -40,7 +40,6 @@ class InlineBotInfo:
 
 
 def _token_in(message: dict[str, Any]) -> str | None:
-    """Find a bot token anywhere in a BotFather reply: text, links or buttons."""
     import json
 
     parts = message.get("parts")
@@ -67,7 +66,6 @@ def _token_in(message: dict[str, Any]) -> str | None:
 
 
 def _merge(messages: list[dict[str, Any]]) -> dict[str, Any]:
-    """One reply out of several BotFather messages, oldest first."""
     merged = dict(messages[-1])
     merged["message"] = "\n".join(str(item.get("message") or "") for item in messages)
     merged["reply_markup"] = next((item.get("reply_markup") for item in reversed(messages) if item.get("reply_markup")), None)
@@ -153,7 +151,6 @@ class BotFatherConversation:
         return False
 
     async def response(self, *, since: int | None = None, settle: float = 1.5) -> dict[str, Any]:
-        """Collect all BotFather replies until the dialog goes quiet."""
         floor = since if since is not None else self._last_id
         deadline = time.monotonic() + self.timeout
         found: dict[int, dict[str, Any]] = {}

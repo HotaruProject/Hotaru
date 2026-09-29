@@ -175,7 +175,6 @@ class Nav:
         await self.answer(text)
 
     def ref(self, *, follow: bool = False) -> "ScreenRef":
-        # pinned to the screen this press renders, unless the flow owns the form
         return ScreenRef(self.engine, self.form.id, None if follow else (self.form.gen + 1) & 0xFFFF)
 
 
@@ -315,7 +314,7 @@ class Kit:
     @classmethod
     def _label(cls, text: str, icon: Optional[str], style: Optional[str] = None) -> str:
         if style in {"primary", "success", "danger"} and premium():
-            icon = None  # coloured icons vanish on coloured buttons
+            icon = None
         mark = cls.icon(icon)
         body = _esc(bare(text) if mark else text)
         return f"{mark} {body}" if mark and body else (mark or body or " ")
@@ -391,7 +390,6 @@ class ScreenEngine:
                 "rich INTEGER NOT NULL DEFAULT 0, touched REAL NOT NULL, ttl REAL NOT NULL, language TEXT)"
             )
             db.execute("CREATE INDEX IF NOT EXISTS screen_forms_message ON screen_forms(chat, message_id)")
-            # Keep old config menus working after the merge.
             for form_id, raw in db.execute("SELECT id, actions FROM screen_forms WHERE module = 'config'").fetchall():
                 actions = json.loads(raw or "[]")
                 for action in actions:
@@ -569,7 +567,7 @@ class ScreenEngine:
                 current.append(button)
             if current:
                 rows.append(current)
-        text = f"{screen.notice}\n\n{screen.text}" if screen.notice else screen.text
+        text = f"{screen.notice}\n{screen.text}" if screen.notice else screen.text
 
         def swap(match: "re.Match[str]") -> str:
             raw = match.group(2)
@@ -658,7 +656,7 @@ class ScreenEngine:
             if runtime.observatory is not None:
                 runtime.observatory.emit("screens", "delivery_failed", module=module_id, error=type(exc).__name__, detail=str(exc)[:200])
             hint = self._t("ui.inline_unavailable", "<i>Inline menu is unavailable here, showing plain text.</i>")
-            await respond(f"{rich_to_plain(text) if screen.rich else text}\n\n{hint}", parse_mode="HTML")
+            await respond(f"{rich_to_plain(text) if screen.rich else text}\n{hint}", parse_mode="HTML")
             return None
         form.message_id = sent.get("id") if isinstance(sent, dict) and isinstance(sent.get("id"), int) else None
         self._commit(form, text, actions, gen, screen)
@@ -675,7 +673,6 @@ class ScreenEngine:
                 form.inline_id = cast('dict[str, Any]', inline_id)
                 self._save(form)
             if repaint and form.gen == gen:
-                # custom emoji in a fresh inline result render only after an edit
                 try:
                     await self._edit(form, form.text, rows, form.rich)
                 except Exception as exc:
@@ -880,7 +877,6 @@ class ScreenEngine:
             await self._finish(form, action, nav, result)
 
     async def _finish(self, form: Form, action: dict[str, Any], nav: Nav, result: Any) -> None:
-        # redraw before answering, so the spinner lasts until the menu changes
         if not isinstance(result, Screen):
             await nav.answer(result if isinstance(result, str) else None)
             return
@@ -977,7 +973,6 @@ class ScreenEngine:
             pass
 
     async def on_message(self, message: Any) -> bool:
-        # replies to a menu feed its input button: long and multi-line values
         from .response import reply_message_id
 
         text = getattr(message, "text", None)

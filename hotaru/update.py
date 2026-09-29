@@ -42,7 +42,6 @@ def _git(repo: Path, *args: str, check: bool = True, input_data: Optional[bytes]
 
 @lru_cache(maxsize=1)
 def current_commit() -> str:
-    """The rolling release id: the commit this checkout runs."""
     root = Path(__file__).resolve().parent.parent
     return _text(_git(root, "rev-parse", "--short", "HEAD", check=False)) or "unknown"
 

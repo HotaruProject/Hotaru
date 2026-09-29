@@ -1,13 +1,10 @@
-"""Kernel icons and Unicode fallbacks."""
 from __future__ import annotations
 
 import html
 from typing import Dict, Optional, Tuple
 
 
-# ID, fallback, bound emoji. Telegram requires the exact bound emoji in rich text.
 _icons: Dict[str, Tuple[int, str, str]] = {
-    # navigation and actions
     "back": (5258236805890710909, "‹", "⬅️"),
     "close": (5260342697075416641, "✕", "❌"),
     "search": (5429571366384842791, "🔍", "🔎"),
@@ -34,7 +31,6 @@ _icons: Dict[str, Tuple[int, str, str]] = {
     "eye": (5253959125838090076, "👁", "👁"),
     "loading": (5258012149036365477, "◌", "📸"),
     "minus": (5275969776668134187, "−", "⛔️"),
-    # objects
     "bot": (5258093637450866522, "🤖", "🤖"),
     "book": (5258328383183396223, "📖", "📖"),
     "bolt": (5258152182150077732, "⚡", "⚡️"),
@@ -66,7 +62,6 @@ _icons: Dict[str, Tuple[int, str, str]] = {
     "text": (5370546867786523009, "🔤", "📝"),
     "kernel": (4974681956907221809, "▪️", "▪️"),
     "module": (4974508259839836856, "▪️", "▪️"),
-    # Hotaru set
     "hotaru": (5884064191467233197, "◉", "⚡️"),
     "hotaru_ho": (5886680238867357294, "HO", "⚡️"),
     "hotaru_ta": (5884059780535821183, "TA", "⚡️"),

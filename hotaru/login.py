@@ -75,7 +75,6 @@ _ART_NONE = (0, 0, 0)
 
 
 def _art_tone(value: float) -> tuple[int, int, int]:
-    """Flat brand bands: crisp shapes instead of a gradient."""
     if value < 0.12:
         return _ART_NONE
     if value < 0.46:
@@ -86,7 +85,6 @@ def _art_tone(value: float) -> tuple[int, int, int]:
 
 
 def _art_field(x: float, y: float, w: int, h: int) -> float:
-    """Round shadow, flat accretion disk, near-side stripe, photon ring, twin jets."""
     cx, cy = (w - 1) / 2.0, (h - 1) / 2.0
     dx, dy = x - cx, y - cy
     shadow = 0.145 * w
@@ -113,7 +111,6 @@ def _art_field(x: float, y: float, w: int, h: int) -> float:
 
 
 def _art(cols: int, rows: int) -> list[str]:
-    """One half-block glyph per cell from two subpixels; empty halves keep the terminal background."""
     height = rows * 2
     lines: list[str] = []
     for row in range(rows):
@@ -145,7 +142,6 @@ def _art(cols: int, rows: int) -> list[str]:
 
 
 def _art_size() -> tuple[int, int]:
-    """Banner size for the current terminal: use the width, leave room for the header and the prompt."""
     available = max(8, rows() - 9)
     cols = min(columns() - 2, 96, max(32, available * 5))
     return cols, max(8, min(available, round(cols / 3.3)))
@@ -159,9 +155,7 @@ def _banner_text() -> str:
     return "\n".join([*(pad + line for line in _art(cols, art_rows)), caption])
 
 
-# --------------------------------------------------------------------------- #
 # prompt widgets (frame layout, glyphs and colours: @clack/prompts 1.8.1, MIT)
-# --------------------------------------------------------------------------- #
 class Diff(TypedDict):
     lines: list[int]
     numLinesBefore: int
@@ -171,9 +165,6 @@ class Diff(TypedDict):
 Options = Sequence[Dict[str, Any]]
 Validate = Callable[[str], Any]
 
-# --------------------------------------------------------------------------- #
-# styles: node:util styleText semantics (each style closes with its own code)
-# --------------------------------------------------------------------------- #
 _CODES = {
     "reset": (0, 0),
     "bold": (1, 22),
@@ -233,9 +224,6 @@ def rows() -> int:
     return shutil.get_terminal_size((80, 24)).lines
 
 
-# --------------------------------------------------------------------------- #
-# guide symbols (packages/prompts/src/common.ts)
-# --------------------------------------------------------------------------- #
 S_STEP_ACTIVE = "◆"
 S_STEP_CANCEL = "■"
 S_STEP_ERROR = "▲"
@@ -325,7 +313,6 @@ def symbol_bar(state: str) -> str:
 
 
 def wrap_ansi(text: str, limit: int) -> list[str]:
-    """Wrap to `limit` visible columns; escape sequences are carried along (wrapAnsi hard/trim=false)."""
     lines: list[str] = []
     for raw in text.split("\n"):
         current: list[str] = []
@@ -382,7 +369,6 @@ def limit_options(
     column_padding: int = 0,
     row_padding: int = 4,
 ) -> list[str]:
-    """Port of packages/prompts/src/limit-options.ts (sliding window + ellipsis)."""
     available_columns = columns() - column_padding
     output_max_items = max(rows() - row_padding, 0)
     computed = int(max(min(max_items, output_max_items), 5))
@@ -458,9 +444,6 @@ def limit_options(
     return result
 
 
-# --------------------------------------------------------------------------- #
-# raw terminal input
-# --------------------------------------------------------------------------- #
 class Key:
     __slots__ = ("name", "char")
 
@@ -497,7 +480,6 @@ def _block_write(text: str) -> None:
 
 
 def print_prelude() -> None:
-    """Draw the banner. The header lines written after it stay in _block_log for repaints."""
     text = _prelude() if _prelude is not None else ""
     if text:
         write(text + "\n")
@@ -524,7 +506,6 @@ def _resize_pending() -> bool:
 
 
 class Raw:
-    """Raw stdin, but output keeps ONLCR: upstream writes LF and the tty adds CR."""
 
     def __init__(self) -> None:
         self.fd = sys.stdin.fileno()
@@ -583,9 +564,6 @@ class Raw:
         return Key("char", char)
 
 
-# --------------------------------------------------------------------------- #
-# prompt base (packages/core/src/prompts/prompt.ts)
-# --------------------------------------------------------------------------- #
 class Cancelled(KeyboardInterrupt):
     pass
 
@@ -611,7 +589,6 @@ class Prompt:
         self._raw = None
         self._resolved = False
 
-    # ---- frame plumbing (upstream Prompt.render) -------------------------- #
     def render(self) -> str:
         raise NotImplementedError
 
@@ -665,7 +642,6 @@ class Prompt:
         write("\n")
 
     def _on_resize(self) -> None:
-        """Rewrapped lines make row arithmetic unusable: repaint the block from a clean screen."""
         header = list(_block_log)
         write("\x1b[2J\x1b[H")
         print_prelude()
@@ -675,15 +651,12 @@ class Prompt:
         self.draw()
 
     def _resolve(self) -> None:
-        """upstream's once('submit'/'cancel') handler: the cursor is shown exactly once."""
         if self._resolved:
             return
         self._resolved = True
         write(CURSOR_SHOW)
 
-    # ---- interaction ----------------------------------------------------- #
     def handle(self, key: Key) -> bool:
-        """Override; returns True when the prompt is finished."""
         raise NotImplementedError
 
     def run(self) -> Any:
@@ -709,7 +682,6 @@ class Prompt:
             raise Cancelled
         return self.value
 
-    # ---- helpers --------------------------------------------------------- #
     def _submit(self) -> bool:
         if self._validate is not None:
             problem = self._validate(self.value)
@@ -735,7 +707,6 @@ class Prompt:
 
 
 class InputPrompt(Prompt):
-    """text + password share their key handling."""
 
     def __init__(
         self,
@@ -863,9 +834,6 @@ class PasswordPrompt(InputPrompt):
         return super().handle(key)
 
 
-# --------------------------------------------------------------------------- #
-# select / multiselect / confirm
-# --------------------------------------------------------------------------- #
 class SelectPrompt(Prompt):
     def __init__(
         self,
@@ -948,7 +916,6 @@ class SelectPrompt(Prompt):
 
 
 def cancel_pressed(keys: Raw) -> bool:
-    """True when Esc / Ctrl+C is waiting in the input buffer (upstream block() cancel hook)."""
     while True:
         key = keys.key(timeout=0)
         if key is None:
@@ -1027,9 +994,9 @@ class Spinner:
     def start(self, message: str = "") -> None:
         self.message = re.sub(r"\.+$", "", message)
         self._active = True
-        write(CURSOR_HIDE)  # upstream block() hides the cursor while spinning
+        write(CURSOR_HIDE)
         _block_write(f"{style('gray', S_BAR)}\n")
-        self._last = time.monotonic()  # first frame after DELAY, like upstream's setInterval
+        self._last = time.monotonic()
 
     def _clear(self) -> None:
         if self._prev is None:
@@ -1064,7 +1031,7 @@ class Spinner:
         self._clear()
         symbol_ = {"submit": style("green", S_STEP_SUBMIT), "cancel": style("red", S_STEP_CANCEL), "error": style("red", S_STEP_ERROR)}[state]
         _block_write(f"{symbol_}  {message or self.message}\n")
-        write(CURSOR_SHOW)  # upstream unblock() shows the cursor again
+        write(CURSOR_SHOW)
         self._prev = None
 
     def stop(self, message: str = "") -> None:
@@ -1087,9 +1054,6 @@ class Spinner:
         self.message = re.sub(r"\.+$", "", message)
 
 
-# --------------------------------------------------------------------------- #
-# the demo: examples/basic/index.ts, verbatim
-# --------------------------------------------------------------------------- #
 def text(
     message: str,
     placeholder: str | None = None,

@@ -321,7 +321,6 @@ class CallbackStore:
 
     @property
     def connection(self) -> Any:
-        """The live connection: relocate() swaps it on the store, so a captured one would go stale."""
         return self._store.connection if self._store is not None else self._connection
 
     def _init_db(self) -> None:

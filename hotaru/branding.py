@@ -1,4 +1,3 @@
-"""Bundled Telegram artwork."""
 from __future__ import annotations
 
 import asyncio
@@ -49,7 +48,6 @@ class Branding:
                 try:
                     entry = await self._upload(app, media_id, kind, filename)
                 except Exception as exc:
-                    # Keep the menu usable if the upload fails.
                     tag = "video" if kind == "video" else "img"
                     payload["html"] = payload["html"].replace(f'<{tag} src="tg://{kind}?id={media_id}"/>', "")
                     if self.runtime.observatory is not None:
@@ -121,7 +119,6 @@ class Branding:
                     self.runtime.observatory.emit("branding", "avatar_failed", target=kind, error=type(exc).__name__)
 
     async def apply_bot_avatar(self, info: Any) -> None:
-        """Set the bot photo without waiting for forum setup."""
         state = self.runtime.state
         app = self.runtime.app
         key = f"brand-avatar-bot-{info.bot_id}"

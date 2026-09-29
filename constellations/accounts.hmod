@@ -144,7 +144,6 @@ class AccountUI:
             while len(self.watches) > 128:
                 self.watches.pop(next(iter(self.watches))).cancel()
 
-# Handlers check action rights after the engine checks view access.
 
 _status_style = {'current': 'primary', 'running': 'success', 'starting': 'primary', 'login': 'danger', 'stopped': None, 'disabled': None}
 _status_icon = {'current': 'account', 'running': 'bolt', 'starting': 'loading', 'login': 'login', 'stopped': 'ban', 'disabled': 'minus'}
@@ -191,7 +190,7 @@ def _detail(ctx: Any, actor: int, number: int, page: int = 0, note: str = '') ->
         [html.escape(ui.t('field.autostart'), quote=False), f"{k.icon('clock')} " + html.escape(ui.t('on' if profile.enabled else 'off'), quote=False)],
     ]
     heading = f"{k.icon(_status_icon.get(status, 'account'))} <b>{html.escape(ui.t('account', n=number), quote=False)}</b>  " + k.badge(ui.t('status.' + status), _status_style.get(status))
-    text = heading + "\n" + k.table(facts, keys=True)
+    text = heading + k.table(facts, keys=True)
     data = {'number': number, 'uid': profile.user_id, 'page': page}
     taps: list[str] = []
     if profile.user_id == ui.access.root or not ui.runtime.account_manager.manageable(profile.user_id):
@@ -219,7 +218,7 @@ def _detail(ctx: Any, actor: int, number: int, page: int = 0, note: str = '') ->
         taps.append(k.row(k.tap(ui.t('button.permissions'), rights, style=None, icon='lock', user=profile.user_id, **data)))
     text += ''.join(taps)
     if note:
-        text = note + '\n\n' + text
+        text = note + '\n' + text
     rows = [[k.button(ui.t('button.accounts'), home, icon='back', page=page), k.button(ui.t('button.refresh'), account, icon='redo', **data), k.close()]]
     return k.screen(text, rows)
 
@@ -246,7 +245,6 @@ def _denied(ctx: Any, nav: Any, right: str = 'view') -> bool:
 
 
 def _moved(ctx: Any, nav: Any) -> Any:
-    """Reject removed or renumbered accounts."""
     number, uid = nav.int('number'), nav.arg('uid')
     if not number or uid is None:
         return None
@@ -409,7 +407,6 @@ def relogin(ctx: Any, nav: Any) -> Any:
 
 
 def _step_owner(ctx: Any, nav: Any) -> str | None:
-    """Why this login button may not be used right now, if it may not."""
     login = _login(ctx)
     if nav.actor != login.actor:
         return login.t('error.no_permission')
@@ -552,7 +549,6 @@ class AccountLogin:
             await asyncio.wait_for(self.view.edit(screen), _rpc_timeout)
 
     async def open(self, screen: Any) -> None:
-        """Send the wizard into the actor's private chat (Saved Messages for the owner)."""
         engine = self.runtime.screens
         source = SimpleNamespace(chat_id=self.actor, from_id=self.actor, _hotaru_actor_id=self.actor, _hotaru_command='acca', id=None, src='mt')
         form = await engine.open('accounts', source, screen)
@@ -572,7 +568,6 @@ class AccountLogin:
         await ctx.respond(self.hint(actor), parse_mode='HTML')
 
     def begin(self, uid: int | None = None, *, actor: int, kit: Any, view: Any = None, page: int = 0, back: dict[str, Any] | None = None) -> None:
-        """Start a login; with ``view`` the wizard takes over that form, else it opens a new one."""
         self.ui.access.check(actor, 'add', uid)
         if self.task is not None and not self.task.done():
             raise AccountError('login_busy')
@@ -662,7 +657,6 @@ class AccountLogin:
         return value, ''
 
     async def ask(self, step: str, text: str) -> str:
-        """Show an input step and wait for ``login_value`` (or a reply) to fill it."""
         self.ui.access.check(self.actor, 'add')
         self.step, self.prompt = step, text
         self.value = asyncio.get_running_loop().create_future()
@@ -941,7 +935,6 @@ class AccountLogin:
                     self.password.cancel()
                 self.password = None
                 await self.hide()
-
 
 
 _max_id = (1 << 63) - 1

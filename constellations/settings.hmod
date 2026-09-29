@@ -172,7 +172,7 @@ def _missing(ctx: Any, module_id: str) -> Any:
 def home(ctx: Any, nav: Any = None) -> Any:
     k = ctx.screens
     modules = _modules(ctx)
-    lines = [k.banner(), f"{k.icon('settings')} <b>{_escape(bare(ctx.t('kernel.config.title')))}</b>" + (f"  {k.badge(str(len(modules)), 'primary')}" if modules else "")]
+    lines = [k.banner() + f"{k.icon('settings')} <b>{_escape(bare(ctx.t('kernel.config.title')))}</b>" + (f"  {k.badge(str(len(modules)), 'primary')}" if modules else "")]
     lines.append(f"<code>{_escape(ctx.runtime.config.prefix)}prefix</code> · <code>{_escape(ctx.runtime.config.prefix)}alias</code> · <code>{_escape(ctx.runtime.config.prefix)}lsalias</code>")
     if not modules:
         lines.append(f"<i>{_escape(ctx.t('kernel.config.empty'))}</i>")
@@ -263,7 +263,7 @@ def _template_block(ctx: Any, module_id: str, field: ConfigField, value: Any, pa
     title = ctx.t("kernel.config.template_fields")
     counter = f" · {page + 1}/{pages}" if pages > 1 else ""
     syntax = _escape(ctx.t("kernel.config.template_syntax"))
-    block = f"<blockquote expandable><b>{_escape(title)}</b>{counter}\n" + "\n".join(entries) + f"\n\n<i>{syntax}</i></blockquote>"
+    block = f"<blockquote expandable><b>{_escape(title)}</b>{counter}\n" + "\n".join(entries) + f"\n<i>{syntax}</i></blockquote>"
     try:
         used = ctx.tools.template_names(value, legacy_braces=field.legacy_braces)
         for name in used:
@@ -278,7 +278,6 @@ def _template_block(ctx: Any, module_id: str, field: ConfigField, value: Any, pa
 
 
 def _preview_html(preview: str) -> str:
-    """Show the rendered template as it will look, unless it cannot sit inside a quote."""
     from relay.emoji import to_entities
     if re.search(r"<\s*/?\s*(blockquote|pre)\b", preview, re.IGNORECASE):
         return _escape(preview)
@@ -324,7 +323,7 @@ def _param_screen(ctx: Any, module_id: str, key: str, origin: Optional[str], pag
     pages = 1
     if field.template_fields is not None:
         block, page, pages = _template_block(ctx, module_id, field, value, page)
-        lines.append("\n" + block)
+        lines.append(block)
     edit = k.input(ctx.t("ui.edit"), set_value, ctx.t("kernel.config.new_value", name=key), style="primary", icon="edit", **args)
     if isinstance(validator, BooleanValidator):
         lines.append(k.row(

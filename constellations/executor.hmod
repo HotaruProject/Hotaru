@@ -184,9 +184,9 @@ class OutputUpdater:
             i = 0
             n = len(text)
             while i < n:
-                space = limit - size - 2
+                space = limit - size - 1
                 if space - overhead < 64 and len(cur) > 1:
-                    pages.append("\n\n".join(cur))
+                    pages.append("\n".join(cur))
                     cur = [head]
                     size = _u16(head)
                     continue
@@ -196,9 +196,9 @@ class OutputUpdater:
                     take = max(1, take * max(1, space - overhead) // max(1, _u16(block) - overhead))
                     block = self._fmt_entry(title, text[i:i + take], is_code, lang)
                 cur.append(block)
-                size += 2 + _u16(block)
+                size += 1 + _u16(block)
                 i += take
-        pages.append("\n\n".join(cur))
+        pages.append("\n".join(cur))
         return pages
 
     async def _deliver(self, text: str, final: bool) -> None:
@@ -243,7 +243,7 @@ class OutputUpdater:
                     if content is None or content == "":
                         continue
                     parts.append(self._fmt_entry(title, content, is_code, lang))
-                text = "\n\n".join(parts)
+                text = "\n".join(parts)
             await self._deliver(text, final)
 
     async def update(self, new_text: str, force: bool = False, wait: bool = False) -> None:
