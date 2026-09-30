@@ -854,9 +854,11 @@ class InlineManager:
         if reader is None or reader.done():
             return None
         try:
-            result = await mt.call("users.getUsers", id=[{"_": "inputPeerSelf"}])
+            result = await mt.call("users.getUsers", id=[{"_": "inputUserSelf"}])
         except Exception:
             return None
+        if isinstance(result, dict):
+            result = cast('dict[str, Any]', result).get("result", result)
         users: list[Any] = []
         if isinstance(result, list):
             users = cast('list[Any]', result)
