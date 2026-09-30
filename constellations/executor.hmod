@@ -569,11 +569,8 @@ class _MsgProxy:
 
     @property
     def plain_text(self) -> str:
-        for name in ("text", "raw_text", "message", "caption"):
-            value = self._g(name)
-            if isinstance(value, str) and value:
-                return value
-        return ""
+        tools = _tools(self.__dict__["_ctx"])
+        return str(tools.message_text(self.raw))
 
     @property
     def text(self) -> str:

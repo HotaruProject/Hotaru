@@ -4,6 +4,7 @@ import heapq
 import unicodedata
 import hashlib
 import html as _html_mod
+from html.parser import HTMLParser
 import json
 import random
 import re
@@ -783,6 +784,11 @@ def _rich_text(node: object) -> str:
 
 
 def _rich_caption(node: object) -> str:
+    if isinstance(node, dict):
+        caption = cast('dict[str, Any]', node)
+        if caption.get("_") == "pageCaption":
+            return "<br>".join(part for part in (_rich_text(caption.get("text")), _rich_text(caption.get("credit"))) if part)
+        return _rich_text(caption)
     return _rich_text(node) if node is not None else ""
 
 
@@ -813,6 +819,11 @@ def _rich_block(block: object) -> str:
         lang = escape_attr(block.get("language") or "")
         cls = f' class="language-{lang}"' if lang else ""
         return f"<pre><code{cls}>{text}</code></pre>"
+    if kind in {"pageBlockPhoto", "pageBlockVideo", "pageBlockAudio", "pageBlockDocument", "pageBlockMap", "pageBlockEmbed"}:
+        return f"<figcaption>{_rich_caption(block.get('caption'))}</figcaption>"
+    if kind in {"pageBlockCollage", "pageBlockSlideshow"}:
+        inner = "".join(_rich_block(item) for item in cast('list[Any]', block.get("items") or []))
+        return f"<figure>{inner}<figcaption>{_rich_caption(block.get('caption'))}</figcaption></figure>"
     if kind == "pageBlockDivider":
         return "<hr>"
     if kind == "pageBlockAnchor":
@@ -954,6 +965,50 @@ def entities_to_html(text: str | None, entities: list[object] | tuple[object, ..
         if i < len(text):
             out.append(_html_mod.escape(text[i]))
     return "".join(out)
+
+
+class _MessageTextParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.parts: list[str] = []
+
+    def handle_data(self, data: str) -> None:
+        self.parts.append(data)
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag in {"p", "h1", "h2", "h3", "h4", "h5", "h6", "li", "pre", "blockquote", "aside", "summary", "details", "tr", "br", "hr", "footer", "figure", "figcaption"}:
+            self.parts.append("\n")
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag in {"td", "th"}:
+            self.parts.append("\t")
+        else:
+            self.handle_starttag(tag, [])
+
+
+def message_text(message: object) -> str:
+    if isinstance(message, str):
+        return message
+    raw = _ent_get(message, "raw", message)
+    rich = _ent_get(raw, "rich_message") or _ent_get(raw, "richMessage")
+    if rich is None and _ent_get(raw, "_") in {"richMessage", "inputRichMessage", "inputRichMessageHTML"}:
+        rich = raw
+    if rich is not None:
+        markup = _ent_get(rich, "html")
+        if not isinstance(markup, str):
+            markup = rich_to_html({"rich_message": rich})
+        parser = _MessageTextParser()
+        parser.feed(markup)
+        parser.close()
+        text = "\n".join(line.rstrip("\t ") for line in "".join(parser.parts).splitlines())
+        text = re.sub(r"\n{3,}", "\n\n", text).strip()
+        if text:
+            return text
+    for name in ("message", "raw_text", "text", "caption"):
+        value = _ent_get(raw, name)
+        if isinstance(value, str) and value:
+            return value
+    return ""
 
 
 def rich_to_html(message: object) -> str:
@@ -1198,6 +1253,7 @@ TOOLKIT_FUNCS = {
     "badge": badge,
     "countdown": countdown,
     "rich_to_html": rich_to_html,
+    "message_text": message_text,
     "entities_to_html": entities_to_html,
     "btn_html": btn_html,
     "buttons_html": buttons_html,

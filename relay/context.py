@@ -1266,8 +1266,7 @@ async def _ctx_translate(target: MessageOperations, text: Any, to_lang: str | No
     if isinstance(text, int) and not isinstance(text, bool):
         text = await target.ctx.msg(target.chat_id, text)
     if not isinstance(text, str):
-        raw = _msg_field(text, "raw", text)
-        text = _msg_field(raw, "message", _msg_field(raw, "text", _msg_field(raw, "caption")))
+        text = target.ctx.tools.message_text(text)
     if not isinstance(text, str):
         raise ValueError("translation requires text or a text message")
     async def telegram(value: str, language: str, source_language: str) -> str:

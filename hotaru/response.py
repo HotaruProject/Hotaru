@@ -34,7 +34,7 @@ from relay.proxies import (
     UiHelper,
     ForumHelper,
 )
-from relay.toolkit import TOOLS, buttons_html, needs_form, needs_callback
+from relay.toolkit import TOOLS, buttons_html, needs_form, needs_callback, message_text
 
 log = logging.getLogger(__name__)
 
@@ -575,6 +575,9 @@ class ModuleContext(ContextOperations):
     async def _ctx_prepare(text: Any, parse_mode: Any, buttons: Any) -> dict[str, Any]:
         data: dict[str, Any] = {}
         if text is not None:
+            if not isinstance(text, str):
+                text = message_text(text)
+                parse_mode = None
             if str(parse_mode).lower() == "html":
                 data["message"], data["entities"] = to_entities(str(text))
             elif str(parse_mode).lower() in {"md", "markdown"}:
