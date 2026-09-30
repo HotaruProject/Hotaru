@@ -195,7 +195,7 @@ class Kernel:
             if self.response_service is not None:
                 try:
                     text = type(exc).__name__
-                    return await context.respond(text) if context is not None else await self.response_service.answer(message, text=text, output="auto")
+                    return await context.respond(text) if context is not None else await self.response_service.respond(message, text=text, output="auto")
                 except Exception as response_exc:
                     log.error("command error response failed: %s", type(response_exc).__name__)
                     return None
@@ -207,9 +207,9 @@ class Kernel:
                     text, buttons = values
                     if context is not None:
                         return await context.respond(text, buttons=buttons)
-                    return await self.response_service.answer(message, text=text, buttons=buttons, output="auto")
+                    return await self.response_service.respond(message, text=text, buttons=buttons, output="auto")
             if isinstance(result, str):
-                return await context.respond(result) if context is not None else await self.response_service.answer(message, text=result, output="auto")
+                return await context.respond(result) if context is not None else await self.response_service.respond(message, text=result, output="auto")
         return cast(object, result)
 
     async def _invoke(self, spec: Any, invocation: CommandInvocation, message: Any, context: Any = None) -> object:

@@ -66,12 +66,12 @@ class InputContext:
         self.inline_message_id = getattr(query, "msg_id", None)
 
     async def reject(self, text: str | None = None) -> Any:
-        return await self.answer(self.runtime.t("common.invalid_value") if text is None else text, alert=True)
+        return await self.respond(self.runtime.t("common.invalid_value") if text is None else text, alert=True)
 
     async def submit(self, text: str | None = None, **kwargs: Any) -> Any:
-        return await self.answer(text, **kwargs)
+        return await self.respond(text, **kwargs)
 
-    async def answer(self, text: str | None = None, **kwargs: Any) -> Any:
+    async def respond(self, text: str | None = None, **kwargs: Any) -> Any:
         answer = getattr(self.query, "answer", None)
         if callable(answer):
             return await cast(Awaitable[Any], answer(results=[], cache_time=0, is_personal=True))
@@ -1991,20 +1991,20 @@ class Runtime:
 
     async def _caps_cancel(self, callback: Any, payload: Any) -> object:
         if not isinstance(payload, dict):
-            await callback.answer(self.t('runtime.invalid_request'), alert=True)
+            await callback.respond(self.t('runtime.invalid_request'), alert=True)
             return None
         module_id = str(cast('dict[str, Any]', payload).get("module", "")).casefold()
-        await callback.answer(self.t('runtime.cancelled'))
+        await callback.respond(self.t('runtime.cancelled'))
         return await callback.edit(self.t('runtime.module_cancelled', module_id=module_id))
 
     async def _caps_confirm(self, callback: Any, payload: Any) -> object:
         if not isinstance(payload, dict) or self.modules is None or self.state is None or self.stager is None:
-            await callback.answer(self.t('runtime.invalid_request'), alert=True)
+            await callback.respond(self.t('runtime.invalid_request'), alert=True)
             return None
         module_id = str(cast('dict[str, Any]', payload).get("module", "")).casefold()
         source = cast('dict[str, Any]', payload).get("source")
         if not isinstance(source, str):
-            await callback.answer(self.t('runtime.source_missing'), alert=True)
+            await callback.respond(self.t('runtime.source_missing'), alert=True)
             return await callback.edit(self.t('runtime.module_missing', module_id=module_id))
         try:
             loaded, action = await self.load_module(source)
@@ -2016,9 +2016,9 @@ class Runtime:
         except Exception as exc:
             if self.observatory is not None:
                 self.observatory.emit("modules", "activation_error", module=module_id, error=type(exc).__name__, detail=str(exc)[:240])
-            await callback.answer(self.t('runtime.activation_failed'), alert=True)
+            await callback.respond(self.t('runtime.activation_failed'), alert=True)
             return await callback.edit(self.t('runtime.load_error', error=type(exc).__name__, detail=str(exc)[:120]))
-        await callback.answer(self.t('runtime.module_loaded'))
+        await callback.respond(self.t('runtime.module_loaded'))
         text = self.t('runtime.loaded', module_id=module_id, version=loaded.manifest.version)
         if getattr(callback, "inline_message_id", None) and getattr(callback, "app", None) is not None:
             inline_mid = callback.inline_message_id
@@ -2074,13 +2074,13 @@ class Runtime:
 
     async def _module_detail(self, callback: Any, payload: Any) -> object:
         if not isinstance(payload, str):
-            await callback.answer(self.t('runtime.invalid_module'), alert=True)
+            await callback.respond(self.t('runtime.invalid_module'), alert=True)
             return None
         return await callback.edit(self._module_detail_text(payload))
 
     async def _help_page(self, callback: Any, payload: Any) -> object:
         if not isinstance(payload, int) or payload < 0:
-            await callback.answer(self.t('runtime.invalid_page'), alert=True)
+            await callback.respond(self.t('runtime.invalid_page'), alert=True)
             return None
         result = self._help_render(payload, callback.chat_id, callback.msg_id)
         if isinstance(result, tuple):
@@ -2090,15 +2090,15 @@ class Runtime:
 
     async def _restore_confirm(self, callback: Any, payload: Any) -> object:
         if not isinstance(payload, str) or self.backups is None:
-            await callback.answer(self.t('runtime.invalid_restore'), alert=True)
+            await callback.respond(self.t('runtime.invalid_restore'), alert=True)
             return None
         try:
             plan = self.backups.plan(payload)
             await self.restore_filesystem(plan, self.relay_dir)
         except Exception as exc:
-            await callback.answer(self.t('runtime.restore_failed'), alert=True)
+            await callback.respond(self.t('runtime.restore_failed'), alert=True)
             return await callback.edit(self.t('runtime.restore_error', error=type(exc).__name__))
-        await callback.answer(self.t('runtime.restore_done'), alert=True)
+        await callback.respond(self.t('runtime.restore_done'), alert=True)
         return await callback.edit(self.t("runtime.restore_done"))
 
     def _event_error(self, error: Exception) -> None:
