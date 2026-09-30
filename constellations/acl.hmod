@@ -165,7 +165,7 @@ async def command_owadd(ctx: Any, invocation: Any) -> Any:
         return
     async def confirm(call: Any, payload: Any) -> None:
         if not ctx.access_admin.is_owner(call.from_id):
-            await call.answer(ctx.t("acl.no_permission"), alert=True)
+            await call.respond(ctx.t("acl.no_permission"), alert=True)
             return
         user_id = int(payload["user_id"])
         added = ctx.access_admin.add_owner(user_id)
@@ -352,7 +352,7 @@ async def command_ruleclr(ctx: Any, invocation: Any) -> Any:
         return
     async def confirm(call: Any, payload: Any) -> None:
         if not ctx.access_admin.is_owner(call.from_id):
-            await call.answer(ctx.t("acl.no_permission"), alert=True)
+            await call.respond(ctx.t("acl.no_permission"), alert=True)
             return
         removed = ctx.access_admin.remove_tsec_all(payload["kind"], payload["target"])
         await call.edit(ctx.t('acl.rules_cleared') if removed else ctx.t('acl.nothing_clear'), buttons=[])
@@ -676,7 +676,7 @@ async def _action(call: Any, data: dict[str, Any]) -> None:
     ctx = _context(call)
     if ctx is None:
         return
-    await call.answer()
+    await call.respond()
     ctx = _context(call)
     if ctx is None:
         return

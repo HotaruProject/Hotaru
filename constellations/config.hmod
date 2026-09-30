@@ -68,7 +68,7 @@ def _directory_form(ctx: Any) -> Dict[str, Any]:
     for mod_id, _schema in modules:
         def make_handler(m: str) -> Any:
             async def handler(c: Any, p: Any) -> Any:
-                await c.answer()
+                await c.respond()
                 await c.edit(**_module_form(ctx, m))
             return handler
 
@@ -253,7 +253,7 @@ def _parameter_form(ctx: Any, module_id: str, key: str, page: int = 0) -> Dict[s
                 mod_config.set(k, coerced)
             except Exception as exc:
                 try:
-                    await c.answer(f"Ошибка: {exc}", alert=True)
+                    await c.respond(f"Ошибка: {exc}", alert=True)
                 except Exception:
                     pass
                 return
@@ -294,10 +294,10 @@ def _parameter_form(ctx: Any, module_id: str, key: str, page: int = 0) -> Dict[s
             async def handler(c: Any, p: Any) -> Any:
                 new_val = cur + delta
                 if validator.minimum is not None and new_val < validator.minimum:
-                    await c.answer(f"Минимум: {validator.minimum}", alert=True)
+                    await c.respond(f"Минимум: {validator.minimum}", alert=True)
                     return
                 if validator.maximum is not None and new_val > validator.maximum:
-                    await c.answer(f"Максимум: {validator.maximum}", alert=True)
+                    await c.respond(f"Максимум: {validator.maximum}", alert=True)
                     return
                 mod_config.set(key, new_val)
                 await c.edit(**_parameter_form(ctx, module_id, key))
@@ -317,10 +317,10 @@ def _parameter_form(ctx: Any, module_id: str, key: str, page: int = 0) -> Dict[s
             async def handler(c: Any, p: Any) -> Any:
                 new_val = round(cur + delta, 2)
                 if validator.minimum is not None and new_val < validator.minimum:
-                    await c.answer(f"Минимум: {validator.minimum}", alert=True)
+                    await c.respond(f"Минимум: {validator.minimum}", alert=True)
                     return
                 if validator.maximum is not None and new_val > validator.maximum:
-                    await c.answer(f"Максимум: {validator.maximum}", alert=True)
+                    await c.respond(f"Максимум: {validator.maximum}", alert=True)
                     return
                 mod_config.set(key, new_val)
                 await c.edit(**_parameter_form(ctx, module_id, key))
