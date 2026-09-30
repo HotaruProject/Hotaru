@@ -389,6 +389,11 @@ def _attr_or(obj: Any, *names: Any) -> Any:
 
 
 async def _get_reply(ctx: Any, invocation: Any) -> Any:
+    source = getattr(ctx, "_source", None)
+    header = _msg_field(source, "reply_to")
+    if _msg_field(header, "reply_to_peer_id") is not None:
+        target = await _MsgProxy(source, ctx=ctx).get_reply_message()
+        return target.raw if target is not None else None
     reply = None
     fetch = getattr(ctx, "reply", None)
     if callable(fetch):
@@ -510,6 +515,10 @@ def _dump(v: Any) -> str:
     return _format_val(v)
 
 
+def _msg_field(value: Any, key: str, default: Any = None) -> Any:
+    return value.get(key, default) if hasattr(value, "get") else getattr(value, key, default)
+
+
 class _MsgProxy:
 
     def __init__(
@@ -560,7 +569,11 @@ class _MsgProxy:
 
     @property
     def plain_text(self) -> str:
-        return self._g("text", "raw_text", "message", "caption") or ""
+        for name in ("text", "raw_text", "message", "caption"):
+            value = self._g(name)
+            if isinstance(value, str) and value:
+                return value
+        return ""
 
     @property
     def text(self) -> str:
@@ -571,9 +584,7 @@ class _MsgProxy:
         rich = self._rich_html()
         if rich:
             return rich
-        plain = self._g("text", "raw_text", "message", "caption") or ""
-        if not isinstance(plain, str):
-            plain = str(plain) if plain else ""
+        plain = self.plain_text
         ents = cast(Any, self._g("entities") or [])
         tools = _tools(self.__dict__["_ctx"])
         conv = getattr(tools, "entities_to_html", None) if tools is not None else None
@@ -600,7 +611,7 @@ class _MsgProxy:
 
     @property
     def id(self) -> int | None:
-        return self._g("id", "message_id")
+        return self._g("id", "message_id", "msg_id")
 
     @property
     def msg_id(self) -> int | None:
@@ -608,11 +619,15 @@ class _MsgProxy:
 
     @property
     def chat_id(self) -> int | None:
-        return self._g("chat_id", "peer_id", "chat")
+        value = self._g("chat_id", "peer_id", "chat")
+        if value is None:
+            source = getattr(self.__dict__["_ctx"], "_source", None)
+            value = _msg_field(source, "chat_id") or _msg_field(source, "peer_id")
+        return self._peer_id(value)
 
     @property
     def user_id(self) -> int | None:
-        return self._g("from_id", "sender_id", "user_id")
+        return self._peer_id(self._g("from_id", "sender_id", "user_id"))
 
     @property
     def from_id(self) -> int | None:
@@ -653,7 +668,7 @@ class _MsgProxy:
 
     @property
     def is_me(self) -> bool:
-        return bool(self._g("is_me", "out"))
+        return bool(self._g("out") or self._g("is_me"))
 
     @property
     def out(self) -> bool:
@@ -670,7 +685,7 @@ class _MsgProxy:
 
     @property
     def has_media(self) -> bool:
-        return self._g("media") is not None
+        return self._g("media") is not None or any(self._g(k) is not None for k in ("photo", "document", "video", "audio", "voice", "sticker", "animation"))
 
     @property
     def media(self) -> Any:
@@ -678,11 +693,11 @@ class _MsgProxy:
 
     @property
     def photo(self) -> Any:
-        return self._g("photo")
+        return self._g("photo") or _msg_field(self.media, "photo")
 
     @property
     def document(self) -> Any:
-        return self._g("document")
+        return self._g("document") or _msg_field(self.media, "document")
 
     @property
     def video(self) -> Any:
@@ -707,7 +722,17 @@ class _MsgProxy:
 
     @property
     def topic_id(self) -> int | None:
-        return self._g("topic_id", "message_thread_id", "top_msg_id")
+        explicit = self._g("topic_id", "message_thread_id", "top_msg_id")
+        if isinstance(explicit, int) and explicit > 0:
+            return explicit
+        header = self._g("reply_to")
+        top = _msg_field(header, "reply_to_top_id")
+        if isinstance(top, int) and top > 0:
+            return top
+        if _msg_field(header, "forum_topic"):
+            return _msg_field(header, "reply_to_msg_id")
+        action = self._g("action")
+        return self.id if _msg_field(action, "_") == "messageActionTopicCreate" else None
 
 
     @property
@@ -721,11 +746,9 @@ class _MsgProxy:
         return getattr(raw, key, default)
 
     def __getattr__(self, name: str) -> Any:
-        raw = self.__dict__.get("_raw")
-        if raw is not None:
-            v = getattr(raw, name, _SENTINEL)
-            if v is not _SENTINEL:
-                return v
+        value = self._g(name, default=_SENTINEL)
+        if value is not _SENTINEL:
+            return value
         raise AttributeError(f"MsgProxy has no attribute {name!r}")
 
     def __bool__(self) -> bool:
@@ -766,78 +789,558 @@ class _MsgProxy:
         return html.escape(str(text if text is not None else self.text))
 
 
+    def _app(self) -> Any:
+        ctx = self.__dict__["_ctx"]
+        source = getattr(ctx, "_source", None)
+        if (self.src or _msg_field(source, "src", "mt")) != "mt":
+            raise ValueError("executor message operations require an MTProto message")
+        app = getattr(getattr(ctx, "runtime", None), "app", None)
+        if app is None:
+            raise RuntimeError("message client is unavailable")
+        self._target()
+        return app
+
+    def _target(self) -> tuple[int, int]:
+        chat, mid = self.chat_id, self.id
+        if not isinstance(chat, int) or not isinstance(mid, int) or mid <= 0:
+            raise ValueError("message has no concrete peer/message identity")
+        return chat, mid
+
+    @staticmethod
+    def _peer_id(value: Any) -> int | None:
+        if isinstance(value, int):
+            return value
+        for key, prefix in (("channel_id", -1000000000000), ("chat_id", 0), ("user_id", None), ("id", None)):
+            ident = _msg_field(value, key)
+            if isinstance(ident, int):
+                return ident if prefix is None else prefix - ident
+        return None
+
+    async def _rpc(self, method: str, **kwargs: Any) -> Any:
+        result = await self._app().mt_req(method, **kwargs)
+        if _msg_field(result, "ok") is False:
+            raise RuntimeError(f"{method}: {_msg_field(result, 'error', 'RPC failed')}")
+        return result
+
+    async def _on_message(self, method: str, *, id_key: str = "msg_id", **kwargs: Any) -> Any:
+        if "peer" in kwargs or id_key in kwargs:
+            raise ValueError("a message operation cannot override its target")
+        return await self._rpc(method, peer=await self.get_input_chat(), **{id_key: self.id}, **kwargs)
+
+    def _send_options(self, kwargs: dict[str, Any], *, reply: bool = False) -> dict[str, Any]:
+        data = dict(kwargs)
+        for key in ("chat_id", "peer", "message_id", "msg_id", "id", "via"):
+            if key in data:
+                raise ValueError(f"{key} cannot override this message's target")
+        topic = data.pop("topic_id", self.topic_id)
+        target = data.pop("reply_to", self.id if reply else topic)
+        if reply and target != self.id:
+            raise ValueError("reply must target this message")
+        if target is not None:
+            if isinstance(target, int):
+                target = {"_": "inputReplyToMessage", "reply_to_msg_id": target}
+            elif isinstance(target, dict):
+                target = dict(cast('dict[str, Any]', target))
+            else:
+                raise TypeError("reply_to must be a message ID or InputReplyToMessage")
+            if topic is not None:
+                target["top_msg_id"] = topic
+            data["reply_to"] = target
+        if "buttons" in data:
+            data["kbd"] = data.pop("buttons")
+        if isinstance(data.get("kbd"), list):
+            data["kbd"] = {"inline_keyboard": data["kbd"]}
+        if "link_preview" in data:
+            data["no_webpage"] = not data.pop("link_preview")
+        return data
+
     async def respond(self, text: str, **kwargs: Any) -> Any:
-        return await self.__dict__["_ctx"].respond(text, **kwargs)
+        kwargs.setdefault("parse_mode", "html")
+        return await self._app().send_msg(self.chat_id, text, via="mt", **self._send_options(kwargs))
 
     async def edit(self, text: str, **kwargs: Any) -> Any:
-        return await self.__dict__["_ctx"].respond(text, output="edit", **kwargs)
+        data = self._send_options(kwargs)
+        data.pop("reply_to", None)
+        data.setdefault("parse_mode", "html")
+        return await self._app().edit_msg(self.chat_id, self.id, text, via="mt", **data)
 
     async def reply(self, text: str, **kwargs: Any) -> Any:
-        return await self.__dict__["_ctx"].respond(text, output="reply", **kwargs)
+        kwargs.setdefault("parse_mode", "html")
+        return await self._app().send_msg(self.chat_id, text, via="mt", **self._send_options(kwargs, reply=True))
 
-    async def delete(self) -> Any:
-        app = getattr(getattr(self.__dict__["_ctx"], "runtime", None), "app", None)
-        if app is None or self.chat_id is None or self.id is None:
-            return None
-        return await app.delete_msg(self.chat_id, self.id)
+    async def answer(self, text: str, **kwargs: Any) -> Any:
+        return await (self.edit(text, **kwargs) if self.out else self.reply(text, **kwargs))
 
-    async def pin(self, both_sides: bool = False, **kwargs: Any) -> Any:
-        app = getattr(getattr(self.__dict__["_ctx"], "runtime", None), "app", None)
-        if app is None or self.chat_id is None or self.id is None:
-            return None
-        return await app.pin_msg(self.chat_id, self.id, notify=not both_sides, **kwargs)
+    async def delete(self, revoke: bool = True) -> Any:
+        from relay.rpc import delete_chat_msg
+        chat, mid = self._target()
+        return await delete_chat_msg(self._app(), chat, mid, revoke=revoke)
+
+    async def pin(self, both_sides: bool | None = None, *, notify: bool = False, pm_oneside: bool = False) -> Any:
+        return await self._on_message("messages.updatePinnedMessage", id_key="id", silent=not notify, pm_oneside=pm_oneside if both_sides is None else not both_sides)
 
     async def unpin(self) -> Any:
-        app = getattr(getattr(self.__dict__["_ctx"], "runtime", None), "app", None)
-        if app is None or self.chat_id is None or self.id is None:
-            return None
-        return await app.unpin_msg(self.chat_id, self.id)
+        return await self._on_message("messages.updatePinnedMessage", id_key="id", unpin=True)
 
     async def forward(self, to_chat: Any, **kwargs: Any) -> Any:
-        app = getattr(getattr(self.__dict__["_ctx"], "runtime", None), "app", None)
-        if app is None or self.chat_id is None or self.id is None:
-            return None
-        return await app.forward_msg(self.chat_id, self.id, to=to_chat, **kwargs)
+        topic = kwargs.pop("topic_id", self.topic_id if to_chat == self.chat_id else None)
+        if topic is not None:
+            kwargs["top_msg_id"] = topic
+        return await self._app().forward_msg(self.chat_id, self.id, to=to_chat, via="mt", **kwargs)
 
-    async def react(self, emoji: str) -> Any:
-        app = getattr(getattr(self.__dict__["_ctx"], "runtime", None), "app", None)
-        if app is None or self.chat_id is None or self.id is None:
-            return None
-        return await app.send_reaction(self.chat_id, self.id, emoji)
+    async def forward_to(self, to_chat: Any, **kwargs: Any) -> Any:
+        return await self.forward(to_chat, **kwargs)
+
+    async def copy_to(self, to_chat: Any, **kwargs: Any) -> Any:
+        kwargs["drop_author"] = True
+        return await self.forward(to_chat, **kwargs)
+
+    async def react(self, emoji: Any, **kwargs: Any) -> Any:
+        values = cast("list[Any]", emoji) if isinstance(emoji, list) else [emoji] if emoji else []
+        reactions = [{"_": "reactionEmoji", "emoticon": v} if isinstance(v, str) else {"_": "reactionCustomEmoji", "document_id": v} if isinstance(v, int) else v for v in values]
+        return await self._on_message("messages.sendReaction", reaction=reactions, **kwargs)
 
     async def unreact(self) -> Any:
-        app = getattr(getattr(self.__dict__["_ctx"], "runtime", None), "app", None)
-        if app is None or self.chat_id is None or self.id is None:
-            return None
-        return await app.send_reaction(self.chat_id, self.id, "")
+        return await self.react([])
 
     async def get_sender(self) -> Any:
-        app = getattr(getattr(self.__dict__["_ctx"], "runtime", None), "app", None)
         uid = self.user_id
-        if app is None or uid is None:
+        if uid is None:
             return None
-        return await app.get_user(uid)
+        return await self.__dict__["_ctx"].resolve(uid)
 
     async def get_chat(self) -> Any:
-        app = getattr(getattr(self.__dict__["_ctx"], "runtime", None), "app", None)
-        cid = self.chat_id
-        if app is None or cid is None:
-            return None
-        return await app.get_chat(cid)
+        return await self._app().get_chat(self.chat_id, via="mt")
 
-    async def download(self, destination: Any = None) -> Any:
-        ctx = self.__dict__["_ctx"]
-        source = self.__dict__["_raw"]
+    async def get_input_chat(self) -> Any:
+        return await self._app().mt.resolve_peer(self.chat_id)
+
+    async def get_input_sender(self) -> Any:
+        return await self._app().mt.resolve_peer(self.user_id) if self.user_id is not None else None
+
+    @staticmethod
+    def _input_entity(peer: Any, kind: str) -> dict[str, Any]:
+        if isinstance(peer, bytes):
+            from goygram import ext
+            peer = ext.deserialize_constructor(peer)
+        data = dict(cast("dict[str, Any]", peer))
+        ctor = str(data.get("_", ""))
+        allowed = {"inputPeerChannel": "inputChannel", "inputPeerChannelFromMessage": "inputChannelFromMessage"} if kind == "channel" else {"inputPeerUser": "inputUser", "inputPeerUserFromMessage": "inputUserFromMessage", "inputPeerSelf": "inputUserSelf"}
+        if ctor not in allowed:
+            raise ValueError(f"message peer is not a {kind}")
+        data["_"] = allowed[ctor]
+        return data
+
+    async def get_input_channel(self) -> Any:
+        return self._input_entity(await self.get_input_chat(), "channel")
+
+    async def download(self, destination: Any = None, **kwargs: Any) -> Any:
+        if not self.has_media:
+            raise ValueError("this message has no media")
         if destination is None:
-            destination = "/tmp"
-        return await ctx.download_file(source, destination)
+            import tempfile
+            fd, destination = tempfile.mkstemp(prefix="hotaru-executor-")
+            os.close(fd)
+        return await self.__dict__["_ctx"].download_file(self.raw, destination, **kwargs)
+
+    async def download_media(self, destination: Any = None, **kwargs: Any) -> Any:
+        return await self.download(destination, **kwargs)
 
     async def read(self) -> Any:
-        app = getattr(getattr(self.__dict__["_ctx"], "runtime", None), "app", None)
-        if app is None or self.chat_id is None:
-            return None
-        return await app.mark_read(self.chat_id, self.id)
+        if self.topic_id is not None:
+            return await self._rpc("messages.readDiscussion", peer=await self.get_input_chat(), msg_id=self.topic_id, read_max_id=self.id)
+        if self.chat_id is not None and self.chat_id < -1000000000000:
+            return await self._rpc("channels.readHistory", channel=await self.get_input_channel(), max_id=self.id)
+        return await self._rpc("messages.readHistory", peer=await self.get_input_chat(), max_id=self.id)
 
+    async def mark_read(self) -> Any:
+        return await self.read()
+
+    async def read_contents(self) -> Any:
+        if self.chat_id is not None and self.chat_id < -1000000000000:
+            return await self._rpc("channels.readMessageContents", channel=await self.get_input_channel(), id=[self.id])
+        return await self._rpc("messages.readMessageContents", id=[self.id])
+
+    async def get_reply_message(self) -> Any:
+        header = self._g("reply_to")
+        mid = self._g("reply_to_msg_id") or _msg_field(header, "reply_to_msg_id")
+        direct = self._g("reply_to_message", "reply_msg")
+        if direct is not None:
+            if isinstance(direct, dict):
+                direct = {"chat_id": self.chat_id, **cast("dict[str, Any]", direct)}
+            return _MsgProxy(direct, self.__dict__["_ctx"])
+        if not mid:
+            return None
+        peer = self._peer_id(_msg_field(header, "reply_to_peer_id")) or self.chat_id
+        raw = await self.__dict__["_ctx"].msg(peer, mid)
+        if raw is None:
+            return None
+        if isinstance(raw, dict):
+            raw = {"chat_id": peer, **cast('dict[str, Any]', raw)}
+        return _MsgProxy(raw, self.__dict__["_ctx"])
+
+    async def refresh(self) -> "_MsgProxy":
+        chat, mid = self._target()
+        raw = await self.__dict__["_ctx"].msg(chat, mid)
+        if raw is None:
+            raise LookupError("message no longer exists or is inaccessible")
+        self.__dict__["_raw"] = {"chat_id": chat, **cast('dict[str, Any]', raw)} if isinstance(raw, dict) else raw
+        return self
+
+    async def get_buttons(self) -> list[list[Any]]:
+        return self.buttons
+
+    @property
+    def buttons(self) -> list[list[Any]]:
+        markup = self._g("reply_markup")
+        rows: Any = _msg_field(markup, "rows") or _msg_field(markup, "inline_keyboard") or _msg_field(markup, "keyboard") or []
+        return [[_MsgButton(self, button) for button in (cast("list[Any]", row) if isinstance(row, list) else _msg_field(row, "buttons", []))] for row in rows]
+
+    @property
+    def button_count(self) -> int:
+        return sum(len(row) for row in self.buttons)
+
+    async def click(self, i: Any = None, j: int | None = None, *, text: Any = None, filter: Any = None, data: Any = None, share_phone: Any = None, share_geo: Any = None, password: Any = None, open_url: bool = False) -> Any:
+        if data is not None:
+            return await self.click_button({"_": "keyboardButtonCallback", "data": data}, password=password)
+        if sum(value is not None for value in (i, text, filter)) > 1:
+            raise ValueError("select only one of i, text or filter")
+        if j is not None and (text is not None or filter is not None or isinstance(i, (list, tuple))):
+            raise ValueError("j requires a row index")
+        poll = _msg_field(self.media, "poll") or self._g("poll")
+        answers: Any = _msg_field(poll, "answers", [])
+        if poll is not None:
+            if j is not None:
+                raise ValueError("poll options have no columns")
+            if i is not None:
+                indices = cast("list[Any]", i) if isinstance(i, (list, tuple)) else [i]
+                selected = [answers[index] for index in indices]
+            else:
+                selected = cast("list[Any]", [])
+                for answer in answers:
+                    label = _msg_field(answer, "text")
+                    label = _msg_field(label, "text", label)
+                    if (filter(_MsgButton(self, answer)) if filter is not None else text(label) if callable(text) else text is not None and label == text):
+                        selected.append(answer)
+                        break
+            return await self.vote([_msg_field(a, "option") for a in selected])
+        rows = self.buttons
+        flat = [button for row in rows for button in row]
+        if not flat:
+            return None
+        if text is not None:
+            button = next((b for b in flat if (text(b.text) if callable(text) else b.text == text)), None)
+        elif filter is not None:
+            button = next((b for b in flat if filter(b)), None)
+        else:
+            button = rows[i or 0][j] if j is not None else flat[0 if i is None else i]
+        return await button.click(share_phone=share_phone, share_geo=share_geo, password=password, open_url=open_url) if button else None
+
+    async def click_button(self, button: Any, *, share_phone: Any = None, share_geo: Any = None, password: Any = None, open_url: bool = False) -> Any:
+        kind = _msg_field(button, "type", button)
+        ctor = str(_msg_field(kind, "_", ""))
+        data = _msg_field(kind, "data", _msg_field(button, "callback_data"))
+        if data is not None or ctor in {"keyboardButtonGame", "inlineButtonTypeGame"}:
+            args: dict[str, Any] = {"game": True} if data is None else {"data": data.encode() if isinstance(data, str) else data}
+            if password is not None:
+                if isinstance(password, str):
+                    from goygram.transports import mtproto
+                    state = await self._rpc("account.getPassword")
+                    state = _msg_field(state, "result", state)
+                    srp_id, a, m1 = getattr(mtproto, "_compute_password_check")(state, password)
+                    password = {"_": "inputCheckPasswordSRP", "srp_id": srp_id, "A": a, "M1": m1}
+                args["password"] = password
+            return await self._on_message("messages.getBotCallbackAnswer", **args)
+        url = _msg_field(kind, "url", _msg_field(button, "url"))
+        if url is not None and ctor not in {"keyboardButtonUrlAuth", "inlineButtonTypeUrlAuth"}:
+            if open_url:
+                import webbrowser
+                return webbrowser.open(str(url))
+            return url
+        if ctor in {"keyboardButtonRequestPhone", "buttonTypeRequestPhone"} or _msg_field(button, "request_contact"):
+            if not share_phone:
+                raise ValueError("share_phone must be explicit")
+            if isinstance(share_phone, dict):
+                return await self.reply_media(share_phone)
+            me = await self._app().get_me()
+            phone = _msg_field(me, "phone") if share_phone is True else share_phone
+            return await self.reply_contact(phone, _msg_field(me, "first_name", ""), last_name=_msg_field(me, "last_name", ""))
+        if ctor in {"keyboardButtonRequestGeoLocation", "buttonTypeRequestGeoLocation"} or _msg_field(button, "request_location"):
+            if share_geo is None:
+                raise ValueError("share_geo=(longitude, latitude) must be explicit")
+            if isinstance(share_geo, (tuple, list)):
+                longitude, latitude = cast('Any', share_geo)
+                return await self.reply_location(latitude, longitude)
+            geo = share_geo if _msg_field(share_geo, "_") == "inputMediaGeoPoint" else {"_": "inputMediaGeoPoint", "geo_point": share_geo}
+            return await self.reply_media(geo)
+        if ctor in {"keyboardButtonSwitchInline", "inlineButtonTypeSwitchInline"} or _msg_field(button, "switch_inline_query") is not None or _msg_field(button, "switch_inline_query_current_chat") is not None:
+            bot = self._g("via_bot_id") or self.user_id
+            query = _msg_field(kind, "query", _msg_field(button, "switch_inline_query", _msg_field(button, "switch_inline_query_current_chat", "")))
+            import secrets
+            return await self._rpc("messages.startBot", bot=self._input_entity(await self._app().mt.resolve_peer(bot), "user"), peer=await self.get_input_chat(), random_id=secrets.randbits(63), start_param=query)
+        if ctor in {"keyboardButton", "buttonTypeDefault"} or not ctor and (isinstance(button, str) or isinstance(button, dict) and set(cast("dict[str, Any]", button)) <= {"text"}):
+            return await self.reply(button if isinstance(button, str) else _msg_field(button, "text", ""))
+        raise NotImplementedError(f"click is not supported for {ctor or 'this button type'}")
+
+    async def vote(self, options: Any) -> Any:
+        answers = _msg_field(_msg_field(self.media, "poll") or self._g("poll"), "answers", [])
+        values = cast("list[Any]", options) if isinstance(options, (list, tuple)) else [options]
+        selected = [_msg_field(answers[v], "option") if isinstance(v, int) else v for v in values]
+        return await self._on_message("messages.sendVote", options=selected)
+
+    async def retract_vote(self) -> Any:
+        return await self.vote([])
+
+    async def get_poll_results(self) -> Any:
+        return await self._on_message("messages.getPollResults", poll_hash=0)
+
+    async def get_poll_votes(self, *, option: bytes | None = None, offset: str | None = None, limit: int = 100) -> Any:
+        return await self._on_message("messages.getPollVotes", id_key="id", option=option, offset=offset, limit=limit)
+
+    async def get_reactions(self) -> Any:
+        return await self._rpc("messages.getMessagesReactions", peer=await self.get_input_chat(), id=[self.id])
+
+    async def get_reactors(self, *, reaction: Any = None, offset: str | None = None, limit: int = 100) -> Any:
+        if isinstance(reaction, str):
+            reaction = {"_": "reactionEmoji", "emoticon": reaction}
+        return await self._on_message("messages.getMessageReactionsList", id_key="id", reaction=reaction, offset=offset, limit=limit)
+
+    async def translate(self, to_lang: str) -> Any:
+        return await self._rpc("messages.translateText", peer=await self.get_input_chat(), id=[self.id], to_lang=to_lang)
+
+    async def get_views(self, increment: bool = False) -> Any:
+        return await self._rpc("messages.getMessagesViews", peer=await self.get_input_chat(), id=[self.id], increment=increment)
+
+    async def get_replies(self, *, offset_id: int = 0, limit: int = 100, **kwargs: Any) -> Any:
+        data: dict[str, Any] = {"offset_id": offset_id, "offset_date": 0, "add_offset": 0, "limit": limit, "max_id": 0, "min_id": 0, "hash": 0, **kwargs}
+        return await self._on_message("messages.getReplies", **data)
+
+    async def get_discussion(self) -> Any:
+        return await self._on_message("messages.getDiscussionMessage")
+
+    async def get_link(self, *, grouped: bool = False, thread: bool = False) -> str:
+        if self.chat_id is not None and self.chat_id < -1000000000000:
+            result = await self._rpc("channels.exportMessageLink", channel=await self.get_input_channel(), id=self.id, grouped=grouped, thread=thread)
+            return str(_msg_field(_msg_field(result, "result", result), "link", ""))
+        chat, mid = self._target()
+        return f"tg://openmessage?{'user_id' if chat > 0 else 'chat_id'}={abs(chat)}&message_id={mid}"
+
+    async def edit_buttons(self, buttons: Any = None) -> Any:
+        from goygram.types.kbd import kbd_to_tl
+        if isinstance(buttons, list):
+            buttons = {"inline_keyboard": cast("list[Any]", buttons)}
+        markup: dict[str, Any] | None = kbd_to_tl(buttons) if buttons else {"_": "replyInlineMarkup", "rows": []}
+        if markup is None:
+            raise ValueError("invalid button markup")
+        return await self._on_message("messages.editMessage", id_key="id", reply_markup=markup)
+
+    async def remove_buttons(self) -> Any:
+        return await self.edit_buttons()
+
+    async def edit_caption(self, caption: str, **kwargs: Any) -> Any:
+        return await self.edit(caption, **kwargs)
+
+    async def _prepare_media(self, media: Any, kind: str, file_name: str | None = None) -> Any:
+        from relay.files import document
+        self._app()
+        if kind not in {"document", "photo", "video", "audio", "voice", "animation", "sticker"}:
+            raise ValueError("unsupported media kind")
+        if isinstance(media, _MsgProxy):
+            media = media.media
+        wrapped = _msg_field(media, "media")
+        if wrapped is not None:
+            media = wrapped
+        ctor = str(_msg_field(media, "_", ""))
+        if ctor.startswith("inputMedia"):
+            return media
+        for name in ("photo", "document"):
+            item = _msg_field(media, name) or (media if ctor in {name, "input" + name.title()} else None)
+            if item is not None:
+                ref = {"_": "input" + name.title(), **{key: _msg_field(item, key) for key in ("id", "access_hash", "file_reference")}}
+                return {"_": "inputMedia" + name.title(), "id": ref}
+        if ctor:
+            raise ValueError(f"cannot send {ctor} as InputMedia")
+        if isinstance(media, str) and media.startswith(("https://", "http://")):
+            return {"_": "inputMediaPhotoExternal" if kind == "photo" else "inputMediaDocumentExternal", "url": media}
+        import mimetypes
+        from goygram.sugar import media_duration
+        up = await self.__dict__["_ctx"].upload_file(media, file_name=file_name)
+        mime = mimetypes.guess_type(str(file_name or up.get("name", "")))[0]
+        if not mime or mime == "application/octet-stream":
+            mime = {"voice": "audio/ogg", "audio": "audio/mpeg", "video": "video/mp4", "animation": "video/mp4", "sticker": "image/webp"}.get(kind, "application/octet-stream")
+        payload = document(up, mime=mime, file_name=file_name, force_file=kind == "document")
+        if kind == "photo":
+            return {"_": "inputMediaUploadedPhoto", "file": payload["file"]}
+        attrs: Any = payload["attributes"]
+        duration = media_duration(os.fspath(media)) if isinstance(media, (str, os.PathLike)) and kind in {"audio", "voice", "video"} else 0
+        if kind in {"audio", "voice"}:
+            attrs.append({"_": "documentAttributeAudio", "voice": kind == "voice", "duration": duration or 0})
+        elif kind == "video":
+            attrs.append({"_": "documentAttributeVideo", "duration": duration or 0, "w": 0, "h": 0, "supports_streaming": True})
+        elif kind == "animation":
+            attrs.append({"_": "documentAttributeAnimated"})
+        elif kind == "sticker":
+            attrs.append({"_": "documentAttributeSticker", "alt": "", "stickerset": {"_": "inputStickerSetEmpty"}})
+            payload["mime_type"] = "image/webp" if mime == "application/octet-stream" else mime
+        return payload
+
+    async def edit_media(self, media: Any, *, caption: str | None = None, kind: str = "document", **kwargs: Any) -> Any:
+        from goygram.sugar import html_to_entities, md_to_entities
+        data = self._send_options(kwargs)
+        data.pop("reply_to", None)
+        media = await self._prepare_media(media, kind, data.pop("file_name", None))
+        mode = str(data.pop("parse_mode", "html")).lower()
+        if "kbd" in data:
+            from goygram.types.kbd import kbd_to_tl
+            data["reply_markup"] = kbd_to_tl(data.pop("kbd"))
+        if caption is not None:
+            if mode in {"html", "md"}:
+                caption, data["entities"] = (html_to_entities if mode == "html" else md_to_entities)(caption)
+            data["message"] = caption
+        return await self._on_message("messages.editMessage", id_key="id", media=media, **data)
+
+    async def send_media(self, media: Any, caption: str | None = None, *, kind: str = "document", **kwargs: Any) -> Any:
+        from goygram.sugar import html_to_entities, md_to_entities
+        data = self._send_options(kwargs)
+        media = await self._prepare_media(media, kind, data.pop("file_name", None))
+        mode = str(data.pop("parse_mode", "html")).lower()
+        if caption is not None and mode in {"html", "md"}:
+            caption, data["entities"] = (html_to_entities if mode == "html" else md_to_entities)(caption)
+        return await self._app().send_media(self.chat_id, media, kind, caption, via="mt", **data)
+
+    async def reply_media(self, media: Any, caption: str | None = None, **kwargs: Any) -> Any:
+        return await self.send_media(media, caption, **self._send_options(kwargs, reply=True))
+
+    async def send_file(self, file: Any, caption: str | None = None, **kwargs: Any) -> Any:
+        return await self.send_media(file, caption, **kwargs)
+
+    async def reply_file(self, file: Any, caption: str | None = None, **kwargs: Any) -> Any:
+        return await self.reply_media(file, caption, **kwargs)
+
+    async def send_photo(self, photo: Any, caption: str | None = None, **kwargs: Any) -> Any:
+        return await self.send_media(photo, caption, kind="photo", **kwargs)
+
+    async def reply_photo(self, photo: Any, caption: str | None = None, **kwargs: Any) -> Any:
+        return await self.reply_media(photo, caption, kind="photo", **kwargs)
+
+    async def send_video(self, video: Any, caption: str | None = None, **kwargs: Any) -> Any:
+        return await self.send_media(video, caption, kind="video", **kwargs)
+
+    async def reply_video(self, video: Any, caption: str | None = None, **kwargs: Any) -> Any:
+        return await self.reply_media(video, caption, kind="video", **kwargs)
+
+    async def send_audio(self, audio: Any, caption: str | None = None, **kwargs: Any) -> Any:
+        return await self.send_media(audio, caption, kind="audio", **kwargs)
+
+    async def reply_audio(self, audio: Any, caption: str | None = None, **kwargs: Any) -> Any:
+        return await self.reply_media(audio, caption, kind="audio", **kwargs)
+
+    async def send_voice(self, voice: Any, caption: str | None = None, **kwargs: Any) -> Any:
+        return await self.send_media(voice, caption, kind="voice", **kwargs)
+
+    async def reply_voice(self, voice: Any, caption: str | None = None, **kwargs: Any) -> Any:
+        return await self.reply_media(voice, caption, kind="voice", **kwargs)
+
+    async def send_animation(self, animation: Any, caption: str | None = None, **kwargs: Any) -> Any:
+        return await self.send_media(animation, caption, kind="animation", **kwargs)
+
+    async def reply_animation(self, animation: Any, caption: str | None = None, **kwargs: Any) -> Any:
+        return await self.reply_media(animation, caption, kind="animation", **kwargs)
+
+    async def send_sticker(self, sticker: Any, **kwargs: Any) -> Any:
+        return await self.send_media(sticker, kind="sticker", **kwargs)
+
+    async def reply_sticker(self, sticker: Any, **kwargs: Any) -> Any:
+        return await self.reply_media(sticker, kind="sticker", **kwargs)
+
+    async def send_contact(self, phone: str, first_name: str, *, last_name: str = "", **kwargs: Any) -> Any:
+        return await self.send_media({"_": "inputMediaContact", "phone_number": phone, "first_name": first_name, "last_name": last_name, "vcard": ""}, **kwargs)
+
+    async def reply_contact(self, phone: str, first_name: str, **kwargs: Any) -> Any:
+        return await self.send_contact(phone, first_name, **self._send_options(kwargs, reply=True))
+
+    async def send_location(self, latitude: float, longitude: float, **kwargs: Any) -> Any:
+        return await self.send_media({"_": "inputMediaGeoPoint", "geo_point": {"_": "inputGeoPoint", "lat": latitude, "long": longitude}}, **kwargs)
+
+    async def reply_location(self, latitude: float, longitude: float, **kwargs: Any) -> Any:
+        return await self.send_location(latitude, longitude, **self._send_options(kwargs, reply=True))
+
+    async def send_dice(self, emoji: str = "🎲", **kwargs: Any) -> Any:
+        return await self.send_media({"_": "inputMediaDice", "emoticon": emoji}, **kwargs)
+
+    async def reply_dice(self, emoji: str = "🎲", **kwargs: Any) -> Any:
+        return await self.send_dice(emoji, **self._send_options(kwargs, reply=True))
+
+    async def send_rich(self, rich: Any, **kwargs: Any) -> Any:
+        from goygram.rich import Rich
+        payload = rich.to_tl() if isinstance(rich, Rich) else {"_": "inputRichMessageHTML", "html": rich} if isinstance(rich, str) else rich
+        return await self.respond("", rich_message=payload, **kwargs)
+
+    async def reply_rich(self, rich: Any, **kwargs: Any) -> Any:
+        return await self.send_rich(rich, **self._send_options(kwargs, reply=True))
+
+    async def edit_rich(self, rich: Any, **kwargs: Any) -> Any:
+        data = self._send_options(kwargs)
+        data.pop("reply_to", None)
+        return await self._app().edit_rich(self.chat_id, self.id, rich, via="mt", **data)
+
+    async def save(self, **kwargs: Any) -> Any:
+        return await self.forward("me", **kwargs)
+
+    async def schedule(self, text: str, when: int, **kwargs: Any) -> Any:
+        return await self.respond(text, schedule_date=when, **kwargs)
+
+    async def typing(self, action: str = "sendMessageTypingAction") -> Any:
+        return await self._rpc("messages.setTyping", peer=await self.get_input_chat(), top_msg_id=self.topic_id, action={"_": action})
+
+    def to_dict(self) -> dict[str, Any]:
+        raw = self.raw
+        if hasattr(raw, "to_dict"):
+            return dict(raw.to_dict())
+        if hasattr(raw, "items"):
+            return dict(raw.items())
+        return dict(cast("dict[str, Any]", vars(raw)))
+
+    def stringify(self) -> str:
+        return repr(self)
+
+
+class _MsgButton:
+    def __init__(self, message: _MsgProxy, raw: Any) -> None:
+        self.message = message
+        self.raw = raw
+
+    @property
+    def text(self) -> str:
+        text = self.raw if isinstance(self.raw, str) else _msg_field(self.raw, "text", "")
+        return str(_msg_field(text, "text", text))
+
+    def get(self, key: str, default: Any = None) -> Any:
+        return _msg_field(self.raw, key, default)
+
+    def __getitem__(self, key: str) -> Any:
+        value = self.get(key, _SENTINEL)
+        if value is _SENTINEL:
+            raise KeyError(key)
+        return value
+
+    def __getattr__(self, key: str) -> Any:
+        value = _msg_field(self.__dict__.get("raw"), key, _SENTINEL)
+        if value is _SENTINEL:
+            raise AttributeError(key)
+        return value
+
+    @property
+    def data(self) -> Any:
+        kind = _msg_field(self.raw, "type", self.raw)
+        return _msg_field(kind, "data", _msg_field(self.raw, "callback_data"))
+
+    @property
+    def url(self) -> Any:
+        return _msg_field(_msg_field(self.raw, "type", self.raw), "url")
+
+    async def click(self, **kwargs: Any) -> Any:
+        return await self.message.click_button(self.raw, **kwargs)
 
 class _DBProxy:
 
