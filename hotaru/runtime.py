@@ -147,6 +147,8 @@ class Runtime:
     _app_task: asyncio.Task[None] | None = None
     _premium_cache: bool | None = None
     _premium_checked_at: float = 0.0
+    _premium_retry_at: float = 0.0
+    _premium_lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False)
     _forum_helper: Any = None
     forum_title: str = "Hotaru Userbot"
     _form_msgs: dict[int, tuple[Any, int]] | None = None
@@ -1563,6 +1565,12 @@ class Runtime:
         return value.casefold() if isinstance(value, str) and value.casefold() in SUPPORTED_LANGUAGES else "ru"
 
     async def is_premium(self, refresh: bool = False) -> bool:
+        async with self._premium_lock:
+            if time.monotonic() < self._premium_retry_at:
+                return bool(self._premium_cache)
+            return await self._refresh_premium(refresh)
+
+    async def _refresh_premium(self, refresh: bool) -> bool:
         if not refresh and self._premium_cache is not None and (time.time() - getattr(self, "_premium_checked_at", 0.0)) < 60.0:
             return bool(self._premium_cache)
         app = self.app
@@ -1593,8 +1601,10 @@ class Runtime:
                         for k, v in first_data.items():
                             user_dict[k] = v
         except Exception:
+            self._premium_retry_at = time.monotonic() + 60.0
             log.error("premium check failed", exc_info=True)
             return self._premium_cache if self._premium_cache is not None else False
+        self._premium_retry_at = 0.0
         return bool(self._premium_cache)
 
     def set_language(self, language: str) -> str:
