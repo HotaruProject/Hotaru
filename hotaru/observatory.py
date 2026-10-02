@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import contextvars
+import errno
 import io
 import json
 import logging
@@ -12,6 +14,8 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, Generator, TextIO, cast
+
+from goygram.errors import ConnectionClosedError
 
 LEVELS = ("debug", "info", "warn", "error", "crit")
 _aliases = {"warning": "warn", "critical": "crit", "fatal": "crit", "exception": "error"}
@@ -267,6 +271,16 @@ class _Bridge(logging.Handler):
     def emit(self, record: logging.LogRecord) -> None:
         level = self._translate.get(record.levelname, "info")
         fields: dict[str, Any] = {"msg": record.getMessage()}
+        if record.name == "goygram.mtproto" and (
+            record.msg == "MTProto connection lost, reconnecting in %.1fs"
+            or (record.msg == "MTProto reconnect failed: %r" and isinstance(record.args, tuple)
+                and len(record.args) == 1 and (
+                    isinstance(record.args[0], (ConnectionError, ConnectionClosedError, TimeoutError, asyncio.TimeoutError))
+                    or (isinstance(record.args[0], OSError)
+                        and record.args[0].errno in {errno.ENETDOWN, errno.ENETUNREACH, errno.EHOSTUNREACH})
+                ))
+        ):
+            fields["routine_transport"] = True
         if record.exc_info and record.exc_info[1] is not None:
             fields["exc"] = record.exc_info[1]
         self.obs.emit(
