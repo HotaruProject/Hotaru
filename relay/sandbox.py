@@ -1740,6 +1740,14 @@ class ModuleSandbox:
             self._cb_respond_pending.pop(module_id, None)
             raise
 
+    async def _write_reply(self, process: subprocess.Popen[bytes], reply: dict[str, Any]) -> None:
+        def write() -> None:
+            if process.poll() is None and process.stdin is not None:
+                process.stdin.write((_proto_dumps(reply) + "\n").encode("utf-8"))
+                process.stdin.flush()
+
+        await asyncio.get_running_loop().run_in_executor(None, write)
+
     async def _serve_caps(self, module_id: str) -> None:
         caps = self._pending_caps.pop(module_id, [])
         process = self._workers.get(module_id)
@@ -1766,8 +1774,7 @@ class ModuleSandbox:
                 except Exception as exc:
                     reply = {"kind": "cap_result", "ok": False, "error_type": type(exc).__name__, "error": f"{type(exc).__name__}: {exc}"[:200]}
             if process is self._workers.get(module_id) and process is not None and process.poll() is None and process.stdin is not None:
-                process.stdin.write((_proto_dumps(reply) + "\n").encode("utf-8"))
-                process.stdin.flush()
+                await self._write_reply(process, reply)
 
     async def _serve_respond(self, module_id: str) -> None:
         pending = self._respond_pending.pop(module_id, [])
@@ -1783,8 +1790,7 @@ class ModuleSandbox:
                 reply = {"kind": "respond_result", "ok": False, "error": f"{type(exc).__name__}: {exc}"[:200]}
             process = self._workers.get(module_id)
             if process is not None and process.poll() is None and process.stdin is not None:
-                process.stdin.write((_proto_dumps(reply) + "\n").encode("utf-8"))
-                process.stdin.flush()
+                await self._write_reply(process, reply)
 
     async def _serve_cb_respond(self, module_id: str) -> None:
         pending = self._cb_respond_pending.pop(module_id, [])
@@ -1827,8 +1833,7 @@ class ModuleSandbox:
             except Exception as exc:
                 result = {"ok": False, "error": f"{type(exc).__name__}: {exc}"[:200]}
             if process is not None and process.poll() is None and process.stdin is not None:
-                process.stdin.write((_proto_dumps({"cb_respond_result": result}) + "\n").encode("utf-8"))
-                process.stdin.flush()
+                await self._write_reply(process, {"cb_respond_result": result})
 
     async def _trusted_respond(self, module_id: str, source: Any, payload: dict[str, Any]) -> Any:
         from hotaru.response import FormHandle, Response

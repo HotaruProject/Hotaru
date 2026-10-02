@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Mapping, cast
 
 from goygram import Session
-from goygram.errors import ConnectionClosedError
+from goygram.errors import UnauthorizedError
 from relay.firewall import trusted_scope
 
 BOTFATHER = "@BotFather"
@@ -745,7 +745,8 @@ class InlineManager:
                 if self._is_auth_failure(exc):
                     self._forget_bot()
                 if self.runtime.observatory is not None:
-                    self.runtime.observatory.emit("inline", "poll_error", error=type(exc).__name__, detail=str(exc)[:240], delay=delay)
+                    event = "auth_error" if isinstance(exc, UnauthorizedError) or self._is_auth_failure(exc) else "poll_error"
+                    self.runtime.observatory.emit("inline", event, "error", error=type(exc).__name__, detail=str(exc)[:240], delay=delay)
             finally:
                 self.ready.clear()
                 if app is not None:
@@ -762,7 +763,11 @@ class InlineManager:
             delay = min(delay * 2, 60.0)
 
     async def _poll(self, app: Any) -> None:
+        from hotaru.supervisor import ConnectionRecovery
+
         tasks: list[asyncio.Task[Any]] = []
+        recovery: ConnectionRecovery | None = None
+        warm: asyncio.Task[None] | None = None
         try:
             await app.core.fsm.start()
             tasks.append(asyncio.create_task(app.core.disp.consume(), name="hotaru:inline-dispatch"))
@@ -771,13 +776,14 @@ class InlineManager:
             if reader is None:
                 raise InlineError("inline bot reader did not start")
             tasks.append(reader)
+            recovery = ConnectionRecovery(app.mt, self.runtime.observatory, "inline", ready=self.ready)
             await self._probe(app)
             if any(task.done() for task in tasks):
                 raise InlineError("inline bot stopped during startup")
             self.ready.set()
             if self.runtime.observatory is not None:
                 self.runtime.observatory.emit("inline", "ready_set", self_id=app.session.self_id, dc=app.session.dc)
-            asyncio.create_task(self._warm_owner_peer(app), name="hotaru:inline-warm")
+            warm = asyncio.create_task(self._warm_owner_peer(app), name="hotaru:inline-warm")
             tasks.append(asyncio.create_task(self._watch_bot(app), name="hotaru:inline-health"))
             stop = asyncio.create_task(self._stop.wait(), name="hotaru:inline-stop")
             tasks.append(stop)
@@ -790,24 +796,20 @@ class InlineManager:
                 raise InlineError("inline bot polling stopped")
         finally:
             self.ready.clear()
+            if recovery is not None:
+                await recovery.close()
+            if warm is not None:
+                tasks.append(warm)
             for task in tasks:
                 task.cancel()
             await asyncio.gather(*tasks, return_exceptions=True)
 
     async def _probe(self, app: Any) -> None:
-        deadline = time.monotonic() + 3.0
-        while True:
-            try:
-                await asyncio.wait_for(app.mt.call("updates.getState", api_id=self.runtime.config.api_id), timeout=15.0)
-                await self._check_bot(app)
-                return
-            except (ConnectionError, ConnectionClosedError, TimeoutError, asyncio.TimeoutError):
-                if self._stop.is_set() or time.monotonic() >= deadline:
-                    raise
-                await asyncio.sleep(0.05)
+        await app.mt.call("updates.getState", api_id=self.runtime.config.api_id, retry=0)
+        await self._check_bot(app)
 
     async def _check_bot(self, app: Any) -> None:
-        await asyncio.wait_for(app.mt_users_get_users(id=[{"_": "inputUserSelf"}], retry=0), timeout=15.0)
+        await app.mt_users_get_users(id=[{"_": "inputUserSelf"}], retry=0)
 
     async def _watch_bot(self, app: Any) -> None:
         while not self._stop.is_set():

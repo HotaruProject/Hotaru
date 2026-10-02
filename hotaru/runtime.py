@@ -48,7 +48,7 @@ from .registry import Handler
 from .response import FormHandle, ModuleContextFactory, ResponseService, reply_message_id
 from .security import SecurityGate
 from .state import StateStore
-from .supervisor import ConnectionSupervisor
+from .supervisor import ConnectionRecovery, ConnectionSupervisor
 from .tasks import TaskSupervisor
 
 IDLE_WORKER_SECONDS = 1800.0
@@ -147,7 +147,8 @@ class Runtime:
     _app_task: asyncio.Task[None] | None = None
     _premium_cache: bool | None = None
     _premium_checked_at: float = 0.0
-    _premium_retry_at: float = 0.0
+    _connection: ConnectionRecovery | None = None
+    _connection_task: asyncio.Task[None] | None = None
     _premium_lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False)
     _forum_helper: Any = None
     forum_title: str = "Hotaru Userbot"
@@ -1566,8 +1567,6 @@ class Runtime:
 
     async def is_premium(self, refresh: bool = False) -> bool:
         async with self._premium_lock:
-            if time.monotonic() < self._premium_retry_at:
-                return bool(self._premium_cache)
             return await self._refresh_premium(refresh)
 
     async def _refresh_premium(self, refresh: bool) -> bool:
@@ -1601,10 +1600,8 @@ class Runtime:
                         for k, v in first_data.items():
                             user_dict[k] = v
         except Exception:
-            self._premium_retry_at = time.monotonic() + 60.0
             log.error("premium check failed", exc_info=True)
             return self._premium_cache if self._premium_cache is not None else False
-        self._premium_retry_at = 0.0
         return bool(self._premium_cache)
 
     def set_language(self, language: str) -> str:
@@ -2192,12 +2189,12 @@ class Runtime:
         if self.sandbox is not None:
             was_sandbox = module_id in getattr(self.sandbox, "_workers", {})
             if not was_sandbox:
-                self.sandbox.stop_module(module_id)
+                await asyncio.get_running_loop().run_in_executor(None, self.sandbox.stop_module, module_id)
         try:
             result = await self.modules.deactivate(module_id)
         finally:
             if self.sandbox is not None and was_sandbox:
-                self.sandbox.stop_module(module_id)
+                await asyncio.get_running_loop().run_in_executor(None, self.sandbox.stop_module, module_id)
         if self.callbacks is not None:
             self.callbacks.unregister_module(module_id)
         return result
@@ -2516,6 +2513,9 @@ class Runtime:
         assert self.app is not None
         try:
             await self.authorize()
+            if self.app.mt is not None:
+                self._connection = ConnectionRecovery(self.app.mt, self.observatory, "user")
+                self._connection_task = asyncio.create_task(self._connection.watch(), name="hotaru:user-health")
         except BaseException:
             await self.close()
             raise
@@ -2582,6 +2582,9 @@ class Runtime:
             return
         self.closed = True
         try:
+            if self._connection_task is not None:
+                self._connection_task.cancel()
+                await asyncio.gather(self._connection_task, return_exceptions=True)
             if self._form_gc_task is not None and not self._form_gc_task.done():
                 self._form_gc_task.cancel()
                 await asyncio.gather(self._form_gc_task, return_exceptions=True)
@@ -2604,7 +2607,9 @@ class Runtime:
             if self.tasks is not None:
                 await self.tasks.close()
             if self.sandbox is not None:
-                self.sandbox.stop_all()
+                await asyncio.get_running_loop().run_in_executor(None, self.sandbox.stop_all)
+            if self._connection is not None:
+                await self._connection.close()
             if self.app is not None:
                 await self.app.close()
             if self.state is not None:
