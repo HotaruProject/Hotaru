@@ -1899,18 +1899,36 @@ class Runtime:
             if active is None and not has_file and not has_state:
                 return self.t('runtime.module_missing', module_id=module_id)
 
-            self.purge_module_data(module_id)
-
-            if active is not None:
-                source_path = active.loaded.path
-                if source_path.is_file():
-                    try:
-                        await self.deactivate_module(module_id)
-                        await self.activate_module(str(source_path))
-                    except Exception as exc:
-                        if self.observatory is not None:
-                            self.observatory.emit("modules", "reset_reload_error", module=module_id, error=type(exc).__name__)
-                        return self.t('runtime.reset_failed', error=type(exc).__name__)
+            namespace = self.state.namespace(module_id)
+            source_path = active.loaded.path if active is not None else None
+            if source_path is not None and not source_path.is_file():
+                return self.t('runtime.reset_failed', error="FileNotFoundError")
+            previous = namespace.all()
+            try:
+                if active is not None:
+                    await self.deactivate_module(module_id)
+                with self.state.connection:
+                    self.state.connection.execute(
+                        "DELETE FROM module_state WHERE module_id = ? AND key NOT IN (?, ?, ?)",
+                        (module_id, "caps-consent", "sourcepath", "moduleversion"),
+                    )
+                if source_path is not None:
+                    await self.activate_module(str(source_path))
+            except Exception as exc:
+                if self.modules.get(module_id) is None:
+                    with self.state.connection:
+                        self.state.connection.execute("DELETE FROM module_state WHERE module_id = ?", (module_id,))
+                    for key, value in previous.items():
+                        namespace.set(key, value)
+                    if source_path is not None:
+                        try:
+                            await self.activate_module(str(source_path))
+                        except Exception as rollback_exc:
+                            if self.observatory is not None:
+                                self.observatory.emit("modules", "reset_rollback_error", module=module_id, error=type(rollback_exc).__name__)
+                if self.observatory is not None:
+                    self.observatory.emit("modules", "reset_reload_error", module=module_id, error=type(exc).__name__)
+                return self.t('runtime.reset_failed', error=type(exc).__name__)
 
             if self.observatory is not None:
                 self.observatory.emit("modules", "database_reset", module=module_id)
