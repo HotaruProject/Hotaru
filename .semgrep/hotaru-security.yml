@@ -1,0 +1,16 @@
+rules:
+  - id: hotaru-destructive-account-rpc
+    message: Destructive Telegram account/auth RPC call detected. Block the PR for explicit security review.
+    severity: ERROR
+    languages: [python]
+    pattern-regex: (?i)(?:\.(?:deleteaccount|delete_account|logout|log_out|resetauthorizations|terminateauthkey)\s*\(|\b(?:DeleteAccountRequest|accountDeleteAccount)\s*\()
+  - id: hotaru-destructive-dynamic-rpc
+    message: Dynamic invocation of a destructive Telegram account/auth RPC detected. Block the PR for explicit security review.
+    severity: ERROR
+    languages: [python]
+    pattern-regex: (?is)\b(?:call|invoke|rpc|mt_req|request)\s*\([^)]{0,500}[\"'](?:account\.(?:deleteaccount|delete_account|logout|log_out|resetauthorizations|terminateauthkey)|auth\.(?:logout|log_out|resetauthorizations|terminateauthkey))[\"']
+  - id: hotaru-sensitive-material-egress
+    message: Possible session, vault, or auth-key material sent to a network or Telegram sink. Block the PR for explicit security review.
+    severity: ERROR
+    languages: [python]
+    pattern-regex: (?is)(?:auth_key|api_hash|\.session|\.vault).{0,300}(?:send_(?:document|file|media|message)|upload_file|requests\.(?:post|put)|httpx\.(?:post|put)|urllib\.request\.urlopen)|(?:send_(?:document|file|media|message)|upload_file|requests\.(?:post|put)|httpx\.(?:post|put)|urllib\.request\.urlopen).{0,300}(?:auth_key|api_hash|\.session|\.vault)

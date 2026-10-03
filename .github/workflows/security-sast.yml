@@ -1,0 +1,37 @@
+name: security-sast
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    branches: [main]
+  push:
+    branches: [main]
+  schedule:
+    - cron: '17 4 * * 1'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: security-sast-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  semgrep:
+    name: Semgrep SAST
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout proposed source without credentials
+        uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install pinned Semgrep Community Edition
+        run: python3 -m pip install --disable-pip-version-check --no-cache-dir semgrep==1.179.0
+      - name: Scan pull request and block new findings
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: semgrep scan --config p/security-audit --config .semgrep/hotaru-security.yml --baseline-commit "$BASE_SHA" --error --metrics=off --disable-version-check .
+      - name: Scan default branch using full history
+        if: github.event_name != 'pull_request'
+        run: semgrep scan --config p/security-audit --config .semgrep/hotaru-security.yml --error --metrics=off --disable-version-check .
