@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Literal, cast
 from collections.abc import Awaitable
 
-from goygram.errors import FloodWaitError, MessageNotModifiedError
+from goygram.errors import MessageNotModifiedError
 
 from .state import StateNamespace
 from .plainfmt import rich_to_plain
@@ -263,11 +263,6 @@ class ResponseService:
                 result = await message.edit(text or "", **payload)
             except MessageNotModifiedError:
                 return Response(True, "edit", getattr(message, "src", None), message)
-            except FloodWaitError:
-                raise
-            except Exception:
-                if output == "edit":
-                    raise
             else:
                 return Response(True, "edit", getattr(message, "src", None), result)
         if output == "edit":
