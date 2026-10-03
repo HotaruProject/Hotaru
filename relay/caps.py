@@ -307,7 +307,7 @@ class CapabilityHost:
             if capability == "files":
                 return self._file_op(module_id, payload, meta)
             if capability == "net":
-                return self._net_fetch(module_id, payload, meta)
+                return await asyncio.get_running_loop().run_in_executor(None, self._net_fetch, module_id, payload, meta)
             if capability == "state":
                 return self._state_op(module_id, payload, meta)
             if capability == "inline":
@@ -556,7 +556,11 @@ class CapabilityHost:
             limit = kwargs.get("limit", 100)
             if isinstance(limit, (int, float)) and int(limit) > 500:
                 kwargs = dict(kwargs, limit=500)
-        result = await getattr(app, rpcname(method))(**kwargs)
+        timeout = payload.get("timeout")
+        if timeout is not None and (isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or not 0 < timeout <= 60):
+            raise ValueError("MT timeout must be between 0 and 60 seconds")
+        request = getattr(app, rpcname(method))(**kwargs)
+        result = await request if timeout is None else await asyncio.wait_for(request, float(timeout))
         return _result_body(result)
 
     def _audit_mt(self, module_id: str, method: str, payload: dict[str, Any]) -> None:
@@ -673,7 +677,7 @@ class CapabilityHost:
         except PermissionError:
             raise
         except Exception as exc:
-            raise PermissionError(f"net fetch failed: {type(exc).__name__}")
+            raise OSError(f"net fetch failed: {type(exc).__name__}") from exc
 
     def _state_op(self, module_id: str, payload: dict[str, Any], meta: dict[str, Any]) -> Any:
         state = self.runtime.state

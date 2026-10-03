@@ -8,7 +8,7 @@ dynamic = ["version"]
 description = "Hotaru userbot kernel on GoyGram"
 requires-python = ">=3.8"
 dependencies = [
-    "goygram==0.8.14",
+    "goygram==0.8.15",
 ]
 
 [project.scripts]

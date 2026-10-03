@@ -6,6 +6,126 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable
 
+from goygram.errors import ConnectionClosedError
+
+from .observatory import Observatory
+
+
+TRANSPORT_ERRORS = (ConnectionError, ConnectionClosedError, TimeoutError, asyncio.TimeoutError)
+
+
+class ConnectionRecovery:
+    """Gate new RPCs while GoyGram's existing reader reconnects; never reconnect here."""
+
+    def __init__(self, mt: Any, observatory: Observatory | None, name: str, *, ready: asyncio.Event | None = None) -> None:
+        self.mt = mt
+        self.observatory = observatory
+        self.name = name
+        self.ready = ready
+        self.timeout = 45.0
+        self.probe_timeout = 5.0
+        self.interval = 0.25
+        self._rpc: Callable[..., Awaitable[Any]] = mt._rpc_call
+        self._recovery: asyncio.Task[None] | None = None
+        self._retry_at = 0.0
+        self._failed_writer: Any = None
+        self._closed = False
+        mt._rpc_call = self.call
+
+    def _available(self) -> bool:
+        reader = self.mt.reader_task
+        writer = self.mt.wr
+        return bool(reader is not None and not reader.done() and writer is not None
+                    and not writer.is_closing() and self.mt.auth_ready.is_set())
+
+    def _emit(self, event: str, level: str = "info", **fields: Any) -> None:
+        if self.observatory is not None:
+            self.observatory.emit("connection", event, level, connection=self.name, **fields)
+
+    def recover(self) -> asyncio.Task[None]:
+        task = self._recovery
+        fresh_writer = self._available() and self.mt.wr is not self._failed_writer
+        if task is None or (task.done() and (time.monotonic() >= self._retry_at or fresh_writer)):
+            if self.ready is not None:
+                self.ready.clear()
+            task = self._recovery = asyncio.create_task(self._recover(), name=f"hotaru:recover-{self.name}")
+            task.add_done_callback(lambda done: None if done.cancelled() else done.exception())
+        return task
+
+    async def _recover(self) -> None:
+        self._emit("recovering")
+        deadline = time.monotonic() + self.timeout
+        try:
+            while True:
+                if self._closed or self.mt.stop_ev.is_set():
+                    raise ConnectionClosedError("connection stopped")
+                reader = self.mt.reader_task
+                if reader is None or reader.done():
+                    raise ConnectionClosedError("native reader stopped")
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise TimeoutError("native connection recovery timed out")
+                if self._available():
+                    try:
+                        await asyncio.wait_for(self._rpc("users.getUsers", id=[{"_": "inputUserSelf"}]),
+                                               min(self.probe_timeout, remaining))
+                        break
+                    except TRANSPORT_ERRORS:
+                        pass
+                await asyncio.sleep(min(self.interval, max(0.0, deadline - time.monotonic())))
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            self._failed_writer = self.mt.wr
+            self._retry_at = time.monotonic() + 30.0
+            self._emit("recovery_failed", "error", error=type(exc).__name__, detail=str(exc)[:240])
+            raise
+        self._retry_at = 0.0
+        if self.ready is not None:
+            self.ready.set()
+        self._emit("recovered")
+
+    async def wait_ready(self) -> None:
+        if self._closed or self.mt.stop_ev.is_set():
+            raise ConnectionClosedError("connection stopped")
+        task = self._recovery
+        if task is not None and (not task.done() or self._retry_at):
+            await asyncio.shield(self.recover())
+        elif not self._available():
+            await asyncio.shield(self.recover())
+
+    async def call(self, act: str, **kwargs: Any) -> Any:
+        if act == "ping":
+            return await self._rpc(act, **kwargs)
+        await self.wait_ready()
+        safe_read = act in {"users.getUsers", "updates.getState"}
+        try:
+            request = self._rpc(act, **kwargs)
+            return await asyncio.wait_for(request, 15.0) if safe_read else await request
+        except TRANSPORT_ERRORS:
+            task = self.recover()
+            if not safe_read:
+                raise
+            await asyncio.shield(task)
+            return await asyncio.wait_for(self._rpc(act, **kwargs), 15.0)
+
+    async def watch(self) -> None:
+        while True:
+            await asyncio.sleep(30.0)
+            try:
+                await self.call("users.getUsers", id=[{"_": "inputUserSelf"}])
+            except Exception as exc:
+                self._emit("health_error", "error", error=type(exc).__name__, detail=str(exc)[:240])
+
+    async def close(self) -> None:
+        self._closed = True
+        if self.ready is not None:
+            self.ready.clear()
+        task = self._recovery
+        if task is not None and not task.done():
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+
 
 class Health(enum.Enum):
     READY = "ready"

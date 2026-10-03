@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from relay.context import ContextOperations, MessageOperations
+from relay.translation import translate as _translate_text
+
 import asyncio
 import logging
 import os
@@ -31,8 +34,7 @@ from relay.proxies import (
     UiHelper,
     ForumHelper,
 )
-from relay.toolkit import TOOLS, buttons_html, needs_form, needs_callback
-from .tl import as_tl
+from relay.toolkit import TOOLS, buttons_html, needs_form, needs_callback, message_text
 
 log = logging.getLogger(__name__)
 
@@ -206,7 +208,7 @@ class ResponseService:
     def __init__(self, rich_sender: Callable[..., Any] | None = None) -> None:
         self.rich_sender = rich_sender
 
-    async def answer(
+    async def respond(
         self,
         message: Any,
         *,
@@ -315,12 +317,12 @@ class ResponseService:
             data: dict[str, Any] = cast('dict[str, Any]', form) if isinstance(form, dict) else {"text": kwargs.pop("text", ""), "buttons": buttons}
             if hasattr(message, "form"):
                 return await message.form(data.get("text", ""), data.get("buttons"), **kwargs)
-            return await self.answer(message, text=data.get("text", ""), buttons=data.get("buttons"), output="reply")
+            return await self.respond(message, text=data.get("text", ""), buttons=data.get("buttons"), output="reply")
         if bot:
             return await kwargs.pop("bot_gateway").send_message(getattr(message, "chat_id", None), kwargs.pop("text", ""), buttons=buttons, **kwargs)
         if rich_message is not None:
-            return await self.answer(message, rich_message=rich_message, output=output, **kwargs)
-        return await self.answer(message, text=kwargs.pop("text", None), media=media, output=output, buttons=buttons, **kwargs)
+            return await self.respond(message, rich_message=rich_message, output=output, **kwargs)
+        return await self.respond(message, text=kwargs.pop("text", None), media=media, output=output, buttons=buttons, **kwargs)
 
     async def split(self, message: Any, text: str, *, limit: int = 4096, **kwargs: Any) -> list[Any]:
         if limit < 1:
@@ -338,7 +340,7 @@ class ResponseService:
         for index, part in enumerate(parts):
             options = dict(kwargs)
             options["output"] = kwargs.get("output", "auto") if index == 0 else "reply"
-            result.append(await self.answer(message, text=part, **options))
+            result.append(await self.respond(message, text=part, **options))
         return result
 
     async def split_html(self, message: Any, text: str, *, limit: int = 4096, max_parts: int = 20, **kwargs: Any) -> list[Any]:
@@ -351,7 +353,7 @@ class ResponseService:
         for index, part in enumerate(parts):
             options = dict(kwargs)
             options["output"] = kwargs.get("output", "auto") if index == 0 else "reply"
-            result.append(await self.answer(message, text=part, **options))
+            result.append(await self.respond(message, text=part, **options))
         return result
 
     async def fallback_file(self, message: Any, text: str, *, filename: str = "response.html", **kwargs: Any) -> Any:
@@ -362,13 +364,13 @@ class ResponseService:
         try:
             if hasattr(message, "reply"):
                 return await message.reply(path, filename=filename, **kwargs)
-            return await self.answer(message, media=path, output="reply", **kwargs)
+            return await self.respond(message, media=path, output="reply", **kwargs)
         finally:
             path.unlink(missing_ok=True)
 
     async def smart_split(self, message: Any, text: str, *, limit: int = 4096, file_limit: int = 200000, filename: str = "response.html", **kwargs: Any) -> Any:
         if len(text) <= limit:
-            return [await self.answer(message, text=text, **kwargs)]
+            return [await self.respond(message, text=text, **kwargs)]
         if len(text) > file_limit:
             kwargs.pop("preserve_html", None)
             return await self.fallback_file(message, text, filename=filename, **kwargs)
@@ -379,8 +381,6 @@ class ResponseService:
     async def dispatch(self, message: Any, content: Any = None, **kwargs: Any) -> Any:
         return await self.smart(message, content, **kwargs)
 
-    async def respond(self, message: Any, content: Any = None, **kwargs: Any) -> Any:
-        return await self.smart(message, content, **kwargs)
 
 
 @dataclass(frozen=True)
@@ -410,11 +410,11 @@ class ModuleMessage:
         return self._source.get(key, default) if hasattr(self._source, "get") else default
 
     async def edit(self, text: str, **kwargs: Any) -> Any:
-        return await self._responses.answer(self._source, text=text, output="edit", **kwargs)
+        return await self._responses.respond(self._source, text=text, output="edit", **kwargs)
 
     async def reply(self, text: str, **kwargs: Any) -> Any:
         kwargs.setdefault("output", "reply")
-        return await self._responses.answer(self._source, text=text, **kwargs)
+        return await self._responses.respond(self._source, text=text, **kwargs)
 
     async def download(self, destination: str | Path | None = None) -> Any:
         if not hasattr(self._source, "download"):
@@ -423,7 +423,9 @@ class ModuleMessage:
 
 
 @dataclass
-class ModuleContext:
+class ModuleContext(ContextOperations):
+    _ctx_translate_text = staticmethod(_translate_text)
+
     module_id: str
     _source: Any
     state: StateNamespace
@@ -573,6 +575,29 @@ class ModuleContext:
     def screens(self) -> Any:
         from .screens import Kit
         return Kit(getattr(self.runtime, "screens", None) if self.runtime is not None else None, self)
+    @staticmethod
+    async def _ctx_prepare(text: Any, parse_mode: Any, buttons: Any) -> dict[str, Any]:
+        data: dict[str, Any] = {}
+        if text is not None:
+            if not isinstance(text, str):
+                text = message_text(text)
+                parse_mode = None
+            if str(parse_mode).lower() == "html":
+                data["message"], data["entities"] = to_entities(str(text))
+            elif str(parse_mode).lower() in {"md", "markdown"}:
+                with trusted_scope():
+                    from goygram.sugar import md_to_entities
+                    data["message"], data["entities"] = md_to_entities(str(text))
+            else:
+                data["message"] = str(text)
+        if buttons is not None:
+            with trusted_scope():
+                from goygram.types.kbd import kbd_to_tl
+                markup = kbd_to_tl({"inline_keyboard": buttons} if isinstance(buttons, list) else buttons)
+            if markup is None:
+                raise ValueError("invalid button markup")
+            data["reply_markup"] = markup
+        return data
 
     async def cap(self, capability: str, payload: dict[str, Any] | None = None) -> Any:
         if self.cap_host is None:
@@ -762,11 +787,13 @@ class ModuleContext:
             kwargs.pop("text")
             result = await self.responses.smart_split(self._delivery_source, value, limit=limit, file_limit=file_limit, preserve_html=preserve_html, parse_mode=parse_mode, **kwargs)
         else:
-            result = await self.responses.answer(self._delivery_source, parse_mode=parse_mode, **kwargs)
+            result = await self.responses.respond(self._delivery_source, parse_mode=parse_mode, **kwargs)
         self._remember_response(result)
         return result
 
     async def respond(self, content: Any = None, **kwargs: Any) -> Any:
+        if any(key in kwargs for key in ("peer", "chat_id", "message_id", "target")):
+            return await self._ctx_operation("respond", content, **kwargs)
         async with self._response_lock:
             return await self._respond(content, **kwargs)
 
@@ -794,7 +821,7 @@ class ModuleContext:
                 kwargs["kbd"] = {"inline_keyboard": norm_btns}
                 kwargs["buttons"] = norm_btns
             try:
-                await callback.answer()
+                await callback.respond()
             except Exception:
                 pass
             return await callback.edit(str(text or ""), **kwargs)
@@ -949,59 +976,37 @@ class ModuleContext:
             if hasattr(result, "__await__"):
                 await cast(Awaitable[Any], result)
 
+    async def _ctx_media_rpc(self, method: str, **kwargs: Any) -> Any:
+        if method not in {"messages.sendMedia", "messages.editMessage"} or kwargs.get("media") is None:
+            raise PermissionError("file response requires a media send or edit")
+        if self.cap_host is None:
+            raise ResponseError("capabilities are not available")
+        for source in (self._delivery_source, self._source):
+            if source is None:
+                continue
+            message = MessageOperations(self, source)
+            if kwargs.get("peer") != await message.get_input_chat():
+                continue
+            if method == "messages.editMessage" and (not message.out or kwargs.get("id") != message.id):
+                continue
+            if kwargs.get("send_as") is not None:
+                break
+            with trusted_scope():
+                return await self.cap_host._mt_call(self.module_id, {"method": method, "kwargs": kwargs}, {})
+        return await self.mt(method, **kwargs)
+
     async def send_file(self, file: Any, caption: str | None = None, **kwargs: Any) -> Response:
-        app = getattr(self.runtime, "app", None) if self.runtime is not None else None
-        if app is None or getattr(app, "mt", None) is None:
-            raise ResponseError("upload is unavailable")
-        output = kwargs.pop("output", "reply")
-        file_name = kwargs.pop("file_name", None)
-        mime = kwargs.pop("mime_type", None) or kwargs.pop("mime", None) or "application/octet-stream"
-        if isinstance(file, dict) and str(as_tl(cast('dict[str, Any]', file)).get("_", "")).startswith("inputMedia"):
-            media = cast('dict[str, Any]', file)
-        else:
-            up = await put(app, file, file_name=file_name)
-            media = document(up, mime=mime, file_name=file_name)
-        peer = kwargs.pop("peer", None) or kwargs.pop("chat_id", None) or getattr(self._source, "chat_id", None)
-        message = caption or ""
-        data: dict[str, Any] = {"peer": peer, "media": media, "message": message, "random_id": secrets.randbits(63)}
-        if message:
-            plain, ents = to_entities(str(message))
-            data["message"] = plain
-            if ents:
-                data["entities"] = ents
-        source_id = getattr(self._delivery_source, "id", None)
-        if output in {"edit", "auto"} and (self._response_source is not None or self._outgoing) and isinstance(source_id, int):
-            edit_data = {key: value for key, value in data.items() if key != "random_id"}
-            edit_data["id"] = source_id
-            try:
-                with trusted_scope():
-                    result = await app.mt_messages_edit_message(**edit_data)
-            except Exception as exc:
-                if "MESSAGE_AUTHOR_REQUIRED" not in str(exc).upper() and "MESSAGE_EDIT_FORBIDDEN" not in str(exc).upper():
-                    raise
-            else:
-                return Response(True, "edit", getattr(self._source, "src", None), result)
-        reply_to = kwargs.pop("reply_to", None)
-        topic_id = kwargs.pop("topic_id", self.topic_id)
-        if reply_to is None:
-            mid = reply_message_id(self._source) or getattr(self._source, "id", None)
-            if isinstance(mid, int) and mid > 0:
-                header: dict[str, Any] = {"_": "inputReplyToMessage", "reply_to_msg_id": mid}
-                if isinstance(topic_id, int) and topic_id > 0:
-                    header["top_msg_id"] = topic_id
-                data["reply_to"] = header
-        elif isinstance(reply_to, int):
-            header = {"_": "inputReplyToMessage", "reply_to_msg_id": int(reply_to)}
-            if isinstance(topic_id, int) and topic_id > 0:
-                header["top_msg_id"] = topic_id
-            data["reply_to"] = header
-        elif reply_to:
-            data["reply_to"] = reply_to
-        with trusted_scope():
-            result = await app.mt_messages_send_media(**data)
-        response = Response(True, "reply", getattr(self._source, "src", None), result)
-        self._remember_response(response)
-        return response
+        output = kwargs.pop("output", "send")
+        explicit = any(key in kwargs for key in ("peer", "chat_id", "message_id", "target"))
+        if output in {"auto", "edit"} and not explicit and (self._response_source is not None or self._outgoing):
+            value = await self._ctx_operation("edit_media", file, caption=caption, target=self._delivery_source, **kwargs)
+            return Response(True, "edit", getattr(self._source, "src", None), value)
+        operation = "reply_file" if output in {"auto", "reply"} and not explicit else "send_file"
+        value = await self._ctx_operation(operation, file, caption, **kwargs)
+        result = Response(True, "reply", getattr(self._source, "src", None), value)
+        if output != "send" and not explicit:
+            self._remember_response(result)
+        return result
 
     async def upload_file(self, source: Any, **kwargs: Any) -> Any:
         app = getattr(self.runtime, "app", None)
@@ -1009,10 +1014,14 @@ class ModuleContext:
             raise ResponseError("upload is unavailable")
         return await put(app, source, file_name=kwargs.get("file_name"), **{k: v for k, v in kwargs.items() if k != "file_name"})
 
-    async def download_file(self, source: Any, destination: str | Path, **kwargs: Any) -> Any:
+    async def download_file(self, source: Any, destination: str | Path | None = None, **kwargs: Any) -> Any:
         app = getattr(self.runtime, "app", None)
         if app is None:
             raise ResponseError("download is unavailable")
+        if destination is None:
+            with trusted_scope():
+                fd, destination = tempfile.mkstemp(prefix="hotaru-dl-")
+                os.close(fd)
         return await take(app, source, destination, **kwargs)
 
     def file_media(self, up: dict[str, Any], *, mime: str = "application/octet-stream", file_name: str | None = None, force_file: bool = True) -> dict[str, Any]:
@@ -1093,6 +1102,9 @@ class ModuleContext:
         return await self.respond(rich_message=rich_message, **kwargs)
 
     async def send_rich(self, html: str, **kwargs: Any) -> Response:
+        if "output" not in kwargs or any(key in kwargs for key in ("peer", "chat_id", "message_id", "target")):
+            value = await self._ctx_operation("send_rich", html, **kwargs)
+            return Response(True, "reply", getattr(self._source, "src", None), value)
         buttons = kwargs.pop("buttons", None)
         kind = kwargs.pop("buttons_as", "page")
         fb = kwargs.pop("rich_fallback", "plain")
@@ -1185,6 +1197,9 @@ class ModuleContext:
         return await self._deliver(text=text, **kwargs)
 
     async def edit(self, text: str, **kwargs: Any) -> Response:
+        if any(key in kwargs for key in ("peer", "chat_id", "message_id", "target")):
+            value = await self._ctx_operation("edit", text, **kwargs)
+            return Response(True, "edit", getattr(self._source, "src", None), value)
         return await self._deliver(text=text, output="edit", **kwargs)
 
     @property

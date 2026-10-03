@@ -1286,7 +1286,7 @@ class InlineHelper:
     def rich_article(self, title: str, html_text: str, *, result_id: str | None = None, description: str | None = None, buttons: Any = None, **kw: Any) -> dict[str, Any]:
         return self.rich(result_id or secrets.token_urlsafe(10), title, html_text, buttons=buttons, description=description, **kw)
 
-    async def answer(self, query: Any, results: list[dict[str, Any]], **kw: Any) -> Any:
+    async def respond(self, query: Any, results: list[dict[str, Any]], **kw: Any) -> Any:
         return await query.answer(results=results, **kw)
 
     def photo(self, result_id: str, title: str, photo: str, *, caption: str = "", buttons: Any = None, **kw: Any) -> dict[str, Any]:
@@ -1377,7 +1377,7 @@ class InlineHelper:
         return self.article(result_id, title, text, **kw)
 
     async def show(self, query: Any, title: str, text: str, **kw: Any) -> Any:
-        return await self.answer(query, [self.article(secrets.token_hex(6), title, text, **kw)])
+        return await self.respond(query, [self.article(secrets.token_hex(6), title, text, **kw)])
 
     async def from_query(self, query: Any, title: str, text: str, **kw: Any) -> Any:
         return await self.show(query, title, text, **kw)
@@ -1483,7 +1483,7 @@ class UiHelper:
             text = self._router.runtime.t("common.close")
         async def handler(callback: Any, payload: Any) -> Any:
             try:
-                await callback.answer()
+                await callback.respond()
             except Exception:
                 pass
             deleter = getattr(callback, "delete", None)

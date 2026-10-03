@@ -47,10 +47,10 @@ from .activation import ModuleManager
 from .observatory import Observatory, hook_stdio as observatory_hook_stdio, install as observatory_install
 from .registry import Handler
 from .response import FormHandle, ModuleContextFactory, ResponseService, reply_message_id
-from .screens import Screen, ScreenEngine
+from .screens import ScreenEngine
 from .security import SecurityGate
 from .state import StateStore
-from .supervisor import ConnectionSupervisor
+from .supervisor import ConnectionRecovery, ConnectionSupervisor
 from .tasks import TaskSupervisor
 
 IDLE_WORKER_SECONDS = 1800.0
@@ -68,12 +68,12 @@ class InputContext:
         self.inline_message_id = getattr(query, "msg_id", None)
 
     async def reject(self, text: str | None = None) -> Any:
-        return await self.answer(self.runtime.t("common.invalid_value") if text is None else text, alert=True)
+        return await self.respond(self.runtime.t("common.invalid_value") if text is None else text, alert=True)
 
     async def submit(self, text: str | None = None, **kwargs: Any) -> Any:
-        return await self.answer(text, **kwargs)
+        return await self.respond(text, **kwargs)
 
-    async def answer(self, text: str | None = None, **kwargs: Any) -> Any:
+    async def respond(self, text: str | None = None, **kwargs: Any) -> Any:
         answer = getattr(self.query, "answer", None)
         if callable(answer):
             return await cast(Awaitable[Any], answer(results=[], cache_time=0, is_personal=True))
@@ -151,6 +151,9 @@ class Runtime:
     _app_task: asyncio.Task[None] | None = None
     _premium_cache: bool | None = None
     _premium_checked_at: float = 0.0
+    _connection: ConnectionRecovery | None = None
+    _connection_task: asyncio.Task[None] | None = None
+    _premium_lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False)
     _forum_helper: Any = None
     forum_title: str = "Hotaru Userbot"
     _form_msgs: dict[int, tuple[Any, int]] | None = None
@@ -249,8 +252,8 @@ class Runtime:
         self.cap_host = CapabilityHost(self)
         self.context_factory.cap_host = self.cap_host
         self.context_factory.callback_router = self.callbacks
-        self.screens.register("caps_confirm", self._caps_confirm)
-        self.screens.register("caps_cancel", self._caps_cancel)
+        self.callbacks.register("caps_confirm", self._caps_confirm)
+        self.callbacks.register("caps_cancel", self._caps_cancel)
         self.callbacks.register("restore_confirm", self._restore_confirm)
         self.event_router = EventRouter(self._event_error)
         self.backups = BackupService()
@@ -307,7 +310,7 @@ class Runtime:
             return await self.callbacks.dispatch(callback)
         except CallbackDenied:
             try:
-                await callback.answer(self.t("runtime.callback_denied"), alert=True)
+                await callback.respond(self.t("runtime.callback_denied"), alert=True)
             except Exception:
                 pass
             return None
@@ -1458,7 +1461,7 @@ class Runtime:
             return await self.callbacks.dispatch(callback)
         except CallbackDenied as exc:
             try:
-                await callback.answer(self.t("runtime.callback_denied"), alert=True)
+                await callback.respond(self.t("runtime.callback_denied"), alert=True)
             except Exception:
                 pass
             if self.observatory is not None:
@@ -1466,7 +1469,7 @@ class Runtime:
             return None
         except Exception as exc:
             try:
-                await callback.answer(self.t('runtime.callback_failed'), alert=True)
+                await callback.respond(self.t('runtime.callback_failed'), alert=True)
             except Exception:
                 pass
             if self.observatory is not None:
@@ -1633,6 +1636,10 @@ class Runtime:
         return value.casefold() if isinstance(value, str) and value.casefold() in SUPPORTED_LANGUAGES else "ru"
 
     async def is_premium(self, refresh: bool = False) -> bool:
+        async with self._premium_lock:
+            return await self._refresh_premium(refresh)
+
+    async def _refresh_premium(self, refresh: bool) -> bool:
         if not refresh and self._premium_cache is not None and (time.time() - getattr(self, "_premium_checked_at", 0.0)) < 60.0:
             return bool(self._premium_cache)
         app = self.app
@@ -2035,34 +2042,47 @@ class Runtime:
             self.state.namespace(module_id).set("caps-consent", fingerprint)
 
     async def _render_caps_screen(self, module_id: str, manifest: Any, source: str, chat_id: int | str | None, message_id: int) -> tuple[str, list[list[dict[str, Any]]]] | str:
-        if self.screens is None or self.kernel is None or self.kernel.owner_id is None or chat_id is None:
+        if self.callbacks is None or self.kernel is None or self.kernel.owner_id is None or chat_id is None:
             lines = [self.t('runtime.caps_request', module_id=module_id, version=manifest.version)]
             lines.append(describe_caps(manifest.capabilities, self.t) or self.t("common.none"))
             lines.append(self.t('runtime.caps_retry'))
             return "\n".join(lines)
         text = self.t("runtime.caps_request", module_id=module_id, version=manifest.version) + "\n" + (describe_caps(manifest.capabilities, self.t) or self.t("common.none"))
+        confirm_handle = self.callbacks.store.issue(
+            CallbackBinding(self.kernel.owner_id, chat_id, 0),
+            {"action": "caps_confirm", "payload": {"module": module_id, "source": source}},
+        )
+        cancel_handle = self.callbacks.store.issue(
+            CallbackBinding(self.kernel.owner_id, chat_id, 0),
+            {"action": "caps_cancel", "payload": {"module": module_id}},
+        )
         return (
             text,
             [
                 [
-                    self.screens.kernel_button(self.t('common.confirm'), "caps_confirm", style="success", module=module_id, source=source),
-                    self.screens.kernel_button(self.t('common.cancel'), "caps_cancel", style="danger", module=module_id),
+                    {"text": self.t('common.confirm'), "callback_data": confirm_handle},
+                    {"text": self.t('common.cancel'), "callback_data": cancel_handle},
                 ],
             ],
         )
 
-    async def _caps_cancel(self, nav: Any) -> object:
-        module_id = str(nav.arg("module", "")).casefold()
-        return Screen(self.t('runtime.module_cancelled', module_id=module_id), toast=self.t('runtime.cancelled'))
+    async def _caps_cancel(self, callback: Any, payload: Any) -> object:
+        if not isinstance(payload, dict):
+            await callback.respond(self.t('runtime.invalid_request'), alert=True)
+            return None
+        module_id = str(cast('dict[str, Any]', payload).get("module", "")).casefold()
+        await callback.respond(self.t('runtime.cancelled'))
+        return await callback.edit(self.t('runtime.module_cancelled', module_id=module_id))
 
-    async def _caps_confirm(self, nav: Any) -> object:
-        if self.modules is None or self.state is None or self.stager is None:
-            return self.t('runtime.invalid_request')
-        module_id = str(nav.arg("module", "")).casefold()
-        source = nav.arg("source")
+    async def _caps_confirm(self, callback: Any, payload: Any) -> object:
+        if not isinstance(payload, dict) or self.modules is None or self.state is None or self.stager is None:
+            await callback.respond(self.t('runtime.invalid_request'), alert=True)
+            return None
+        module_id = str(cast('dict[str, Any]', payload).get("module", "")).casefold()
+        source = cast('dict[str, Any]', payload).get("source")
         if not isinstance(source, str):
-            return Screen(self.t('runtime.module_missing', module_id=module_id), toast=self.t('runtime.source_missing'), alert=True)
-        await nav.toast(self.t('runtime.loading_module', module_id=module_id))
+            await callback.respond(self.t('runtime.source_missing'), alert=True)
+            return await callback.edit(self.t('runtime.module_missing', module_id=module_id))
         try:
             loaded, action = await self.load_module(source)
             if action == "confirm":
@@ -2073,8 +2093,15 @@ class Runtime:
         except Exception as exc:
             if self.observatory is not None:
                 self.observatory.emit("modules", "activation_error", module=module_id, error=type(exc).__name__, detail=str(exc)[:240])
-            return Screen(self.t('runtime.load_error', error=type(exc).__name__, detail=str(exc)[:120]))
-        return Screen(self.t('runtime.loaded', module_id=module_id, version=loaded.manifest.version))
+            await callback.respond(self.t('runtime.activation_failed'), alert=True)
+            return await callback.edit(self.t('runtime.load_error', error=type(exc).__name__, detail=str(exc)[:120]))
+        await callback.respond(self.t('runtime.module_loaded'))
+        text = self.t('runtime.loaded', module_id=module_id, version=loaded.manifest.version)
+        if getattr(callback, "inline_message_id", None) and getattr(callback, "app", None) is not None:
+            inline_mid = callback.inline_message_id
+            id_field: dict[str, Any] = cast('dict[str, Any]', inline_mid) if isinstance(inline_mid, dict) else {"_": "inputBotInlineMessageID", "raw": inline_mid}
+            return await callback.app.mt_messages_edit_inline_bot_message( id=id_field, message=text)
+        return await callback.edit(text)
 
     def create_backup(self) -> Path:
         if self.backups is None or self.state is None or self.modules is None:
@@ -2125,13 +2152,13 @@ class Runtime:
 
     async def _module_detail(self, callback: Any, payload: Any) -> object:
         if not isinstance(payload, str):
-            await callback.answer(self.t('runtime.invalid_module'), alert=True)
+            await callback.respond(self.t('runtime.invalid_module'), alert=True)
             return None
         return await callback.edit(self._module_detail_text(payload))
 
     async def _help_page(self, callback: Any, payload: Any) -> object:
         if not isinstance(payload, int) or payload < 0:
-            await callback.answer(self.t('runtime.invalid_page'), alert=True)
+            await callback.respond(self.t('runtime.invalid_page'), alert=True)
             return None
         result = self._help_render(payload, callback.chat_id, callback.msg_id)
         if isinstance(result, tuple):
@@ -2141,15 +2168,15 @@ class Runtime:
 
     async def _restore_confirm(self, callback: Any, payload: Any) -> object:
         if not isinstance(payload, str) or self.backups is None:
-            await callback.answer(self.t('runtime.invalid_restore'), alert=True)
+            await callback.respond(self.t('runtime.invalid_restore'), alert=True)
             return None
         try:
             plan = self.backups.plan(payload)
             await self.restore_filesystem(plan, self.relay_dir)
         except Exception as exc:
-            await callback.answer(self.t('runtime.restore_failed'), alert=True)
+            await callback.respond(self.t('runtime.restore_failed'), alert=True)
             return await callback.edit(self.t('runtime.restore_error', error=type(exc).__name__))
-        await callback.answer(self.t('runtime.restore_done'), alert=True)
+        await callback.respond(self.t('runtime.restore_done'), alert=True)
         return await callback.edit(self.t("runtime.restore_done"))
 
     def _event_error(self, error: Exception) -> None:
@@ -2233,12 +2260,12 @@ class Runtime:
         if self.sandbox is not None:
             was_sandbox = module_id in getattr(self.sandbox, "_workers", {})
             if not was_sandbox:
-                self.sandbox.stop_module(module_id)
+                await asyncio.get_running_loop().run_in_executor(None, self.sandbox.stop_module, module_id)
         try:
             result = await self.modules.deactivate(module_id)
         finally:
             if self.sandbox is not None and was_sandbox:
-                self.sandbox.stop_module(module_id)
+                await asyncio.get_running_loop().run_in_executor(None, self.sandbox.stop_module, module_id)
         if self.callbacks is not None:
             self.callbacks.unregister_module(module_id)
         return result
@@ -2557,6 +2584,9 @@ class Runtime:
         assert self.app is not None
         try:
             await self.authorize()
+            if self.app.mt is not None:
+                self._connection = ConnectionRecovery(self.app.mt, self.observatory, "user")
+                self._connection_task = asyncio.create_task(self._connection.watch(), name="hotaru:user-health")
         except BaseException:
             await self.close()
             raise
@@ -2623,6 +2653,9 @@ class Runtime:
             return
         self.closed = True
         try:
+            if self._connection_task is not None:
+                self._connection_task.cancel()
+                await asyncio.gather(self._connection_task, return_exceptions=True)
             if self._form_gc_task is not None and not self._form_gc_task.done():
                 self._form_gc_task.cancel()
                 await asyncio.gather(self._form_gc_task, return_exceptions=True)
@@ -2645,7 +2678,9 @@ class Runtime:
             if self.tasks is not None:
                 await self.tasks.close()
             if self.sandbox is not None:
-                self.sandbox.stop_all()
+                await asyncio.get_running_loop().run_in_executor(None, self.sandbox.stop_all)
+            if self._connection is not None:
+                await self._connection.close()
             if self.app is not None:
                 await self.app.close()
             if self.state is not None:

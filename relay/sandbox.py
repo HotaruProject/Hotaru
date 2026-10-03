@@ -14,8 +14,13 @@ from pathlib import Path
 from typing import Any, cast
 
 from . import toolkit as _toolkit
+from . import context as _context
+from . import translation as _translation
 from hotaru.callbacks import CallbackBinding
 from relay.firewall import trusted_scope
+
+_CONTEXT_SOURCE = Path(_context.__file__).read_text(encoding="utf-8")
+_TRANSLATION_SOURCE = Path(_translation.__file__).read_text(encoding="utf-8")
 
 _TOOLKIT_SOURCE = Path(_toolkit.__file__).read_text(encoding="utf-8")
 
@@ -279,7 +284,8 @@ def _cap_call(name, payload):
         if resp.get("kind") != "cap_result":
             continue
         if not resp.get("ok"):
-            raise PermissionError(resp.get("error", "capability denied"))
+            error = {"PermissionError": PermissionError, "OSError": OSError, "TimeoutError": TimeoutError, "ConnectionError": ConnectionError, "ValueError": ValueError, "TypeError": TypeError}.get(resp.get("error_type", "PermissionError"), RuntimeError)
+            raise error(resp.get("error", "capability failed"))
         return resp.get("result")
 
 
@@ -388,8 +394,8 @@ class SandboxCallbackProxy:
     def __init__(self, cb_data):
         self._data = cb_data
 
-    async def answer(self, text="", alert=False):
-        return _cb_respond_call({"action": "answer", "text": str(text), "alert": bool(alert)})
+    async def respond(self, text="", alert=False):
+        return _cb_respond_call({"action": "respond", "text": str(text), "alert": bool(alert)})
 
     async def edit(self, text, **kwargs):
         return _cb_respond_call({"action": "edit", "text": str(text), **{k: v for k, v in kwargs.items() if isinstance(v, (str, int, float, bool, list, dict, type(None)))}})
@@ -436,7 +442,11 @@ _template_providers = {}
 _template_resolving = set()
 
 
-class SandboxContext:
+class ContextOperations:
+    pass
+
+
+class SandboxContext(ContextOperations):
     def __init__(self, tools, payload):
         payload = payload or {}
         self.chat_id = payload.get("chat_id")
@@ -553,39 +563,48 @@ class SandboxContext:
         import html as _html
         return _html.escape(str(value), quote=False)
 
+    async def _ctx_prepare(self, text, parse_mode, buttons):
+        return _respond_call({"prepare": {"text": text, "parse_mode": parse_mode, "buttons": buttons}})
+
     async def respond(self, content=None, **kwargs):
+        if any(key in kwargs for key in ("peer", "chat_id", "message_id", "target")):
+            return await self._ctx_operation("respond", content, **kwargs)
         return _respond_call({"content": content, "kwargs": kwargs})
 
-    async def smart_answer(self, content=None, **kwargs):
-        return await self.respond(content, **kwargs)
+    async def send(self, text, **kwargs):
+        kwargs.setdefault("output", "reply")
+        return await self.respond(text, **kwargs)
 
-    async def answer(self, text=None, **kwargs):
-        if text is not None:
-            kwargs["text"] = text
-        value = kwargs.pop("text", "")
-        return _respond_call({"content": value, "kwargs": kwargs})
+    async def edit(self, text, **kwargs):
+        if any(key in kwargs for key in ("peer", "chat_id", "message_id", "target")):
+            return await self._ctx_operation("edit", text, **kwargs)
+        return await self.respond(text, output="edit", **kwargs)
+
+    async def smart_respond(self, content=None, **kwargs):
+        return await self.respond(content, **kwargs)
 
     async def reply_html(self, text, **kwargs):
         kwargs.setdefault("output", "reply")
-        return await self.answer(text, **kwargs)
+        return await self.respond(text, **kwargs)
 
     async def edit_html(self, text, **kwargs):
         kwargs.setdefault("output", "edit")
-        return await self.answer(text, **kwargs)
+        return await self.respond(text, **kwargs)
 
-    async def answer_file(self, media, **kwargs):
+    async def respond_file(self, media, caption=None, **kwargs):
+        kwargs.setdefault("output", "auto")
+        kwargs.setdefault("caption", caption)
         return await self.send_file(media, kwargs.pop("caption", None), **kwargs)
 
-    async def answer_media(self, media, **kwargs):
-        kwargs.setdefault("output", "reply")
+    async def respond_media(self, media, **kwargs):
+        kwargs.setdefault("output", "auto")
         return await self.send_file(media, **kwargs)
 
-    async def answer_rich(self, rich_message, **kwargs):
-        return await self.send_rich(rich_message, **kwargs)
+    async def respond_rich(self, rich_message, **kwargs):
+        return await self.respond(rich_message, rich=True, **kwargs)
 
     async def send_rich(self, html, **kwargs):
-        kwargs["rich"] = True
-        return _respond_call({"content": html, "kwargs": kwargs})
+        return await self._ctx_operation("send_rich", html, **kwargs)
 
     async def inline_form(self, text, buttons=None, form_handle=False, **kwargs):
         return _respond_call({"content": text, "form_handle": bool(form_handle), "kwargs": {"buttons": buttons, "output": "inline", **kwargs}})
@@ -604,14 +623,24 @@ class SandboxContext:
     def ui(self):
         return _UiProxy(self.t)
 
+    async def _ctx_media_rpc(self, method, **kwargs):
+        return _respond_call({"media_rpc": {"method": method, "kwargs": kwargs}})
+
     async def send_file(self, media, caption=None, **kwargs):
-        kwargs["media"] = media
-        return _respond_call({"content": caption or "", "kwargs": kwargs})
+        output = kwargs.pop("output", "send")
+        explicit = any(key in kwargs for key in ("peer", "chat_id", "message_id", "target"))
+        if output in {"auto", "edit"} and not explicit and self._msg.get("out"):
+            return await self._ctx_operation("edit_media", media, caption=caption, **kwargs)
+        operation = "reply_file" if output in {"auto", "reply"} and not explicit else "send_file"
+        return await self._ctx_operation(operation, media, caption, **kwargs)
+
+    async def send_media(self, media, caption=None, **kwargs):
+        return await self.send_file(media, caption, **kwargs)
 
     async def upload_file(self, source, **kwargs):
         return _cap_call("assets", {"op": "upload", "file": source, "filename": kwargs.get("file_name")})
 
-    async def download_file(self, source, destination, **kwargs):
+    async def download_file(self, source, destination=None, **kwargs):
         return _cap_call("assets", {"op": "download", "message": source, "destination": destination})
 
     def file_media(self, up, *, mime="application/octet-stream", file_name=None, force_file=True):
@@ -666,8 +695,8 @@ class _RichProxy:
     async def edit(self, message_id, html, **kwargs):
         return _respond_call({"content": html, "kwargs": {"rich": True, "output": "edit", "message_id": message_id, **kwargs}})
 
-    async def answer(self, html, **kwargs):
-        return self.send(html, **kwargs)
+    async def respond(self, html, **kwargs):
+        return await self.send(html, **kwargs)
 
 
 class _UiProxy:
@@ -856,7 +885,7 @@ class SandboxInlineQuery:
     def from_id(self):
         return None
 
-    async def answer(self, results=None, **kwargs):
+    async def respond(self, results=None, **kwargs):
         self._answered = True
         return {"ok": True, "results": results or []}
 
@@ -978,6 +1007,12 @@ def main():
         cfg.get("cpu_seconds", 1800),
         cfg.get("net_blocked", True),
     )
+    context_ns = {}
+    exec(compile(cfg["context_source"], "hotaru_context", "exec"), context_ns, context_ns)
+    SandboxContext.__bases__ = (context_ns["ContextOperations"],)
+    translation_ns = {}
+    exec(compile(cfg["translation_source"], "hotaru_translation", "exec"), translation_ns, translation_ns)
+    SandboxContext._ctx_translate_text = staticmethod(translation_ns["translate"])
     tools = _build_tools(cfg.get("toolkit_source", ""))
     ns = {"__name__": cfg.get("module_id", "sandbox"), "cap": _cap_call, "mt": _mt_call, "net": _net_call, "tools": SimpleNamespace(**tools), "logs": _WorkerLogs()}
     try:
@@ -1312,6 +1347,9 @@ SECCOMP_POLICY = {
 }
 
 
+
+
+
 class SandboxError(RuntimeError):
     pass
 
@@ -1511,6 +1549,8 @@ class ModuleSandbox:
             "source": source,
             "commands": commands,
             "toolkit_source": _TOOLKIT_SOURCE,
+            "context_source": _CONTEXT_SOURCE,
+            "translation_source": _TRANSLATION_SOURCE,
             "mem_mb": self.mem_mb,
             "file_mb": self.file_mb,
             "nofile": self.nofile,
@@ -1703,6 +1743,14 @@ class ModuleSandbox:
             self._cb_respond_pending.pop(module_id, None)
             raise
 
+    async def _write_reply(self, process: subprocess.Popen[bytes], reply: dict[str, Any]) -> None:
+        def write() -> None:
+            if process.poll() is None and process.stdin is not None:
+                process.stdin.write((_proto_dumps(reply) + "\n").encode("utf-8"))
+                process.stdin.flush()
+
+        await asyncio.get_running_loop().run_in_executor(None, write)
+
     async def _serve_caps(self, module_id: str) -> None:
         caps = self._pending_caps.pop(module_id, [])
         process = self._workers.get(module_id)
@@ -1727,10 +1775,9 @@ class ModuleSandbox:
                         result = await cap_host.call(module_id, name, payload)
                     reply = {"kind": "cap_result", "ok": True, "result": result}
                 except Exception as exc:
-                    reply = {"kind": "cap_result", "ok": False, "error": f"{type(exc).__name__}: {exc}"[:200]}
+                    reply = {"kind": "cap_result", "ok": False, "error_type": type(exc).__name__, "error": f"{type(exc).__name__}: {exc}"[:200]}
             if process is self._workers.get(module_id) and process is not None and process.poll() is None and process.stdin is not None:
-                process.stdin.write((_proto_dumps(reply) + "\n").encode("utf-8"))
-                process.stdin.flush()
+                await self._write_reply(process, reply)
 
     async def _serve_respond(self, module_id: str) -> None:
         pending = self._respond_pending.pop(module_id, [])
@@ -1746,8 +1793,7 @@ class ModuleSandbox:
                 reply = {"kind": "respond_result", "ok": False, "error": f"{type(exc).__name__}: {exc}"[:200]}
             process = self._workers.get(module_id)
             if process is not None and process.poll() is None and process.stdin is not None:
-                process.stdin.write((_proto_dumps(reply) + "\n").encode("utf-8"))
-                process.stdin.flush()
+                await self._write_reply(process, reply)
 
     async def _serve_cb_respond(self, module_id: str) -> None:
         pending = self._cb_respond_pending.pop(module_id, [])
@@ -1761,9 +1807,9 @@ class ModuleSandbox:
                 if callback is None:
                     raise PermissionError("callback context is unavailable")
                 action = data.get("action")
-                if action == "answer":
+                if action == "respond":
                     with trusted_scope():
-                        value = await callback.answer(str(data.get("text", "")), alert=bool(data.get("alert", False)))
+                        value = await callback.respond(str(data.get("text", "")), alert=bool(data.get("alert", False)))
                 elif action == "edit":
                     kwargs: dict[str, Any] = {}
                     for k in ("parse_mode", "rich", "style"):
@@ -1790,12 +1836,18 @@ class ModuleSandbox:
             except Exception as exc:
                 result = {"ok": False, "error": f"{type(exc).__name__}: {exc}"[:200]}
             if process is not None and process.poll() is None and process.stdin is not None:
-                process.stdin.write((_proto_dumps({"cb_respond_result": result}) + "\n").encode("utf-8"))
-                process.stdin.flush()
+                await self._write_reply(process, {"cb_respond_result": result})
 
     async def _trusted_respond(self, module_id: str, source: Any, payload: dict[str, Any]) -> Any:
         from hotaru.response import FormHandle, Response
         from types import SimpleNamespace
+        if "prepare" in payload:
+            from hotaru.response import ModuleContext
+            prepare = payload["prepare"]
+            if not isinstance(prepare, dict):
+                raise ValueError("context preparation requires a mapping")
+            prepare = cast('dict[str, Any]', prepare)
+            return await getattr(ModuleContext, "_ctx_prepare")(prepare.get("text"), prepare.get("parse_mode"), prepare.get("buttons"))
         if "form" in payload:
             from hotaru.runtime import Runtime
             runtime = cast(Runtime, self.runtime)
@@ -1827,6 +1879,15 @@ class ModuleSandbox:
         if context is None:
             context = self.runtime.context_factory.create(module_id, source)
             self._respond_contexts[module_id] = context
+        if "media_rpc" in payload:
+            media_rpc = payload["media_rpc"]
+            if not isinstance(media_rpc, dict):
+                raise ValueError("file response requires a mapping")
+            media_rpc = cast('dict[str, Any]', media_rpc)
+            media_kwargs = media_rpc.get("kwargs")
+            if not isinstance(media_kwargs, dict):
+                raise ValueError("file response arguments require a mapping")
+            return await context._ctx_media_rpc(str(media_rpc.get("method", "")), **cast('dict[str, Any]', media_kwargs))
         kwargs = dict(payload.get("kwargs") or {})
         if kwargs.get("media") is not None or kwargs.get("file") is not None or payload.get("content") is not None and not isinstance(payload["content"], str):
             raise PermissionError("sandbox respond media must go through files capability")

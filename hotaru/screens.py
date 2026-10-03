@@ -167,7 +167,7 @@ class Nav:
             return
         self._answered = True
         try:
-            await self.call.answer(_clip(text), alert=alert)
+            await self.call.respond(_clip(text), alert=alert)
         except Exception:
             pass
 
@@ -901,7 +901,7 @@ class ScreenEngine:
     @staticmethod
     async def _answer(callback: Any, text: Optional[str] = None, *, alert: bool = False) -> None:
         try:
-            await callback.answer(_clip(text), alert=alert)
+            await callback.respond(_clip(text), alert=alert)
         except Exception:
             pass
 
