@@ -24,6 +24,32 @@
     }
   },
   "kernel": {
+    "backups": {
+      "description": "サービス用フォーラムにバックアップを送信",
+      "commands": {
+        "backup": {
+          "description": "バックアップを送信、または自動送信を設定"
+        }
+      },
+      "config_fields": {
+        "enabled": "バックアップを自動送信する",
+        "interval_hours": "バックアップの送信間隔（時間）"
+      },
+      "heading": "{icon} <b>バックアップ</b>\n{status} · {hours}時間",
+      "enabled": "有効",
+      "disabled": "無効",
+      "last_sent": "最終送信: {date}",
+      "destination": "送信先: サービス用チャットの「{topic}」トピック。",
+      "send_now": "今すぐ送信",
+      "disable": "無効にする",
+      "enable": "有効にする",
+      "not_ready": "サービス用チャットの準備ができていません",
+      "caption": "Hotaruのバックアップ",
+      "failed": "バックアップの送信に失敗しました: {error}",
+      "sent": "バックアップを送信しました",
+      "topic": "Backups",
+      "usage": "<code>{prefix}backup [now|on|off]</code>"
+    },
     "capabilities": {
       "mt": "MTProtoへのアクセス",
       "state": "データの保存",
@@ -155,6 +181,13 @@
         "language": {
           "description": "言語を表示または変更"
         }
+      },
+      "native": {
+        "ru": "Русский",
+        "en": "English",
+        "kz": "Қазақша",
+        "uk": "Українська",
+        "ja": "日本語"
       }
     },
     "test-features": {
@@ -523,8 +556,13 @@
       "pending": "待機中",
       "config_fields": {
         "level": "記録するログの最低レベル",
-        "batch_size": "1 メッセージあたりのログ件数",
-        "auto_topic": "フォーラムのログトピックを自動管理"
+        "batch_size": "1つのメッセージにまとめるイベント数",
+        "auto_topic": "フォーラムのログトピックを自動管理する"
+      },
+      "config": {
+        "level": "記録するログの最低レベル",
+        "batch_size": "1つのメッセージにまとめるイベント数",
+        "auto_topic": "フォーラムのログトピックを自動管理する"
       }
     },
     "executor": {
@@ -621,7 +659,12 @@
         }
       },
       "config_fields": {
-        "template": "info カードのテキスト"
+        "template": ".info のテンプレート。プレースホルダー: {version} {uptime} {modules}"
+      },
+      "empty_template": "情報テンプレートが空です",
+      "bad_placeholder": "無効なプレースホルダー: {error}",
+      "config": {
+        "template": ".info のテンプレート。プレースホルダー: {version} {uptime} {modules}"
       }
     }
   },

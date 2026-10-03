@@ -5,12 +5,8 @@ HOTARU = {
     "capabilities": ["mt", "state", "files"],
     "tasks": {"send": {"interval": 60, "autostart": True}},
     "config_schema": {
-        "enabled": {"type": "bool", "default": True, "description": "Send automatic backups"},
-        "interval_hours": {"type": "int", "default": 24, "minimum": 1, "maximum": 720, "description": "Hours between backups"},
-    },
-    "lexicon": {
-        "en": {"description": "Send backups to the service forum", "commands": {"backup": {"description": "Send a backup or manage automatic backups"}}},
-        "ru": {"description": "Отправка бекапов в служебный чат", "commands": {"backup": {"description": "Отправить бекап или настроить автоотправку"}}},
+        "enabled": {"type": "bool", "default": True},
+        "interval_hours": {"type": "int", "default": 24, "minimum": 1, "maximum": 720},
     },
 }
 
@@ -22,23 +18,19 @@ from typing import Any
 _lock = asyncio.Lock()
 
 
-def _text(ctx: Any, en: str, ru: str) -> str:
-    return ru if ctx.runtime.language() == "ru" else en
-
-
 def home(ctx: Any, nav: Any = None) -> Any:
     k = ctx.screens
     enabled = ctx.config.get("enabled", True)
     hours = ctx.config.get("interval_hours", 24)
     last = ctx.state.get("last_sent", 0)
-    status = _text(ctx, "Enabled", "Включено") if enabled else _text(ctx, "Disabled", "Выключено")
-    text = k.banner() + f"{k.icon('folder')} <b>{_text(ctx, 'Backups', 'Бекапы')}</b>\n{status} · {hours} {_text(ctx, 'hours', 'ч.')}"
+    status = ctx.t("kernel.backups.enabled" if enabled else "kernel.backups.disabled")
+    text = k.banner() + ctx.t("kernel.backups.heading", icon=k.icon("folder"), status=status, hours=hours)
     if last:
-        text += "\n" + _text(ctx, "Last sent: ", "Последняя отправка: ") + time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime(last))
-    text += "\n" + _text(ctx, "Destination: Backups topic in the service chat.", "Куда: топик Backups в служебном чате.")
+        text += "\n" + ctx.t("kernel.backups.last_sent", date=time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime(last)))
+    text += "\n" + ctx.t("kernel.backups.destination", topic=html.escape(ctx.t("kernel.backups.topic")))
     return k.screen(text, [
-        [k.button(_text(ctx, 'Send now', 'Отправить сейчас'), send_now)],
-        [k.button(_text(ctx, 'Disable' if enabled else 'Enable', 'Выключить' if enabled else 'Включить'), toggle)],
+        [k.button(ctx.t("kernel.backups.send_now"), send_now)],
+        [k.button(ctx.t("kernel.backups.disable" if enabled else "kernel.backups.enable"), toggle)],
         k.footer(),
     ])
 
@@ -56,11 +48,11 @@ async def _send(ctx: Any, *, automatic: bool = False) -> bool:
                 return False
             if now - ctx.state.get("last_sent", 0) < ctx.config.get("interval_hours", 24) * 3600:
                 return False
-        topic = await ctx.forum.ensure_topic("Backups")
+        topic = await ctx.forum.ensure_topic(ctx.t("kernel.backups.topic"))
         if topic is None:
-            raise RuntimeError(_text(ctx, "Service chat is not ready", "Служебный чат ещё не готов"))
+            raise RuntimeError(ctx.t("kernel.backups.not_ready"))
         archive = ctx.runtime.create_backup()
-        await ctx.forum.send_file(topic, str(archive), _text(ctx, "Hotaru backup", "Бекап Hotaru"), file_name=archive.name)
+        await ctx.forum.send_file(topic, str(archive), ctx.t("kernel.backups.caption"), file_name=archive.name)
         ctx.state.set("last_sent", time.time())
         return True
 
@@ -69,8 +61,8 @@ async def send_now(ctx: Any, nav: Any) -> Any:
     try:
         await _send(ctx)
     except Exception as exc:
-        return home(ctx).with_notice(_text(ctx, "Backup failed: ", "Не удалось отправить бекап: ") + html.escape(str(exc)))
-    return home(ctx).with_notice(_text(ctx, "Backup sent", "Бекап отправлен"))
+        return home(ctx).with_notice(ctx.t("kernel.backups.failed", error=html.escape(str(exc))))
+    return home(ctx).with_notice(ctx.t("kernel.backups.sent"))
 
 
 async def task_send(ctx: Any) -> None:
@@ -90,6 +82,6 @@ async def command_backup(ctx: Any, invocation: Any) -> None:
     elif not args:
         screen = home(ctx)
     else:
-        await ctx.respond(f"<code>{html.escape(ctx.runtime.config.prefix)}backup [now|on|off]</code>", parse_mode="HTML")
+        await ctx.respond(ctx.t("kernel.backups.usage", prefix=html.escape(ctx.runtime.config.prefix)), parse_mode="HTML")
         return
     await ctx.screens.show(screen)

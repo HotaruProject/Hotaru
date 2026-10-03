@@ -47,8 +47,8 @@ def home(ctx: Any, nav: Any = None) -> Any:
     items, page, pages = k.page(catalog, nav.int("page") if nav is not None else 0, _page_size)
     kernel_count = sum(1 for row in catalog if row[2])
     lines = [k.banner("help"),
-        k.wordmark() + "  " + k.badge(ctx.t("kernel.help_ui.count", "{count} modules", count=len(catalog)), "primary")
-        + " " + k.badge(ctx.t("kernel.help_ui.prefix", "prefix {prefix}", prefix=runtime.config.prefix)),
+        k.wordmark() + "  " + k.badge(ctx.t("kernel.help_ui.count", count=len(catalog)), "primary")
+        + " " + k.badge(ctx.t("kernel.help_ui.prefix", prefix=runtime.config.prefix)),
     ]
     user_count = len(catalog) - kernel_count
     for kernel in (True, False):
