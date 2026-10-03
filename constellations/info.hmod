@@ -8,18 +8,7 @@ HOTARU = {
             "type": "str",
             "default_key": "kernel.info.template",
             "max_len": 3000,
-            "description": "Шаблон .info, плейсхолдеры {version} {uptime} {modules}",
             "category": "General",
-        },
-    },
-    "lexicon": {
-        "en": {
-            "description": "Userbot info card",
-            "commands": {"info": {"description": "Show userbot info"}},
-        },
-        "ru": {
-            "description": "Карточка юзербота",
-            "commands": {"info": {"description": "Информация о юзерботе"}},
         },
     },
 }
@@ -61,12 +50,12 @@ def _placeholders(ctx: 'ModuleContext') -> Dict[str, Union[str, int]]:
 async def command_info(ctx: 'ModuleContext', invocation: 'CommandInvocation') -> None:
     template = ctx.config.get("template")
     if not template:
-        await ctx.respond("info: template is empty")
+        await ctx.respond(ctx.t("kernel.info.empty_template"))
         return
     values = _placeholders(ctx)
     try:
         text = template.format(**values)
     except (KeyError, IndexError, ValueError) as exc:
-        await ctx.respond(f"info: bad placeholder {exc}")
+        await ctx.respond(ctx.t("kernel.info.bad_placeholder", error=str(exc)))
         return
     await ctx.respond(text, parse_mode="HTML", rich=True, rich_fallback="bot")

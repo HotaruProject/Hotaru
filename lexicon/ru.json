@@ -32,7 +32,27 @@
       "shared_prefix": "Текущий префикс команд",
       "shared_uptime": "Время работы в секундах",
       "template_syntax": "Используйте {{name}}, числовой формат {{name:.2f}} и {{{{ / }}}} для буквальных скобок. Значения экранируются для HTML.",
-      "template_preview": "Предпросмотр (HTML, примеры значений)"
+      "template_preview": "Предпросмотр (HTML, примеры значений)",
+      "directory_empty": "<b>Конфигурация</b>\n\nНастраиваемых модулей нет.",
+      "directory": "<b>Конфигурация</b>\n\nВыберите модуль:",
+      "module_missing_error": "<b>Ошибка:</b> Модуль <code>{module}</code> не найден.",
+      "no_settings": "<b>Ошибка:</b> У модуля <code>{module}</code> нет настроек.",
+      "parameter_missing_error": "<b>Ошибка:</b> Параметр <code>{parameter}</code> не найден.",
+      "empty": "(пусто)",
+      "parameter_details": "• Значение: <code>{value}</code>\n• Тип: <code>{type}</code>\n• По умолчанию: <code>{default}</code>\n",
+      "parameter_description": "• Описание: <i>{description}</i>\n",
+      "template_unavailable": "Поле шаблона недоступно или не экспортировано: {name}",
+      "error": "Ошибка: {error}",
+      "boolean_true": "🔘 Да",
+      "boolean_false": "⚪️ Нет",
+      "minimum": "Минимум: {value}",
+      "maximum": "Максимум: {value}",
+      "enter": "✏️ Ввести",
+      "new_value": "Новое значение {parameter}",
+      "reset": "🔄 Сброс",
+      "module_missing": "Модуль <code>{module}</code> не найден.",
+      "parameter_missing": "Параметр <code>{parameter}</code> не найден.",
+      "error_html": "Ошибка: <code>{error}</code>"
     },
     "power": {
       "already_stopped": "Юзербот уже остановлен.",
@@ -174,6 +194,13 @@
         "language": {
           "description": "Показать или изменить язык"
         }
+      },
+      "native": {
+        "ru": "Русский",
+        "en": "English",
+        "kz": "Қазақша",
+        "uk": "Українська",
+        "ja": "日本語"
       }
     },
     "test-features": {
@@ -449,7 +476,17 @@
           "description": "Логи юзербота с файлом"
         }
       },
-      "pending": "ожидание"
+      "pending": "ожидание",
+      "config": {
+        "level": "Минимальный уровень записываемых логов",
+        "batch_size": "Количество событий в одном сообщении",
+        "auto_topic": "Автоматически управлять топиком логов в форуме"
+      },
+      "config_fields": {
+        "level": "Минимальный уровень записываемых логов",
+        "batch_size": "Количество событий в одном сообщении",
+        "auto_topic": "Автоматически управлять топиком логов в форуме"
+      }
     },
     "commands": {
       "lg": "Показать последние записи журнала"
@@ -560,6 +597,14 @@
         "info": {
           "description": "Информация о юзерботе"
         }
+      },
+      "empty_template": "Шаблон информации пуст",
+      "bad_placeholder": "Некорректный плейсхолдер: {error}",
+      "config": {
+        "template": "Шаблон .info, плейсхолдеры {version} {uptime} {modules}"
+      },
+      "config_fields": {
+        "template": "Шаблон .info, плейсхолдеры {version} {uptime} {modules}"
       }
     }
   },

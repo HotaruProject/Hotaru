@@ -155,6 +155,13 @@
         "language": {
           "description": "Показати або змінити мову"
         }
+      },
+      "native": {
+        "ru": "Русский",
+        "en": "English",
+        "kz": "Қазақша",
+        "uk": "Українська",
+        "ja": "日本語"
       }
     },
     "test-features": {
@@ -425,7 +432,27 @@
       "shared_prefix": "Поточний префікс команд",
       "shared_uptime": "Час роботи в секундах",
       "template_syntax": "Використовуйте {{name}}, числовий формат {{name:.2f}} та {{{{ / }}}} для буквальних дужок. Значення екрануються для HTML.",
-      "template_preview": "Попередній перегляд (HTML, приклади значень)"
+      "template_preview": "Попередній перегляд (HTML, приклади значень)",
+      "directory_empty": "<b>Конфігурація</b>\n\nНемає модулів із налаштуваннями.",
+      "directory": "<b>Конфігурація</b>\n\nВиберіть модуль:",
+      "module_missing_error": "<b>Помилка:</b> Модуль <code>{module}</code> не знайдено.",
+      "no_settings": "<b>Помилка:</b> Модуль <code>{module}</code> не має налаштувань.",
+      "parameter_missing_error": "<b>Помилка:</b> Параметр <code>{parameter}</code> не знайдено.",
+      "empty": "(порожньо)",
+      "parameter_details": "• Значення: <code>{value}</code>\n• Тип: <code>{type}</code>\n• За замовчуванням: <code>{default}</code>\n",
+      "parameter_description": "• Опис: <i>{description}</i>\n",
+      "template_unavailable": "Поле шаблону недоступне або не експортоване: {name}",
+      "error": "Помилка: {error}",
+      "boolean_true": "🔘 Так",
+      "boolean_false": "⚪️ Ні",
+      "minimum": "Мінімум: {value}",
+      "maximum": "Максимум: {value}",
+      "enter": "✏️ Ввести",
+      "new_value": "Нове значення {parameter}",
+      "reset": "🔄 Скинути",
+      "module_missing": "Модуль <code>{module}</code> не знайдено.",
+      "parameter_missing": "Параметр <code>{parameter}</code> не знайдено.",
+      "error_html": "Помилка: <code>{error}</code>"
     },
     "settings": {
       "description": "Керування аліасами та префіксом",
@@ -475,7 +502,17 @@
           "description": "Логи юзербота з файлом"
         }
       },
-      "pending": "очікування"
+      "pending": "очікування",
+      "config": {
+        "level": "Мінімальний рівень записуваних логів",
+        "batch_size": "Кількість подій в одному повідомленні",
+        "auto_topic": "Автоматично керувати темою логів у форумі"
+      },
+      "config_fields": {
+        "level": "Мінімальний рівень записуваних логів",
+        "batch_size": "Кількість подій в одному повідомленні",
+        "auto_topic": "Автоматично керувати темою логів у форумі"
+      }
     },
     "executor": {
       "heading": "<b>Виконавець</b> | <code>{elapsed:.1f} мс</code>",
@@ -566,6 +603,14 @@
         "info": {
           "description": "Інформація про юзербота"
         }
+      },
+      "empty_template": "Шаблон інформації порожній",
+      "bad_placeholder": "Некоректний заповнювач: {error}",
+      "config": {
+        "template": "Шаблон .info, заповнювачі {version} {uptime} {modules}"
+      },
+      "config_fields": {
+        "template": "Шаблон .info, заповнювачі {version} {uptime} {modules}"
       }
     }
   },

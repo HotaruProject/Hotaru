@@ -32,7 +32,27 @@
       "shared_prefix": "Current command prefix",
       "shared_uptime": "Runtime uptime in seconds",
       "template_syntax": "Use {{name}}, numeric {{name:.2f}}, and {{{{ / }}}} for literal braces. Values are HTML-escaped.",
-      "template_preview": "Preview (HTML, example values)"
+      "template_preview": "Preview (HTML, example values)",
+      "directory_empty": "<b>Configuration</b>\n\nNo configurable modules.",
+      "directory": "<b>Configuration</b>\n\nChoose a module:",
+      "module_missing_error": "<b>Error:</b> Module <code>{module}</code> not found.",
+      "no_settings": "<b>Error:</b> Module <code>{module}</code> has no settings.",
+      "parameter_missing_error": "<b>Error:</b> Parameter <code>{parameter}</code> not found.",
+      "empty": "(empty)",
+      "parameter_details": "• Value: <code>{value}</code>\n• Type: <code>{type}</code>\n• Default: <code>{default}</code>\n",
+      "parameter_description": "• Description: <i>{description}</i>\n",
+      "template_unavailable": "Template field unavailable or not exported: {name}",
+      "error": "Error: {error}",
+      "boolean_true": "🔘 True",
+      "boolean_false": "⚪️ False",
+      "minimum": "Minimum: {value}",
+      "maximum": "Maximum: {value}",
+      "enter": "✏️ Enter",
+      "new_value": "New value for {parameter}",
+      "reset": "🔄 Reset",
+      "module_missing": "Module <code>{module}</code> not found.",
+      "parameter_missing": "Parameter <code>{parameter}</code> not found.",
+      "error_html": "Error: <code>{error}</code>"
     },
     "power": {
       "already_stopped": "Userbot is already stopped.",
@@ -174,6 +194,13 @@
         "language": {
           "description": "Show or change language"
         }
+      },
+      "native": {
+        "ru": "Русский",
+        "en": "English",
+        "kz": "Қазақша",
+        "uk": "Українська",
+        "ja": "日本語"
       }
     },
     "test-features": {
@@ -469,7 +496,17 @@
           "description": "Userbot logs with a file"
         }
       },
-      "pending": "pending"
+      "pending": "pending",
+      "config": {
+        "level": "Minimum log level to record",
+        "batch_size": "Log events to batch per message",
+        "auto_topic": "Automatically manage the logs topic in the forum"
+      },
+      "config_fields": {
+        "level": "Minimum log level to record",
+        "batch_size": "Log events to batch per message",
+        "auto_topic": "Automatically manage the logs topic in the forum"
+      }
     },
     "executor": {
       "heading": "<b>Executor</b> | <code>{elapsed:.1f}ms</code>",
@@ -560,6 +597,14 @@
         "info": {
           "description": "Show userbot info"
         }
+      },
+      "empty_template": "The info template is empty",
+      "bad_placeholder": "Invalid placeholder: {error}",
+      "config": {
+        "template": "Info template; placeholders: {version} {uptime} {modules}"
+      },
+      "config_fields": {
+        "template": "Info template; placeholders: {version} {uptime} {modules}"
       }
     }
   },
