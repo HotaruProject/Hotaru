@@ -304,7 +304,7 @@ class ModuleManager:
                         ctx = kernel.context_factory.create(loaded.manifest.module_id, None)
                         
                         async def sandbox_task_handler(c: Any=ctx, s: Any=sandbox, m: Any=loaded.manifest.module_id, t: Any=task_name) -> Any:
-                            await s.call(m, t, [], {}, target=f"task_{t}")
+                            await s.call(m, t, [], {"source": "task"}, target=f"task_{t}", context=c)
                             
                         self.tasks.spawn(
                             loaded.manifest.module_id, 
@@ -383,7 +383,7 @@ class ModuleManager:
                 break
             except Exception as exc:
                 if not failed:
-                    log.error("module task failed: %s (%s)", type(exc).__name__, module_id, exc_info=True)
+                    log.error("module task failed: %s/%s: %s: %s", module_id, name, type(exc).__name__, exc, exc_info=True)
                 failed = True
                 await asyncio.sleep(interval)
 
