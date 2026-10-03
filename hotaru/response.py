@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from relay.context import ContextOperations
+from relay.context import ContextOperations, MessageOperations
 from relay.translation import translate as _translate_text
 
 import asyncio
@@ -971,6 +971,25 @@ class ModuleContext(ContextOperations):
             result = deleter()
             if hasattr(result, "__await__"):
                 await cast(Awaitable[Any], result)
+
+    async def _ctx_media_rpc(self, method: str, **kwargs: Any) -> Any:
+        if method not in {"messages.sendMedia", "messages.editMessage"} or kwargs.get("media") is None:
+            raise PermissionError("file response requires a media send or edit")
+        if self.cap_host is None:
+            raise ResponseError("capabilities are not available")
+        for source in (self._delivery_source, self._source):
+            if source is None:
+                continue
+            message = MessageOperations(self, source)
+            if kwargs.get("peer") != await message.get_input_chat():
+                continue
+            if method == "messages.editMessage" and (not message.out or kwargs.get("id") != message.id):
+                continue
+            if kwargs.get("send_as") is not None:
+                break
+            with trusted_scope():
+                return await self.cap_host._mt_call(self.module_id, {"method": method, "kwargs": kwargs}, {})
+        return await self.mt(method, **kwargs)
 
     async def send_file(self, file: Any, caption: str | None = None, **kwargs: Any) -> Response:
         output = kwargs.pop("output", "send")

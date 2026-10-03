@@ -415,10 +415,11 @@ class MessageOperations:
         return await self._rpc("messages.setTyping", peer=await self.get_input_chat(), top_msg_id=self.topic_id, action={"_": action})
 
 
-    async def _rpc(self, method: str, **kwargs: Any) -> Any:
+    async def _rpc(self, method: str, *, _media_response: bool = False, **kwargs: Any) -> Any:
         if self._g("src", "source", default="mt") not in {"mt", "mtproto"}:
             raise ValueError("message operations require an MTProto message")
-        result = await self.ctx.mt(method, **kwargs)
+        sender = self.ctx._ctx_media_rpc if _media_response else self.ctx.mt
+        result = await sender(method, **kwargs)
         if _msg_field(result, "ok") is False:
             raise RuntimeError(f"{method}: {_msg_field(result, 'error', 'RPC failed')}")
         return result
@@ -554,14 +555,14 @@ class MessageOperations:
         data.pop("reply_to", None)
         media = await self._prepare_media(media, kind, data.pop("file_name", None), data.pop("mime_type", data.pop("mime", None)))
         data.update(await self.ctx._ctx_prepare(caption, data.pop("parse_mode", "html"), data.pop("kbd", None)))
-        return await self._on_message("messages.editMessage", id_key="id", media=media, **data)
+        return await self._on_message("messages.editMessage", id_key="id", media=media, _media_response=True, **data)
 
     async def send_media(self, media: Any, caption: str | None = None, *, kind: str = "document", **kwargs: Any) -> Any:
         data = self._send_options(kwargs)
         media = await self._prepare_media(media, kind, data.pop("file_name", None), data.pop("mime_type", data.pop("mime", None)))
         data.update(await self.ctx._ctx_prepare(caption or "", data.pop("parse_mode", "html"), data.pop("kbd", None)))
         data.setdefault("random_id", secrets.randbits(63))
-        return await self._rpc("messages.sendMedia", peer=await self.get_input_chat(), media=media, **data)
+        return await self._rpc("messages.sendMedia", peer=await self.get_input_chat(), media=media, _media_response=True, **data)
 
     async def send_rich(self, rich: Any, **kwargs: Any) -> Any:
         payload = rich.to_tl() if hasattr(rich, "to_tl") else {"_": "inputRichMessageHTML", "html": rich} if isinstance(rich, str) else rich
