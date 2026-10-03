@@ -2,7 +2,7 @@ HOTARU = {
     "id": "executor",
     "version": "3.4.0",
     "commands": ["sh", "py", "kill"],
-    "capabilities": ["mt", "files", "net", "state"],
+    "capabilities": ["mt", "files", "net", "state", "assets"],
 }
 
 import ast
@@ -372,6 +372,11 @@ def _attr_or(obj: Any, *names: Any) -> Any:
 
 
 async def _get_reply(ctx: Any, invocation: Any) -> Any:
+    source = getattr(ctx, "_source", None)
+    header = _msg_field(source, "reply_to")
+    if _msg_field(header, "reply_to_peer_id") is not None:
+        target = await _MsgProxy(source, ctx=ctx).get_reply_message()
+        return target.raw if target is not None else None
     reply = None
     fetch = getattr(ctx, "reply", None)
     if callable(fetch):
@@ -493,6 +498,10 @@ def _dump(v: Any) -> str:
     return _format_val(v)
 
 
+def _msg_field(value: Any, key: str, default: Any = None) -> Any:
+    return value.get(key, default) if hasattr(value, "get") else getattr(value, key, default)
+
+
 class _MsgProxy:
 
     def __init__(
@@ -543,7 +552,8 @@ class _MsgProxy:
 
     @property
     def plain_text(self) -> str:
-        return self._g("text", "raw_text", "message", "caption") or ""
+        tools = _tools(self.__dict__["_ctx"])
+        return str(tools.message_text(self.raw))
 
     @property
     def text(self) -> str:
@@ -554,9 +564,7 @@ class _MsgProxy:
         rich = self._rich_html()
         if rich:
             return rich
-        plain = self._g("text", "raw_text", "message", "caption") or ""
-        if not isinstance(plain, str):
-            plain = str(plain) if plain else ""
+        plain = self.plain_text
         ents = cast(Any, self._g("entities") or [])
         tools = _tools(self.__dict__["_ctx"])
         conv = getattr(tools, "entities_to_html", None) if tools is not None else None
@@ -583,7 +591,7 @@ class _MsgProxy:
 
     @property
     def id(self) -> int | None:
-        return self._g("id", "message_id")
+        return self._g("id", "message_id", "msg_id")
 
     @property
     def msg_id(self) -> int | None:
@@ -591,11 +599,15 @@ class _MsgProxy:
 
     @property
     def chat_id(self) -> int | None:
-        return self._g("chat_id", "peer_id", "chat")
+        value = self._g("chat_id", "peer_id", "chat")
+        if value is None:
+            source = getattr(self.__dict__["_ctx"], "_source", None)
+            value = _msg_field(source, "chat_id") or _msg_field(source, "peer_id")
+        return self._peer_id(value)
 
     @property
     def user_id(self) -> int | None:
-        return self._g("from_id", "sender_id", "user_id")
+        return self._peer_id(self._g("from_id", "sender_id", "user_id"))
 
     @property
     def from_id(self) -> int | None:
@@ -636,7 +648,7 @@ class _MsgProxy:
 
     @property
     def is_me(self) -> bool:
-        return bool(self._g("is_me", "out"))
+        return bool(self._g("out") or self._g("is_me"))
 
     @property
     def out(self) -> bool:
@@ -653,7 +665,7 @@ class _MsgProxy:
 
     @property
     def has_media(self) -> bool:
-        return self._g("media") is not None
+        return self._g("media") is not None or any(self._g(k) is not None for k in ("photo", "document", "video", "audio", "voice", "sticker", "animation"))
 
     @property
     def media(self) -> Any:
@@ -661,11 +673,11 @@ class _MsgProxy:
 
     @property
     def photo(self) -> Any:
-        return self._g("photo")
+        return self._g("photo") or _msg_field(self.media, "photo")
 
     @property
     def document(self) -> Any:
-        return self._g("document")
+        return self._g("document") or _msg_field(self.media, "document")
 
     @property
     def video(self) -> Any:
@@ -690,7 +702,17 @@ class _MsgProxy:
 
     @property
     def topic_id(self) -> int | None:
-        return self._g("topic_id", "message_thread_id", "top_msg_id")
+        explicit = self._g("topic_id", "message_thread_id", "top_msg_id")
+        if isinstance(explicit, int) and explicit > 0:
+            return explicit
+        header = self._g("reply_to")
+        top = _msg_field(header, "reply_to_top_id")
+        if isinstance(top, int) and top > 0:
+            return top
+        if _msg_field(header, "forum_topic"):
+            return _msg_field(header, "reply_to_msg_id")
+        action = self._g("action")
+        return self.id if _msg_field(action, "_") == "messageActionTopicCreate" else None
 
 
     @property
@@ -704,11 +726,9 @@ class _MsgProxy:
         return getattr(raw, key, default)
 
     def __getattr__(self, name: str) -> Any:
-        raw = self.__dict__.get("_raw")
-        if raw is not None:
-            v = getattr(raw, name, _SENTINEL)
-            if v is not _SENTINEL:
-                return v
+        value = self._g(name, default=_SENTINEL)
+        if value is not _SENTINEL:
+            return value
         raise AttributeError(f"MsgProxy has no attribute {name!r}")
 
     def __bool__(self) -> bool:
@@ -749,78 +769,293 @@ class _MsgProxy:
         return html.escape(str(text if text is not None else self.text))
 
 
-    async def respond(self, text: str, **kwargs: Any) -> Any:
-        return await self.__dict__["_ctx"].respond(text, **kwargs)
 
-    async def edit(self, text: str, **kwargs: Any) -> Any:
-        return await self.__dict__["_ctx"].respond(text, output="edit", **kwargs)
 
-    async def reply(self, text: str, **kwargs: Any) -> Any:
-        return await self.__dict__["_ctx"].respond(text, output="reply", **kwargs)
+    @staticmethod
+    def _peer_id(value: Any) -> int | None:
+        if isinstance(value, int):
+            return value
+        for key, prefix in (("channel_id", -1000000000000), ("chat_id", 0), ("user_id", None), ("id", None)):
+            ident = _msg_field(value, key)
+            if isinstance(ident, int):
+                return ident if prefix is None else prefix - ident
+        return None
 
-    async def delete(self) -> Any:
-        app = getattr(getattr(self.__dict__["_ctx"], "runtime", None), "app", None)
-        if app is None or self.chat_id is None or self.id is None:
-            return None
-        return await app.delete_msg(self.chat_id, self.id)
 
-    async def pin(self, both_sides: bool = False, **kwargs: Any) -> Any:
-        app = getattr(getattr(self.__dict__["_ctx"], "runtime", None), "app", None)
-        if app is None or self.chat_id is None or self.id is None:
-            return None
-        return await app.pin_msg(self.chat_id, self.id, notify=not both_sides, **kwargs)
 
-    async def unpin(self) -> Any:
-        app = getattr(getattr(self.__dict__["_ctx"], "runtime", None), "app", None)
-        if app is None or self.chat_id is None or self.id is None:
-            return None
-        return await app.unpin_msg(self.chat_id, self.id)
 
-    async def forward(self, to_chat: Any, **kwargs: Any) -> Any:
-        app = getattr(getattr(self.__dict__["_ctx"], "runtime", None), "app", None)
-        if app is None or self.chat_id is None or self.id is None:
-            return None
-        return await app.forward_msg(self.chat_id, self.id, to=to_chat, **kwargs)
+    async def send_text(self, *args: Any, **kwargs: Any) -> Any:
+        return await self.__dict__["_ctx"]._ctx_operation("send_text", *args, target=self.raw, **kwargs)
 
-    async def react(self, emoji: str) -> Any:
-        app = getattr(getattr(self.__dict__["_ctx"], "runtime", None), "app", None)
-        if app is None or self.chat_id is None or self.id is None:
-            return None
-        return await app.send_reaction(self.chat_id, self.id, emoji)
+    async def edit(self, *args: Any, **kwargs: Any) -> Any:
+        return await self.__dict__["_ctx"]._ctx_operation("edit", *args, target=self.raw, **kwargs)
 
-    async def unreact(self) -> Any:
-        app = getattr(getattr(self.__dict__["_ctx"], "runtime", None), "app", None)
-        if app is None or self.chat_id is None or self.id is None:
-            return None
-        return await app.send_reaction(self.chat_id, self.id, "")
+    async def reply(self, *args: Any, **kwargs: Any) -> Any:
+        return await self.__dict__["_ctx"]._ctx_operation("reply", *args, target=self.raw, **kwargs)
 
-    async def get_sender(self) -> Any:
-        app = getattr(getattr(self.__dict__["_ctx"], "runtime", None), "app", None)
-        uid = self.user_id
-        if app is None or uid is None:
-            return None
-        return await app.get_user(uid)
+    async def respond(self, *args: Any, **kwargs: Any) -> Any:
+        return await self.__dict__["_ctx"]._ctx_operation("respond", *args, target=self.raw, **kwargs)
 
-    async def get_chat(self) -> Any:
-        app = getattr(getattr(self.__dict__["_ctx"], "runtime", None), "app", None)
-        cid = self.chat_id
-        if app is None or cid is None:
-            return None
-        return await app.get_chat(cid)
+    async def delete(self, *args: Any, **kwargs: Any) -> Any:
+        return await self.__dict__["_ctx"]._ctx_operation("delete", *args, target=self.raw, **kwargs)
 
-    async def download(self, destination: Any = None) -> Any:
-        ctx = self.__dict__["_ctx"]
-        source = self.__dict__["_raw"]
-        if destination is None:
-            destination = "/tmp"
-        return await ctx.download_file(source, destination)
+    async def pin(self, *args: Any, **kwargs: Any) -> Any:
+        return await self.__dict__["_ctx"]._ctx_operation("pin", *args, target=self.raw, **kwargs)
 
-    async def read(self) -> Any:
-        app = getattr(getattr(self.__dict__["_ctx"], "runtime", None), "app", None)
-        if app is None or self.chat_id is None:
-            return None
-        return await app.mark_read(self.chat_id, self.id)
+    async def unpin(self, *args: Any, **kwargs: Any) -> Any:
+        return await self.__dict__["_ctx"]._ctx_operation("unpin", *args, target=self.raw, **kwargs)
 
+    async def forward(self, *args: Any, **kwargs: Any) -> Any:
+        return await self.__dict__["_ctx"]._ctx_operation("forward", *args, target=self.raw, **kwargs)
+
+    async def forward_to(self, *args: Any, **kwargs: Any) -> Any:
+        return await self.__dict__["_ctx"]._ctx_operation("forward_to", *args, target=self.raw, **kwargs)
+
+    async def copy_to(self, *args: Any, **kwargs: Any) -> Any:
+        return await self.__dict__["_ctx"]._ctx_operation("copy_to", *args, target=self.raw, **kwargs)
+
+    async def react(self, *args: Any, **kwargs: Any) -> Any:
+        return await self.__dict__["_ctx"]._ctx_operation("react", *args, target=self.raw, **kwargs)
+
+    async def unreact(self, *args: Any, **kwargs: Any) -> Any:
+        return await self.__dict__["_ctx"]._ctx_operation("unreact", *args, target=self.raw, **kwargs)
+
+    async def get_sender(self, *args: Any, **kwargs: Any) -> Any:
+        return await self.__dict__["_ctx"]._ctx_operation("get_sender", *args, target=self.raw, **kwargs)
+
+    async def get_chat(self, *args: Any, **kwargs: Any) -> Any:
+        return await self.__dict__["_ctx"]._ctx_operation("get_chat", *args, target=self.raw, **kwargs)
+
+    async def get_input_chat(self, *args: Any, **kwargs: Any) -> Any:
+        return await self.__dict__["_ctx"]._ctx_operation("get_input_chat", *args, target=self.raw, **kwargs)
+
+    async def get_input_sender(self, *args: Any, **kwargs: Any) -> Any:
+        return await self.__dict__["_ctx"]._ctx_operation("get_input_sender", *args, target=self.raw, **kwargs)
+
+
+    async def get_input_channel(self, *args: Any, **kwargs: Any) -> Any:
+        return await self.__dict__["_ctx"]._ctx_operation("get_input_channel", *args, target=self.raw, **kwargs)
+
+    async def download(self, *args: Any, **kwargs: Any) -> Any:
+        return await self.__dict__["_ctx"]._ctx_operation("download", *args, target=self.raw, **kwargs)
+
+    async def download_media(self, *args: Any, **kwargs: Any) -> Any:
+        return await self.__dict__["_ctx"]._ctx_operation("download_media", *args, target=self.raw, **kwargs)
+
+    async def read(self, *args: Any, **kwargs: Any) -> Any:
+        return await self.__dict__["_ctx"]._ctx_operation("read", *args, target=self.raw, **kwargs)
+
+    async def mark_read(self, *args: Any, **kwargs: Any) -> Any:
+        return await self.__dict__["_ctx"]._ctx_operation("mark_read", *args, target=self.raw, **kwargs)
+
+    async def read_contents(self, *args: Any, **kwargs: Any) -> Any:
+        return await self.__dict__["_ctx"]._ctx_operation("read_contents", *args, target=self.raw, **kwargs)
+
+    async def get_reply_message(self) -> Any:
+        raw = await self.__dict__["_ctx"]._ctx_operation("get_reply_message", target=self.raw)
+        return _MsgProxy(raw, self.__dict__["_ctx"]) if raw is not None else None
+
+    async def refresh(self) -> "_MsgProxy":
+        self.__dict__["_raw"] = await self.__dict__["_ctx"]._ctx_operation("refresh", target=self.raw)
+        return self
+
+    async def get_buttons(self) -> list[list[Any]]:
+        return self.buttons
+
+    @property
+    def buttons(self) -> list[list[Any]]:
+        markup = self._g("reply_markup")
+        rows: Any = _msg_field(markup, "rows") or _msg_field(markup, "inline_keyboard") or _msg_field(markup, "keyboard") or []
+        return [[_MsgButton(self, button) for button in (cast("list[Any]", row) if isinstance(row, list) else _msg_field(row, "buttons", []))] for row in rows]
+
+    @property
+    def button_count(self) -> int:
+        return sum(len(row) for row in self.buttons)
+
+    async def click(self, *args: Any, **kwargs: Any) -> Any:
+        return await self.__dict__["_ctx"]._ctx_operation("click", *args, target=self.raw, **kwargs)
+
+    async def click_button(self, *args: Any, **kwargs: Any) -> Any:
+        return await self.__dict__["_ctx"]._ctx_operation("click_button", *args, target=self.raw, **kwargs)
+
+    async def vote(self, *args: Any, **kwargs: Any) -> Any:
+        return await self.__dict__["_ctx"]._ctx_operation("vote", *args, target=self.raw, **kwargs)
+
+    async def retract_vote(self, *args: Any, **kwargs: Any) -> Any:
+        return await self.__dict__["_ctx"]._ctx_operation("retract_vote", *args, target=self.raw, **kwargs)
+
+    async def get_poll_results(self, *args: Any, **kwargs: Any) -> Any:
+        return await self.__dict__["_ctx"]._ctx_operation("get_poll_results", *args, target=self.raw, **kwargs)
+
+    async def get_poll_votes(self, *args: Any, **kwargs: Any) -> Any:
+        return await self.__dict__["_ctx"]._ctx_operation("get_poll_votes", *args, target=self.raw, **kwargs)
+
+    async def get_reactions(self, *args: Any, **kwargs: Any) -> Any:
+        return await self.__dict__["_ctx"]._ctx_operation("get_reactions", *args, target=self.raw, **kwargs)
+
+    async def get_reactors(self, *args: Any, **kwargs: Any) -> Any:
+        return await self.__dict__["_ctx"]._ctx_operation("get_reactors", *args, target=self.raw, **kwargs)
+
+    async def translate(self, *args: Any, **kwargs: Any) -> Any:
+        return await self.__dict__["_ctx"]._ctx_operation("translate", *args, target=self.raw, **kwargs)
+
+    async def get_views(self, *args: Any, **kwargs: Any) -> Any:
+        return await self.__dict__["_ctx"]._ctx_operation("get_views", *args, target=self.raw, **kwargs)
+
+    async def get_replies(self, *args: Any, **kwargs: Any) -> Any:
+        return await self.__dict__["_ctx"]._ctx_operation("get_replies", *args, target=self.raw, **kwargs)
+
+    async def get_discussion(self, *args: Any, **kwargs: Any) -> Any:
+        return await self.__dict__["_ctx"]._ctx_operation("get_discussion", *args, target=self.raw, **kwargs)
+
+    async def get_link(self, *args: Any, **kwargs: Any) -> Any:
+        return await self.__dict__["_ctx"]._ctx_operation("get_link", *args, target=self.raw, **kwargs)
+
+    async def edit_buttons(self, *args: Any, **kwargs: Any) -> Any:
+        return await self.__dict__["_ctx"]._ctx_operation("edit_buttons", *args, target=self.raw, **kwargs)
+
+    async def remove_buttons(self, *args: Any, **kwargs: Any) -> Any:
+        return await self.__dict__["_ctx"]._ctx_operation("remove_buttons", *args, target=self.raw, **kwargs)
+
+    async def edit_caption(self, *args: Any, **kwargs: Any) -> Any:
+        return await self.__dict__["_ctx"]._ctx_operation("edit_caption", *args, target=self.raw, **kwargs)
+
+
+    async def edit_media(self, *args: Any, **kwargs: Any) -> Any:
+        return await self.__dict__["_ctx"]._ctx_operation("edit_media", *args, target=self.raw, **kwargs)
+
+    async def send_media(self, *args: Any, **kwargs: Any) -> Any:
+        return await self.__dict__["_ctx"]._ctx_operation("send_media", *args, target=self.raw, **kwargs)
+
+    async def reply_media(self, *args: Any, **kwargs: Any) -> Any:
+        return await self.__dict__["_ctx"]._ctx_operation("reply_media", *args, target=self.raw, **kwargs)
+
+    async def send_file(self, *args: Any, **kwargs: Any) -> Any:
+        return await self.__dict__["_ctx"]._ctx_operation("send_file", *args, target=self.raw, **kwargs)
+
+    async def reply_file(self, *args: Any, **kwargs: Any) -> Any:
+        return await self.__dict__["_ctx"]._ctx_operation("reply_file", *args, target=self.raw, **kwargs)
+
+    async def send_photo(self, *args: Any, **kwargs: Any) -> Any:
+        return await self.__dict__["_ctx"]._ctx_operation("send_photo", *args, target=self.raw, **kwargs)
+
+    async def reply_photo(self, *args: Any, **kwargs: Any) -> Any:
+        return await self.__dict__["_ctx"]._ctx_operation("reply_photo", *args, target=self.raw, **kwargs)
+
+    async def send_video(self, *args: Any, **kwargs: Any) -> Any:
+        return await self.__dict__["_ctx"]._ctx_operation("send_video", *args, target=self.raw, **kwargs)
+
+    async def reply_video(self, *args: Any, **kwargs: Any) -> Any:
+        return await self.__dict__["_ctx"]._ctx_operation("reply_video", *args, target=self.raw, **kwargs)
+
+    async def send_audio(self, *args: Any, **kwargs: Any) -> Any:
+        return await self.__dict__["_ctx"]._ctx_operation("send_audio", *args, target=self.raw, **kwargs)
+
+    async def reply_audio(self, *args: Any, **kwargs: Any) -> Any:
+        return await self.__dict__["_ctx"]._ctx_operation("reply_audio", *args, target=self.raw, **kwargs)
+
+    async def send_voice(self, *args: Any, **kwargs: Any) -> Any:
+        return await self.__dict__["_ctx"]._ctx_operation("send_voice", *args, target=self.raw, **kwargs)
+
+    async def reply_voice(self, *args: Any, **kwargs: Any) -> Any:
+        return await self.__dict__["_ctx"]._ctx_operation("reply_voice", *args, target=self.raw, **kwargs)
+
+    async def send_animation(self, *args: Any, **kwargs: Any) -> Any:
+        return await self.__dict__["_ctx"]._ctx_operation("send_animation", *args, target=self.raw, **kwargs)
+
+    async def reply_animation(self, *args: Any, **kwargs: Any) -> Any:
+        return await self.__dict__["_ctx"]._ctx_operation("reply_animation", *args, target=self.raw, **kwargs)
+
+    async def send_sticker(self, *args: Any, **kwargs: Any) -> Any:
+        return await self.__dict__["_ctx"]._ctx_operation("send_sticker", *args, target=self.raw, **kwargs)
+
+    async def reply_sticker(self, *args: Any, **kwargs: Any) -> Any:
+        return await self.__dict__["_ctx"]._ctx_operation("reply_sticker", *args, target=self.raw, **kwargs)
+
+    async def send_contact(self, *args: Any, **kwargs: Any) -> Any:
+        return await self.__dict__["_ctx"]._ctx_operation("send_contact", *args, target=self.raw, **kwargs)
+
+    async def reply_contact(self, *args: Any, **kwargs: Any) -> Any:
+        return await self.__dict__["_ctx"]._ctx_operation("reply_contact", *args, target=self.raw, **kwargs)
+
+    async def send_location(self, *args: Any, **kwargs: Any) -> Any:
+        return await self.__dict__["_ctx"]._ctx_operation("send_location", *args, target=self.raw, **kwargs)
+
+    async def reply_location(self, *args: Any, **kwargs: Any) -> Any:
+        return await self.__dict__["_ctx"]._ctx_operation("reply_location", *args, target=self.raw, **kwargs)
+
+    async def send_dice(self, *args: Any, **kwargs: Any) -> Any:
+        return await self.__dict__["_ctx"]._ctx_operation("send_dice", *args, target=self.raw, **kwargs)
+
+    async def reply_dice(self, *args: Any, **kwargs: Any) -> Any:
+        return await self.__dict__["_ctx"]._ctx_operation("reply_dice", *args, target=self.raw, **kwargs)
+
+    async def send_rich(self, *args: Any, **kwargs: Any) -> Any:
+        return await self.__dict__["_ctx"]._ctx_operation("send_rich", *args, target=self.raw, **kwargs)
+
+    async def reply_rich(self, *args: Any, **kwargs: Any) -> Any:
+        return await self.__dict__["_ctx"]._ctx_operation("reply_rich", *args, target=self.raw, **kwargs)
+
+    async def edit_rich(self, *args: Any, **kwargs: Any) -> Any:
+        return await self.__dict__["_ctx"]._ctx_operation("edit_rich", *args, target=self.raw, **kwargs)
+
+    async def save(self, *args: Any, **kwargs: Any) -> Any:
+        return await self.__dict__["_ctx"]._ctx_operation("save", *args, target=self.raw, **kwargs)
+
+    async def schedule(self, *args: Any, **kwargs: Any) -> Any:
+        return await self.__dict__["_ctx"]._ctx_operation("schedule", *args, target=self.raw, **kwargs)
+
+    async def typing(self, *args: Any, **kwargs: Any) -> Any:
+        return await self.__dict__["_ctx"]._ctx_operation("typing", *args, target=self.raw, **kwargs)
+
+    def to_dict(self) -> dict[str, Any]:
+        raw = self.raw
+        if hasattr(raw, "to_dict"):
+            return dict(raw.to_dict())
+        if hasattr(raw, "items"):
+            return dict(raw.items())
+        return dict(cast("dict[str, Any]", vars(raw)))
+
+    def stringify(self) -> str:
+        return repr(self)
+
+
+class _MsgButton:
+    def __init__(self, message: _MsgProxy, raw: Any) -> None:
+        self.message = message
+        self.raw = raw
+
+    @property
+    def text(self) -> str:
+        text = self.raw if isinstance(self.raw, str) else _msg_field(self.raw, "text", "")
+        return str(_msg_field(text, "text", text))
+
+    def get(self, key: str, default: Any = None) -> Any:
+        return _msg_field(self.raw, key, default)
+
+    def __getitem__(self, key: str) -> Any:
+        value = self.get(key, _SENTINEL)
+        if value is _SENTINEL:
+            raise KeyError(key)
+        return value
+
+    def __getattr__(self, key: str) -> Any:
+        value = _msg_field(self.__dict__.get("raw"), key, _SENTINEL)
+        if value is _SENTINEL:
+            raise AttributeError(key)
+        return value
+
+    @property
+    def data(self) -> Any:
+        kind = _msg_field(self.raw, "type", self.raw)
+        return _msg_field(kind, "data", _msg_field(self.raw, "callback_data"))
+
+    @property
+    def url(self) -> Any:
+        return _msg_field(_msg_field(self.raw, "type", self.raw), "url")
+
+    async def click(self, **kwargs: Any) -> Any:
+        return await self.message.click_button(self.raw, **kwargs)
 
 class _DBProxy:
 

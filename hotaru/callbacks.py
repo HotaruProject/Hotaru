@@ -59,9 +59,11 @@ class CallbackContext:
                     self.inline_message_id = inline_message_id
 
     def __getattr__(self, name: str) -> Any:
+        if name == "answer":
+            raise AttributeError("use respond")
         return getattr(self._callback, name)
 
-    async def answer(self, text: str | None = None, **kwargs: Any) -> Any:
+    async def respond(self, text: str | None = None, **kwargs: Any) -> Any:
         kwargs.pop("show_alert", None)
         alert = kwargs.pop("alert", False)
         return await self._callback.answer(text, alert=alert, **kwargs)
@@ -245,7 +247,7 @@ class CallbackContext:
 
     async def delete(self) -> Any:
         try:
-            await self.answer()
+            await self.respond()
         except Exception:
             pass
         runtime = getattr(self, "_hotaru_runtime", None)
@@ -456,7 +458,7 @@ class CallbackRouter:
     @staticmethod
     async def _default_close_handler(callback: Any, payload: Any = None) -> Any:
         try:
-            await callback.answer()
+            await callback.respond()
         except Exception:
             pass
         deleter = getattr(callback, "delete", None)
@@ -503,6 +505,10 @@ class CallbackRouter:
         return self.store.issue(binding, {"module": module_id, "action_id": action_id, "payload": payload})
 
     async def dispatch(self, callback: Any) -> object:
+        if self.runtime is not None:
+            access = getattr(self.runtime, "access", None)
+            if access is None or not access.is_owner(self._optional(callback, "from_id")):
+                return None
         mid = self._optional(callback, "msg_id")
         binding = CallbackBinding(
             actor=self._required(callback, "from_id"),
