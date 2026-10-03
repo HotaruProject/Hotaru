@@ -623,6 +623,9 @@ class SandboxContext(ContextOperations):
     def ui(self):
         return _UiProxy(self.t)
 
+    async def _ctx_media_rpc(self, method, **kwargs):
+        return _respond_call({"media_rpc": {"method": method, "kwargs": kwargs}})
+
     async def send_file(self, media, caption=None, **kwargs):
         output = kwargs.pop("output", "send")
         explicit = any(key in kwargs for key in ("peer", "chat_id", "message_id", "target"))
@@ -1876,6 +1879,15 @@ class ModuleSandbox:
         if context is None:
             context = self.runtime.context_factory.create(module_id, source)
             self._respond_contexts[module_id] = context
+        if "media_rpc" in payload:
+            media_rpc = payload["media_rpc"]
+            if not isinstance(media_rpc, dict):
+                raise ValueError("file response requires a mapping")
+            media_rpc = cast('dict[str, Any]', media_rpc)
+            media_kwargs = media_rpc.get("kwargs")
+            if not isinstance(media_kwargs, dict):
+                raise ValueError("file response arguments require a mapping")
+            return await context._ctx_media_rpc(str(media_rpc.get("method", "")), **cast('dict[str, Any]', media_kwargs))
         kwargs = dict(payload.get("kwargs") or {})
         if kwargs.get("media") is not None or kwargs.get("file") is not None or payload.get("content") is not None and not isinstance(payload["content"], str):
             raise PermissionError("sandbox respond media must go through files capability")
