@@ -18,6 +18,32 @@
     "invalid_value": "Invalid value"
   },
   "kernel": {
+    "backups": {
+      "description": "Send backups to the service forum",
+      "commands": {
+        "backup": {
+          "description": "Send a backup or manage automatic backups"
+        }
+      },
+      "config_fields": {
+        "enabled": "Send automatic backups",
+        "interval_hours": "Hours between backups"
+      },
+      "heading": "{icon} <b>Backups</b>\n{status} · {hours} hours",
+      "enabled": "Enabled",
+      "disabled": "Disabled",
+      "last_sent": "Last sent: {date}",
+      "destination": "Destination: {topic} topic in the service chat.",
+      "send_now": "Send now",
+      "disable": "Disable",
+      "enable": "Enable",
+      "not_ready": "Service chat is not ready",
+      "caption": "Hotaru backup",
+      "failed": "Backup failed: {error}",
+      "sent": "Backup sent",
+      "topic": "Backups",
+      "usage": "<code>{prefix}backup [now|on|off]</code>"
+    },
     "config": {
       "description": "Hotaru configuration module",
       "commands": {
@@ -194,6 +220,13 @@
         "language": {
           "description": "Show or change language"
         }
+      },
+      "native": {
+        "ru": "Русский",
+        "en": "English",
+        "kz": "Қазақша",
+        "uk": "Українська",
+        "ja": "日本語"
       }
     },
     "test-features": {
@@ -517,8 +550,13 @@
       "pending": "pending",
       "config_fields": {
         "level": "Minimum log level to record",
-        "batch_size": "Log events per message",
-        "auto_topic": "Manage the logs topic in the forum automatically"
+        "batch_size": "Log events to batch per message",
+        "auto_topic": "Automatically manage the logs topic in the forum"
+      },
+      "config": {
+        "level": "Minimum log level to record",
+        "batch_size": "Log events to batch per message",
+        "auto_topic": "Automatically manage the logs topic in the forum"
       }
     },
     "executor": {
@@ -615,7 +653,12 @@
         }
       },
       "config_fields": {
-        "template": "Text of the info card"
+        "template": "Info template; placeholders: {version} {uptime} {modules}"
+      },
+      "empty_template": "The info template is empty",
+      "bad_placeholder": "Invalid placeholder: {error}",
+      "config": {
+        "template": "Info template; placeholders: {version} {uptime} {modules}"
       }
     }
   },

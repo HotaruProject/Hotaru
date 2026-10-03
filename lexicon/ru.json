@@ -18,6 +18,32 @@
     "invalid_value": "Некорректное значение"
   },
   "kernel": {
+    "backups": {
+      "description": "Отправка бекапов в служебный чат",
+      "commands": {
+        "backup": {
+          "description": "Отправить бекап или настроить автоотправку"
+        }
+      },
+      "config_fields": {
+        "enabled": "Отправлять бекапы автоматически",
+        "interval_hours": "Интервал между бекапами в часах"
+      },
+      "heading": "{icon} <b>Бекапы</b>\n{status} · {hours} ч.",
+      "enabled": "Включено",
+      "disabled": "Выключено",
+      "last_sent": "Последняя отправка: {date}",
+      "destination": "Куда: топик {topic} в служебном чате.",
+      "send_now": "Отправить сейчас",
+      "disable": "Выключить",
+      "enable": "Включить",
+      "not_ready": "Служебный чат ещё не готов",
+      "caption": "Бекап Hotaru",
+      "failed": "Не удалось отправить бекап: {error}",
+      "sent": "Бекап отправлен",
+      "topic": "Backups",
+      "usage": "<code>{prefix}backup [now|on|off]</code>"
+    },
     "config": {
       "description": "Модуль конфигурации Hotaru",
       "commands": {
@@ -194,6 +220,13 @@
         "language": {
           "description": "Показать или изменить язык"
         }
+      },
+      "native": {
+        "ru": "Русский",
+        "en": "English",
+        "kz": "Қазақша",
+        "uk": "Українська",
+        "ja": "日本語"
       }
     },
     "test-features": {
@@ -488,8 +521,13 @@
       "pending": "ожидание",
       "config_fields": {
         "level": "Минимальный уровень записываемых логов",
-        "batch_size": "Событий лога в одном сообщении",
-        "auto_topic": "Автоматически вести топик логов в форуме"
+        "batch_size": "Количество событий в одном сообщении",
+        "auto_topic": "Автоматически управлять топиком логов в форуме"
+      },
+      "config": {
+        "level": "Минимальный уровень записываемых логов",
+        "batch_size": "Количество событий в одном сообщении",
+        "auto_topic": "Автоматически управлять топиком логов в форуме"
       }
     },
     "commands": {
@@ -615,7 +653,12 @@
         }
       },
       "config_fields": {
-        "template": "Текст карточки info"
+        "template": "Шаблон .info, плейсхолдеры {version} {uptime} {modules}"
+      },
+      "empty_template": "Шаблон информации пуст",
+      "bad_placeholder": "Некорректный плейсхолдер: {error}",
+      "config": {
+        "template": "Шаблон .info, плейсхолдеры {version} {uptime} {modules}"
       }
     }
   },

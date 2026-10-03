@@ -8,13 +8,7 @@ HOTARU = {
 from typing import Any, Callable, List
 
 
-NATIVE_LABELS = {
-    "ru": "Русский",
-    "en": "English",
-    "kz": "Қазақша",
-    "uk": "Українська",
-    "ja": "日本語"
-}
+LANGUAGES = ("ru", "en", "kz", "uk", "ja")
 
 
 def _escape(value: Any) -> Any:
@@ -26,13 +20,13 @@ def home(ctx: Any, nav: Any = None) -> Any:
     k = ctx.screens
     current = ctx.runtime.language()
     options = [
-        k.button(k.radio(NATIVE_LABELS[language], language == current), select, style="success" if language == current else None, language=language)
+        k.button(k.radio(ctx.t('kernel.translations.native.' + language), language == current), select, style="success" if language == current else None, language=language)
         for language in ("ru", "en", "kz", "uk", "ja")
     ]
     rows = k.grid(options, 2)
     rows.append(k.footer())
     title = _escape(ctx.t('commands.lang.description'))
-    text = f"<b>🌐 {title}</b>\n{_escape(ctx.t('commands.lang.current', language=NATIVE_LABELS[current]))}"
+    text = f"<b>🌐 {title}</b>\n{_escape(ctx.t('commands.lang.current', language=ctx.t('kernel.translations.native.' + current)))}"
     return k.screen(text, rows)
 
 
@@ -41,7 +35,7 @@ def select(ctx: Any, nav: Any) -> Any:
     if language != ctx.runtime.language():
         ctx.runtime.set_language(language)
     screen = home(ctx)
-    screen.toast = NATIVE_LABELS.get(language, language)
+    screen.toast = ctx.t("kernel.translations.native." + language, language)
     return screen
 
 
@@ -69,12 +63,12 @@ async def command_lang(ctx: Any, invocation: Any) -> Any:
         try:
             ctx.runtime.set_language(invocation.args[0])
         except Exception:
-            language_key: Callable[[str], List[str]] = lambda code: [code, NATIVE_LABELS[code]]
-            matches = await ctx.tools.search(list(NATIVE_LABELS), invocation.args[0], key=language_key, limit=5)
+            language_key: Callable[[str], List[str]] = lambda code: [code, ctx.t('kernel.translations.native.' + code)]
+            matches = await ctx.tools.search(list(LANGUAGES), invocation.args[0], key=language_key, limit=5)
             text = _escape(ctx.t('commands.lang.invalid', language=invocation.args[0]))
             for hit in matches:
                 code = hit['value']
-                text += f"\n<code>{_escape(ctx.runtime.config.prefix)}lang {code}</code> · {_escape(NATIVE_LABELS[code])}"
+                text += f"\n<code>{_escape(ctx.runtime.config.prefix)}lang {code}</code> · {_escape(ctx.t('kernel.translations.native.' + code))}"
             await ctx.respond(text)
             return
     await _show(ctx)

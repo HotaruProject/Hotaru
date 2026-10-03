@@ -219,7 +219,7 @@ def _module_screen(ctx: Any, module_id: str, origin: Optional[str]) -> Any:
             notes.append(f"• <b>{_escape(key)}</b> — {_escape(ctx.tools.truncate(description, 160))}")
     head = f"{k.icon(icons.module(module_id))} <b>{_escape(module_id)}</b>  {k.badge(_escape(ctx.t('kernel.config.title_short')))}"
     if changed:
-        head += " " + k.badge(ctx.t("kernel.config.changed", "changed: {count}", count=changed), "primary")
+        head += " " + k.badge(ctx.t("kernel.config.changed", count=changed), "primary")
     text = head + "\n" + "\n".join(entries)
     if notes:
         text += k.details(f"{k.icon('info')} {_escape(ctx.t('kernel.config.about'))}", "\n".join(notes))
