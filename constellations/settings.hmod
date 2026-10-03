@@ -122,12 +122,29 @@ def _escape(value: Any) -> str:
     return html.escape(str(value), quote=False)
 
 
+def _localized_schema(ctx: Any, manifest: Any) -> ConfigSchema:
+    localized = manifest.localized(ctx.i18n.language)
+    descriptions = localized.get("config", {})
+    defaults = localized.get("config_defaults", {})
+    descriptions = cast(Dict[str, Any], descriptions) if isinstance(descriptions, dict) else {}
+    defaults = cast(Dict[str, Any], defaults) if isinstance(defaults, dict) else {}
+    schema: Dict[str, Any] = {key: dict(cast(Dict[str, Any], spec)) if isinstance(spec, dict) else spec for key, spec in manifest.config_schema.items()}
+    for key, value in schema.items():
+        if isinstance(value, dict):
+            spec = cast(Dict[str, Any], value)
+            if isinstance(descriptions.get(key), str):
+                spec["description"] = descriptions[key]
+            if key in defaults:
+                spec["default"] = defaults[key]
+    return ConfigSchema.from_manifest(schema)
+
+
 def _modules(ctx: Any) -> List[Tuple[str, Any, ConfigSchema]]:
     items: List[Tuple[str, Any, ConfigSchema]] = []
     for active in ctx.runtime.modules.items():
         manifest = getattr(getattr(active, "loaded", None), "manifest", None)
         if manifest is not None and getattr(manifest, "config_schema", None):
-            schema = ConfigSchema.from_manifest(manifest.config_schema)
+            schema = _localized_schema(ctx, manifest)
             if len(schema) > 0:
                 items.append((str(manifest.module_id), manifest, schema))
     return sorted(items, key=lambda item: item[0].casefold())
@@ -138,7 +155,7 @@ def _open(ctx: Any, module_id: str) -> Optional[Tuple[Any, ConfigSchema, ModuleC
     manifest = getattr(getattr(active, "loaded", None), "manifest", None)
     if manifest is None or not manifest.config_schema:
         return None
-    schema = ConfigSchema.from_manifest(manifest.config_schema)
+    schema = _localized_schema(ctx, manifest)
     return manifest, schema, ModuleConfig(module_id, ctx.runtime.state.namespace(module_id), schema, translate=ctx.t)
 
 
