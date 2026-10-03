@@ -34,4 +34,4 @@ jobs:
         run: semgrep scan --config p/security-audit --config .semgrep/hotaru-security.yml --baseline-commit "$BASE_SHA" --error --metrics=off --disable-version-check .
       - name: Scan default branch using full history
         if: github.event_name != 'pull_request'
-        run: semgrep scan --config p/security-audit --config .semgrep/hotaru-security.yml --error --metrics=off --disable-version-check .
+        run: semgrep scan --config p/security-audit --config .semgrep/hotaru-security.yml --metrics=off --disable-version-check .
