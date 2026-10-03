@@ -59,7 +59,7 @@ def home(ctx: Any, nav: Any = None) -> Any:
         summary = f"{k.icon('kernel' if kernel else 'module')} <b>{_escape(title)}</b> · {kernel_count if kernel else user_count}"
         lines.append(k.details(summary, "\n".join(entries), open=not kernel or user_count == 0))
     rows = [k.pager(home, page, pages)]
-    rows.append([k.input(ctx.t("ui.search"), search, ctx.t("kernel.help_ui.search_prompt"), icon="search"), k.close()])
+    rows.append([k.input(ctx.t("ui.search"), search, ctx.t("kernel.help_ui.search_prompt")), k.close()])
     return k.screen("".join(lines), rows)
 
 
@@ -100,7 +100,7 @@ def _card(ctx: Any, module_id: str, actor: Any, back: Any, **back_args: Any) -> 
         lines[-1] += k.details(f"{k.icon('lock')} <b>{_escape(ctx.t('kernel.help_ui.capabilities'))}</b> · {len(manifest.capabilities)}", capabilities)
     rows: List[List[Any]] = []
     if getattr(manifest, "config_schema", None) and runtime.modules.get("settings") is not None and runtime.access.is_owner(actor):
-        rows.append([k.link(ctx.t("kernel.help_ui.settings"), "settings", "module", style="primary", icon="settings", id=module_id, origin="help")])
+        rows.append([k.link(ctx.t("kernel.help_ui.settings"), "settings", "module", style="primary", id=module_id, origin="help")])
     rows.append(k.footer(back, **back_args))
     return k.screen("\n".join(lines), rows)
 
@@ -124,7 +124,7 @@ async def search(ctx: Any, nav: Any) -> Any:
         return home(ctx).with_notice(f"{k.icon('search')} " + ctx.t("ui.nothing_found", query=_escape(query)))
     lines = [f"{k.icon('search')} <b>{_escape(ctx.t('kernel.help_ui.results', query=query))}</b>  " + k.badge(str(len(hits)))]
     lines += [_entry(ctx, hit["value"][0], hit["value"][1], found, q=query) for hit in hits]
-    rows = [[k.input(ctx.t("ui.search"), search, ctx.t("kernel.help_ui.search_prompt"), icon="search")], k.footer(home)]
+    rows = [[k.input(ctx.t("ui.search"), search, ctx.t("kernel.help_ui.search_prompt"))], k.footer(home)]
     return k.screen("\n".join(lines), rows)
 
 
