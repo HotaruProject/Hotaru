@@ -26,7 +26,6 @@ from relay.rpc import delete_chat_msg
 from . import icons
 from .callback_codec import open_callback, seal_callback
 from .markup import copy_limit, row_limit, kbd_to_tl
-from .plainfmt import rich_to_plain
 
 if TYPE_CHECKING:
     from .runtime import Runtime
@@ -639,14 +638,10 @@ class ScreenEngine:
             sent, nonce = await runtime.deliver_inline(source, text, rows, rich=screen.rich, reply_to=reply_to)
         except Exception as exc:
             self.drop(form)
-            if respond is None:
-                raise
-            log.warning("screen delivery failed: %s", type(exc).__name__)
+            log.error("screen delivery failed: %s", type(exc).__name__)
             if runtime.observatory is not None:
                 runtime.observatory.emit("screens", "delivery_failed", module=module_id, error=type(exc).__name__, detail=str(exc)[:200])
-            hint = self._t("ui.inline_unavailable", "<i>Inline menu is unavailable here, showing plain text.</i>")
-            await respond(f"{rich_to_plain(text) if screen.rich else text}\n{hint}", parse_mode="HTML")
-            return None
+            raise
         form.message_id = sent.get("id") if isinstance(sent, dict) and isinstance(sent.get("id"), int) else None
         self._commit(form, text, actions, gen, screen)
         asyncio.get_running_loop().create_task(self._bind(form.id, nonce, gen, rows, has_emoji(text)))
@@ -692,7 +687,7 @@ class ScreenEngine:
                     blocked = any(item in str(exc).lower() for item in ("chat not found", "blocked", "peer_id_invalid", "input_user_deactivated"))
                     if not blocked or not callable(reopen) or not await cast('Awaitable[bool]', reopen(chat_id)):
                         raise
-                    result = await app.mt_messages_send_message(**{**data, "random_id": secrets.randbits(63)})
+                    result = await app.mt_messages_send_message(**data)
         except Exception:
             self.drop(form)
             raise

@@ -7,6 +7,7 @@ HOTARU = {
 
 import ast
 import asyncio
+import logging
 import contextlib
 import html
 import inspect
@@ -206,16 +207,16 @@ class OutputUpdater:
             try:
                 await self.ctx.screens.show(_output_screen(self.ctx, _keep_pages(self.ctx, self._pages), self._pages, 0), fallback=False)
                 return
-            except Exception:
-                pass
+            except Exception as exc:
+                logging.getLogger(__name__).error("executor screen delivery failed: %s", type(exc).__name__)
+                return
         kwargs: dict[str, Any] = {"parse_mode": "HTML", "rich": False}
         if self.msg:
             kwargs["output"] = "edit"
         try:
             self.msg = await self.ctx.respond(text, **kwargs)
-        except Exception:
-            if final:
-                self.msg = await self.ctx.respond(text, output="reply", parse_mode="HTML", rich=False)
+        except Exception as exc:
+            logging.getLogger(__name__).error("executor response failed: %s", type(exc).__name__)
 
     async def _send(self, sections: list[Any] | None = None, returncode: int | None = None, final: bool = False) -> None:
         async with self._lock:
