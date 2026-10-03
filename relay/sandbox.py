@@ -1187,7 +1187,7 @@ def main():
                         chat_id=payload.get("chat_id"),
                     )
                     with _capture_module_output():
-                        if payload.get("source") in ("lifecycle", "template"):
+                        if payload.get("source") in ("lifecycle", "template", "task"):
                             result = _invoke_lifecycle(handler, ctx)
                         else:
                             result = handler(ctx, invocation)

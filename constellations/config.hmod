@@ -37,6 +37,23 @@ def _escape(value: Any) -> str:
     return html.escape(str(value), quote=False)
 
 
+def _localized_schema(ctx: Any, manifest: Any) -> ConfigSchema:
+    localized = manifest.localized(ctx.i18n.language)
+    descriptions = localized.get("config", {})
+    defaults = localized.get("config_defaults", {})
+    descriptions = cast(Dict[str, Any], descriptions) if isinstance(descriptions, dict) else {}
+    defaults = cast(Dict[str, Any], defaults) if isinstance(defaults, dict) else {}
+    schema: Dict[str, Any] = {key: dict(cast(Dict[str, Any], spec)) if isinstance(spec, dict) else spec for key, spec in manifest.config_schema.items()}
+    for key, value in schema.items():
+        if isinstance(value, dict):
+            spec = cast(Dict[str, Any], value)
+            if isinstance(descriptions.get(key), str):
+                spec["description"] = descriptions[key]
+            if key in defaults:
+                spec["default"] = defaults[key]
+    return ConfigSchema.from_manifest(schema)
+
+
 def _find_modules(ctx: Any) -> List[Tuple[str, ConfigSchema]]:
     runtime = ctx.runtime
     items: List[Tuple[str, ConfigSchema]] = []
@@ -46,7 +63,7 @@ def _find_modules(ctx: Any) -> List[Tuple[str, ConfigSchema]]:
             if getattr(mod, "loaded", None) and getattr(mod.loaded, "manifest", None):
                 manifest = mod.loaded.manifest
                 if getattr(manifest, "config_schema", None):
-                    schema = ConfigSchema.from_manifest(manifest.config_schema)
+                    schema = _localized_schema(ctx, manifest)
                     if len(schema) > 0:
                         items.append((str(manifest.module_id), schema))
     return items
@@ -105,7 +122,7 @@ def _module_form(ctx: Any, module_id: str) -> Dict[str, Any]:
             "module_id": module_id,
         }
 
-    schema = ConfigSchema.from_manifest(manifest.config_schema)
+    schema = _localized_schema(ctx, manifest)
     namespace = runtime.state.namespace(module_id)
     mod_config = ModuleConfig(module_id, namespace, schema, translate=ctx.t)
 
@@ -159,7 +176,7 @@ def _parameter_form(ctx: Any, module_id: str, key: str, page: int = 0) -> Dict[s
             "module_id": module_id,
         }
 
-    schema = ConfigSchema.from_manifest(manifest.config_schema)
+    schema = _localized_schema(ctx, manifest)
     field = schema.get(key)
     if not field:
         return {
@@ -377,7 +394,7 @@ async def command_conf(ctx: Any, invocation: Any) -> Any:
         if not active or not getattr(active, "loaded", None) or not active.loaded.manifest.config_schema:
             await ctx.respond(f"Модуль <code>{_escape(module_id)}</code> не найден.")
             return
-        schema = ConfigSchema.from_manifest(active.loaded.manifest.config_schema)
+        schema = _localized_schema(ctx, active.loaded.manifest)
         ns = runtime.state.namespace(module_id)
         mod_conf = ModuleConfig(module_id, ns, schema, translate=ctx.t)
         mod_conf.reset()
@@ -397,7 +414,7 @@ async def command_conf(ctx: Any, invocation: Any) -> Any:
     if not active or not getattr(active, "loaded", None) or not active.loaded.manifest.config_schema:
         await ctx.respond(f"Модуль <code>{_escape(module_id)}</code> не найден.")
         return
-    schema = ConfigSchema.from_manifest(active.loaded.manifest.config_schema)
+    schema = _localized_schema(ctx, active.loaded.manifest)
     field = schema.get(key)
     if not field:
         field_key: Callable[[Tuple[str, ConfigField]], List[str]] = lambda item: [item[0], item[1].description or ""]
