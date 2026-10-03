@@ -155,6 +155,13 @@
         "language": {
           "description": "Тілді көрсету немесе өзгерту"
         }
+      },
+      "native": {
+        "ru": "Русский",
+        "en": "English",
+        "kz": "Қазақша",
+        "uk": "Українська",
+        "ja": "日本語"
       }
     },
     "test-features": {
@@ -425,7 +432,27 @@
       "shared_prefix": "Ағымдағы пәрмен префиксі",
       "shared_uptime": "Жұмыс уақыты, секунд",
       "template_syntax": "{{name}}, сан пішімі {{name:.2f}}, ал жай жақшалар үшін {{{{ / }}}} пайдаланыңыз. Мәндер HTML үшін экрандалған.",
-      "template_preview": "Алдын ала қарау (HTML, мән үлгілері)"
+      "template_preview": "Алдын ала қарау (HTML, мән үлгілері)",
+      "directory_empty": "<b>Баптаулар</b>\n\nБапталатын модульдер жоқ.",
+      "directory": "<b>Баптаулар</b>\n\nМодульді таңдаңыз:",
+      "module_missing_error": "<b>Қате:</b> <code>{module}</code> модулі табылмады.",
+      "no_settings": "<b>Қате:</b> <code>{module}</code> модулінің баптаулары жоқ.",
+      "parameter_missing_error": "<b>Қате:</b> <code>{parameter}</code> параметрі табылмады.",
+      "empty": "(бос)",
+      "parameter_details": "• Мәні: <code>{value}</code>\n• Түрі: <code>{type}</code>\n• Әдепкі мәні: <code>{default}</code>\n",
+      "parameter_description": "• Сипаттамасы: <i>{description}</i>\n",
+      "template_unavailable": "Үлгі өрісі қолжетімсіз немесе экспортталмаған: {name}",
+      "error": "Қате: {error}",
+      "boolean_true": "🔘 Иә",
+      "boolean_false": "⚪️ Жоқ",
+      "minimum": "Ең аз мән: {value}",
+      "maximum": "Ең көп мән: {value}",
+      "enter": "✏️ Енгізу",
+      "new_value": "{parameter} параметрінің жаңа мәні",
+      "reset": "🔄 Қалпына келтіру",
+      "module_missing": "<code>{module}</code> модулі табылмады.",
+      "parameter_missing": "<code>{parameter}</code> параметрі табылмады.",
+      "error_html": "Қате: <code>{error}</code>"
     },
     "settings": {
       "description": "Бүркеншік аттар мен префиксті басқару",
@@ -475,7 +502,17 @@
           "description": "Юзербот логтары файлмен бірге"
         }
       },
-      "pending": "күтілуде"
+      "pending": "күтілуде",
+      "config": {
+        "level": "Журналға жазылатын ең төменгі деңгей",
+        "batch_size": "Бір хабарламадағы оқиғалар саны",
+        "auto_topic": "Форумдағы журнал тақырыбын автоматты басқару"
+      },
+      "config_fields": {
+        "level": "Журналға жазылатын ең төменгі деңгей",
+        "batch_size": "Бір хабарламадағы оқиғалар саны",
+        "auto_topic": "Форумдағы журнал тақырыбын автоматты басқару"
+      }
     },
     "executor": {
       "heading": "<b>Орындаушы</b> | <code>{elapsed:.1f} мс</code>",
@@ -566,6 +603,14 @@
         "info": {
           "description": "Юзербот туралы ақпарат"
         }
+      },
+      "empty_template": "Ақпарат үлгісі бос",
+      "bad_placeholder": "Қате толтырғыш: {error}",
+      "config": {
+        "template": ".info үлгісі, толтырғыштар: {version} {uptime} {modules}"
+      },
+      "config_fields": {
+        "template": ".info үлгісі, толтырғыштар: {version} {uptime} {modules}"
       }
     }
   },

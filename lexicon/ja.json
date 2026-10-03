@@ -155,6 +155,13 @@
         "language": {
           "description": "言語を表示または変更"
         }
+      },
+      "native": {
+        "ru": "Русский",
+        "en": "English",
+        "kz": "Қазақша",
+        "uk": "Українська",
+        "ja": "日本語"
       }
     },
     "test-features": {
@@ -425,7 +432,27 @@
       "shared_prefix": "現在のコマンド接頭辞",
       "shared_uptime": "起動後の経過秒数",
       "template_syntax": "{{name}}、数値書式 {{name:.2f}}、通常の波括弧には {{{{ / }}}} を使います。値はHTMLエスケープされます。",
-      "template_preview": "プレビュー（HTML、サンプル値）"
+      "template_preview": "プレビュー（HTML、サンプル値）",
+      "directory_empty": "<b>設定</b>\n\n設定可能なモジュールはありません。",
+      "directory": "<b>設定</b>\n\nモジュールを選択してください：",
+      "module_missing_error": "<b>エラー：</b> モジュール <code>{module}</code> が見つかりません。",
+      "no_settings": "<b>エラー：</b> モジュール <code>{module}</code> には設定項目がありません。",
+      "parameter_missing_error": "<b>エラー：</b> パラメーター <code>{parameter}</code> が見つかりません。",
+      "empty": "（空）",
+      "parameter_details": "• 値：<code>{value}</code>\n• 型：<code>{type}</code>\n• 既定値：<code>{default}</code>\n",
+      "parameter_description": "• 説明：<i>{description}</i>\n",
+      "template_unavailable": "テンプレート変数が利用できないか、公開されていません：{name}",
+      "error": "エラー：{error}",
+      "boolean_true": "🔘 はい",
+      "boolean_false": "⚪️ いいえ",
+      "minimum": "最小値：{value}",
+      "maximum": "最大値：{value}",
+      "enter": "✏️ 入力",
+      "new_value": "{parameter} の新しい値",
+      "reset": "🔄 リセット",
+      "module_missing": "モジュール <code>{module}</code> が見つかりません。",
+      "parameter_missing": "パラメーター <code>{parameter}</code> が見つかりません。",
+      "error_html": "エラー：<code>{error}</code>"
     },
     "settings": {
       "description": "別名とプレフィックスの管理",
@@ -475,7 +502,17 @@
           "description": "ユーザーボットのログとファイル"
         }
       },
-      "pending": "待機中"
+      "pending": "待機中",
+      "config": {
+        "level": "記録するログの最低レベル",
+        "batch_size": "1つのメッセージにまとめるイベント数",
+        "auto_topic": "フォーラムのログトピックを自動管理する"
+      },
+      "config_fields": {
+        "level": "記録するログの最低レベル",
+        "batch_size": "1つのメッセージにまとめるイベント数",
+        "auto_topic": "フォーラムのログトピックを自動管理する"
+      }
     },
     "executor": {
       "heading": "<b>実行</b> | <code>{elapsed:.1f} ミリ秒</code>",
@@ -566,6 +603,14 @@
         "info": {
           "description": "ユーザーボットの情報"
         }
+      },
+      "empty_template": "情報テンプレートが空です",
+      "bad_placeholder": "無効なプレースホルダー: {error}",
+      "config": {
+        "template": ".info のテンプレート。プレースホルダー: {version} {uptime} {modules}"
+      },
+      "config_fields": {
+        "template": ".info のテンプレート。プレースホルダー: {version} {uptime} {modules}"
       }
     }
   },
