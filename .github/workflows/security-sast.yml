@@ -1,6 +1,6 @@
 name: security-sast
 on:
-  pull_request:
+  pull_request_target:
     types: [opened, synchronize, reopened, ready_for_review]
     branches: [main]
   push:
@@ -17,21 +17,35 @@ jobs:
   semgrep:
     name: Semgrep SAST
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read
     steps:
-      - name: Checkout proposed source without credentials
+      - name: Checkout trusted base and policy
         uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a
         with:
+          ref: ${{ github.event.pull_request.base.sha || github.sha }}
+          path: trusted
           fetch-depth: 0
           persist-credentials: false
+      - name: Fetch proposed source as data
+        if: github.event_name == 'pull_request_target'
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_SHA: ${{ github.event.pull_request.head.sha }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          git -C trusted fetch --no-tags origin "refs/pull/${PR_NUMBER}/head"
+          test "$(git -C trusted rev-parse FETCH_HEAD)" = "$PR_SHA"
+          git -C trusted worktree add --detach "$RUNNER_TEMP/proposed" FETCH_HEAD
       - name: Install pinned Semgrep Community Edition
         run: python3 -m pip install --disable-pip-version-check --no-cache-dir semgrep==1.179.0
-      - name: Scan pull request and block new findings
-        if: github.event_name == 'pull_request'
+      - name: Scan pull request using base-branch policy
+        if: github.event_name == 'pull_request_target'
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
-        run: semgrep scan --config p/security-audit --config .semgrep/hotaru-security.yml --baseline-commit "$BASE_SHA" --error --metrics=off --disable-version-check .
+        working-directory: ${{ runner.temp }}/proposed
+        run: semgrep scan --config p/security-audit --config "$GITHUB_WORKSPACE/trusted/.semgrep/hotaru-security.yml" --baseline-commit "$BASE_SHA" --error --metrics=off --disable-version-check .
       - name: Scan default branch using full history
-        if: github.event_name != 'pull_request'
-        run: semgrep scan --config p/security-audit --config .semgrep/hotaru-security.yml --metrics=off --disable-version-check .
+        if: github.event_name != 'pull_request_target'
+        run: semgrep scan --config p/security-audit --config trusted/.semgrep/hotaru-security.yml --metrics=off --disable-version-check trusted
