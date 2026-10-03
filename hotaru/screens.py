@@ -44,7 +44,6 @@ _cache = 256
 _styles = {"primary", "danger", "success", "link"}
 _tap = re.compile(r'<tg-button(\s[^>]*?)\sdata-hs="([A-Za-z0-9_-]+)"([^>]*)>')
 _rich = re.compile(r"<(?:table|tg-button|tg-button-row|details|h[1-6]|hr|footer|ul|ol|aside|tg-time|tg-math|mark|sup|sub|img|video)\b", re.IGNORECASE)
-_mark = re.compile(r"^[^\w\s<]+\s+")
 
 
 class ScreenError(RuntimeError):
@@ -63,16 +62,11 @@ def _style(style: Optional[str]) -> str:
     return f' style="{style}"'
 
 
-def bare(text: str) -> str:
-    return _mark.sub("", text, count=1)
-
-
 def _decorate(item: dict[str, Any], style: Optional[str], icon: Optional[str]) -> dict[str, Any]:
     if style:
         item["style"] = style
     if icon:
         item["icon"] = icon
-        item["text"] = bare(str(item.get("text", "")))
     return item
 
 
@@ -316,7 +310,7 @@ class Kit:
         if style in {"primary", "success", "danger"} and premium():
             icon = None
         mark = cls.icon(icon)
-        body = _esc(bare(text) if mark else text)
+        body = _esc(text)
         return f"{mark} {body}" if mark and body else (mark or body or " ")
 
     def _spec(self, kind: str, fn: Any, args: dict[str, Any]) -> str:

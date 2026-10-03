@@ -101,7 +101,6 @@ async def command_prefix(ctx: Any, invocation: Any) -> Any:
 import html
 import re
 from hotaru import icons
-from hotaru.screens import bare
 from hotaru.config import (
     BooleanValidator,
     ChoiceValidator,
@@ -172,7 +171,7 @@ def _missing(ctx: Any, module_id: str) -> Any:
 def home(ctx: Any, nav: Any = None) -> Any:
     k = ctx.screens
     modules = _modules(ctx)
-    lines = [k.banner() + f"{k.icon('settings')} <b>{_escape(bare(ctx.t('kernel.config.title')))}</b>" + (f"  {k.badge(str(len(modules)), 'primary')}" if modules else "")]
+    lines = [k.banner() + f"<b>{_escape(ctx.t('kernel.config.title'))}</b>" + (f"  {k.badge(str(len(modules)), 'primary')}" if modules else "")]
     lines.append(f"<code>{_escape(ctx.runtime.config.prefix)}prefix</code> · <code>{_escape(ctx.runtime.config.prefix)}alias</code> · <code>{_escape(ctx.runtime.config.prefix)}lsalias</code>")
     if not modules:
         lines.append(f"<i>{_escape(ctx.t('kernel.config.empty'))}</i>")
@@ -209,7 +208,7 @@ def _module_screen(ctx: Any, module_id: str, origin: Optional[str]) -> Any:
         text += k.details(f"{k.icon('info')} {_escape(ctx.t('kernel.config.about'))}", "\n".join(notes))
     rows: List[List[Any]] = []
     if changed:
-        rows.append([k.button(ctx.t("kernel.config.reset_all"), confirm_reset, icon="undo", id=module_id, origin=origin)])
+        rows.append([k.button(ctx.t("kernel.config.reset_all"), confirm_reset, id=module_id, origin=origin)])
     if origin == "help" and ctx.runtime.modules.get("help") is not None:
         rows.append([k.link(ctx.t("common.back"), "help", "module", icon="back", id=module_id), k.close()])
     else:
@@ -324,7 +323,7 @@ def _param_screen(ctx: Any, module_id: str, key: str, origin: Optional[str], pag
     if field.template_fields is not None:
         block, page, pages = _template_block(ctx, module_id, field, value, page)
         lines.append(block)
-    edit = k.input(ctx.t("ui.edit"), set_value, ctx.t("kernel.config.new_value", name=key), style="primary", icon="edit", **args)
+    edit = k.input(ctx.t("ui.edit"), set_value, ctx.t("kernel.config.new_value", name=key), style="primary", **args)
     if isinstance(validator, BooleanValidator):
         lines.append(k.row(
             k.tap(k.radio(ctx.t("ui.on"), bool(value)), set_bool, style="success" if value else None, value=True, **args),
@@ -354,9 +353,9 @@ def _param_screen(ctx: Any, module_id: str, key: str, origin: Optional[str], pag
     extra: List[Any] = []
     text_value = field.format_value(value)
     if not field.secret and not isinstance(validator, (BooleanValidator, ChoiceValidator, SecretValidator)) and 0 < len(text_value) <= 256:
-        extra.append(k.copy(ctx.t("kernel.config.copy"), text_value, icon="copy"))
+        extra.append(k.copy(ctx.t("kernel.config.copy"), text_value, icon=None))
     if not _is_default(config, key):
-        extra.append(k.button(ctx.t("ui.reset"), reset_value, icon="undo", **args))
+        extra.append(k.button(ctx.t("ui.reset"), reset_value, **args))
     if extra:
         rows.append(extra)
     if not isinstance(validator, (BooleanValidator, ChoiceValidator)) and (field.template_fields is not None or _max_len(validator) > _input_limit):
