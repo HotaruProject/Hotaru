@@ -7,8 +7,6 @@ HOTARU = {
 
 from typing import Any, Tuple, cast
 
-_consent_ttl = 3600
-
 async def command_ld(ctx: Any, invocation: Any) -> Any:
     runtime = ctx.runtime
     if runtime is None:
@@ -17,7 +15,7 @@ async def command_ld(ctx: Any, invocation: Any) -> Any:
     result = await runtime._command_ld(invocation)
     if isinstance(result, tuple):
         text, rows = cast(Tuple[Any, Any], result)
-        await ctx.screens.show(ctx.screens.screen(text, rows, ttl=_consent_ttl))
+        await ctx.screens.show(ctx.screens.screen(text, rows))
     else:
         await ctx.respond(result)
 

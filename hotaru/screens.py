@@ -38,9 +38,9 @@ _version = 1
 _pack = struct.Struct("<BIHB")
 _tag = 8
 _toast = 200
-_ttl = 7 * 86400.0
 _kernel = "@kernel"
 _cache = 256
+_forms = 4096
 _styles = {"primary", "danger", "success", "link"}
 _tap = re.compile(r'<tg-button(\s[^>]*?)\sdata-hs="([A-Za-z0-9_-]+)"([^>]*)>')
 _rich = re.compile(r"<(?:table|tg-button|tg-button-row|details|h[1-6]|hr|footer|ul|ol|aside|tg-time|tg-math|mark|sup|sub|img|video)\b", re.IGNORECASE)
@@ -102,7 +102,6 @@ class Screen:
     toast: Optional[str] = None
     alert: bool = False
     rich: bool = False
-    ttl: Optional[float] = None
     notice: Optional[str] = None
 
     def with_notice(self, text: str) -> "Screen":
@@ -127,10 +126,6 @@ class Form:
     touched: float
     ttl: float
     language: Optional[str] = None
-
-    @property
-    def expired(self) -> bool:
-        return self.touched + self.ttl < time.time()
 
 
 class Nav:
@@ -430,13 +425,15 @@ class ScreenEngine:
         db.commit()
         self._remember(form)
 
-    def _create(self, module: str, actor: int, command: Optional[str], chat: Any, *, bot: bool, ttl: float) -> Form:
+    def _create(self, module: str, actor: int, command: Optional[str], chat: Any, *, bot: bool) -> Form:
         db = self._ensure()
         now = time.time()
-        db.execute("DELETE FROM screen_forms WHERE touched + ttl < ?", (now,))
+        rows = int(db.execute("SELECT COUNT(*) FROM screen_forms").fetchone()[0] or 0)
+        if rows >= _forms:
+            db.execute("DELETE FROM screen_forms WHERE id IN (SELECT id FROM screen_forms ORDER BY touched ASC LIMIT ?)", (rows - _forms + 1,))
         cursor = db.execute(
             "INSERT INTO screen_forms(module, actor, command, chat, bot, touched, ttl, language) VALUES (?,?,?,?,?,?,?,?)",
-            (module, int(actor), command, None if chat is None else str(chat), int(bot), now, ttl, self._language()),
+            (module, int(actor), command, None if chat is None else str(chat), int(bot), now, 0.0, self._language()),
         )
         db.commit()
         form_id = int(cursor.lastrowid or 0)
@@ -553,7 +550,7 @@ class ScreenEngine:
                     token = self._action(form, spec, actions, gen)
                     button["switch_inline_query_current_chat" if kind == "input" else "callback_data"] = token + " " if kind == "input" else token
                 else:
-                    for key in ("url", "copy_text", "disabled", "switch_inline_query", "switch_inline_query_current_chat", "user_id", "web_app"):
+                    for key in ("callback_data", "url", "copy_text", "disabled", "switch_inline_query", "switch_inline_query_current_chat", "user_id", "web_app"):
                         if key in spec:
                             button[key] = spec[key]
                     if not set(button) - {"text", "style"}:
@@ -582,8 +579,6 @@ class ScreenEngine:
     def _commit(self, form: Form, text: str, actions: list[dict[str, Any]], gen: int, screen: Screen) -> None:
         form.text, form.actions, form.gen, form.rich = text, actions, gen, bool(screen.rich)
         form.touched = time.time()
-        if screen.ttl is not None:
-            form.ttl = float(screen.ttl)
         self._save(form)
         self._target(form, any(action.get("k") == "input" for action in actions))
 
@@ -598,7 +593,7 @@ class ScreenEngine:
 
     def _reply_targets(self) -> set[tuple[str, int]]:
         if self._targets is None:
-            rows = self._ensure().execute("SELECT chat, message_id FROM screen_forms WHERE bot = 0 AND message_id IS NOT NULL AND actions LIKE '%\"k\": \"input\"%' AND touched + ttl >= ?", (time.time(),)).fetchall()
+            rows = self._ensure().execute("SELECT chat, message_id FROM screen_forms WHERE bot = 0 AND message_id IS NOT NULL AND actions LIKE '%\"k\": \"input\"%'").fetchall()
             self._targets = {(str(row[0]), int(row[1])) for row in rows}
         return self._targets
 
@@ -627,18 +622,18 @@ class ScreenEngine:
             return await branding.rich(text)
         return {"_": "inputRichMessageHTML", **to_rich(text)}
 
-    async def show(self, ctx: Any, screen: Screen, *, reply_to: Optional[int] = None, fallback: bool = True, ttl: Optional[float] = None) -> Optional[Form]:
+    async def show(self, ctx: Any, screen: Screen, *, reply_to: Optional[int] = None, fallback: bool = True) -> Optional[Form]:
         source = getattr(ctx, "_delivery_source", None) or getattr(ctx, "message", None)
         module_id = str(getattr(ctx, "module_id", "") or "")
         if source is None or not module_id:
             raise ScreenError("screen has no source message")
-        return await self.open(module_id, source, screen, reply_to=reply_to, respond=ctx.respond if fallback else None, ttl=ttl)
+        return await self.open(module_id, source, screen, reply_to=reply_to, respond=ctx.respond if fallback else None)
 
-    async def open(self, module_id: str, source: Any, screen: Screen, *, reply_to: Optional[int] = None, respond: Optional[Callable[..., Any]] = None, ttl: Optional[float] = None) -> Optional[Form]:
+    async def open(self, module_id: str, source: Any, screen: Screen, *, reply_to: Optional[int] = None, respond: Optional[Callable[..., Any]] = None) -> Optional[Form]:
         runtime = self.runtime
         if getattr(source, "src", None) == "bot":
-            return await self.send(module_id, getattr(source, "chat_id", None), screen, actor=self._actor_of(source), command=self._command_of(source), ttl=ttl)
-        form = self._create(module_id, self._actor_of(source), self._command_of(source), getattr(source, "chat_id", None), bot=False, ttl=float(ttl or screen.ttl or _ttl))
+            return await self.send(module_id, getattr(source, "chat_id", None), screen, actor=self._actor_of(source), command=self._command_of(source))
+        form = self._create(module_id, self._actor_of(source), self._command_of(source), getattr(source, "chat_id", None), bot=False)
         text, rows, actions, gen = self._compile(form, screen)
         try:
             sent, nonce = await runtime.deliver_inline(source, text, rows, rich=screen.rich, reply_to=reply_to)
@@ -672,10 +667,10 @@ class ScreenEngine:
                 except Exception as exc:
                     log.debug("screen repaint failed: %s", type(exc).__name__)
 
-    async def send(self, module_id: str, chat_id: Any, screen: Screen, *, actor: Optional[int] = None, command: Optional[str] = None, ttl: Optional[float] = None) -> Form:
+    async def send(self, module_id: str, chat_id: Any, screen: Screen, *, actor: Optional[int] = None, command: Optional[str] = None) -> Form:
         app = self._bot_app()
         owner = getattr(getattr(self.runtime, "kernel", None), "owner_id", None)
-        form = self._create(module_id, int(actor or owner or 0), command, chat_id, bot=True, ttl=float(ttl or screen.ttl or _ttl))
+        form = self._create(module_id, int(actor or owner or 0), command, chat_id, bot=True)
         text, rows, actions, gen = self._compile(form, screen)
         data: dict[str, Any] = {"peer": chat_id, "random_id": secrets.randbits(63), "no_webpage": True}
         if screen.rich:
@@ -820,7 +815,7 @@ class ScreenEngine:
         denied = self._t("ui.denied", "This button is not for you.")
         decoded = self.decode(getattr(callback, "data", None))
         form = self.load(decoded[0]) if decoded is not None else None
-        if decoded is None or form is None or form.expired:
+        if decoded is None or form is None:
             await self._answer(callback, expired, alert=True)
             if form is not None:
                 await self._strip(form, callback)
@@ -916,7 +911,7 @@ class ScreenEngine:
     def _input_action(self, token: str) -> Optional[tuple[Form, dict[str, Any]]]:
         decoded = self.decode(token)
         form = self.load(decoded[0]) if decoded is not None else None
-        if decoded is None or form is None or form.expired or form.gen != decoded[1] or decoded[2] >= len(form.actions):
+        if decoded is None or form is None or form.gen != decoded[1] or decoded[2] >= len(form.actions):
             return None
         action = form.actions[decoded[2]]
         return (form, action) if action.get("k") == "input" else None
@@ -978,7 +973,7 @@ class ScreenEngine:
             return False
         row = self._ensure().execute(f"SELECT {self._columns} FROM screen_forms WHERE chat = ? AND message_id = ? AND bot = 0", (str(chat), target)).fetchone()
         form = self._row(row) if row is not None else None
-        if form is None or form.expired:
+        if form is None:
             return False
         action = next((item for item in form.actions if item.get("k") == "input"), None)
         actor = getattr(message, "from_id", None)
