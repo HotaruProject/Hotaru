@@ -870,7 +870,7 @@ class Runtime:
             pass
         if self.observatory is not None:
             self.observatory.emit("inline", "form_queued", nonce=nonce, chat=chat_id, rows=len(inline_buttons))
-        sent_result, result = await self._send_inline_result(chat_id, nonce, reply_to, options.get("topic_id"))
+        sent_result, result = await self._send_inline_result(chat_id, nonce, reply_to, options.get("topic_id"), message_id)
         if options.get("delete_source", True) and chat_id is not None and bool(getattr(command, "is_me", False) or getattr(command, "out", False)):
             try:
                 await self._delete_inline_source(command, chat_id, message_id)
@@ -895,7 +895,7 @@ class Runtime:
             self.observatory.emit("inline", "form_sent", "debug", nonce=nonce, sent_id=None, chosen=nonce in (self._form_inline_ids or {}), shape=type(sent_result).__name__)
         return cast('dict[str, Any]', result) if isinstance(result, dict) else result
 
-    async def _send_inline_result(self, chat_id: Any, nonce: str, reply_to: Any, topic_id: Any) -> tuple[Any, Any]:
+    async def _send_inline_result(self, chat_id: Any, nonce: str, reply_to: Any, topic_id: Any, source_id: int | None = None) -> tuple[Any, Any]:
         if self.inline is None or self.inline.info is None or self.app is None:
             raise RuntimeError("inline insertion transport is not ready")
         if self._form_chosen is None:
@@ -937,6 +937,9 @@ class Runtime:
         if not isinstance(query_id, (int, str)) or not isinstance(results, list) or not results:
             raise RuntimeError("inline bot returned no form result")
         reply_param: dict[str, Any] | None = None
+        form = (self._inline_forms or {}).get(nonce)
+        if reply_to is None and topic_id is None and source_id is not None and str(chat_id).startswith("-") and form is not None and form[2]:
+            reply_to = source_id
         if isinstance(reply_to, int):
             reply_param = {"_": "inputReplyToMessage", "reply_to_msg_id": reply_to}
             if isinstance(topic_id, int):
@@ -978,7 +981,7 @@ class Runtime:
             self._inline_forms = {}
         self._inline_forms[nonce] = (text, rows, rich)
         try:
-            sent_result, _ = await self._send_inline_result(chat_id, nonce, reply_to, topic_id)
+            sent_result, _ = await self._send_inline_result(chat_id, nonce, reply_to, topic_id, message_id)
         except BaseException:
             self._inline_forms.pop(nonce, None)
             (self._form_chosen or {}).pop(nonce, None)
