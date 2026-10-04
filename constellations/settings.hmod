@@ -110,12 +110,10 @@ from hotaru.config import (
     IntegerValidator,
     ModuleConfig,
     SecretValidator,
-    StringValidator,
 )
 
 _per_page = 3
 _preview = 60
-_input_limit = 200
 
 
 def _escape(value: Any) -> str:
@@ -375,18 +373,8 @@ def _param_screen(ctx: Any, module_id: str, key: str, origin: Optional[str], pag
         extra.append(k.button(ctx.t("ui.reset"), reset_value, **args))
     if extra:
         rows.append(extra)
-    if not isinstance(validator, (BooleanValidator, ChoiceValidator)) and (field.template_fields is not None or _max_len(validator) > _input_limit):
-        lines.append(f"{k.icon('idea')} <i>{_escape(ctx.t('ui.reply_hint'))}</i>")
     rows.append(k.footer(module, id=module_id, origin=origin))
     return k.screen("\n".join(line for line in lines if line), rows)
-
-
-def _max_len(validator: Any) -> int:
-    inner = getattr(validator, "inner", validator)
-    if not isinstance(inner, StringValidator):
-        return 0
-    value = getattr(inner, "max_len", None)
-    return int(value) if isinstance(value, int) else 10 ** 6
 
 
 def param(ctx: Any, nav: Any) -> Any:

@@ -7,7 +7,7 @@ import secrets
 import string
 import time
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable, Mapping, cast
+from typing import Any, Awaitable, Callable, cast
 
 from goygram import Session
 from goygram.errors import UnauthorizedError
@@ -959,8 +959,7 @@ class InlineManager:
             return False
         if text.startswith("hotaru-input:"):
             token = text.partition(" ")[0].split(":", 1)[1]
-            requests: dict[str, tuple[Any, ...]] = getattr(self.runtime, "_input_requests", None) or {}
-            request = requests.get(token)
+            request = self.runtime._input_request(token)
             return bool(
                 request is not None
                 and (request[3] is None or request[3] > time.monotonic())
@@ -1017,16 +1016,13 @@ class InlineManager:
         if not self._allows_form(update, chosen=True):
             return
         text = str(getattr(update, "query", "") or "").strip()
-        screens = getattr(self.runtime, "screens", None)
-        if screens is None or not screens.owns(text):
-            from hotaru.security import AccessVerdict
+        from hotaru.security import AccessVerdict
 
-            security = getattr(self.runtime, "security", None)
-            requests = cast('Mapping[str, tuple[object, ...]]', getattr(self.runtime, "_input_requests", None) or {})
-            request = requests.get(text.partition(" ")[0].split(":", 1)[1]) if text.startswith("hotaru-input:") else None
-            authorized = request is not None and self.runtime._input_actor_matches(update, request[2])
-            if security is None or security.check(update, transport="inline", authorized=authorized) is not AccessVerdict.ALLOW:
-                return
+        security = getattr(self.runtime, "security", None)
+        request = self.runtime._input_request(text.partition(" ")[0].split(":", 1)[1]) if text.startswith("hotaru-input:") else None
+        authorized = request is not None and self.runtime._input_actor_matches(update, request[2])
+        if security is None or security.check(update, transport="inline", authorized=authorized) is not AccessVerdict.ALLOW:
+            return
         token = text.partition(" ")[0].split(":", 1)[1] if text.startswith("hotaru-input:") else None
         if token is not None:
             self._chosen_pending.add(token)

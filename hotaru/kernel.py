@@ -51,7 +51,6 @@ class Kernel:
         self._seen_limit = seen_limit
         self._running: dict[tuple[int | str | None, int], asyncio.Task[Any]] = {}
         self.suspended = False
-        self.reply_hook: Any = None
 
     def attach(self, app: Any) -> None:
         app.on_edit(self._on_edit)
@@ -61,12 +60,6 @@ class Kernel:
         return await self.dispatch(message, source="edit")
 
     async def _on_msg(self, message: Any) -> object | None:
-        if self.reply_hook is not None and not self._is_blocked_peer(message) and self.command_name(getattr(message, "text", None)) is None:
-            try:
-                if await self.reply_hook(message):
-                    return None
-            except Exception as exc:
-                log.error("reply hook failed: %s", type(exc).__name__)
         await self.dispatch_watchers(message)
         return await self.dispatch(message, source="new")
 

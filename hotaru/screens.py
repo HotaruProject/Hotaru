@@ -356,7 +356,6 @@ class ScreenEngine:
         self._kernel: dict[str, Callable[..., Any]] = {}
         self._cache: dict[int, Form] = {}
         self._locks: dict[int, asyncio.Lock] = {}
-        self._targets: Optional[set[tuple[str, int]]] = None
         self._ready = False
 
     _columns = "id,module,actor,command,chat,message_id,inline_id,bot,gen,actions,text,rich,touched,ttl,language"
@@ -443,7 +442,6 @@ class ScreenEngine:
         return form
 
     def drop(self, form: Form) -> None:
-        self._target(form, False)
         db = self._ensure()
         db.execute("DELETE FROM screen_forms WHERE id = ?", (form.id,))
         db.commit()
@@ -547,7 +545,7 @@ class ScreenEngine:
                 kind = spec.get("k")
                 if kind in {"go", "input", "close"}:
                     token = self._action(form, spec, actions, gen)
-                    button["switch_inline_query_current_chat" if kind == "input" else "callback_data"] = token + " " if kind == "input" else token
+                    button["switch_inline_query_current_chat" if kind == "input" else "callback_data"] = "hotaru-input:" + token + " " if kind == "input" else token
                 else:
                     for key in ("callback_data", "url", "copy_text", "disabled", "switch_inline_query", "switch_inline_query_current_chat", "user_id", "web_app"):
                         if key in spec:
@@ -568,7 +566,7 @@ class ScreenEngine:
             if spec.get("k") not in {"go", "input"}:
                 raise ScreenError("malformed in-text button")
             token = self._action(form, spec, actions, gen)
-            target = f'query="{token} "' if spec.get("k") == "input" else f'data="{token}"'
+            target = f'query="hotaru-input:{token} "' if spec.get("k") == "input" else f'data="{token}"'
             return f"<tg-button{match.group(1)} {target}{match.group(3)}>"
 
         text = _tap.sub(swap, text)
@@ -579,22 +577,6 @@ class ScreenEngine:
         form.text, form.actions, form.gen, form.rich = text, actions, gen, bool(screen.rich)
         form.touched = time.time()
         self._save(form)
-        self._target(form, any(action.get("k") == "input" for action in actions))
-
-    def _target(self, form: Form, enabled: bool) -> None:
-        if self._targets is None or form.bot or form.message_id is None:
-            return
-        key = (str(form.chat), int(form.message_id))
-        if enabled:
-            self._targets.add(key)
-        else:
-            self._targets.discard(key)
-
-    def _reply_targets(self) -> set[tuple[str, int]]:
-        if self._targets is None:
-            rows = self._ensure().execute("SELECT chat, message_id FROM screen_forms WHERE bot = 0 AND message_id IS NOT NULL AND actions LIKE '%\"k\": \"input\"%'").fetchall()
-            self._targets = {(str(row[0]), int(row[1])) for row in rows}
-        return self._targets
 
     def _actor_of(self, source: Any) -> int:
         for value in (getattr(source, "_hotaru_actor_id", None), getattr(source, "from_id", None)):
@@ -911,73 +893,31 @@ class ScreenEngine:
         action = form.actions[decoded[2]]
         return (form, action) if action.get("k") == "input" else None
 
-    async def input_query(self, query: Any, text: str) -> None:
-        from goygram.types import InlineObj
-        from relay.inline_tl import answer_tl
-
-        token, _, value = text.partition(" ")
-        value = value.strip()
+    def input_request(self, token: str) -> Optional[tuple[Any, ...]]:
         found = self._input_action(token)
-        results: list[dict[str, Any]] = []
-        if value and found is not None and self._allowed(found[0], getattr(query, "from_id", None), found[1]):
-            if found[1].get("s"):
-                title = self._t("ui.input_send_secret", "Send ({count} characters)", count=len(value))
-            else:
-                title = self._t("ui.input_send", "Send: {value}", value=_clip(value, 60))
-            results.append(InlineObj.article(secrets.token_urlsafe(8), title, "🔄", description=str(found[1].get("p") or ""), parse_mode="HTML"))
-        await answer_tl(query, results=results, cache_time=0, is_personal=True)
+        if found is None:
+            return None
+        form, action = found
+        source = SimpleNamespace(from_id=form.actor, chat_id=form.chat, _hotaru_command=form.command, _hotaru_input_secret=bool(action.get("s")))
+        return self._submit, token, source, None, action.get("p", ""), None
 
-    async def input_chosen(self, chosen: Any, text: str) -> None:
-        token, _, value = text.partition(" ")
+    async def _submit(self, call: Any, value: str, token: str) -> None:
         found = self._input_action(token)
-        actor = getattr(chosen, "from_id", None)
-        await self._drop_transfer(found[0] if found is not None else None, getattr(chosen, "msg_id", None))
-        if found is None or not self._allowed(found[0], actor, found[1]):
+        if found is None:
             return
-        security = getattr(self.runtime, "security", None)
-        if security is not None:
-            from .security import AccessVerdict
-            if security.check(chosen, transport="inline", module_id=found[0].module, authorized=True) is not AccessVerdict.ALLOW:
+        async with self.lock(found[0]):
+            found = self._input_action(token)
+            if found is None:
                 return
-        await self._submit(found[0], found[1], chosen, value.strip(), cast(int, actor))
-
-    async def _submit(self, form: Form, action: dict[str, Any], event: Any, value: str, actor: int) -> None:
-        async with self.lock(form):
+            form, action = found
+            actor = getattr(call.query, "from_id", None)
+            if not self._allowed(form, actor, action):
+                return
+            action["k"] = "submitted"
+            self._save(form)
             try:
-                result = await self._invoke(form, action, event, Nav(self, form, action, value=value, actor=actor))
+                result = await self._invoke(form, action, call.query, Nav(self, form, action, value=value.strip(), actor=cast(int, actor)))
                 if isinstance(result, Screen) and self.load(form.id) is not None:
                     await self.render(form, result)
             except Exception as exc:
                 self._report(form, action, exc)
-
-    async def _drop_transfer(self, form: Optional[Form], inline_id: Any) -> None:
-        try:
-            await self.runtime.drop_transfer(SimpleNamespace(chat_id=form.chat if form is not None else None), inline_id)
-        except Exception:
-            pass
-
-    async def on_message(self, message: Any) -> bool:
-        from .response import reply_message_id
-
-        text = getattr(message, "text", None)
-        target = reply_message_id(message)
-        chat = getattr(message, "chat_id", None)
-        if not isinstance(text, str) or not text or target is None or chat is None or self._db is None:
-            return False
-        if (str(chat), int(target)) not in self._reply_targets():
-            return False
-        row = self._ensure().execute(f"SELECT {self._columns} FROM screen_forms WHERE chat = ? AND message_id = ? AND bot = 0", (str(chat), target)).fetchone()
-        form = self._row(row) if row is not None else None
-        if form is None:
-            return False
-        action = next((item for item in form.actions if item.get("k") == "input"), None)
-        actor = getattr(message, "from_id", None)
-        if action is None or not self._allowed(form, actor, action):
-            return False
-        try:
-            with trusted_scope():
-                await delete_chat_msg(self.runtime.app, chat, int(getattr(message, "id", 0) or getattr(message, "msg_id", 0)))
-        except Exception:
-            pass
-        await self._submit(form, action, message, text.strip(), cast(int, actor))
-        return True
