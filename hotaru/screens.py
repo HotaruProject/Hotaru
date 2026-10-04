@@ -656,7 +656,7 @@ class ScreenEngine:
             if form.inline_id is None:
                 form.inline_id = cast('dict[str, Any]', inline_id)
                 self._save(form)
-            if repaint and form.gen == gen:
+            if repaint and form.gen == gen and not form.rich:
                 try:
                     await self._edit(form, form.text, rows, form.rich)
                 except Exception as exc:

@@ -336,9 +336,9 @@ class Runtime:
         owner = self.kernel.owner_id if self.kernel is not None else None
         if owner is None:
             raise RuntimeError("form owner is missing")
-        if has_emoji(text):
-            text = text + EMOJI_PAD
         options = dict(options or {})
+        if has_emoji(text) and not options.get("rich"):
+            text = text + EMOJI_PAD
         actor = getattr(command, "from_id", None)
         if not isinstance(actor, int):
             getter = getattr(command, "get", None)
@@ -475,7 +475,9 @@ class Runtime:
         entry = (self._forms or {}).get(key)
         if entry is None:
             return
-        handle, _, text, buttons, _ = entry
+        handle, _, text, buttons, options = entry
+        if options.get("rich"):
+            return
         try:
             await self.edit_form(handle, text, buttons=buttons)
         except Exception as exc:
@@ -970,7 +972,7 @@ class Runtime:
             if isinstance(value, int):
                 topic_id = value
                 break
-        if has_emoji(text):
+        if has_emoji(text) and not rich:
             text = text + EMOJI_PAD
         nonce = secrets.token_urlsafe(12)
         if self._inline_forms is None:
@@ -2582,6 +2584,7 @@ class Runtime:
         assert self.app is not None
         try:
             await self.authorize()
+            set_premium(await self.is_premium())
             if self.app.mt is not None:
                 self._connection = ConnectionRecovery(self.app.mt, self.observatory, "user")
                 self._connection_task = asyncio.create_task(self._connection.watch(), name="hotaru:user-health")

@@ -61,7 +61,7 @@ class Kernel:
         return await self.dispatch(message, source="edit")
 
     async def _on_msg(self, message: Any) -> object | None:
-        if self.reply_hook is not None and not self._is_blocked_peer(message):
+        if self.reply_hook is not None and not self._is_blocked_peer(message) and self.command_name(getattr(message, "text", None)) is None:
             try:
                 if await self.reply_hook(message):
                     return None
