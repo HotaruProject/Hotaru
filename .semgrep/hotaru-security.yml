@@ -5,7 +5,7 @@ rules:
     languages: [generic]
     paths:
       include: ["*.py", "*.hmod", "*.sh", "*.yml", "*.yaml"]
-      exclude: [".semgrep/**"]
+      exclude: [".semgrep/**", ".coderabbit.yaml", ".coderabbit.yml"]
     pattern-regex: (?i)\b(?:deleteaccount|delete_account|resetauthorizations|reset_authorizations|resetauthorization|reset_authorization|terminateauthkey|terminate_auth_key|log(?:out|_out)|deleteaccountrequest|resetauthorizationsrequest|resetauthorizationrequest|terminateauthkeyrequest)\b
   - id: hotaru-destructive-dynamic-rpc
     message: Dynamic invocation of a destructive Telegram account/auth RPC detected. Block the PR for explicit security review.
@@ -13,7 +13,7 @@ rules:
     languages: [generic]
     paths:
       include: ["*.py", "*.hmod"]
-      exclude: [".semgrep/**"]
+      exclude: [".semgrep/**", ".coderabbit.yaml", ".coderabbit.yml"]
     pattern-regex: (?is)["'][^"'\n]{0,64}(?:account\.(?:deleteaccount|delete_account|logout|log_out|resetauthorizations|terminateauthkey)|auth\.(?:logout|log_out|resetauthorizations|terminateauthkey))[^"'\n]{0,64}["']
   - id: hotaru-sensitive-material-egress
     message: Possible session, vault, or auth-key material sent to a network or Telegram sink. Block the PR for explicit security review.
@@ -21,7 +21,7 @@ rules:
     languages: [generic]
     paths:
       include: ["*.py", "*.hmod"]
-      exclude: [".semgrep/**"]
+      exclude: [".semgrep/**", ".coderabbit.yaml", ".coderabbit.yml"]
     pattern-regex: (?is)(?:auth_key|api_hash|\.session|\.vault|master\.key|vault_key).{0,300}(?:send_(?:document|file|media|message)|upload_file|requests\.(?:post|put)|httpx\.(?:post|put)|urlopen)|(?:send_(?:document|file|media|message)|upload_file|requests\.(?:post|put)|httpx\.(?:post|put)|urlopen).{0,300}(?:auth_key|api_hash|\.session|\.vault|master\.key|vault_key)
   - id: hotaru-exfil-drop-endpoint
     message: Known data-drop or exfiltration endpoint detected. Block the PR for explicit security review.
@@ -29,7 +29,7 @@ rules:
     languages: [generic]
     paths:
       include: ["*.py", "*.hmod", "*.sh", "*.yml", "*.yaml", "*.toml", "*.json"]
-      exclude: [".semgrep/**"]
+      exclude: [".semgrep/**", ".coderabbit.yaml", ".coderabbit.yml"]
     pattern-regex: (?i)webhook\.site|pipedream\.net|requestbin|burpcollaborator|oastify|interact\.sh|ngrok\.io|ngrok-free|discord(?:app)?\.com/api/webhooks|hooks\.slack\.com
   - id: hotaru-chat-invite-exfil
     message: Telegram invite-join used as an exfiltration channel detected. Block the PR for explicit security review.
@@ -37,7 +37,7 @@ rules:
     languages: [generic]
     paths:
       include: ["*.py", "*.hmod"]
-      exclude: [".semgrep/**"]
+      exclude: [".semgrep/**", ".coderabbit.yaml", ".coderabbit.yml"]
     pattern-regex: (?i)\b(?:importchatinviterequest|importchatinvite|import_chat_invite|checkchatinviterequest|checkchatinvite|check_chat_invite)\b|t\.me/(?:joinchat/|\+)
   - id: hotaru-decoded-payload-sink
     message: Decoded or unpacked payload passed to an execution or network sink. Block the PR for explicit security review.
@@ -45,7 +45,7 @@ rules:
     languages: [generic]
     paths:
       include: ["*.py", "*.hmod", "*.sh"]
-      exclude: [".semgrep/**"]
+      exclude: [".semgrep/**", ".coderabbit.yaml", ".coderabbit.yml"]
     pattern-regex: (?is)(?:b64decode|urlsafe_b64decode|a85decode|b85decode|fromhex|codecs\.decode|marshal\.loads|zlib\.decompress|lzma\.decompress|bz2\.decompress|unhexlify).{0,400}(?:\bexec\s*\(|\beval\s*\(|__import__|subprocess|os\.system|os\.popen|requests\.(?:post|put)|httpx\.(?:post|put)|urlopen|aiohttp)|(?:\bexec\s*\(|\beval\s*\(|__import__|subprocess|os\.system|os\.popen|requests\.(?:post|put)|httpx\.(?:post|put)|urlopen|aiohttp).{0,400}(?:b64decode|urlsafe_b64decode|a85decode|b85decode|fromhex|codecs\.decode|marshal\.loads|zlib\.decompress|lzma\.decompress|bz2\.decompress|unhexlify)
   - id: hotaru-shell-fetch-exec
     message: Remote shell payload fetched and piped into an interpreter. Block the PR for explicit security review.
@@ -53,7 +53,7 @@ rules:
     languages: [generic]
     paths:
       include: ["*.py", "*.hmod", "*.sh", "*.yml", "*.yaml"]
-      exclude: [".semgrep/**"]
+      exclude: [".semgrep/**", ".coderabbit.yaml", ".coderabbit.yml"]
     pattern-regex: (?i)(?:curl|wget)[^\n|]{0,200}\|\s*(?:sudo\s+)?(?:bash|sh|zsh|python3?|perl|ruby)\b|\b(?:bash|sh)\s+<\(\s*(?:curl|wget)
   - id: hotaru-remote-dependency-source
     message: Dependency resolved from a URL or git remote, which executes code at install time. Block the PR for explicit security review.
@@ -61,5 +61,5 @@ rules:
     languages: [generic]
     paths:
       include: ["*.toml", "*.txt", "*.cfg", "*.lock", "*.yml", "*.yaml"]
-      exclude: [".semgrep/**"]
+      exclude: [".semgrep/**", ".coderabbit.yaml", ".coderabbit.yml"]
     pattern-regex: (?i)["'\s]@\s*(?:git\+)?https?://|git\+(?:ssh|https?)://
