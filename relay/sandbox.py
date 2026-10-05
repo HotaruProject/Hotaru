@@ -11,7 +11,7 @@ import sysconfig
 import tempfile
 import time
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Sequence, cast
 
 from . import toolkit as _toolkit
 from . import context as _context
@@ -195,9 +195,10 @@ def install_seccomp():
         raise OSError("seccomp filter installation failed")
 
 
-def install_firewall(protected, namespaces=False):
+def install_firewall(protected, namespaces=False, deps_root=""):
     roots = [str(Path(item).resolve()) for item in protected]
     native_root = str((Path(os.__file__).resolve().parent / "lib-dynload").resolve()) + os.sep
+    module_deps = str(Path(deps_root).resolve()) + os.sep if deps_root else ""
 
     def deny_process(*args, **kwargs):
         raise PermissionError("module process escape is denied")
@@ -215,7 +216,9 @@ def install_firewall(protected, namespaces=False):
         if event == "import" and args and str(args[0]).split(".", 1)[0].casefold() in {"goygram", "hotaru", "relay"}:
             raise PermissionError("module cannot import Hotaru/GoyGram internals; use capability proxies")
         if not namespaces and event == "import" and len(args) > 1 and args[1]:
-            if not str(Path(os.fsdecode(args[1])).resolve()).startswith(native_root):
+            resolved = str(Path(os.fsdecode(args[1])).resolve())
+            pure_python_dep = bool(module_deps) and resolved.startswith(module_deps) and not resolved.endswith((".so", ".pyd", ".dylib"))
+            if not resolved.startswith(native_root) and not pure_python_dep:
                 raise PermissionError("portable sandbox only permits standard-library native extensions")
         if event in {"open", "os.open"} and args and isinstance(args[0], (str, bytes)):
             if not namespaces and args[1] is None and not os.path.isabs(args[0]):
@@ -999,7 +1002,7 @@ def main():
             if _exc.errno != _errno.EPERM:
                 sys.stderr.write(f"seccomp self-test failed: splice errno={_exc.errno}\n")
                 sys.exit(1)
-    install_firewall(cfg.get("protected", []), cfg.get("namespaces", False))
+    install_firewall(cfg.get("protected", []), cfg.get("namespaces", False), cfg.get("deps_root", ""))
     apply_limits(
         cfg.get("mem_mb", 256),
         cfg.get("file_mb", 16),
@@ -1384,6 +1387,7 @@ class ModuleSandbox:
         self._booted: dict[str, bool] = {}
         self._last_use: dict[str, float] = {}
         self._module_defs: dict[str, tuple[str, list[str]]] = {}
+        self._module_deps: dict[str, str] = {}
         self._respond_sources: dict[str, Any] = {}
         self._respond_contexts: dict[str, Any] = {}
         self._cb_waiters: dict[tuple[str, str], asyncio.Future[Any]] = {}
@@ -1410,7 +1414,7 @@ class ModuleSandbox:
         os.makedirs(self._sandbox_base, exist_ok=True)
         os.chmod(self._sandbox_base, 0o700)
 
-    def _make_preexec(self, namespaces: bool = True) -> Any:
+    def _make_preexec(self, namespaces: bool = True, deps: str | None = None) -> Any:
         if not namespaces:
             def portable() -> None:
                 import os as _os
@@ -1430,6 +1434,7 @@ class ModuleSandbox:
         nofile = self.nofile
         cpu_seconds = self.cpu_seconds
         nproc = self.nproc
+        deps_path = deps
 
         def preexec() -> None:
             import ctypes
@@ -1503,6 +1508,8 @@ class ModuleSandbox:
 
             bind_ro(python_path, "/usr/bin/python3", False)
             bind_ro(stdlib_path, stdlib_dst, True)
+            if deps_path:
+                bind_ro(deps_path, "/opt/pkgs", True)
             bind_ro("/usr/lib", "/usr/lib", True)
             if os.path.isdir("/usr/lib64"):
                 bind_ro("/usr/lib64", "/usr/lib64", True)
@@ -1544,6 +1551,7 @@ class ModuleSandbox:
     def _spawn(self, module_id: str, source: str, commands: list[str], *, namespaces: bool | None = None) -> subprocess.Popen[bytes]:
         if namespaces is None:
             namespaces = self._namespaces
+        deps = self._module_deps.get(module_id)
         hello = {
             "module_id": module_id,
             "source": source,
@@ -1559,6 +1567,7 @@ class ModuleSandbox:
             "seccomp": SECCOMP_POLICY,
             "seccomp_required": namespaces,
             "namespaces": namespaces,
+            "deps_root": deps or "",
             "protected": [
                 str(self.runtime.config.session_dir),
                 str(self.runtime.config.session_dir / f"{self.runtime.config.session_name}.vault"),
@@ -1572,14 +1581,14 @@ class ModuleSandbox:
         }
         if namespaces:
             argv = ["/usr/bin/python3", "-s", "-c", WORKER_SOURCE]
-            env = {"PATH": "/usr/bin:/bin", "HOME": "/tmp", "PYTHONPATH": "", "PYTHONHOME": "/opt/py", **cli_config}
+            env = {"PATH": "/usr/bin:/bin", "HOME": "/tmp", "PYTHONPATH": "/opt/pkgs" if deps else "", "PYTHONHOME": "/opt/py", **cli_config}
             cwd = "/"
         else:
             argv = [self._python, "-s", "-S", "-c", WORKER_SOURCE]
             env = {
                 "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
                 "HOME": self._sandbox_base,
-                "PYTHONPATH": "",
+                "PYTHONPATH": deps or "",
                 "PYTHONDONTWRITEBYTECODE": "1",
                 "TMPDIR": self._sandbox_base,
                 "LANG": "C.UTF-8",
@@ -1593,7 +1602,7 @@ class ModuleSandbox:
             stderr=subprocess.PIPE,
             cwd=cwd,
             env=env,
-            preexec_fn=self._make_preexec(namespaces),
+            preexec_fn=self._make_preexec(namespaces, deps),
         )
         assert process.stdin is not None and process.stdout is not None
         process.stdin.write((_proto_dumps(hello) + "\n").encode("utf-8"))
@@ -1635,6 +1644,22 @@ class ModuleSandbox:
         assert process.stdout is not None
         line = process.stdout.readline()
         return line.decode("utf-8", errors="replace").strip() if line else None
+
+    def deps_root(self) -> Path:
+        base = os.environ.get("XDG_CACHE_HOME") or os.path.join(os.path.expanduser("~"), ".cache")
+        return Path(base) / "hotaru" / "module-deps"
+
+    async def ensure_module_deps(self, module_id: str, source: str, extra: Sequence[str] = ()) -> str | None:
+        from hotaru.deps import install_module_deps
+
+        root = self.deps_root()
+        loop = asyncio.get_running_loop()
+        path = await loop.run_in_executor(None, lambda: install_module_deps(root, module_id, source, extra))
+        if path:
+            self._module_deps[module_id] = path
+        else:
+            self._module_deps.pop(module_id, None)
+        return path
 
     async def start_module(self, module_id: str, source: str, commands: list[str]) -> bool:
         self._module_defs[module_id] = (source, commands)
@@ -2003,6 +2028,7 @@ class ModuleSandbox:
                     logging.getLogger(__name__).error("sandbox stop failed: %s", type(exc).__name__)
                     return False
         self._module_defs.pop(module_id, None)
+        self._module_deps.pop(module_id, None)
         self._workers.pop(module_id, None)
         self._booted.pop(module_id, None)
         self._last_use.pop(module_id, None)
