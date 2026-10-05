@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import ast
+import gzip
 import hashlib
 import importlib
 import importlib.metadata
@@ -558,9 +559,14 @@ _PACKAGE_SPEC_RE = re.compile(
 )
 _RESERVED_IMPORTS = frozenset({"hotaru", "relay", "goygram", "site", "sitecustomize", "usercustomize"})
 _IMPORT_CACHE_NAME = ".import-names.json"
+_INDEX_NAME = "pypi-index.txt"
 _PROBE_TIMEOUT = 300.0
 _INDEX_TIMEOUT = 15.0
+_INDEX_FETCH_TIMEOUT = 300.0
+_INDEX_MAX_AGE = 7 * 86400.0
+_INDEX_CANDIDATES = 25
 _PYPI_JSON = "https://pypi.org/pypi/{name}/json"
+_PYPI_INDEX = "https://pypi.org/simple/"
 _HTTP_AGENT = "hotaru-module-deps/1"
 _CANDIDATE_TEMPLATES = ("{name}", "py{name}", "python-{name}", "{name}-py", "{name}-python")
 
@@ -639,10 +645,14 @@ def _module_import_probe(target: Path, names: Sequence[str]) -> list[str]:
     return [name for name in names if name in reported]
 
 
-def _http_text(url: str, *, timeout: float) -> str | None:
+def _http_text(url: str, *, timeout: float, accept: str = "application/json") -> str | None:
+    headers = {"User-Agent": _HTTP_AGENT, "Accept": accept, "Accept-Encoding": "gzip"}
     try:
-        with urlopen(Request(url, headers={"User-Agent": _HTTP_AGENT}), timeout=timeout) as response:
-            return response.read().decode("utf-8", "replace")
+        with urlopen(Request(url, headers=headers), timeout=timeout) as response:
+            raw = response.read()
+            if response.headers.get("Content-Encoding") == "gzip":
+                raw = gzip.decompress(raw)
+            return raw.decode("utf-8", "replace")
     except (HTTPError, URLError, OSError, ValueError):
         return None
 
@@ -672,6 +682,79 @@ def candidate_distributions(name: str) -> list[str]:
     if stemmed and stemmed != base:
         candidates.append(stemmed)
     return list(dict.fromkeys(candidates))
+
+
+def flat_name(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "", value.casefold())
+
+
+def import_candidates(name: str) -> list[str]:
+    """Local guesses for a dotted import path: the path itself plus its parts with py/python affixes."""
+    parts = [part for part in name.split(".") if part]
+    candidates: list[str] = []
+    if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_.]*", name):
+        candidates.append(name.casefold().replace("_", "-"))
+    for item in (parts[-1] if parts else "", parts[0] if parts else ""):
+        if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", item):
+            candidates.extend(candidate_distributions(item))
+    return list(dict.fromkeys(candidates))
+
+
+def _pypi_index(root: Path, *, timeout: float = _INDEX_FETCH_TIMEOUT) -> Path | None:
+    """Cached newline-separated snapshot of every distribution name on PyPI."""
+    path = root / _INDEX_NAME
+    try:
+        if path.stat().st_mtime > time.time() - _INDEX_MAX_AGE:
+            return path
+    except OSError:
+        pass
+    body = _http_text(_PYPI_INDEX, timeout=timeout, accept="application/vnd.pypi.simple.v1+json")
+    names: list[str] = []
+    if body is not None:
+        try:
+            payload = json.loads(body)
+        except ValueError:
+            payload = None
+        if isinstance(payload, dict):
+            projects = cast("dict[str, Any]", payload).get("projects")
+            if isinstance(projects, list):
+                for item in cast("list[Any]", projects):
+                    if isinstance(item, dict) and cast("dict[str, Any]", item).get("name"):
+                        names.append(str(cast("dict[str, Any]", item)["name"]))
+    if names:
+        try:
+            root.mkdir(parents=True, exist_ok=True)
+            temp = path.with_name(path.name + ".tmp")
+            temp.write_text("\n".join(sorted(names)), encoding="utf-8")
+            os.replace(str(temp), str(path))
+            return path
+        except OSError:
+            return None
+    return path if path.is_file() else None
+
+
+def namespace_candidates(root: Path, name: str, *, limit: int = _INDEX_CANDIDATES) -> list[str]:
+    """Distribution names from the whole PyPI namespace that contain the import name, best first."""
+    key = flat_name(name)
+    path = _pypi_index(root) if key else None
+    if path is None:
+        return []
+    words = {word for word in re.split(r"[^a-z0-9]+", name.casefold()) if word}
+    scored: list[tuple[tuple[int, int, int, str], str]] = []
+    try:
+        with path.open(encoding="utf-8", errors="replace") as handle:
+            for line in handle:
+                project = line.strip()
+                flat = flat_name(project)
+                if not flat or key not in flat:
+                    continue
+                tokens = [word for word in re.split(r"[^a-z0-9]+", project.casefold()) if word]
+                rank = 0 if flat == key else (1 if flat.startswith(key) or flat.endswith(key) else 2)
+                scored.append(((rank, len([word for word in tokens if word not in words]), len(flat), project.casefold()), project))
+    except OSError:
+        return []
+    scored.sort()
+    return [project for _score, project in scored[:limit]]
 
 
 def isolated_managers(target: Path) -> list[list[str]]:
@@ -704,20 +787,91 @@ def _install_into(target: Path, specs: Sequence[str], *, timeout: float) -> None
     raise DependencyError("module dependency install failed:\n" + "\n".join(output.splitlines()[-6:]))
 
 
-def _resolve_distribution(root: Path, name: str, verify: Sequence[str]) -> str | None:
-    for candidate in candidate_distributions(name):
-        if _pypi_project(candidate) is None:
-            continue
-        probe = Path(tempfile.mkdtemp(prefix="probe-", dir=str(root)))
-        try:
-            _install_into(probe, [candidate], timeout=_PROBE_TIMEOUT)
-            if not _module_import_probe(probe, verify):
-                return candidate
-        except DependencyError:
-            pass
-        finally:
-            shutil.rmtree(str(probe), ignore_errors=True)
+def _probe_distribution(root: Path, candidate: str, verify: Sequence[str]) -> str | None:
+    project = _pypi_project(candidate)
+    if project is None:
+        return None
+    probe = Path(tempfile.mkdtemp(prefix="probe-", dir=str(root)))
+    try:
+        _install_into(probe, [project], timeout=_PROBE_TIMEOUT)
+        if not _module_import_probe(probe, verify):
+            return project
+    except DependencyError:
+        return None
+    finally:
+        shutil.rmtree(str(probe), ignore_errors=True)
     return None
+
+
+def _resolve_distribution(root: Path, path: str) -> str | None:
+    """Import path -> distribution, confirmed by importing the module from the installed candidate.
+
+    ponytail: the namespace list is ranked and capped; each candidate costs one PyPI JSON check
+    (which skips squatter names with no releases) and installs only when it actually has files.
+    """
+    for candidate in import_candidates(path):
+        found = _probe_distribution(root, candidate, [path])
+        if found:
+            return found
+    for candidate in namespace_candidates(root, path):
+        found = _probe_distribution(root, candidate, [path])
+        if found:
+            return found
+    return None
+
+
+def _provided_modules(dist_info: Path) -> set[str]:
+    """Top-level modules a distribution provides, from top_level.txt and its RECORD."""
+    modules: set[str] = set()
+    top_level = dist_info / "top_level.txt"
+    try:
+        if top_level.is_file():
+            modules.update(line.strip() for line in top_level.read_text(encoding="utf-8", errors="replace").splitlines())
+    except OSError:
+        pass
+    try:
+        lines = (dist_info / "RECORD").read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        lines = []
+    for line in lines:
+        head = line.split(",", 1)[0].split("/", 1)[0]
+        if not head or head.endswith((".dist-info", ".data")):
+            continue
+        module = head[:-3] if head.endswith(".py") else head
+        if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", module):
+            modules.add(module)
+    return modules
+
+
+def _learn_distributions(target: Path, cache: dict[str, str]) -> None:
+    """Remember which modules every installed distribution provides, so the next lookup is free."""
+    for dist_info in sorted(target.glob("*.dist-info")):
+        project = ""
+        try:
+            with (dist_info / "METADATA").open(encoding="utf-8", errors="replace") as handle:
+                for line in handle:
+                    if line.startswith("Name: "):
+                        project = line[6:].strip()
+                        break
+        except OSError:
+            continue
+        if not project:
+            continue
+        for module in _provided_modules(dist_info):
+            cache.setdefault(module.casefold(), project)
+
+
+def environment_distributions() -> dict[str, str]:
+    """Module -> distribution for everything already installed in this interpreter."""
+    mapping: dict[str, str] = {}
+    try:
+        packages = importlib.metadata.packages_distributions()
+    except Exception:
+        return mapping
+    for module, projects in packages.items():
+        if projects:
+            mapping.setdefault(str(module).casefold(), str(projects[0]))
+    return mapping
 
 
 def _import_cache(root: Path) -> dict[str, str]:
@@ -778,25 +932,32 @@ def install_module_deps(root: Path, module_id: str, source: str, extra: Sequence
     versions = target_versions(target) if target.is_dir() else {}
     pending = [spec for spec in explicit if not _spec_satisfied(spec, versions)]
     missing = set(_module_import_probe(target, imports)) if target.is_dir() else set(imports)
+    cache = environment_distributions()
+    for module, project in _import_cache(root).items():
+        cache[module] = project
     if not pending and not missing:
+        _learn_distributions(target, cache)
+        _import_cache_write(root, cache)
         return str(target)
     root.mkdir(parents=True, exist_ok=True)
-    cache = _import_cache(root)
     unresolved: list[str] = []
     plan = list(pending)
-    for name, paths in groups.items():
-        if not any(path in missing for path in paths):
-            continue
-        distribution = cache.get(name)
-        if distribution is None:
-            distribution = _resolve_distribution(root, name, paths) or ""
-        if not distribution:
-            unresolved.append(name)
-            continue
-        cache[name] = distribution
-        plan.append(distribution)
+    for paths in groups.values():
+        for path in paths:
+            if path not in missing:
+                continue
+            key = path.casefold()
+            distribution = cache.get(key)
+            if distribution is None:
+                distribution = _resolve_distribution(root, path) or ""
+            if not distribution:
+                unresolved.append(path)
+                continue
+            cache[key] = distribution
+            plan.append(distribution)
     if plan:
         _install_into(target, list(dict.fromkeys(plan)), timeout=timeout)
+    _learn_distributions(target, cache)
     still = _module_import_probe(target, imports)
     if unresolved or still:
         raise DependencyError("module dependencies are unavailable: " + ", ".join(sorted({*unresolved, *still})))
@@ -810,4 +971,4 @@ def _spec_satisfied(spec: str, versions: dict[str, str]) -> bool:
     return installed is not None and requirement_satisfied(requirement, installed)
 
 
-__all__ = ["DependencyError", "Requirement", "parse_requirement", "requirement_satisfied", "installed_version", "module_available", "import_name", "find_env_manager", "build_command", "ensure", "ensure_kernel", "ensure_project", "project_requirements", "version_tuple", "satisfies", "normalize_version", "stdlib_names", "scan_imports", "third_party_imports", "safe_spec", "candidate_distributions", "isolated_managers", "target_versions", "install_module_deps"]
+__all__ = ["DependencyError", "Requirement", "parse_requirement", "requirement_satisfied", "installed_version", "module_available", "import_name", "find_env_manager", "build_command", "ensure", "ensure_kernel", "ensure_project", "project_requirements", "version_tuple", "satisfies", "normalize_version", "stdlib_names", "scan_imports", "third_party_imports", "safe_spec", "candidate_distributions", "flat_name", "import_candidates", "namespace_candidates", "environment_distributions", "isolated_managers", "target_versions", "install_module_deps"]
