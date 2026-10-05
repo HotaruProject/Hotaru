@@ -1,0 +1,5 @@
+# Security-critical paths. Changes here must be approved by the owner:
+# a pull request that edits the enforcement gate or its policy cannot be
+# merged by the author alone.
+/.github/   @sepiol026-wq
+/.semgrep/  @sepiol026-wq
