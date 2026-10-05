@@ -9,15 +9,18 @@ import importlib.util
 import json
 import os
 import re
-
 import shutil
 import subprocess
 import sys
+import sysconfig
 import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Sequence, cast
+from urllib.error import HTTPError, URLError
+from urllib.parse import quote
+from urllib.request import Request, urlopen
 
 
 class DependencyError(RuntimeError):
@@ -546,4 +549,265 @@ def ensure_project(root: Path) -> dict[str, Any]:
         shutil.rmtree(str(lock), ignore_errors=True)
 
 
-__all__ = ["DependencyError", "Requirement", "parse_requirement", "requirement_satisfied", "installed_version", "module_available", "import_name", "find_env_manager", "build_command", "ensure", "ensure_kernel", "ensure_project", "project_requirements", "version_tuple", "satisfies", "normalize_version"]
+_MODULE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
+_PACKAGE_SPEC_RE = re.compile(
+    r"^[A-Za-z0-9][A-Za-z0-9._-]*"
+    r"(?:\[[A-Za-z0-9._,-]+\])?"
+    r"(?:(?:===|==|!=|>=|<=|>|<|~=)[A-Za-z0-9._*+!-]+"
+    r"(?:,(?:===|==|!=|>=|<=|>|<|~=)[A-Za-z0-9._*+!-]+)*)?$"
+)
+_RESERVED_IMPORTS = frozenset({"hotaru", "relay", "goygram", "site", "sitecustomize", "usercustomize"})
+_IMPORT_CACHE_NAME = ".import-names.json"
+_PROBE_TIMEOUT = 300.0
+_INDEX_TIMEOUT = 15.0
+_PYPI_JSON = "https://pypi.org/pypi/{name}/json"
+_HTTP_AGENT = "hotaru-module-deps/1"
+_CANDIDATE_TEMPLATES = ("{name}", "py{name}", "python-{name}", "{name}-py", "{name}-python")
+
+
+def stdlib_names() -> frozenset[str]:
+    declared = getattr(sys, "stdlib_module_names", None)
+    if declared is not None:
+        return frozenset(str(item) for item in cast("frozenset[str]", declared))
+    base = Path(sysconfig.get_paths()["stdlib"])
+    found = {str(item) for item in sys.builtin_module_names}
+    for directory in (base, base / "lib-dynload"):
+        try:
+            entries = list(directory.iterdir())
+        except OSError:
+            continue
+        for entry in entries:
+            if entry.is_dir():
+                if (entry / "__init__.py").is_file():
+                    found.add(entry.name)
+            elif entry.suffix in {".py", ".so", ".pyd"}:
+                found.add(entry.stem if entry.suffix == ".py" else entry.name.split(".")[0])
+    return frozenset(found)
+
+
+def scan_imports(source: str) -> list[str]:
+    try:
+        tree = ast.parse(source)
+    except SyntaxError as exc:
+        raise DependencyError(f"module source cannot be parsed: {exc.msg}") from exc
+    found: list[str] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            found.extend(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and not node.level and node.module:
+            found.append(node.module)
+    return list(dict.fromkeys(found))
+
+
+def third_party_imports(source: str) -> list[str]:
+    reserved = _RESERVED_IMPORTS | stdlib_names()
+    return [item for item in scan_imports(source) if item.split(".")[0] not in reserved]
+
+
+def safe_spec(line: str) -> str:
+    text = line.strip()
+    if not _PACKAGE_SPEC_RE.fullmatch(text):
+        raise DependencyError(f"unsupported dependency requirement: {line}")
+    if parse_requirement(text).canonical in _RESERVED_IMPORTS:
+        raise DependencyError(f"reserved dependency name: {line}")
+    return text
+
+
+def _module_import_probe(target: Path, names: Sequence[str]) -> list[str]:
+    if not names:
+        return []
+    code = (
+        "import sys, importlib\n"
+        "bad = []\n"
+        "for name in sys.argv[1:]:\n"
+        "    try:\n"
+        "        importlib.import_module(name)\n"
+        "    except BaseException:\n"
+        "        bad.append(name)\n"
+        "sys.stdout.write('\\n'.join(bad))\n"
+    )
+    env = dict(os.environ)
+    env["PYTHONPATH"] = str(target)
+    env["PYTHONDONTWRITEBYTECODE"] = "1"
+    try:
+        result = subprocess.run([sys.executable, "-s", "-S", "-c", code, *names], capture_output=True, text=True, env=env, timeout=120.0)
+    except (OSError, subprocess.SubprocessError):
+        return list(names)
+    if result.returncode != 0:
+        return list(names)
+    reported = {line.strip() for line in result.stdout.splitlines() if line.strip()}
+    return [name for name in names if name in reported]
+
+
+def _http_text(url: str, *, timeout: float) -> str | None:
+    try:
+        with urlopen(Request(url, headers={"User-Agent": _HTTP_AGENT}), timeout=timeout) as response:
+            return response.read().decode("utf-8", "replace")
+    except (HTTPError, URLError, OSError, ValueError):
+        return None
+
+
+def _pypi_project(name: str, *, timeout: float = _INDEX_TIMEOUT) -> str | None:
+    body = _http_text(_PYPI_JSON.format(name=quote(name, safe="")), timeout=timeout)
+    if body is None:
+        return None
+    try:
+        payload = cast(object, json.loads(body))
+    except ValueError:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    info = cast(dict[str, Any], payload).get("info")
+    if isinstance(info, dict):
+        project = cast(dict[str, Any], info).get("name")
+        if isinstance(project, str) and project.strip():
+            return project.strip()
+    return name
+
+
+def candidate_distributions(name: str) -> list[str]:
+    base = name.casefold().replace("_", "-")
+    candidates = [template.format(name=base) for template in _CANDIDATE_TEMPLATES]
+    stemmed = re.sub(r"\d+$", "", base)
+    if stemmed and stemmed != base:
+        candidates.append(stemmed)
+    return list(dict.fromkeys(candidates))
+
+
+def isolated_managers(target: Path) -> list[list[str]]:
+    commands: list[list[str]] = []
+    uv = _tool_path("uv")
+    if uv:
+        commands.append([uv, "pip", "install", "--target", str(target), "--no-build", "--python", sys.executable])
+    commands.append([sys.executable, "-m", "pip", "install", "--target", str(target), "--only-binary", ":all:"])
+    pdm = _tool_path("pdm")
+    if pdm:
+        commands.append([pdm, "run", "pip", "install", "--target", str(target), "--only-binary", ":all:"])
+    return commands
+
+
+def _install_into(target: Path, specs: Sequence[str], *, timeout: float) -> None:
+    target.mkdir(parents=True, exist_ok=True)
+    output = ""
+    for prefix in isolated_managers(target):
+        command = [*prefix, *specs]
+        if not Path(command[0]).exists() and not shutil.which(command[0]):
+            continue
+        try:
+            result = subprocess.run(command, capture_output=True, text=True, timeout=timeout)
+        except (OSError, subprocess.SubprocessError) as exc:
+            output = str(exc)
+            continue
+        if result.returncode == 0:
+            return
+        output = ((result.stdout or "") + (result.stderr or "")).strip()
+    raise DependencyError("module dependency install failed:\n" + "\n".join(output.splitlines()[-6:]))
+
+
+def _resolve_distribution(root: Path, name: str, verify: Sequence[str]) -> str | None:
+    for candidate in candidate_distributions(name):
+        if _pypi_project(candidate) is None:
+            continue
+        probe = Path(tempfile.mkdtemp(prefix="probe-", dir=str(root)))
+        try:
+            _install_into(probe, [candidate], timeout=_PROBE_TIMEOUT)
+            if not _module_import_probe(probe, verify):
+                return candidate
+        except DependencyError:
+            pass
+        finally:
+            shutil.rmtree(str(probe), ignore_errors=True)
+    return None
+
+
+def _import_cache(root: Path) -> dict[str, str]:
+    try:
+        value = cast(object, json.loads((root / _IMPORT_CACHE_NAME).read_text(encoding="utf-8")))
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(value, dict):
+        return {}
+    return {str(key): str(item) for key, item in cast("dict[object, object]", value).items()}
+
+
+def _import_cache_write(root: Path, value: dict[str, str]) -> None:
+    target = root / _IMPORT_CACHE_NAME
+    root.mkdir(parents=True, exist_ok=True)
+    fd, raw = tempfile.mkstemp(prefix=target.name + ".", dir=str(root))
+    path = Path(raw)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump(value, handle, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+        os.replace(str(path), str(target))
+    finally:
+        path.unlink(missing_ok=True)
+
+
+def target_versions(target: Path) -> dict[str, str]:
+    versions: dict[str, str] = {}
+    for metadata in target.glob("*.dist-info/METADATA"):
+        name = ""
+        version = ""
+        try:
+            with metadata.open(encoding="utf-8", errors="replace") as handle:
+                for line in handle:
+                    if not name and line.startswith("Name: "):
+                        name = line[6:].strip()
+                    elif not version and line.startswith("Version: "):
+                        version = line[9:].strip()
+                    if name and version:
+                        break
+        except OSError:
+            continue
+        if name:
+            versions[name.casefold().replace("_", "-")] = version
+    return versions
+
+
+def install_module_deps(root: Path, module_id: str, source: str, extra: Sequence[str] = (), *, timeout: float = 600.0) -> str | None:
+    if not _MODULE_ID_RE.fullmatch(module_id):
+        raise DependencyError(f"module id is not safe for dependency storage: {module_id}")
+    explicit = [safe_spec(item) for item in extra]
+    imports = third_party_imports(source)
+    if not explicit and not imports:
+        return None
+    groups: dict[str, list[str]] = {}
+    for path in imports:
+        groups.setdefault(path.split(".")[0], []).append(path)
+    target = root / module_id
+    versions = target_versions(target) if target.is_dir() else {}
+    pending = [spec for spec in explicit if not _spec_satisfied(spec, versions)]
+    missing = set(_module_import_probe(target, imports)) if target.is_dir() else set(imports)
+    if not pending and not missing:
+        return str(target)
+    root.mkdir(parents=True, exist_ok=True)
+    cache = _import_cache(root)
+    unresolved: list[str] = []
+    plan = list(pending)
+    for name, paths in groups.items():
+        if not any(path in missing for path in paths):
+            continue
+        distribution = cache.get(name)
+        if distribution is None:
+            distribution = _resolve_distribution(root, name, paths) or ""
+        if not distribution:
+            unresolved.append(name)
+            continue
+        cache[name] = distribution
+        plan.append(distribution)
+    if plan:
+        _install_into(target, list(dict.fromkeys(plan)), timeout=timeout)
+    still = _module_import_probe(target, imports)
+    if unresolved or still:
+        raise DependencyError("module dependencies are unavailable: " + ", ".join(sorted({*unresolved, *still})))
+    _import_cache_write(root, cache)
+    return str(target)
+
+
+def _spec_satisfied(spec: str, versions: dict[str, str]) -> bool:
+    requirement = parse_requirement(spec)
+    installed = versions.get(requirement.canonical)
+    return installed is not None and requirement_satisfied(requirement, installed)
+
+
+__all__ = ["DependencyError", "Requirement", "parse_requirement", "requirement_satisfied", "installed_version", "module_available", "import_name", "find_env_manager", "build_command", "ensure", "ensure_kernel", "ensure_project", "project_requirements", "version_tuple", "satisfies", "normalize_version", "stdlib_names", "scan_imports", "third_party_imports", "safe_spec", "candidate_distributions", "isolated_managers", "target_versions", "install_module_deps"]

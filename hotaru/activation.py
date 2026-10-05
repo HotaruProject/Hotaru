@@ -278,14 +278,16 @@ class ModuleManager:
         if not is_kernel and sandbox is None:
             raise ActivationError("external modules require a sandbox")
         requires = [str(item) for item in (getattr(loaded.manifest, "requires", ()) or ())]
-        if requires and not is_kernel:
-            import traceback; traceback.print_exc(); raise ActivationError(f"module requires third-party packages: {loaded.manifest.module_id}")
-        if requires:
+        if requires and is_kernel:
             from .deps import ensure as ensure_deps
             await ensure_deps(requires)
         if sandbox is not None:
             self._sandbox_ref = sandbox
         if not is_kernel and sandbox is not None:
+            try:
+                await sandbox.ensure_module_deps(loaded.manifest.module_id, loaded.source, requires)
+            except Exception as exc:
+                import traceback; traceback.print_exc(); raise ActivationError(f"module dependencies failed: {loaded.manifest.module_id}") from exc
             await sandbox.start_module(loaded.manifest.module_id, loaded.source, list(loaded.manifest.commands))
             for name in loaded.manifest.commands:
                 if not name.isidentifier():
