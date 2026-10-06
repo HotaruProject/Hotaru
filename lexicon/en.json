@@ -638,7 +638,7 @@
   "inline_commands_hint": "Pick a command — type @<bot> and its name in any chat",
   "settings": {
     "runtime_unavailable": "Runtime unavailable",
-    "usage_alias": "Usage: {prefix}alias <alias> <command>",
+    "usage_alias": "Usage: {prefix}alias <alias> <command with arguments>",
     "alias_exists": "Command already exists: {alias}",
     "command_not_found": "Command not found: {command}\nAvailable: {known}",
     "alias_taken": "Alias is taken: {alias} → {command}. Remove it with {prefix}rmalias {alias}.",

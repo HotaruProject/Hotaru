@@ -81,13 +81,13 @@ class CommandRegistry:
         current = self._items.get(alias.casefold())
         if current is not None and (current.kernel or current.module_id in KERNEL_MODULES):
             raise ValueError(f"kernel command is reserved: {alias}")
-        self._aliases[alias.casefold()] = command.casefold()
+        self._aliases[alias.casefold()] = command
 
     def unregister_alias(self, alias: str) -> bool:
         return self._aliases.pop(alias.casefold(), None) is not None
 
-    def alias_names(self) -> tuple[str, ...]:
-        return tuple(self._aliases)
+    def alias_map(self) -> dict[str, str]:
+        return dict(self._aliases)
 
     def unregister(self, name: str, *, module_id: str | None = None) -> bool:
         key = name.casefold()
@@ -108,13 +108,13 @@ class CommandRegistry:
     def resolve(self, invocation: CommandInvocation) -> CommandSpec | None:
         name = invocation.name.casefold()
         if name in self._aliases:
-            name = self._aliases[name]
+            name = self._aliases[name].split(" ", 1)[0].casefold()
         return self._items.get(name)
 
     def resolve_name(self, name: str) -> CommandSpec | None:
         name = name.casefold()
         if name in self._aliases:
-            name = self._aliases[name]
+            name = self._aliases[name].split(" ", 1)[0].casefold()
         return self._items.get(name)
 
     def spec_of(self, module_id: str) -> tuple[CommandSpec, ...]:
