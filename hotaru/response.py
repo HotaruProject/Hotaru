@@ -825,6 +825,7 @@ class ModuleContext(ContextOperations):
                 pass
             return await callback.edit(str(text or ""), **kwargs)
         mode = kwargs.pop("mode", kwargs.pop("output", "auto"))
+        asked = mode in ("edit", "reply")
         delete_source = kwargs.pop("delete_source", None)
         if kwargs.pop("force_reply", False):
             mode = "reply"
@@ -852,16 +853,19 @@ class ModuleContext(ContextOperations):
             else:
                 kwargs.setdefault("media", content)
         buttons = kwargs.pop("buttons", None)
-        if mode == "edit" and self._response_form is not None:
+        # a standing card is only reused when the module asked for an edit; a plain
+        # respond is a new answer, so a repeat command sends a new card
+        if asked and mode == "edit" and self._response_form is not None:
             kwargs.pop("inline", None)
             kwargs.pop("bot", None)
             try:
                 result = await self._response_form.edit(kwargs.pop("text", ""), self._normalize_buttons(buttons) if buttons is not None else [], **kwargs)
-            except Exception:
+            except Exception as exc:
+                logging.getLogger(__name__).debug("standing form edit failed: %s", type(exc).__name__)
                 self._response_form = None
-                raise
-            await self._cleanup_source(True)
-            return result
+            else:
+                await self._cleanup_source(True)
+                return result
         if delete_source is not None and (buttons is not None or kwargs.get("inline") or kwargs.get("form")):
             kwargs["delete_source"] = delete_source
         if kwargs.pop("inline", False):
