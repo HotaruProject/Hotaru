@@ -116,6 +116,16 @@ def _busy(delta):
         _busy_count += delta
 
 
+def _fail(exc):
+    import traceback
+    frames = [line for line in traceback.format_tb(exc.__traceback__) if 'File "<string>"' not in line]
+    return {
+        "ok": False,
+        "error": "%s: %s" % (type(exc).__name__, exc),
+        "trace": "".join(frames)[-2000:],
+    }
+
+
 def _ask(payload):
     cid = next(_reply_ids)
     payload["cid"] = cid
@@ -1034,7 +1044,10 @@ def main():
         trace = exc.__traceback__
         while trace is not None and trace.tb_next is not None:
             trace = trace.tb_next
-        _host_emit({"ok": False, "error": type(exc).__name__, "detail": str(exc)[:400], "line": trace.tb_lineno if trace is not None else 0})
+        failure = _fail(exc)
+        failure["detail"] = str(exc)[:400]
+        failure["line"] = trace.tb_lineno if trace is not None else 0
+        _host_emit(failure)
         sys.exit(1)
     _host_emit({"ok": True, "commands": list(cfg.get("commands", []))})
     threading.Thread(target=_heartbeat_loop, daemon=True).start()
@@ -1051,7 +1064,7 @@ def main():
                         asyncio.run(cb_proxy.delete())
                         out = {"ok": True, "result": None}
                     except BaseException as exc:
-                        out = {"ok": False, "error": type(exc).__name__}
+                        out = _fail(exc)
                     return out
                 import hashlib as _hashlib
                 import types as _types
@@ -1155,7 +1168,7 @@ def main():
                         result = asyncio.run(result)
                     out = {"ok": True, "result": result}
                 except BaseException as exc:
-                    out = {"ok": False, "error": type(exc).__name__}
+                    out = _fail(exc)
             return out
         try:
             target = req.get("target") or ("command_" + req["command"])
@@ -1189,7 +1202,7 @@ def main():
                         result = asyncio.run(result)
                     out = {"ok": True, "result": result}
         except BaseException as exc:
-            out = {"ok": False, "error": type(exc).__name__}
+            out = _fail(exc)
         return out
 
     def _task(req):
@@ -1374,7 +1387,9 @@ SECCOMP_POLICY = {
 
 
 class SandboxError(RuntimeError):
-    pass
+    def __init__(self, message: str, trace: str = "") -> None:
+        super().__init__(message)
+        self.worker_trace = trace
 
 
 def _json_dict(text: str) -> dict[str, Any]:
@@ -1628,7 +1643,7 @@ class ModuleSandbox:
             detail = str(payload.get("detail") or "")
             line = int(payload.get("line") or 0)
             location = f" line {line}" if line else ""
-            raise SandboxError(f"sandbox worker failed to boot: {payload.get('error', 'no output')}{location}: {detail} {stderr_tail}".strip())
+            raise SandboxError(f"sandbox worker failed to boot: {payload.get('error', 'no output')}{location}: {detail} {stderr_tail}".strip(), payload.get("trace") or "")
         self._workers[module_id] = process
         self._booted[module_id] = True
         self._last_use[module_id] = time.monotonic()
@@ -1698,13 +1713,15 @@ class ModuleSandbox:
             self._respond_contexts.pop((module_id, rid), None)
             self._respond_sources.pop((module_id, rid), None)
         if not isinstance(result, dict) or not result.get("ok"):
-            raise SandboxError(f"sandbox call failed: {result.get('error') if isinstance(result, dict) else 'malformed'}")
+            detail = result.get("error", "malformed") if isinstance(result, dict) else "malformed"
+            raise SandboxError(f"sandbox call failed: {detail}", (result.get("trace") or "") if isinstance(result, dict) else "")
         return result.get("result")
 
     async def cap_call(self, module_id: str, capability: str, payload: dict[str, Any]) -> Any:
         result = await self._roundtrip(module_id, {"command": "$cap." + capability, "args": [], "payload": payload})
         if not isinstance(result, dict) or not result.get("ok"):
-            raise SandboxError(f"sandbox capability failed: {result.get('error') if isinstance(result, dict) else 'malformed'}")
+            detail = result.get("error", "malformed") if isinstance(result, dict) else "malformed"
+            raise SandboxError(f"sandbox capability failed: {detail}", (result.get("trace") or "") if isinstance(result, dict) else "")
         return result.get("result")
 
     async def roundtrip(self, module_id: str, request: dict[str, Any], rid: int | None = None) -> dict[str, Any] | None:
@@ -2105,7 +2122,7 @@ class ModuleSandbox:
                     process.wait(timeout=5)
                 except Exception as exc:
                     import logging
-                    logging.getLogger(__name__).error("sandbox stop failed: %s", type(exc).__name__)
+                    logging.getLogger(__name__).error("sandbox stop failed: %s", type(exc).__name__, exc_info=exc)
                     return False
         self._module_defs.pop(module_id, None)
         self._module_deps.pop(module_id, None)

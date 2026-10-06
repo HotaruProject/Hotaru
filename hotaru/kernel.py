@@ -110,7 +110,7 @@ class Kernel:
             assert self.sandbox is not None
             await self.sandbox.call(watcher.module_id, watcher.name, [], payload, source=message, target=f"watcher_{watcher.name}")
         except Exception as exc:
-            log.error("sandbox watcher failed: %s", type(exc).__name__)
+            log.error("sandbox watcher failed: %s", type(exc).__name__, exc_info=exc)
 
     async def _invoke_watcher(self, watcher: Any, context: Any, message: Any) -> None:
         try:
@@ -119,7 +119,7 @@ class Kernel:
                 if inspect.isawaitable(result):
                     await result
         except Exception as exc:
-            log.error("watcher failed: %s", type(exc).__name__)
+            log.error("watcher failed: %s", type(exc).__name__, exc_info=exc)
 
     def command_name(self, text: str | None) -> str | None:
         invocation = self.parser.parse(text, source="command", message_id=0, chat_id=None, aliases=self.registry.alias_map())
@@ -192,13 +192,13 @@ class Kernel:
         except asyncio.CancelledError:
             return None
         except Exception as exc:
-            log.error("command failed: %s", type(exc).__name__)
+            log.error("command failed: %s", type(exc).__name__, exc_info=exc)
             if self.response_service is not None:
                 try:
-                    text = type(exc).__name__
+                    text = f"{type(exc).__name__}: {exc}"[:300]
                     return await context.respond(text) if context is not None else await self.response_service.respond(message, text=text, output="auto")
                 except Exception as response_exc:
-                    log.error("command error response failed: %s", type(response_exc).__name__)
+                    log.error("command error response failed: %s", type(response_exc).__name__, exc_info=response_exc)
                     return None
             return None
         if spec.kernel and self.response_service is not None:

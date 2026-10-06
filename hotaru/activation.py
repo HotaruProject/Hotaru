@@ -180,7 +180,7 @@ class ModuleManager:
         try:
             await self._run_lifecycle(namespace.get(loaded.manifest.fade), context, loaded.manifest.module_id)
         except Exception as exc:
-            log.error("module fade failed: %s", type(exc).__name__)
+            log.error("module fade failed: %s", type(exc).__name__, exc_info=exc)
 
     async def _rise_sandbox(self, loaded: LoadedModule, sandbox: Any, context: Any) -> None:
         if not loaded.manifest.rise:
@@ -194,7 +194,7 @@ class ModuleManager:
                 target=loaded.manifest.rise,
             )
         except Exception as exc:
-            log.error("sandbox rise failed: %s", type(exc).__name__)
+            log.error("sandbox rise failed: %s", type(exc).__name__, exc_info=exc)
 
     async def _fade_sandbox(self, loaded: LoadedModule, sandbox: Any, context: Any) -> None:
         if not loaded.manifest.fade:
@@ -208,7 +208,7 @@ class ModuleManager:
                 target=loaded.manifest.fade,
             )
         except Exception as exc:
-            log.error("sandbox fade failed: %s", type(exc).__name__)
+            log.error("sandbox fade failed: %s", type(exc).__name__, exc_info=exc)
 
     def begin_boot(self) -> None:
         self._booting = True
@@ -221,7 +221,7 @@ class ModuleManager:
             try:
                 await runner()
             except Exception as exc:
-                log.error("deferred rise failed: %s", type(exc).__name__)
+                log.error("deferred rise failed: %s", type(exc).__name__, exc_info=exc)
 
     def rehydrate_form(self, module_id: str, payload: dict[str, Any]) -> Any:
         callback = self._rehydrators.get(module_id)
@@ -422,7 +422,7 @@ class ModuleManager:
                         fade_ctx = kernel.context_factory.create(module_id, None)
                         await self._fade_host(active.loaded, namespace, fade_ctx)
             except Exception as exc:
-                log.error("module fade setup failed: %s", type(exc).__name__)
+                log.error("module fade setup failed: %s", type(exc).__name__, exc_info=exc)
         if stopper is not None:
             result = stopper(active)
             if inspect.isawaitable(result):
