@@ -1977,6 +1977,7 @@ class ModuleSandbox:
         if context is None:
             context = self.runtime.context_factory.create(module_id, source)
             self._respond_contexts[module_id] = context
+        context.retarget(source)
         if "media_rpc" in payload:
             media_rpc = payload["media_rpc"]
             if not isinstance(media_rpc, dict):

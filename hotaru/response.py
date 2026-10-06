@@ -438,6 +438,14 @@ class ModuleContext(ContextOperations):
     def __repr__(self) -> str:
         return f"ModuleContext({self.module_id!r})"
 
+    def retarget(self, source: Any) -> None:
+        if source is None or source is self._source:
+            return
+        if getattr(source, "chat_id", None) != getattr(self._source, "chat_id", None):
+            self._response_source = None
+            self._response_form = None
+        self._source = source
+
     @property
     def message(self) -> ModuleMessage:
         return ModuleMessage(self._source, self.responses)
@@ -688,8 +696,8 @@ class ModuleContext(ContextOperations):
         kwargs.setdefault("module_id", self.module_id)
         if self.runtime is not None and self.runtime.kernel is not None:
             kwargs.setdefault("command", self.runtime.kernel.command_name(getattr(self._source, "text", "") or ""))
-        source = self._delivery_source
-        kwargs.setdefault("delete_source", self._response_source is not None or self._outgoing)
+        source = self._source
+        kwargs.setdefault("delete_source", self._outgoing)
         result = await self.form_sender(source, text, buttons or [], kwargs)
         key = getattr(source, "_hotaru_inline_form_id", None)
         handle = FormHandle(self.runtime, source, result, key=key)
@@ -847,7 +855,13 @@ class ModuleContext(ContextOperations):
         if mode == "edit" and self._response_form is not None:
             kwargs.pop("inline", None)
             kwargs.pop("bot", None)
-            return await self._response_form.edit(kwargs.pop("text", ""), self._normalize_buttons(buttons) if buttons is not None else [], **kwargs)
+            try:
+                result = await self._response_form.edit(kwargs.pop("text", ""), self._normalize_buttons(buttons) if buttons is not None else [], **kwargs)
+            except Exception:
+                self._response_form = None
+                raise
+            await self._cleanup_source(True)
+            return result
         if delete_source is not None and (buttons is not None or kwargs.get("inline") or kwargs.get("form")):
             kwargs["delete_source"] = delete_source
         if kwargs.pop("inline", False):
@@ -901,12 +915,19 @@ class ModuleContext(ContextOperations):
                 result = await self._deliver(**kwargs)
         if isinstance(result, FormHandle):
             self._response_form = result
-        if delete_source and self._outgoing and not isinstance(result, FormHandle):
-            try:
-                await self._delete_source()
-            except Exception as exc:
-                logging.getLogger(__name__).warning("response cleanup failed: %s", type(exc).__name__)
+        elif delete_source is not None:
+            await self._cleanup_source(bool(delete_source))
+        else:
+            await self._cleanup_source(mode == "reply" or self._response_source is not None)
         return result
+
+    async def _cleanup_source(self, elsewhere: bool) -> None:
+        if not elsewhere or not self._outgoing:
+            return
+        try:
+            await self._delete_source()
+        except Exception as exc:
+            logging.getLogger(__name__).warning("response cleanup failed: %s", type(exc).__name__)
 
     async def smart_respond(self, content: Any = None, **kwargs: Any) -> Any:
         return await self.respond(content, **kwargs)
