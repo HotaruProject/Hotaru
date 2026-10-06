@@ -93,7 +93,6 @@ import re as _re
 _HOST_OUT = sys.stdout
 _HOST_LOCK = threading.Lock()
 _HEARTBEAT_SECONDS = 2.0
-_MAX_TASKS = 8
 _LOCAL = threading.local()
 _reply_wait = {}
 _reply_ids = itertools.count(1)
@@ -294,7 +293,7 @@ def install_firewall(protected, namespaces=False, deps_root=""):
     sys.addaudithook(audit)
 
 
-def apply_limits(mem_mb, file_mb, nofile, cpu_seconds, net_blocked):
+def apply_policy(net_blocked):
     if net_blocked:
         real_socket = socket.socket
 
@@ -314,14 +313,6 @@ def apply_limits(mem_mb, file_mb, nofile, cpu_seconds, net_blocked):
         socket.create_connection = lambda *a, **k: (_ for _ in ()).throw(OSError("network is blocked"))
         socket.getaddrinfo = lambda *a, **k: (_ for _ in ()).throw(OSError("network is blocked"))
     try:
-        if mem_mb > 0:
-            resource.setrlimit(resource.RLIMIT_AS, (mem_mb * 1024 * 1024, mem_mb * 1024 * 1024))
-        if file_mb > 0:
-            resource.setrlimit(resource.RLIMIT_FSIZE, (file_mb * 1024 * 1024, file_mb * 1024 * 1024))
-        if nofile > 0:
-            resource.setrlimit(resource.RLIMIT_NOFILE, (nofile, nofile))
-        if cpu_seconds > 0:
-            resource.setrlimit(resource.RLIMIT_CPU, (cpu_seconds, cpu_seconds))
         resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
     except Exception:
         pass
@@ -1023,13 +1014,7 @@ def main():
                 sys.stderr.write(f"seccomp self-test failed: splice errno={_exc.errno}\n")
                 sys.exit(1)
     install_firewall(cfg.get("protected", []), cfg.get("namespaces", False), cfg.get("deps_root", ""))
-    apply_limits(
-        cfg.get("mem_mb", 256),
-        cfg.get("file_mb", 16),
-        cfg.get("nofile", 64),
-        cfg.get("cpu_seconds", 1800),
-        cfg.get("net_blocked", True),
-    )
+    apply_policy(cfg.get("net_blocked", True))
     install_output_capture()
     context_ns = {}
     exec(compile(cfg["context_source"], "hotaru_context", "exec"), context_ns, context_ns)
@@ -1220,7 +1205,7 @@ def main():
         except Exception:
             pass
 
-    with ThreadPoolExecutor(max_workers=_MAX_TASKS) as pool:
+    with ThreadPoolExecutor() as pool:
         while True:
             line = sys.stdin.readline()
             if not line:
@@ -1402,19 +1387,11 @@ class ModuleSandbox:
         self,
         runtime: Any,
         *,
-        mem_mb: int = 256,
-        file_mb: int = 16,
-        nofile: int = 64,
-        cpu_seconds: int = 1800,
         nproc: int = 64,
         spawn_timeout: float = 60.0,
         idle_timeout: float = 300.0,
     ) -> None:
         self.runtime = runtime
-        self.mem_mb = mem_mb
-        self.file_mb = file_mb
-        self.nofile = nofile
-        self.cpu_seconds = cpu_seconds
         self.nproc = nproc
         self.spawn_timeout = spawn_timeout
         self.idle_timeout = idle_timeout
@@ -1472,10 +1449,6 @@ class ModuleSandbox:
         stdlib_path = self._stdlib
         stdlib_dst = self._stdlib_dst
         sandbox_base = self._sandbox_base
-        mem_mb = self.mem_mb
-        file_mb = self.file_mb
-        nofile = self.nofile
-        cpu_seconds = self.cpu_seconds
         nproc = self.nproc
         deps_path = deps
 
@@ -1532,7 +1505,7 @@ class ModuleSandbox:
                 except OSError:
                     pass
             newroot = tempfile.mkdtemp(prefix="root.", dir=sandbox_base)
-            mount(b"tmpfs", newroot.encode(), b"tmpfs", MS_NOSUID | MS_NODEV, b"size=8m,mode=0755")
+            mount(b"tmpfs", newroot.encode(), b"tmpfs", MS_NOSUID | MS_NODEV, b"mode=0755")
 
             def bind_ro(src: str, dst: str, is_dir: bool, dev: bool = False) -> None:
                 dst_abs = os.path.join(newroot, dst.lstrip("/"))
@@ -1568,7 +1541,7 @@ class ModuleSandbox:
                 bind_ro(dev, dev, False, dev=True)
             tmp_dir = os.path.join(newroot, "tmp")
             os.makedirs(tmp_dir, exist_ok=True)
-            mount(b"tmpfs", tmp_dir.encode(), b"tmpfs", MS_NOSUID | MS_NODEV, b"size=32m,mode=1777")
+            mount(b"tmpfs", tmp_dir.encode(), b"tmpfs", MS_NOSUID | MS_NODEV, b"mode=1777")
             os.makedirs(os.path.join(newroot, "old_root"), exist_ok=True)
             os.chdir(newroot)
             if libc.pivot_root(b".", b"./old_root") != 0:
@@ -1578,11 +1551,7 @@ class ModuleSandbox:
                 raise OSError(ctypes.get_errno(), "old root detach failed")
             os.rmdir("/old_root")
             os.umask(0o077)
-            resource.setrlimit(resource.RLIMIT_AS, (mem_mb * 1024 * 1024, mem_mb * 1024 * 1024))
-            resource.setrlimit(resource.RLIMIT_FSIZE, (file_mb * 1024 * 1024, file_mb * 1024 * 1024))
-            resource.setrlimit(resource.RLIMIT_NOFILE, (nofile, nofile))
             resource.setrlimit(resource.RLIMIT_NPROC, (nproc, nproc))
-            resource.setrlimit(resource.RLIMIT_CPU, (cpu_seconds, cpu_seconds))
             resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
             if not rootless:
                 os.setgroups([])
@@ -1602,10 +1571,6 @@ class ModuleSandbox:
             "toolkit_source": _TOOLKIT_SOURCE,
             "context_source": _CONTEXT_SOURCE,
             "translation_source": _TRANSLATION_SOURCE,
-            "mem_mb": self.mem_mb,
-            "file_mb": self.file_mb,
-            "nofile": self.nofile,
-            "cpu_seconds": self.cpu_seconds,
             "net_blocked": True,
             "seccomp": SECCOMP_POLICY,
             "seccomp_required": namespaces,
