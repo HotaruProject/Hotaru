@@ -639,7 +639,6 @@
   "settings": {
     "runtime_unavailable": "Сервис недоступен",
     "usage_alias": "Использование: {prefix}alias <алиас> <команда>",
-    "alias_invalid": "Алиас: 1–32 символа, буквы любых языков, цифры и _; не может начинаться с цифры.",
     "alias_exists": "Команда уже существует: {alias}",
     "command_not_found": "Команда не найдена: {command}\nДоступны: {known}",
     "alias_taken": "Алиас занят: {alias} → {command}. Удали через {prefix}rmalias {alias}.",

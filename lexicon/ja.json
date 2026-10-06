@@ -618,7 +618,6 @@
   "settings": {
     "runtime_unavailable": "サービスを利用できません",
     "usage_alias": "使い方: {prefix}alias <別名> <コマンド>",
-    "alias_invalid": "別名は1～32文字で、各言語の文字、数字、_ が使用できます。数字で始めることはできません。",
     "alias_exists": "コマンドはすでに存在します: {alias}",
     "command_not_found": "コマンドが見つかりません: {command}\n使用可能: {known}",
     "alias_taken": "別名は使用中です: {alias} → {command}。{prefix}rmalias {alias} で削除できます。",
