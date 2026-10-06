@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from typing import Any
+from typing import Any, Collection
 
 from .layouts import swap_layout
 
@@ -46,6 +46,7 @@ class CommandParser:
         message_id: int,
         chat_id: int | str | None,
         message: Any = None,
+        aliases: Collection[str] | None = None,
     ) -> CommandInvocation | None:
         if not isinstance(text, str) or not text:
             return None
@@ -57,14 +58,21 @@ class CommandParser:
         body = body.lstrip()
         if not body:
             return None
-        stop = next((i for i, c in enumerate(body) if c.isspace()), len(body))
-        name = body[:stop].casefold()
-        if not name.isidentifier() and not swap_layout(name).isidentifier():
-            return None
-        raw = body[stop + 1:] if stop < len(body) else ""
+        words = body.split()
+        size = 1
+        if aliases:
+            for candidate in range(len(words), 1, -1):
+                if " ".join(words[:candidate]).casefold() in aliases:
+                    size = candidate
+                    break
+        name = " ".join(words[:size]).casefold()
+        end = 0
+        for word in words[:size]:
+            end = body.index(word, end) + len(word)
+        raw = body[end:].lstrip()
         return CommandInvocation(
             name=name,
-            args=tuple(raw.split()),
+            args=tuple(words[size:]),
             source=source,
             message_id=message_id,
             chat_id=chat_id,

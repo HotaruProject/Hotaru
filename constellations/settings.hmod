@@ -14,15 +14,12 @@ async def command_alias(ctx: Any, invocation: Any) -> Any:
     if runtime is None:
         await ctx.respond(ctx.t('settings.runtime_unavailable'))
         return
-    if len(invocation.args) != 2:
+    if len(invocation.args) < 2:
         await ctx.respond(ctx.t('settings.usage_alias', prefix=runtime.config.prefix))
         return
-    alias, command = invocation.args
-    alias = alias.casefold()
+    *alias_words, command = invocation.args
+    alias = " ".join(alias_words).casefold()
     command = command.casefold().lstrip("/")
-    if not 1 <= len(alias) <= 32 or not alias.isidentifier():
-        await ctx.respond(ctx.t('settings.alias_invalid'))
-        return
     if runtime.kernel.registry.resolve_name(alias) is not None:
         await ctx.respond(ctx.t('settings.alias_exists', alias=alias))
         return
@@ -47,10 +44,10 @@ async def command_rmalias(ctx: Any, invocation: Any) -> Any:
     if runtime is None:
         await ctx.respond(ctx.t('settings.runtime_unavailable'))
         return
-    if len(invocation.args) != 1:
+    if not invocation.args:
         await ctx.respond(ctx.t('settings.usage_rmalias', prefix=runtime.config.prefix))
         return
-    alias = invocation.args[0].casefold()
+    alias = " ".join(invocation.args).casefold()
     aliases = runtime.state.get_setting("user_aliases", {})
     if alias in aliases:
         del aliases[alias]

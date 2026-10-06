@@ -618,7 +618,6 @@
   "settings": {
     "runtime_unavailable": "Қызмет қолжетімсіз",
     "usage_alias": "Қолдану: {prefix}alias <бүркеншік_ат> <команда>",
-    "alias_invalid": "Бүркеншік ат: 1–32 таңба, кез келген тілдің әріптері, цифрлар және _; цифрдан басталмауы керек.",
     "alias_exists": "Команда бұрыннан бар: {alias}",
     "command_not_found": "Команда табылмады: {command}\nҚолжетімді: {known}",
     "alias_taken": "Бүркеншік ат қолданылуда: {alias} → {command}. Жою: {prefix}rmalias {alias}.",
