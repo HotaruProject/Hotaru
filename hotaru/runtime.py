@@ -469,7 +469,7 @@ class Runtime:
             await self.edit_form(handle, text, buttons=buttons)
         except Exception as exc:
             if self.observatory is not None:
-                self.observatory.emit("inline", "emoji_refresh_failed", level="error", error=type(exc).__name__)
+                self.observatory.emit("inline", "emoji_refresh_failed", level="error", error=exc)
 
     async def restore_forms(self) -> int:
         if self.state is None:
@@ -917,7 +917,7 @@ class Runtime:
                 await self._delete_inline_source(command, chat_id, message_id)
             except Exception as exc:
                 if self.observatory is not None:
-                    self.observatory.emit("response", "source_cleanup_failed", error=type(exc).__name__)
+                    self.observatory.emit("response", "source_cleanup_failed", error=exc)
         sent = extract_sent_message(sent_result)
         if isinstance(sent, dict) and isinstance(sent.get("id"), int):
             if self._form_msgs is None:
@@ -1071,7 +1071,7 @@ class Runtime:
                 await result
         except Exception as exc:
             if self.observatory is not None:
-                self.observatory.emit("inline", "input_error", level="error", error=type(exc).__name__)
+                self.observatory.emit("inline", "input_error", level="error", error=exc)
         finally:
             if self._input_requests is not None:
                 self._input_requests.pop(token, None)
@@ -1192,7 +1192,7 @@ class Runtime:
                 await CallbackContext(callback, self).delete()
             except Exception as exc:
                 if self.observatory is not None:
-                    self.observatory.emit("inline", "transfer_cleanup_failed", level="error", error=type(exc).__name__)
+                    self.observatory.emit("inline", "transfer_cleanup_failed", level="error", error=exc)
                 return False
             return True
         chat_id = getattr(source, "chat_id", None)
@@ -1216,7 +1216,7 @@ class Runtime:
                         hist = await app.mt_messages_get_history(peer=peer, offset_id=0, offset_date=0, add_offset=0, limit=10, max_id=0, min_id=0, hash=0)
                 except Exception as exc:
                     if self.observatory is not None:
-                        self.observatory.emit("inline", "transfer_cleanup_failed", level="error", error=type(exc).__name__)
+                        self.observatory.emit("inline", "transfer_cleanup_failed", level="error", error=exc)
                     return False
                 body: Any = cast('dict[str, Any]', hist).get("result", hist) if isinstance(hist, dict) else hist
                 messages = cast('dict[str, Any]', body).get("messages") if isinstance(body, dict) else None
@@ -1240,7 +1240,7 @@ class Runtime:
                             deleted = True
                         except Exception as exc:
                             if self.observatory is not None:
-                                self.observatory.emit("inline", "transfer_cleanup_failed", level="error", error=type(exc).__name__)
+                                self.observatory.emit("inline", "transfer_cleanup_failed", level="error", error=exc)
                             return False
                     break
                 if deleted:
@@ -1408,7 +1408,7 @@ class Runtime:
                 self.observatory.emit(
                     "inline",
                     "callback_error",
-                    error=type(exc).__name__,
+                    error=exc,
                     detail=str(exc)[:240],
                     tb=traceback.format_exc()[-4000:],
                     src=str(getattr(callback, "src", None)),
@@ -1857,7 +1857,7 @@ class Runtime:
                             if self.observatory is not None:
                                 self.observatory.emit("modules", "reset_rollback_error", module=module_id, error=type(rollback_exc).__name__)
                 if self.observatory is not None:
-                    self.observatory.emit("modules", "reset_reload_error", module=module_id, error=type(exc).__name__)
+                    self.observatory.emit("modules", "reset_reload_error", module=module_id, error=exc)
                 return self.t('runtime.reset_failed', error=type(exc).__name__)
 
             if self.observatory is not None:
@@ -1896,7 +1896,7 @@ class Runtime:
                 await self.activate_module(str(reload_path))
             except Exception as exc:
                 if self.observatory is not None:
-                    self.observatory.emit("modules", "update_error", module=module_id, error=type(exc).__name__)
+                    self.observatory.emit("modules", "update_error", module=module_id, error=exc)
                 try:
                     if self.stager is None:
                         raise RuntimeError("module stager is unavailable")
@@ -2464,7 +2464,7 @@ class Runtime:
                     self.account_manager.sync_vaults()
             except Exception as exc:
                 if self.observatory is not None:
-                    self.observatory.emit("accounts", "sync_error", error=type(exc).__name__)
+                    self.observatory.emit("accounts", "sync_error", error=exc)
 
     def _ensure_primary_account(self, user_id: int) -> None:
         manager = self.account_manager
@@ -2583,7 +2583,7 @@ class Runtime:
                         try:
                             self.account_manager.spawn(profile.account_number)
                         except Exception as exc:
-                            log.warning("Account #%s could not start: %s", profile.account_number, type(exc).__name__)
+                            log.warning("Account #%s could not start: %s", profile.account_number, type(exc).__name__, exc_info=exc)
         gc.collect()
         gc.freeze()
         self._app_task = asyncio.create_task(self.app.run(), name="hotaru:app")

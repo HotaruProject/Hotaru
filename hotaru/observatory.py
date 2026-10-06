@@ -69,6 +69,10 @@ def pretty_error(error: BaseException | None, *, frames: int = 4, note: str = ""
     if error is None:
         return ""
     lines = [f"{type(error).__name__}: {scrub_text(str(error)) or '<no message>'}"]
+    worker = getattr(error, "worker_trace", "")
+    if worker:
+        lines.append("  module trace (most recent last):")
+        lines.extend(f"    {line}" for line in scrub_text(str(worker)).rstrip().splitlines()[-12:])
     collected: list[str] = []
     skipped = 0
     tb = error.__traceback__

@@ -754,7 +754,7 @@ class InlineManager:
                         await app.close()
                     except Exception as exc:
                         if self.runtime.observatory is not None:
-                            self.runtime.observatory.emit("inline", "close_error", error=type(exc).__name__)
+                            self.runtime.observatory.emit("inline", "close_error", error=exc)
                 self.bot_app = None
             try:
                 await asyncio.wait_for(self._stop.wait(), timeout=delay)
@@ -835,7 +835,7 @@ class InlineManager:
             except Exception as exc:
                 if not reported and runtime.observatory is not None:
                     reported = True
-                    runtime.observatory.emit("inline", "warmup_error", error=type(exc).__name__)
+                    runtime.observatory.emit("inline", "warmup_error", error=exc)
                 await asyncio.sleep(3.0)
                 continue
             entity = mt.entities.get(("user", owner))
@@ -978,7 +978,7 @@ class InlineManager:
                     await handler(update)
                 except Exception as exc:
                     if self.runtime.observatory is not None:
-                        self.runtime.observatory.emit("inline", "chosen_error", error=type(exc).__name__)
+                        self.runtime.observatory.emit("inline", "chosen_error", error=exc)
         finally:
             if token is not None:
                 requests = getattr(self.runtime, "_input_requests", None)
@@ -999,7 +999,7 @@ class InlineManager:
                 await handler(message)
             except Exception as exc:
                 if self.runtime.observatory is not None:
-                    self.runtime.observatory.emit("inline", "pm_handler_error", error=type(exc).__name__)
+                    self.runtime.observatory.emit("inline", "pm_handler_error", error=exc)
 
     async def stop(self) -> None:
         self._stop.set()
