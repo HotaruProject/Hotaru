@@ -80,12 +80,37 @@ except ImportError:
     resource = None
 import socket
 import sys
+import threading
 import time
 from pathlib import Path
 from types import SimpleNamespace
 import re as _re
 
 _HOST_OUT = sys.stdout
+_HOST_LOCK = threading.Lock()
+_BUSY = threading.Event()
+_HEARTBEAT_SECONDS = 2.0
+
+
+def _host_raw(text):
+    with _HOST_LOCK:
+        _HOST_OUT.write(text)
+        _HOST_OUT.flush()
+
+
+def _host_emit(payload):
+    _host_raw(_proto_dumps(payload) + "\n")
+
+
+def _heartbeat_loop():
+    while True:
+        time.sleep(_HEARTBEAT_SECONDS)
+        if not _BUSY.is_set():
+            continue
+        try:
+            _host_emit({"_hb": 1})
+        except Exception:
+            return
 
 _PROTO_BYTES_KEY = "$bytes"
 
@@ -277,8 +302,7 @@ def apply_limits(mem_mb, file_mb, nofile, cpu_seconds, net_blocked):
 
 def _cap_call(name, payload):
     req = _proto_dumps({"cap": name, "payload": payload})
-    _HOST_OUT.write(req + "\n")
-    _HOST_OUT.flush()
+    _host_raw(req + "\n")
     while True:
         line = sys.stdin.readline()
         if not line:
@@ -318,8 +342,7 @@ def _net_call(url, data=None, timeout=10.0):
 
 def _respond_call(payload):
     req = _proto_dumps({"respond": payload})
-    _HOST_OUT.write(req + "\n")
-    _HOST_OUT.flush()
+    _host_raw(req + "\n")
     while True:
         line = sys.stdin.readline()
         if not line:
@@ -374,8 +397,7 @@ _sandbox_callbacks = {}
 
 
 def _cb_respond_call(data):
-    _HOST_OUT.write(_proto_dumps({"cb_respond": data}) + "\n")
-    _HOST_OUT.flush()
+    _host_emit({"cb_respond": data})
     while True:
         line = sys.stdin.readline()
         if not line:
@@ -1029,11 +1051,10 @@ def main():
         trace = exc.__traceback__
         while trace is not None and trace.tb_next is not None:
             trace = trace.tb_next
-        sys.stdout.write(_proto_dumps({"ok": False, "error": type(exc).__name__, "detail": str(exc)[:400], "line": trace.tb_lineno if trace is not None else 0}) + "\n")
-        sys.stdout.flush()
+        _host_emit({"ok": False, "error": type(exc).__name__, "detail": str(exc)[:400], "line": trace.tb_lineno if trace is not None else 0})
         sys.exit(1)
-    sys.stdout.write(_proto_dumps({"ok": True, "commands": list(cfg.get("commands", []))}) + "\n")
-    sys.stdout.flush()
+    _host_emit({"ok": True, "commands": list(cfg.get("commands", []))})
+    threading.Thread(target=_heartbeat_loop, daemon=True).start()
     while True:
         line = sys.stdin.readline()
         if not line:
@@ -1054,8 +1075,7 @@ def main():
                         out = {"ok": True, "result": None}
                     except BaseException as exc:
                         out = {"ok": False, "error": type(exc).__name__}
-                    sys.stdout.write(_proto_dumps(out) + "\n")
-                    sys.stdout.flush()
+                    _host_emit(out)
                     continue
                 import hashlib as _hashlib
                 import types as _types
@@ -1141,6 +1161,7 @@ def main():
                             _sandbox_callbacks[action_id] = cb_handler
                         except Exception:
                             pass
+            _BUSY.set()
             if cb_handler is None:
                 out = {"ok": False, "error": "no_callback_handler"}
             else:
@@ -1161,9 +1182,10 @@ def main():
                     out = {"ok": True, "result": result}
                 except BaseException as exc:
                     out = {"ok": False, "error": type(exc).__name__}
-            sys.stdout.write(_proto_dumps(out) + "\n")
-            sys.stdout.flush()
+            _BUSY.clear()
+            _host_emit(out)
             continue
+        _BUSY.set()
         try:
             target = req.get("target") or ("command_" + req["command"])
             handler = ns.get(target)
@@ -1199,8 +1221,8 @@ def main():
                     out = {"ok": True, "result": result}
         except BaseException as exc:
             out = {"ok": False, "error": type(exc).__name__}
-        sys.stdout.write(_proto_dumps(out) + "\n")
-        sys.stdout.flush()
+        _BUSY.clear()
+        _host_emit(out)
 
 
 main()
@@ -1372,8 +1394,8 @@ class ModuleSandbox:
         nofile: int = 64,
         cpu_seconds: int = 1800,
         nproc: int = 64,
-        spawn_timeout: float = 10.0,
-        call_timeout: float = 15.0,
+        spawn_timeout: float = 60.0,
+        idle_timeout: float = 300.0,
     ) -> None:
         self.runtime = runtime
         self.mem_mb = mem_mb
@@ -1382,10 +1404,11 @@ class ModuleSandbox:
         self.cpu_seconds = cpu_seconds
         self.nproc = nproc
         self.spawn_timeout = spawn_timeout
-        self.call_timeout = call_timeout
+        self.idle_timeout = idle_timeout
         self._workers: dict[str, subprocess.Popen[bytes]] = {}
         self._booted: dict[str, bool] = {}
         self._last_use: dict[str, float] = {}
+        self._activity: dict[str, float] = {}
         self._module_defs: dict[str, tuple[str, list[str]]] = {}
         self._module_deps: dict[str, str] = {}
         self._respond_sources: dict[str, Any] = {}
@@ -1685,7 +1708,7 @@ class ModuleSandbox:
             if source is not None:
                 self._respond_sources[module_id] = source
             try:
-                result = await asyncio.wait_for(self._roundtrip(module_id, {"command": command, "args": args, "payload": payload, "target": target}), timeout=self.call_timeout)
+                result = await self._roundtrip(module_id, {"command": command, "args": args, "payload": payload, "target": target})
             finally:
                 self._respond_contexts.pop(module_id, None)
                 if source is not None:
@@ -1743,14 +1766,24 @@ class ModuleSandbox:
                 if "cb_respond" in message:
                     self._cb_respond_pending.setdefault(module_id, []).append(message)
                     continue
+                if "_hb" in message:
+                    self._activity[module_id] = time.monotonic()
+                    continue
                 return message
 
         task = asyncio.ensure_future(loop.run_in_executor(None, _roundtrip))
+        started = self._activity[module_id] = time.monotonic()
         try:
             while True:
                 try:
                     return await asyncio.wait_for(asyncio.shield(task), timeout=0.05)
                 except asyncio.TimeoutError:
+                    last = self._activity.get(module_id, started)
+                    if self._pending_caps.get(module_id) or self._respond_pending.get(module_id) or self._cb_respond_pending.get(module_id):
+                        last = self._activity[module_id] = time.monotonic()
+                    window = self.idle_timeout if last > started else self.spawn_timeout
+                    if time.monotonic() - last >= window:
+                        raise SandboxError(f"sandbox worker stalled: no activity for {time.monotonic() - last:.0f}s ({module_id})")
                     if self._pending_caps.get(module_id):
                         await self._serve_caps(module_id)
                     if self._respond_pending.get(module_id):
@@ -1766,6 +1799,7 @@ class ModuleSandbox:
             self._pending_caps.pop(module_id, None)
             self._respond_pending.pop(module_id, None)
             self._cb_respond_pending.pop(module_id, None)
+            self._activity.pop(module_id, None)
             raise
 
     async def _write_reply(self, process: subprocess.Popen[bytes], reply: dict[str, Any]) -> None:
@@ -2032,6 +2066,7 @@ class ModuleSandbox:
         self._workers.pop(module_id, None)
         self._booted.pop(module_id, None)
         self._last_use.pop(module_id, None)
+        self._activity.pop(module_id, None)
         return process is not None
 
     def reap_idle(self, idle_seconds: float) -> list[str]:
