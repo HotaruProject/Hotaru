@@ -122,7 +122,7 @@ class Kernel:
             log.error("watcher failed: %s", type(exc).__name__)
 
     def command_name(self, text: str | None) -> str | None:
-        invocation = self.parser.parse(text, source="command", message_id=0, chat_id=None, aliases=self.registry.alias_names())
+        invocation = self.parser.parse(text, source="command", message_id=0, chat_id=None, aliases=self.registry.alias_map())
         if invocation is None:
             return None
         spec = self.registry.resolve(invocation)
@@ -146,7 +146,7 @@ class Kernel:
             message_id=message_id,
             chat_id=chat_id,
             message=message,
-            aliases=self.registry.alias_names(),
+            aliases=self.registry.alias_map(),
         )
         if invocation is None:
             return None

@@ -617,7 +617,7 @@
   "inline_commands_hint": "Команданы таңда — кез келген чатта @<бот> және оның атын тер",
   "settings": {
     "runtime_unavailable": "Қызмет қолжетімсіз",
-    "usage_alias": "Қолдану: {prefix}alias <бүркеншік_ат> <команда>",
+    "usage_alias": "Қолдану: {prefix}alias <бүркеншік_ат> <команда мен аргументтері>",
     "alias_exists": "Команда бұрыннан бар: {alias}",
     "command_not_found": "Команда табылмады: {command}\nҚолжетімді: {known}",
     "alias_taken": "Бүркеншік ат қолданылуда: {alias} → {command}. Жою: {prefix}rmalias {alias}.",

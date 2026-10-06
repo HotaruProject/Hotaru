@@ -617,7 +617,7 @@
   "inline_commands_hint": "Обери команду — введи @<бот> і її назву в будь-якому чаті",
   "settings": {
     "runtime_unavailable": "Сервіс недоступний",
-    "usage_alias": "Використання: {prefix}alias <аліас> <команда>",
+    "usage_alias": "Використання: {prefix}alias <аліас> <команда з аргументами>",
     "alias_exists": "Команда вже існує: {alias}",
     "command_not_found": "Команду не знайдено: {command}\nДоступні: {known}",
     "alias_taken": "Аліас зайнято: {alias} → {command}. Видали через {prefix}rmalias {alias}.",
