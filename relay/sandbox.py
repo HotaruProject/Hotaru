@@ -2157,8 +2157,7 @@ class ModuleSandbox:
                 continue
             if now - self._last_use.get(module_id, now) < idle_seconds:
                 continue
-            lock = self._roundtrip_locks.get(module_id)
-            if lock is not None and lock.locked():
+            if self._waiters.get(module_id):
                 continue
             try:
                 process.kill()
