@@ -1675,16 +1675,15 @@ class Runtime:
                 else:
                     candidate = self.stage_module(source, candidate_dir)
                 module_id = candidate.manifest.module_id
-                caps = list(getattr(candidate.manifest, "capabilities", ()) or ())
-                fingerprint = self._caps_fingerprint(candidate.manifest)
-                if caps and not self._caps_consented(module_id, fingerprint):
+                caps = list(candidate.manifest.capabilities)
+                if not self._caps_consented(module_id, candidate.manifest):
                     return candidate, "confirm"
                 source_text = candidate.source
             loaded = self.stager.stage_text(source_text, self.relay_dir)
             if not caps:
-                self._mark_caps_consent(module_id, fingerprint)
+                self._mark_caps_consent(module_id, [])
             if self.modules is not None and self.modules.get(module_id) is not None:
-                result = await self._command_rl(SimpleNamespace(args=(module_id,)))
+                result = await self._command_rl(SimpleNamespace(args=(module_id,)), source=source_text)
                 if result == self.t("runtime.reloaded", module_id=module_id):
                     return loaded, "updated"
                 return loaded, result
@@ -1871,7 +1870,7 @@ class Runtime:
             return self.t('runtime.usage_reset', prefix=self.config.prefix)
         return await self.reset_module_database(invocation.args[0])
 
-    async def _command_rl(self, invocation: Any) -> str:
+    async def _command_rl(self, invocation: Any, *, source: str | None = None) -> Any:
         if len(invocation.args) not in (1, 2) or self.modules is None:
             return self.t('runtime.usage_reload', prefix=self.config.prefix)
         force = len(invocation.args) == 2 and invocation.args[1].casefold() == "force"
@@ -1891,8 +1890,15 @@ class Runtime:
                 candidate_loaded = self.modules.loader.load(candidate)
                 if candidate_loaded.manifest.module_id != module_id:
                     return self.t('runtime.id_mismatch', module_id=module_id)
+                if not self._caps_consented(module_id, candidate_loaded.manifest):
+                    return await self._render_caps_screen(
+                        module_id, candidate_loaded.manifest, candidate_loaded.source,
+                        getattr(invocation, "chat_id", None), getattr(invocation, "message_id", 0),
+                    )
             await self.deactivate_module(module_id)
             try:
+                if source is not None and self.stager is not None:
+                    reload_path = self.stager.stage_text(source, self.relay_dir).path
                 await self.activate_module(str(reload_path))
             except Exception as exc:
                 if self.observatory is not None:
@@ -1981,26 +1987,50 @@ class Runtime:
         payload = json.dumps([manifest.module_id, sorted(manifest.capabilities)], separators=(",", ":"))
         return hashlib.sha256(payload.encode()).hexdigest()[:16]
 
-    def _caps_consented(self, module_id: str, fingerprint: str) -> bool:
+    def _approved_caps(self, module_id: str) -> set[str]:
         if self.state is None or module_id not in self.state.module_ids():
-            return False
+            return set()
         namespace = self.state.namespace(module_id)
-        return namespace.get("caps-consent") == fingerprint
+        consent = namespace.get("caps-consent")
+        if isinstance(consent, list):
+            values = cast("list[object]", consent)
+            return {value for value in values if isinstance(value, str)} if all(isinstance(value, str) for value in values) else set()
+        if isinstance(consent, str) and self.modules is not None:
+            active = self.modules.get(module_id)
+            manifest = active.loaded.manifest if active is not None else None
+            if manifest is None:
+                expected = self.relay_dir / f"{module_id}.hmod"
+                source_path = namespace.get("sourcepath")
+                if not isinstance(source_path, str) or Path(source_path).absolute() != expected.absolute() or expected.is_symlink():
+                    return set()
+                try:
+                    manifest = self.modules.loader.load(expected).manifest
+                except (OSError, ValueError):
+                    return set()
+            if manifest.module_id == module_id and self._caps_fingerprint(manifest) == consent:
+                approved = set(manifest.capabilities)
+                namespace.set("caps-consent", sorted(approved))
+                return approved
+        return set()
 
-    def _mark_caps_consent(self, module_id: str, fingerprint: str) -> None:
+    def _caps_consented(self, module_id: str, manifest: Any) -> bool:
+        return manifest.module_id == module_id and set(manifest.capabilities).issubset(self._approved_caps(module_id))
+
+    def _mark_caps_consent(self, module_id: str, capabilities: list[str]) -> None:
         if self.state is not None:
-            self.state.namespace(module_id).set("caps-consent", fingerprint)
+            self.state.namespace(module_id).set("caps-consent", sorted(self._approved_caps(module_id) | set(capabilities)))
 
     async def _render_caps_screen(self, module_id: str, manifest: Any, source: str, chat_id: int | str | None, message_id: int) -> tuple[str, list[list[dict[str, str]]]] | str:
+        capabilities = sorted(set(manifest.capabilities) - self._approved_caps(module_id))
         if self.callbacks is None or self.kernel is None or self.kernel.owner_id is None or chat_id is None:
             lines = [self.t('runtime.caps_request', module_id=module_id, version=manifest.version)]
-            lines.append(describe_caps(manifest.capabilities, self.t) or self.t("common.none"))
+            lines.append(describe_caps(tuple(capabilities), self.t) or self.t("common.none"))
             lines.append(self.t('runtime.caps_retry'))
             return "\n".join(lines)
-        text = self.t("runtime.caps_request", module_id=module_id, version=manifest.version) + "\n" + (describe_caps(manifest.capabilities, self.t) or self.t("common.none"))
+        text = self.t("runtime.caps_request", module_id=module_id, version=manifest.version) + "\n" + (describe_caps(tuple(capabilities), self.t) or self.t("common.none"))
         confirm_handle = self.callbacks.store.issue(
             CallbackBinding(self.kernel.owner_id, chat_id, 0),
-            {"action": "caps_confirm", "payload": {"module": module_id, "source": source}},
+            {"action": "caps_confirm", "payload": {"module": module_id, "source": source, "digest": hashlib.sha256(source.encode("utf-8")).hexdigest(), "capabilities": capabilities}},
         )
         cancel_handle = self.callbacks.store.issue(
             CallbackBinding(self.kernel.owner_id, chat_id, 0),
@@ -2034,10 +2064,20 @@ class Runtime:
             await callback.respond(self.t('runtime.source_missing'), alert=True)
             return await callback.edit(self.t('runtime.module_missing', module_id=module_id))
         try:
-            loaded, action = await self.load_module(source)
-            if action == "confirm":
-                self._mark_caps_consent(module_id, self._caps_fingerprint(loaded.manifest))
-                loaded, action = await self.load_module(source)
+            request = cast("dict[str, Any]", payload)
+            capabilities = request.get("capabilities")
+            if not isinstance(capabilities, list) or not all(isinstance(value, str) for value in cast("list[object]", capabilities)):
+                raise ValueError("invalid capability approval")
+            with trusted_scope(), tempfile.TemporaryDirectory(prefix=".hotaru-consent-") as candidate_dir:
+                candidate = self.stager.stage_text(source, candidate_dir)
+            if candidate.manifest.module_id != module_id or candidate.digest != request.get("digest"):
+                raise ValueError("module approval mismatch")
+            requested = set(candidate.manifest.capabilities)
+            granted = set(cast("list[str]", capabilities))
+            if not granted.issubset(requested) or not (requested - self._approved_caps(module_id)).issubset(granted):
+                raise ValueError("capability approval changed")
+            self._mark_caps_consent(module_id, sorted(granted))
+            loaded, action = await self.load_module(candidate.source)
             if action not in {"loaded", "updated"}:
                 raise RuntimeError(action)
         except Exception as exc:
@@ -2323,11 +2363,11 @@ class Runtime:
             if not isinstance(source_path, str) or Path(source_path).absolute() != expected.absolute() or expected.is_symlink():
                 state.delete_module(module_id)
                 continue
-            if not isinstance(consent, str):
+            if not isinstance(consent, (str, list)):
                 self._emit_restore_event("restore_skipped", module_id, "consent missing")
                 continue
             try:
-                await asyncio.wait_for(self._restore_module(module_id, source_path, consent), timeout)
+                await asyncio.wait_for(self._restore_module(module_id, source_path), timeout)
             except asyncio.TimeoutError:
                 self._emit_restore_event("restore_timeout", module_id, "activation deadline exceeded")
                 continue
@@ -2337,12 +2377,12 @@ class Runtime:
             restored.append(module_id)
         return tuple(restored)
 
-    async def _restore_module(self, module_id: str, source_path: str, consent: str) -> None:
+    async def _restore_module(self, module_id: str, source_path: str) -> None:
         assert self.modules is not None
         loaded = self.modules.loader.load(source_path)
         if loaded.manifest.module_id != module_id:
             raise ValueError("module id mismatch")
-        if self._caps_fingerprint(loaded.manifest) != consent:
+        if not self._caps_consented(module_id, loaded.manifest):
             raise ValueError("capabilities changed; !trust required")
         await self.activate_module(source_path)
 
