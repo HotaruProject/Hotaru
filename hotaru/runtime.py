@@ -603,6 +603,13 @@ class Runtime:
         options["delete_source"] = False
         actor = options.get("callback_actor")
         inline_form = source.src == "inline" or str(handle.key).startswith("inline:")
+        inline_id = None
+        if inline_form:
+            inline_id = getattr(source, "inline_message_id", None) or (self._form_inline_ids or {}).get(str(handle.key).split(":", 1)[-1])
+            if inline_id is None:
+                raise RuntimeError("inline form edit identity is unavailable")
+        elif self.inline is None or self.inline.bot_app is None:
+            raise RuntimeError("form bot transport is unavailable")
         rebound: list[list[dict[str, object]]] = []
         for row in cast('list[dict[str, object] | list[dict[str, object]]]', next_buttons or []):
             current: list[dict[str, object]] = []
@@ -617,9 +624,6 @@ class Runtime:
             rebound.append(current)
         next_buttons = rebound
         if inline_form:
-            inline_id = getattr(source, "inline_message_id", None) or (self._form_inline_ids or {}).get(str(handle.key).split(":", 1)[-1])
-            if inline_id is None:
-                raise RuntimeError("inline form edit identity is unavailable")
             callback = SimpleNamespace(src="mt", app=self.app, chat_id=source.chat_id, msg_id=source.id, inline_message_id=inline_id, from_id=actor, form_nonce=str(handle.key).split(":", 1)[-1])
             value = await CallbackContext(callback, self).edit(next_text, buttons=next_buttons, rich=bool(options.get("rich", False)))
         else:
