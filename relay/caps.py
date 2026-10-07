@@ -284,7 +284,7 @@ class CapabilityHost:
         manifest = active.loaded.manifest
         return capability in manifest.capabilities and (
             self.runtime._is_kernel_module(module_id)
-            or self.runtime._caps_consented(module_id, self.runtime._caps_fingerprint(manifest))
+            or self.runtime._caps_consented(module_id, manifest)
         )
 
     async def call(self, module_id: str, capability: str, payload: dict[str, Any]) -> Any:
