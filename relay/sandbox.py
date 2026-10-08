@@ -521,6 +521,10 @@ class SandboxContext(ContextOperations):
         return _cap_call("$template", {"key": key, "values": values, "local": local})
 
     @property
+    def config(self):
+        return dict(self._msg.get("config", {}))
+
+    @property
     def i18n(self):
         return SimpleNamespace(language=self._msg.get("language", "en"), t=self.t)
 
@@ -671,6 +675,9 @@ class SandboxContext(ContextOperations):
 
     async def upload_file(self, source, **kwargs):
         return _cap_call("assets", {"op": "upload", "file": source, "filename": kwargs.get("file_name")})
+
+    async def read_attachment_text(self, *, reply=False, max_bytes=1048576):
+        return _cap_call("fetch", {"op": "attachment_text", "reply": reply, "max_bytes": max_bytes})
 
     async def download_file(self, source, destination=None, **kwargs):
         return _cap_call("assets", {"op": "download", "message": source, "destination": destination})
@@ -1706,7 +1713,9 @@ class ModuleSandbox:
     async def call(self, module_id: str, command: str, args: list[str], payload: dict[str, Any], source: Any = None, target: str | None = None, context: Any = None) -> Any:
         context = context or self.runtime.context_factory.create(module_id, source)
         config = context.config
-        payload = dict(payload, version=context.version, started_at=self.runtime.started_at, templates={
+        payload = dict(payload, version=context.version, started_at=self.runtime.started_at, config={
+            key: config.get(key) for key in config.schema
+        }, templates={
             key: {"value": config.get(key), "fields": field.template_fields, "legacy_braces": field.legacy_braces}
             for key, field in config.schema.items() if field.template_fields is not None
         })
@@ -1896,6 +1905,14 @@ class ModuleSandbox:
                         if set(payload) - {"key", "values", "local"} or not isinstance(payload.get("key"), str) or not isinstance(payload.get("local", {}), dict):
                             raise ValueError("Invalid template request")
                         result = await self.runtime.modules.render_template(context, payload["key"], payload.get("values", {}), payload.get("local", {}))
+                    elif name == "fetch" and payload.get("op") == "attachment_text":
+                        if set(payload) - {"op", "reply", "max_bytes"}:
+                            raise ValueError("Invalid attachment request")
+                        source = self._respond_sources.get((module_id, rid))
+                        if source is None:
+                            raise PermissionError("attachment requires a bound message")
+                        context = self.runtime.context_factory.create(module_id, source)
+                        result = await context.read_attachment_text(reply=payload.get("reply", False), max_bytes=payload.get("max_bytes", 1048576))
                     else:
                         if cap_host is None:
                             raise RuntimeError("capability host is unavailable")
