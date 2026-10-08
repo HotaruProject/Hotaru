@@ -696,7 +696,13 @@ class InlineManager:
             if bot_user and bot_user.get("dc_id"):
                 bot_session.data["dc"] = bot_user["dc_id"]
 
+        import platform
+        from hotaru.update import current_commit
+
         app = GoyGram(
+            device_model="Hotaru",
+            system_version=f"{platform.system()} {platform.release()}",
+            app_version=f"Hotaru {current_commit()}",
             bot_token=self.info.token,
             api_id=self.runtime.config.api_id,
             api_hash=self.runtime.config.api_hash,
