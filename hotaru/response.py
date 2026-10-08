@@ -537,6 +537,12 @@ class ModuleContext(ContextOperations):
     def assets(self) -> Any:
             return AssetsHelper(self)
 
+    async def load_module(self, source: str) -> Any:
+        return await self.modules.load(source)
+
+    async def unload_module(self, module_id: str, *, purge: bool = False) -> Any:
+        return await self.modules.unload(module_id, purge=purge)
+
     @property
     def modules(self) -> Any:
         return ModulesHelper(self)

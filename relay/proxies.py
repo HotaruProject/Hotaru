@@ -1546,7 +1546,7 @@ class ModulesHelper:
     async def hashes(self) -> Any:
         return await self._host.cap("modules", {"op": "hashes"})
 
-    async def load(self, url: str | None = None, text: str | None = None, source: str | None = None) -> Any:
+    async def load(self, source: str | None = None, *, url: str | None = None, text: str | None = None) -> Any:
         payload: dict[str, Any] = {"op": "load"}
         if url is not None:
             payload["url"] = url
