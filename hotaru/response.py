@@ -542,6 +542,12 @@ class ModuleContext(ContextOperations):
         return ModulesHelper(self)
 
     @property
+    def version(self) -> str:
+        from .update import current_commit
+
+        return current_commit()
+
+    @property
     def uptime(self) -> int:
         return max(0, int(time.monotonic() - self.runtime.started_at))
 
