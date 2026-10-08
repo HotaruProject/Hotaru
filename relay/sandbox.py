@@ -486,6 +486,10 @@ class SandboxContext(ContextOperations):
         self._msg = payload
 
     @property
+    def version(self):
+        return self._msg["version"]
+
+    @property
     def uptime(self):
         return max(0, int(time.monotonic() - self._msg["started_at"]))
 
@@ -1696,7 +1700,7 @@ class ModuleSandbox:
     async def call(self, module_id: str, command: str, args: list[str], payload: dict[str, Any], source: Any = None, target: str | None = None, context: Any = None) -> Any:
         context = context or self.runtime.context_factory.create(module_id, source)
         config = context.config
-        payload = dict(payload, started_at=self.runtime.started_at, templates={
+        payload = dict(payload, version=context.version, started_at=self.runtime.started_at, templates={
             key: {"value": config.get(key), "fields": field.template_fields, "legacy_braces": field.legacy_braces}
             for key, field in config.schema.items() if field.template_fields is not None
         })

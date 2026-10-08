@@ -13,7 +13,6 @@ HOTARU = {
     },
 }
 
-import subprocess
 import time
 from typing import TYPE_CHECKING, Dict, Union
 
@@ -24,16 +23,6 @@ if TYPE_CHECKING:
 
 def _placeholders(ctx: 'ModuleContext') -> Dict[str, Union[str, int]]:
     runtime = ctx.runtime
-    version = "unknown"
-    try:
-        out = subprocess.run(
-            ["git", "-C", "/root/Hotaru", "rev-parse", "--short", "HEAD"],
-            capture_output=True, timeout=5,
-        )
-        if out.returncode == 0:
-            version = out.stdout.decode().strip()
-    except Exception:
-        pass
     uptime_s = max(0, int(time.monotonic() - ctx.runtime.started_at))
     uptime = ctx.tools.duration(uptime_s, ctx.i18n.language)
     modules = 0
@@ -41,7 +30,7 @@ def _placeholders(ctx: 'ModuleContext') -> Dict[str, Union[str, int]]:
     if mod_mgr is not None and hasattr(mod_mgr, "items"):
         modules = len(mod_mgr.items())
     return {
-        "version": version,
+        "version": ctx.version,
         "uptime": uptime,
         "modules": modules,
     }
