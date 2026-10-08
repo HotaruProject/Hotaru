@@ -19,6 +19,7 @@ from relay.firewall import module_scope
 from relay.emoji import to_entities, to_rich
 from goygram.types.kbd import kbd_to_tl
 from relay.rpc import delete_chat_msg
+from .observatory import rotate_file
 
 
 def _cb_log(data: dict[str, Any]) -> None:
@@ -27,6 +28,7 @@ def _cb_log(data: dict[str, Any]) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("a", encoding="utf-8") as fh:
             fh.write(json.dumps(data, ensure_ascii=False, default=str) + "\n")
+        rotate_file(path)
     except Exception:
         pass
 
