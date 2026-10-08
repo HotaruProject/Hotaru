@@ -149,6 +149,8 @@ class Runtime:
     _premium_checked_at: float = 0.0
     _connection: ConnectionRecovery | None = None
     _connection_task: asyncio.Task[None] | None = None
+    _unload_tasks: dict[str, asyncio.Task[str | None]] = field(default_factory=dict, repr=False)
+    _module_locks: dict[str, asyncio.Lock] = field(default_factory=dict, repr=False)
     _premium_lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False)
     _forum_helper: Any = None
     forum_title: str = "Hotaru Userbot"
@@ -564,6 +566,8 @@ class Runtime:
         return await self.restore_forms()
 
     async def unload_module_forms(self, module_id: str) -> int:
+        if self.callbacks is not None:
+            self.callbacks.unregister_module(module_id)
         if self.cap_host is not None:
             await self.cap_host.close_jobs(module_id)
         if self._forms is None or getattr(self, "closed", False):
@@ -1684,83 +1688,56 @@ class Runtime:
                     candidate = self.stager.stage_text(source, candidate_dir)
                 else:
                     candidate = self.stage_module(source, candidate_dir)
-                module_id = candidate.manifest.module_id
+        unloading = self._unload_tasks.get(candidate.manifest.module_id)
+        if unloading is not None:
+            await asyncio.shield(unloading)
+        task = asyncio.create_task(self._load_candidate(candidate))
+        task.add_done_callback(lambda done: done.cancelled() or done.exception())
+        return await asyncio.shield(task)
+
+    async def _load_candidate(self, candidate: Any) -> tuple[Any, str]:
+        module_id = candidate.manifest.module_id
+        with trusted_scope():
+            async with self._module_locks.setdefault(module_id, asyncio.Lock()):
+                if self.stager is None or self.state is None:
+                    raise RuntimeError(self.t('runtime.not_ready'))
+                unloading = self._unload_tasks.get(module_id)
+                if unloading is not None and unloading.done():
+                    self._unload_tasks.pop(module_id, None)
+                if self._is_kernel_module(module_id):
+                    raise PermissionError(self.t("runtime.protected", module_id=module_id))
                 caps = list(candidate.manifest.capabilities)
                 if not self._caps_consented(module_id, candidate.manifest):
                     return candidate, "confirm"
                 source_text = candidate.source
-            loaded = self.stager.stage_text(source_text, self.relay_dir)
-            if not caps:
-                self._mark_caps_consent(module_id, [])
-            if self.modules is not None and self.modules.get(module_id) is not None:
-                result = await self._command_rl(SimpleNamespace(args=(module_id,)), source=source_text)
-                if result == self.t("runtime.reloaded", module_id=module_id):
-                    return loaded, "updated"
-                return loaded, result
-            try:
-                await self.activate_module(str(loaded.path))
-            except Exception as exc:
-                loaded.path.unlink(missing_ok=True)
-                self.state.delete_module(module_id)
-                if self.observatory is not None:
-                    self.observatory.emit("modules", "load_error", module=module_id, error=type(exc).__name__, detail=str(exc)[:240])
-                return loaded, self.t('runtime.load_failed', error=type(exc).__name__)
-            if self.observatory is not None:
-                self.observatory.emit("modules", "loaded", module=module_id, version=loaded.manifest.version)
-            return loaded, "loaded"
-
-    async def _command_ld(self, invocation: Any) -> str | tuple[str, list[Any]]:
-        if len(invocation.args) > 1:
-            return self.t('runtime.usage_load', prefix=self.config.prefix)
-        if invocation.args:
-            candidate = invocation.args[0]
-            if not (
-                candidate.startswith("https://")
-                or "\n" in candidate
-                or candidate.lstrip().startswith("HOTARU")
-                or Path(candidate).is_file()
-            ):
-                return self.t('runtime.usage_load', prefix=self.config.prefix)
-        temporary: Path | None = None
-        try:
-            if invocation.args:
-                source: str | Path = invocation.args[0]
-            else:
-                if invocation.message is None:
-                    return self.t('runtime.usage_load', prefix=self.config.prefix)
-                fd, raw_path = tempfile.mkstemp(prefix=".hotaru-download-", suffix=".hmod")
-                os.close(fd)
-                temporary = Path(raw_path)
+                old_path = self.relay_dir / f"{module_id}.hmod"
+                old_source = old_path.read_text(encoding="utf-8") if old_path.is_file() else None
+                previous = self.state.namespace(module_id).all()
+                loaded = self.stager.stage_text(source_text, self.relay_dir)
+                if not caps:
+                    self._mark_caps_consent(module_id, [])
+                if self.modules is not None and self.modules.get(module_id) is not None:
+                    result = await self._reload_module(SimpleNamespace(args=(module_id,)), source=source_text)
+                    if result == self.t("runtime.reloaded", module_id=module_id):
+                        return loaded, "updated"
+                    return loaded, result
                 try:
-                    await self._download_module_message(invocation.message, temporary)
-                except ValueError as exc:
-                    if str(exc) in (self.t('runtime.file_missing'), self.t('runtime.file_document')):
-                        return self.t('runtime.usage_load', prefix=self.config.prefix)
-                    raise
-                source = temporary
-            loaded, action = await self.load_module(source)
-        except Exception as exc:
-            if self.observatory is not None:
-                self.observatory.emit("modules", "load_error", error=type(exc).__name__, detail=str(exc)[:240])
-            return self.t('runtime.load_error', error=type(exc).__name__, detail=str(exc)[:3500])
-        finally:
-            if temporary is not None:
-                temporary.unlink(missing_ok=True)
-        module_id = loaded.manifest.module_id
-        if action in {"loaded", "updated"}:
-            return self.t("runtime." + action, module_id=module_id, version=loaded.manifest.version)
-        if action != "confirm":
-            return action
-        screen = await self._render_caps_screen(
-            module_id,
-            loaded.manifest,
-            loaded.source,
-            invocation.chat_id,
-            invocation.message_id,
-        )
-        if isinstance(screen, tuple):
-            return screen
-        return self.t('runtime.load_screen', module_id=module_id, version=loaded.manifest.version, screen=screen)
+                    await self.activate_module(str(loaded.path))
+                except Exception as exc:
+                    if old_source is not None:
+                        self.stager.stage_text(old_source, self.relay_dir)
+                    else:
+                        loaded.path.unlink(missing_ok=True)
+                    self.state.delete_module(module_id)
+                    namespace = self.state.namespace(module_id)
+                    for key, value in previous.items():
+                        namespace.set(key, value)
+                    if self.observatory is not None:
+                        self.observatory.emit("modules", "load_error", module=module_id, error=type(exc).__name__, detail=str(exc)[:240])
+                    return loaded, self.t('runtime.load_failed', error=type(exc).__name__)
+                if self.observatory is not None:
+                    self.observatory.emit("modules", "loaded", module=module_id, version=loaded.manifest.version)
+                return loaded, "loaded"
 
     def purge_module_data(self, module_id: str) -> None:
         module_id = module_id.casefold()
@@ -1775,55 +1752,61 @@ class Runtime:
     async def unload_module(self, module_id: str, *, purge: bool = False) -> str | None:
         if self.modules is None or self.state is None:
             raise RuntimeError(self.t('runtime.not_ready'))
-        with trusted_scope():
-            module_id = module_id.casefold()
-            if self._is_kernel_module(module_id):
-                return self.t('runtime.protected', module_id=module_id)
-            active = self.modules.get(module_id)
-            self.state.namespace(module_id)
-            source_path = active.loaded.path if active is not None else self.relay_dir / f"{module_id}.hmod"
-            if not source_path.is_file():
-                return self.t('runtime.module_missing', module_id=module_id)
-            try:
-                self._backup_before_activation(source_path)
-                if active is not None:
-                    await self.deactivate_module(module_id)
-                source_path.unlink()
-            except Exception as exc:
-                if active is not None and self.modules.get(module_id) is None and source_path.is_file():
-                    try:
-                        await self.activate_module(str(source_path))
-                    except Exception:
-                        pass
-                if self.observatory is not None:
-                    self.observatory.emit("modules", "unload_error", module=module_id, error=type(exc).__name__, detail=str(exc)[:240])
-                return self.t('runtime.unload_failed', error=type(exc).__name__)
-            if purge:
-                self.purge_module_data(module_id)
-            if self.observatory is not None:
-                self.observatory.emit("modules", "unloaded", module=module_id, purged=purge)
-            return None
+        if type(purge) is not bool:
+            raise ValueError("purge must be a boolean")
+        module_id = module_id.casefold()
+        if self._is_kernel_module(module_id):
+            return self.t('runtime.protected', module_id=module_id)
+        task = self._unload_tasks.get(module_id)
+        if task is None:
+            caller = asyncio.current_task()
+            task = asyncio.create_task(self._unload_module(module_id, purge=purge, caller=caller))
+            self._unload_tasks[module_id] = task
+            task.add_done_callback(lambda done: done.cancelled() or done.exception())
+        result = await asyncio.shield(task)
+        if result is None and purge:
+            async with self._module_locks.setdefault(module_id, asyncio.Lock()):
+                if self._unload_tasks.get(module_id) is not task:
+                    raise RuntimeError("module changed during unload")
+                with trusted_scope():
+                    self.purge_module_data(module_id)
+        if result is not None:
+            self._unload_tasks.pop(module_id, None)
+        return result
 
-    async def _command_ul(self, invocation: Any) -> str:
-        if self.modules is None or self.state is None:
-            return self.t('runtime.not_ready')
-        flags = {"-c", "--clean", "-p", "--purge", "-r", "--reset", "-d", "--drop"}
-        purge = False
-        target_args: list[str] = []
-        for arg in invocation.args:
-            if arg.casefold() in flags:
-                purge = True
-            else:
-                target_args.append(arg)
-        if len(target_args) != 1:
-            return self.t('runtime.usage_unload', prefix=self.config.prefix)
-        module_id = target_args[0]
-        result = await self.unload_module(module_id, purge=purge)
-        if result:
-            return result
-        if purge:
-            return self.t('runtime.purged', module=module_id.casefold())
-        return self.t('runtime.unloaded', module=module_id.casefold())
+    async def _unload_module(self, module_id: str, *, purge: bool = False, caller: asyncio.Task[Any] | None = None) -> str | None:
+        async with self._module_locks.setdefault(module_id, asyncio.Lock()):
+            if self.modules is None or self.state is None:
+                raise RuntimeError(self.t('runtime.not_ready'))
+            with trusted_scope():
+                module_id = module_id.casefold()
+                if self._is_kernel_module(module_id):
+                    return self.t('runtime.protected', module_id=module_id)
+                active = self.modules.get(module_id)
+                self.state.namespace(module_id)
+                source_path = active.loaded.path if active is not None else self.relay_dir / f"{module_id}.hmod"
+                if not source_path.is_file() and active is None:
+                    return self.t('runtime.module_missing', module_id=module_id)
+                try:
+                    if source_path.is_file():
+                        self._backup_before_activation(source_path)
+                    if active is not None:
+                        await self.deactivate_module(module_id, caller=caller)
+                    source_path.unlink(missing_ok=True)
+                except Exception as exc:
+                    if active is not None and self.modules.get(module_id) is None and source_path.is_file():
+                        try:
+                            await self.activate_module(str(source_path))
+                        except Exception:
+                            pass
+                    if self.observatory is not None:
+                        self.observatory.emit("modules", "unload_error", module=module_id, error=type(exc).__name__, detail=str(exc)[:240])
+                    return self.t('runtime.unload_failed', error=type(exc).__name__)
+                if purge:
+                    self.purge_module_data(module_id)
+                if self.observatory is not None:
+                    self.observatory.emit("modules", "unloaded", module=module_id, purged=purge)
+                return None
 
     async def reset_module_database(self, module_id: str) -> str:
         if self.state is None or self.modules is None:
@@ -1881,6 +1864,13 @@ class Runtime:
         return await self.reset_module_database(invocation.args[0])
 
     async def _command_rl(self, invocation: Any, *, source: str | None = None) -> Any:
+        if not invocation.args:
+            return self.t('runtime.usage_reload', prefix=self.config.prefix)
+        module_id = str(invocation.args[0]).casefold()
+        async with self._module_locks.setdefault(module_id, asyncio.Lock()):
+            return await self._reload_module(invocation, source=source)
+
+    async def _reload_module(self, invocation: Any, *, source: str | None = None) -> Any:
         if len(invocation.args) not in (1, 2) or self.modules is None:
             return self.t('runtime.usage_reload', prefix=self.config.prefix)
         force = len(invocation.args) == 2 and invocation.args[1].casefold() == "force"
@@ -2244,6 +2234,9 @@ class Runtime:
             path, self.kernel, health=health, sandbox=self.sandbox, is_kernel=is_kernel,
         )
         module_id = result.loaded.manifest.module_id
+        unloading = self._unload_tasks.get(module_id)
+        if unloading is not None and unloading.done():
+            self._unload_tasks.pop(module_id, None)
         namespace = self.state.namespace(module_id) if self.state is not None else None
         if namespace is not None:
             namespace.set("sourcepath", str(result.loaded.path))
@@ -2252,22 +2245,16 @@ class Runtime:
         return result
 
 
-    async def deactivate_module(self, module_id: str) -> bool:
+    async def deactivate_module(self, module_id: str, *, caller: asyncio.Task[Any] | None = None) -> bool:
         if self.modules is None:
             raise RuntimeError("build the runtime before deactivating modules")
-        was_sandbox = False
-        if self.sandbox is not None:
-            was_sandbox = module_id in getattr(self.sandbox, "_workers", {})
-            if not was_sandbox:
-                await asyncio.get_running_loop().run_in_executor(None, self.sandbox.stop_module, module_id)
-        try:
-            result = await self.modules.deactivate(module_id)
-        finally:
-            if self.sandbox is not None and was_sandbox:
-                await asyncio.get_running_loop().run_in_executor(None, self.sandbox.stop_module, module_id)
         if self.callbacks is not None:
             self.callbacks.unregister_module(module_id)
-        return result
+        try:
+            return await self.modules.deactivate(module_id, caller=caller)
+        finally:
+            if self.callbacks is not None:
+                self.callbacks.unregister_module(module_id)
 
     async def restore_backup(self, plan: Any, activate: Any, *, rollback: Any | None = None, timeout: float = 10.0) -> Any:
         if self.backups is None:

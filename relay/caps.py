@@ -774,20 +774,20 @@ class CapabilityHost:
         source = payload.get("source")
         if runtime.stager is None or runtime.state is None:
             raise PermissionError("module stager is not ready")
-        if isinstance(url, str) and url.startswith("https://"):
-            loaded, action = await runtime.load_module(url)
-        elif isinstance(text, str) and ("\n" in text or text.lstrip().startswith("HOTARU")):
-            loaded, action = await runtime.load_module(text)
-        elif isinstance(source, str) and ("\n" in source or source.lstrip().startswith("HOTARU")):
-            loaded, action = await runtime.load_module(source)
-        else:
+        sources = [item for item in (source, text, url) if item is not None]
+        if len(sources) != 1 or not isinstance(sources[0], str):
+            raise PermissionError("modules load requires exactly one source")
+        value = sources[0]
+        if not (value.startswith("https://") or "\n" in value or value.lstrip().startswith("HOTARU")):
             raise PermissionError("modules load requires an https url or module source text")
+        loaded, action = await runtime.load_module(value)
         module_id = loaded.manifest.module_id
         return {
             "module_id": module_id,
             "version": loaded.manifest.version,
             "digest": loaded.digest,
             "action": action,
+            **({"source": loaded.source, "capabilities": list(loaded.manifest.capabilities)} if action == "confirm" else {}),
         }
 
     async def _modules_unload(self, caller_id: str, payload: dict[str, Any]) -> Any:
@@ -795,7 +795,22 @@ class CapabilityHost:
         target = payload.get("module_id")
         if not isinstance(target, str) or not target:
             raise PermissionError("modules unload requires a module_id")
-        purge = bool(payload.get("purge", False))
+        purge = payload.get("purge", False)
+        if not isinstance(purge, bool):
+            raise PermissionError("purge must be a boolean")
+        target = target.casefold()
+        if runtime._is_kernel_module(target):
+            raise PermissionError("kernel modules are protected")
+        sandbox = runtime.sandbox
+        waiters = tuple(sandbox._waiters.get(caller_id, {}).values()) if sandbox is not None and target == caller_id else ()
+        if waiters and sandbox is not None:
+            async def finish() -> None:
+                await asyncio.wait(waiters, timeout=runtime.modules.timeout)
+                result = await runtime.unload_module(target, purge=purge)
+                if result is not None:
+                    raise RuntimeError(result)
+            sandbox._spawn_pump_task(finish())
+            return {"module_id": target, "action": "unloading", "purged": False}
         result = await runtime.unload_module(target, purge=purge)
         if result is not None:
             raise PermissionError(result)
@@ -819,9 +834,13 @@ class CapabilityHost:
         if not isinstance(target, str) or not target:
             raise PermissionError("modules reload requires a module_id")
         module_id = target.casefold()
+        if runtime._is_kernel_module(module_id):
+            raise PermissionError("kernel modules are protected")
         if runtime.modules.get(module_id) is None:
             raise PermissionError(f"module not found: {module_id}")
         result = await runtime._command_rl(SimpleNamespace(args=(module_id, "force")))
+        if result != runtime.t("runtime.reloaded", module_id=module_id):
+            raise RuntimeError(str(result))
         return {"module_id": module_id, "action": "reloaded", "detail": result}
 
     async def _assets_op(self, module_id: str, payload: dict[str, Any], meta: dict[str, Any]) -> Any:

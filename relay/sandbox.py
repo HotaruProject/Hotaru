@@ -704,6 +704,12 @@ class SandboxContext(ContextOperations):
     def inline(self):
         return _InlineProxy()
 
+    async def load_module(self, source):
+        return await self.modules.load(source)
+
+    async def unload_module(self, module_id, *, purge=False):
+        return await self.modules.unload(module_id, purge=purge)
+
     @property
     def modules(self):
         return _ModulesProxy()
@@ -943,7 +949,7 @@ class _ModulesProxy:
     async def hashes(self):
         return _cap_call("modules", {"op": "hashes"})
 
-    async def load(self, url=None, text=None, source=None):
+    async def load(self, source=None, *, url=None, text=None):
         payload = {"op": "load"}
         if url is not None:
             payload["url"] = url
@@ -1812,12 +1818,14 @@ class ModuleSandbox:
         except Exception:
             pass
         finally:
-            self._kill_worker(module_id, SandboxError(f"sandbox worker stopped: {module_id}"))
+            if self._queues.get(module_id) is queue:
+                self._kill_worker(module_id, SandboxError(f"sandbox worker stopped: {module_id}"))
 
     def _spawn_pump_task(self, coro: Any) -> None:
-        task = asyncio.ensure_future(coro)
+        task: asyncio.Task[Any] = asyncio.create_task(coro)
         self._pump_tasks.add(task)
         task.add_done_callback(self._pump_tasks.discard)
+        task.add_done_callback(lambda done: done.cancelled() or done.exception())
 
     def _fail_waiters(self, module_id: str, error: Exception) -> None:
         for waiter in self._waiters.pop(module_id, {}).values():

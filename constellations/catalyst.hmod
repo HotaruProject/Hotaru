@@ -2,30 +2,85 @@ HOTARU = {
     "id": "catalyst",
     "version": "1.2.0",
     "commands": ['ld', 'ul', 'rl', 'ex', 'rs', 'resetdb'],
-    "capabilities": [],
+    "capabilities": ["modules"],
 }
 
 from typing import Any, Tuple, cast
+from pathlib import Path
+from types import SimpleNamespace
+import tempfile
 
 async def command_ld(ctx: Any, invocation: Any) -> Any:
     runtime = ctx.runtime
     if runtime is None:
         await ctx.respond(ctx.t('kernel.kernel.runtime_unavailable'))
         return
-    result = await runtime._command_ld(invocation)
-    if isinstance(result, tuple):
-        text, buttons = cast(Tuple[Any, Any], result)
-        await ctx.respond(text, buttons=buttons)
+    if len(invocation.args) > 1:
+        await ctx.respond(ctx.t('runtime.usage_load', prefix=runtime.config.prefix))
+        return
+    temporary = None
+    try:
+        if invocation.args:
+            source = str(invocation.args[0])
+            if not (source.startswith("https://") or "\n" in source or source.lstrip().startswith("HOTARU")):
+                if not Path(source).is_file():
+                    await ctx.respond(ctx.t('runtime.usage_load', prefix=runtime.config.prefix))
+                    return
+                source = Path(source).read_text(encoding="utf-8")
+        else:
+            if invocation.message is None:
+                await ctx.respond(ctx.t('runtime.usage_load', prefix=runtime.config.prefix))
+                return
+            with tempfile.NamedTemporaryFile(suffix=".hmod", delete=False) as handle:
+                temporary = Path(handle.name)
+            await runtime._download_module_message(invocation.message, temporary)
+            source = temporary.read_text(encoding="utf-8")
+        result = await ctx.load_module(source)
+    except Exception as exc:
+        if runtime.observatory is not None:
+            runtime.observatory.emit("modules", "load_error", error=exc)
+        await ctx.respond(ctx.t('runtime.load_error', error=type(exc).__name__, detail=str(exc)[:3500]))
+        return
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+    action = result["action"]
+    if action == "confirm":
+        screen = await runtime._render_caps_screen(
+            result["module_id"], SimpleNamespace(capabilities=result["capabilities"], version=result["version"]),
+            result["source"], invocation.chat_id, invocation.message_id,
+        )
+        if isinstance(screen, tuple):
+            text, buttons = cast(Tuple[Any, Any], screen)
+            await ctx.respond(text, buttons=buttons)
+        else:
+            await ctx.respond(screen)
+    elif action in {"loaded", "updated"}:
+        await ctx.respond(ctx.t("runtime." + action, module_id=result["module_id"], version=result["version"]))
     else:
-        await ctx.respond(result)
+        await ctx.respond(action)
 
 async def command_ul(ctx: Any, invocation: Any) -> Any:
     runtime = ctx.runtime
     if runtime is None:
         await ctx.respond(ctx.t('kernel.kernel.runtime_unavailable'))
         return
-    result = await runtime._command_ul(invocation)
-    await ctx.respond(result)
+    flags = {"-c", "--clean", "-p", "--purge", "-r", "--reset", "-d", "--drop"}
+    args = [arg for arg in invocation.args if arg.casefold() not in flags]
+    purge = len(args) != len(invocation.args)
+    if len(args) != 1:
+        await ctx.respond(ctx.t('runtime.usage_unload', prefix=runtime.config.prefix))
+        return
+    module_id = str(args[0]).casefold()
+    if runtime._is_kernel_module(module_id):
+        await ctx.respond(ctx.t('runtime.core_protected'))
+        return
+    try:
+        await ctx.unload_module(module_id, purge=purge)
+    except Exception as exc:
+        await ctx.respond(str(exc))
+        return
+    await ctx.respond(ctx.t('runtime.purged' if purge else 'runtime.unloaded', module=module_id))
 
 async def command_rl(ctx: Any, invocation: Any) -> Any:
     runtime = ctx.runtime

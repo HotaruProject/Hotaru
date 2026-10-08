@@ -540,6 +540,11 @@ class CallbackRouter:
             from types import SimpleNamespace
             access = getattr(self.runtime, "access", None)
             module_id = value.get("module")
+            modules = getattr(self.runtime, "modules", None)
+            if isinstance(module_id, str) and modules is not None and (
+                modules.get(module_id) is None or module_id in modules._stopping
+            ):
+                raise CallbackDenied("module is no longer active")
             form_id = value.get("form_id")
             form = cast('Runtime', self.runtime).get_form(form_id) if isinstance(form_id, str) else None
             if form_id and form is None:
@@ -699,11 +704,17 @@ class CallbackRouter:
         if handler is None:
             self.store.unconsume(data)
             raise CallbackDenied("callback action is unavailable")
-        with module_scope(str(value.get("module") or "")):
-            result = handler(CallbackContext(callback, self.runtime), value.get("payload"))
-            if inspect.isawaitable(result):
-                return await result
-            return result
+        async def invoke() -> object:
+            with module_scope(str(value.get("module") or "")):
+                result = handler(CallbackContext(callback, self.runtime), value.get("payload"))
+                if inspect.isawaitable(result):
+                    return await result
+                return result
+        tasks = getattr(self.runtime, "tasks", None)
+        owner = value.get("module")
+        if tasks is not None and isinstance(owner, str):
+            return await tasks.spawn(owner, invoke(), name=f"hotaru:callback:{owner}")
+        return await invoke()
 
     @staticmethod
     def _required(callback: Any, name: str) -> int | str:

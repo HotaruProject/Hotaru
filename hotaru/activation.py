@@ -39,13 +39,13 @@ class ModuleInstance:
 
 
 class ModuleBinder:
-    def bind(self, loaded: LoadedModule, namespace: dict[str, Any], kernel: Any, *, is_kernel: bool = False) -> tuple[str, ...]:
+    def bind(self, loaded: LoadedModule, namespace: dict[str, Any], kernel: Any, *, is_kernel: bool = False, sandbox: bool = False) -> tuple[str, ...]:
         handlers: list[tuple[str, Any]] = []
         for name in loaded.manifest.commands:
             if not name.isidentifier():
                 import traceback; traceback.print_exc(); raise ActivationError(f"module command is invalid: {name}")
             handler = namespace.get(f"command_{name}")
-            if not callable(handler):
+            if not sandbox and not callable(handler):
                 import traceback; traceback.print_exc(); raise ActivationError(f"module handler is missing: {name}")
             handlers.append((name, handler))
 
@@ -54,7 +54,7 @@ class ModuleBinder:
             if not name.isidentifier():
                 import traceback; traceback.print_exc(); raise ActivationError(f"module inline command is invalid: {name}")
             handler = namespace.get(f"inline_{name}")
-            if not callable(handler):
+            if not sandbox and not callable(handler):
                 import traceback; traceback.print_exc(); raise ActivationError(f"module inline handler is missing: {name}")
             inline_handlers.append((name, handler))
         
@@ -63,10 +63,14 @@ class ModuleBinder:
             if not name.isidentifier():
                 import traceback; traceback.print_exc(); raise ActivationError(f"module watcher is invalid: {name}")
             handler = namespace.get(f"watcher_{name}")
-            if not callable(handler):
+            if not sandbox and not callable(handler):
                 import traceback; traceback.print_exc(); raise ActivationError(f"watcher handler is missing: {name}")
             watcher_handlers.append((name, handler))
 
+        from .registry import KERNEL_MODULES
+        reserved = loaded.manifest.module_id in KERNEL_MODULES
+        aliases = kernel.registry.alias_map()
+        bound_inline: list[str] = []
         bound: list[str] = []
         bound_watchers: list[str] = []
         try:
@@ -78,24 +82,31 @@ class ModuleBinder:
                     handler,
                     module_id=loaded.manifest.module_id,
                     kernel=is_kernel,
+                    sandbox=sandbox,
                 )
                 bound.append(name)
             for name, handler in watcher_handlers:
-                kernel.registry.register_watcher(name, handler, module_id=loaded.manifest.module_id, sandbox=False)
+                kernel.registry.register_watcher(name, handler, module_id=loaded.manifest.module_id, sandbox=sandbox)
                 bound_watchers.append(name)
             for name, handler in inline_handlers:
-                kernel.inline_registry.register(name, handler, module_id=loaded.manifest.module_id)
+                kernel.inline_registry.register(name, handler, module_id=loaded.manifest.module_id, sandbox=sandbox)
+                bound_inline.append(name)
             for alias, command in (loaded.manifest.aliases or {}).items():
                 kernel.registry.register_alias(alias, command)
         except Exception as exc:
             for name in bound:
-                kernel.unregister_module_command(loaded.manifest.module_id, name)
-            for name, _ in inline_handlers:
+                kernel.registry.unregister_kernel(name, module_id=loaded.manifest.module_id)
+            for name in bound_inline:
                 kernel.inline_registry.unregister(name, module_id=loaded.manifest.module_id)
             for name in bound_watchers:
                 kernel.registry.unregister_watcher(name, loaded.manifest.module_id)
-            for alias in (loaded.manifest.aliases or {}):
-                kernel.registry.unregister_alias(alias)
+            for key in kernel.registry.alias_map():
+                if key not in aliases:
+                    kernel.registry.unregister_alias(key)
+            for key, command in aliases.items():
+                kernel.registry.register_alias(key, command)
+            if is_kernel and not reserved:
+                KERNEL_MODULES.discard(loaded.manifest.module_id)
             import traceback; traceback.print_exc(); raise ActivationError(f"module command binding failed: {loaded.manifest.module_id}") from exc
         return tuple(bound)
 
@@ -113,23 +124,7 @@ class ModuleBinder:
             kernel.registry.unregister_alias(alias)
 
     def bind_sandbox(self, loaded: LoadedModule, kernel: Any) -> tuple[str, ...]:
-        for name in loaded.manifest.commands:
-            if not name.isidentifier():
-                import traceback; traceback.print_exc(); raise ActivationError(f"module command is invalid: {name}")
-        for name in loaded.manifest.commands:
-            kernel.registry.register(
-                name,
-                None,
-                module_id=loaded.manifest.module_id,
-                sandbox=True,
-            )
-        for name in getattr(loaded.manifest, "inline_commands", ()):
-            kernel.inline_registry.register(name, None, module_id=loaded.manifest.module_id, sandbox=True)
-        for name in loaded.manifest.watchers:
-            kernel.registry.register_watcher(name, None, module_id=loaded.manifest.module_id, sandbox=True)
-        for alias, command in (loaded.manifest.aliases or {}).items():
-            kernel.registry.register_alias(alias, command)
-        return tuple(loaded.manifest.commands)
+        return self.bind(loaded, {}, kernel, sandbox=True)
 
 
 class ModuleManager:
@@ -148,11 +143,13 @@ class ModuleManager:
         self.tasks = tasks
         self.form_cleanup: Callable[[str], Any] | None = None
         self._active: dict[str, ActiveModule] = {}
+        self._activating: set[str] = set()
+        self._stopping: dict[str, asyncio.Task[bool]] = {}
         self._bindings: dict[str, tuple[Any, tuple[str, ...], bool]] = {}                               
         self._rehydrators: dict[str, Callable[[dict[str, Any]], Any]] = {}
         self._sandbox_ref: Any = None
         self._booting = False
-        self._deferred_rise: list[Any] = []
+        self._deferred_rise: list[tuple[ActiveModule, Callable[[], Any]]] = []
     def _register_rehydrator(self, module_id: str, namespace: dict[str, Any]) -> None:
         callback = namespace.get("rehydrate_form")
         if callable(callback):
@@ -185,16 +182,14 @@ class ModuleManager:
     async def _rise_sandbox(self, loaded: LoadedModule, sandbox: Any, context: Any) -> None:
         if not loaded.manifest.rise:
             return
-        try:
-            await sandbox.call(
-                loaded.manifest.module_id,
-                loaded.manifest.rise,
-                [],
-                {"source": "lifecycle"},
-                target=loaded.manifest.rise,
-            )
-        except Exception as exc:
-            log.error("sandbox rise failed: %s", type(exc).__name__, exc_info=exc)
+        await asyncio.wait_for(sandbox.call(
+            loaded.manifest.module_id,
+            loaded.manifest.rise,
+            [],
+            {"source": "lifecycle"},
+            target=loaded.manifest.rise,
+            context=context,
+        ), timeout=self.timeout)
 
     async def _fade_sandbox(self, loaded: LoadedModule, sandbox: Any, context: Any) -> None:
         if not loaded.manifest.fade:
@@ -206,6 +201,7 @@ class ModuleManager:
                 [],
                 {"source": "lifecycle"},
                 target=loaded.manifest.fade,
+                context=context,
             )
         except Exception as exc:
             log.error("sandbox fade failed: %s", type(exc).__name__, exc_info=exc)
@@ -217,11 +213,14 @@ class ModuleManager:
         self._booting = False
         pending = self._deferred_rise
         self._deferred_rise = []
-        for runner in pending:
+        for active, runner in pending:
+            if self._active.get(active.loaded.manifest.module_id) is not active:
+                continue
             try:
                 await runner()
             except Exception as exc:
                 log.error("deferred rise failed: %s", type(exc).__name__, exc_info=exc)
+                await self.deactivate(active.loaded.manifest.module_id)
 
     def rehydrate_form(self, module_id: str, payload: dict[str, Any]) -> Any:
         callback = self._rehydrators.get(module_id)
@@ -269,6 +268,43 @@ class ModuleManager:
         is_kernel: bool = False,
     ) -> ActiveModule:
         loaded = self.loader.load(path)
+        module_id = loaded.manifest.module_id
+        if module_id in self._active or module_id in self._activating or module_id in self._stopping:
+            raise ActivationError(f"module is already active or changing: {module_id}")
+        from .registry import KERNEL_MODULES
+        reserved = module_id in KERNEL_MODULES
+        aliases = kernel.registry.alias_map()
+        self._activating.add(module_id)
+        try:
+            return await self._activate_source(path, kernel, health=health, sandbox=sandbox, is_kernel=is_kernel)
+        except BaseException:
+            if module_id in self._active:
+                await self.deactivate(module_id)
+            elif sandbox is not None and not is_kernel:
+                sandbox.stop_module(module_id)
+            if is_kernel and not reserved:
+                KERNEL_MODULES.discard(module_id)
+            restored_aliases = set(loaded.manifest.aliases or {})
+            if is_kernel:
+                restored_aliases.update(loaded.manifest.commands)
+            for alias in restored_aliases:
+                key = alias.casefold()
+                if key in aliases:
+                    kernel.registry.register_alias(key, aliases[key])
+            raise
+        finally:
+            self._activating.discard(module_id)
+
+    async def _activate_source(
+        self,
+        path: str | Path,
+        kernel: Any,
+        *,
+        health: Callable[[ModuleInstance], Any] | None = None,
+        sandbox: Any = None,
+        is_kernel: bool = False,
+    ) -> ActiveModule:
+        loaded = self.loader.load(path)
         from .registry import KERNEL_MODULES
 
         if loaded.manifest.module_id in self._active:
@@ -299,6 +335,12 @@ class ModuleManager:
                 import traceback; traceback.print_exc(); raise ActivationError(f"module is already active: {loaded.manifest.module_id}")
             self._active[loaded.manifest.module_id] = active
             self._bindings[loaded.manifest.module_id] = (kernel, commands, False)
+            if health is not None:
+                result = health(instance)
+                if inspect.isawaitable(result):
+                    result = await asyncio.wait_for(result, timeout=self.timeout)
+                if result is False:
+                    raise ActivationError("health check returned false")
             
             if self.tasks is not None and kernel.context_factory is not None:
                 for task_name, task_def in (loaded.manifest.tasks or {}).items():
@@ -317,7 +359,7 @@ class ModuleManager:
             if kernel.context_factory is not None and loaded.manifest.rise:
                 rise_ctx = kernel.context_factory.create(loaded.manifest.module_id, None)
                 if self._booting:
-                    self._deferred_rise.append(lambda: self._rise_sandbox(loaded, sandbox, rise_ctx))
+                    self._deferred_rise.append((active, lambda: self._rise_sandbox(loaded, sandbox, rise_ctx)))
                 else:
                     await self._rise_sandbox(loaded, sandbox, rise_ctx)
             return active
@@ -360,13 +402,15 @@ class ModuleManager:
             if kernel.context_factory is not None and loaded.manifest.rise:
                 rise_ctx = kernel.context_factory.create(loaded.manifest.module_id, None)
                 if self._booting:
-                    self._deferred_rise.append(lambda: self._rise_host(loaded, namespace, kernel, rise_ctx))
+                    self._deferred_rise.append((active, lambda: self._rise_host(loaded, namespace, kernel, rise_ctx)))
                 else:
                     await self._rise_host(loaded, namespace, kernel, rise_ctx)
             return active
-        except Exception as exc:
-            if commands is not None:
+        except BaseException as exc:
+            if commands is not None and loaded.manifest.module_id not in self._active:
                 self.binder.unbind(loaded, commands, kernel, is_kernel=is_kernel)
+            if isinstance(exc, asyncio.CancelledError):
+                raise
             import traceback; traceback.print_exc(); raise ActivationError(f"module activation failed: {loaded.manifest.module_id}") from exc
 
     async def _run_task(self, name: str, task_def: dict[str, Any], handler: Any, ctx: Any) -> None:
@@ -401,43 +445,67 @@ class ModuleManager:
                 await asyncio.wait_for(result, timeout=self.timeout)
             return
 
-    async def deactivate(self, module_id: str, stopper: Callable[[ActiveModule], Any] | None = None) -> bool:
-        active = self._active.get(module_id)
-        if active is None:
-            return False
-        binding = self._bindings.get(module_id)
-        if binding is not None and active.loaded.manifest.fade:
-            try:
-                namespace = active.context.namespace if isinstance(active.context, ModuleInstance) else {}
-                is_sandbox = bool(namespace.get("__sandbox__"))
-                kernel = binding[0]
-                if is_sandbox:
-                    sandbox = self._sandbox_ref if hasattr(self, "_sandbox_ref") else None
-                    if sandbox is not None:
-                        if getattr(kernel, "context_factory", None) is not None:
-                            fade_ctx = kernel.context_factory.create(module_id, None)
-                            await self._fade_sandbox(active.loaded, sandbox, fade_ctx)
-                else:
-                    if getattr(kernel, "context_factory", None) is not None:
-                        fade_ctx = kernel.context_factory.create(module_id, None)
-                        await self._fade_host(active.loaded, namespace, fade_ctx)
-            except Exception as exc:
-                log.error("module fade setup failed: %s", type(exc).__name__, exc_info=exc)
-        if stopper is not None:
-            result = stopper(active)
+    async def _cleanup_step(self, action: Callable[[], Any]) -> None:
+        try:
+            result = action()
             if inspect.isawaitable(result):
-                await asyncio.wait_for(result, timeout=self.timeout)
-        if self.tasks is not None:
-            await self.tasks.cancel_module(module_id)
-        if hasattr(self, "form_cleanup") and self.form_cleanup is not None:
-            result = self.form_cleanup(module_id)
-            if inspect.isawaitable(result):
-                await asyncio.wait_for(result, timeout=self.timeout)
+                task = asyncio.ensure_future(result)
+                task.add_done_callback(lambda done: done.cancelled() or done.exception())
+                done, _ = await asyncio.wait({task}, timeout=self.timeout)
+                if not done:
+                    task.cancel()
+                    raise asyncio.TimeoutError("module cleanup timed out")
+                task.result()
+        except (Exception, asyncio.CancelledError) as exc:
+            log.error("module cleanup failed: %s", type(exc).__name__, exc_info=exc)
+
+    async def deactivate(self, module_id: str, stopper: Callable[[ActiveModule], Any] | None = None, *, caller: asyncio.Task[Any] | None = None) -> bool:
+        task = self._stopping.get(module_id)
+        if task is asyncio.current_task():
+            return True
+        if task is None:
+            active = self._active.get(module_id)
+            if active is None:
+                return False
+            caller = caller or asyncio.current_task()
+            task = asyncio.create_task(self._deactivate(active, stopper, caller))
+            self._stopping[module_id] = task
+            task.add_done_callback(lambda done: done.cancelled() or done.exception())
+        return await asyncio.shield(task)
+
+    async def _deactivate(self, active: ActiveModule, stopper: Callable[[ActiveModule], Any] | None, caller: asyncio.Task[Any] | None) -> bool:
+        module_id = active.loaded.manifest.module_id
         binding = self._bindings.pop(module_id, None)
-        if binding is not None:
-            kern, commands, ik = binding
-            self.binder.unbind(active.loaded, commands, kern, is_kernel=ik)
-        del self._active[module_id]
+        namespace = active.context.namespace if isinstance(active.context, ModuleInstance) else {}
+        sandbox = self._sandbox_ref if namespace.get("__sandbox__") else None
+        try:
+            if binding is not None:
+                kernel, commands, is_kernel = binding
+                await self._cleanup_step(lambda: self.binder.unbind(active.loaded, commands, kernel, is_kernel=is_kernel))
+            tasks = self.tasks
+            if tasks is not None:
+                await self._cleanup_step(lambda: tasks.cancel_module(module_id, exclude=caller, timeout=self.timeout / 2))
+            if binding is not None and active.loaded.manifest.fade:
+                kernel = binding[0]
+                if getattr(kernel, "context_factory", None) is not None:
+                    async def fade() -> None:
+                        context = kernel.context_factory.create(module_id, None)
+                        if sandbox is not None:
+                            await self._fade_sandbox(active.loaded, sandbox, context)
+                        else:
+                            await self._fade_host(active.loaded, namespace, context)
+                    await self._cleanup_step(fade)
+            if stopper is not None:
+                await self._cleanup_step(lambda: stopper(active))
+            cleanup = self.form_cleanup
+            if cleanup is not None:
+                await self._cleanup_step(lambda: cleanup(module_id))
+        finally:
+            if sandbox is not None:
+                await self._cleanup_step(lambda: sandbox.stop_module(module_id))
+            self._rehydrators.pop(module_id, None)
+            self._active.pop(module_id, None)
+            self._stopping.pop(module_id, None)
         return True
 
     def template_catalog(self, consumer: str) -> dict[str, dict[str, Any]]:
