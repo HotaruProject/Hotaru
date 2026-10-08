@@ -913,8 +913,8 @@ def _ent_tags(e: object, kind: str) -> tuple[str, str] | None:
         uid = _ent_get(e, "user_id") or 0
         return f'<a href="tg://user?id={uid}">', "</a>"
     if "customemoji" in kl:
-        did = _ent_get(e, "document_id") or _ent_get(e, "emoji_id") or 0
-        return f'<tg-emoji emoji-id="{did}">', "</tg-emoji>"
+        did = int(_ent_get(e, "document_id") or _ent_get(e, "emoji_id") or 0)
+        return f'<tg-emoji emoji-id={did}>', "</tg-emoji>"
     return None
 
 

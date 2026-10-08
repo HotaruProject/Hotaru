@@ -67,7 +67,7 @@ def to_entities(text: str) -> tuple[str, list[dict[str, Any]]]:
             kept.append({**entity, "offset": offset, "length": length})
     return tail, kept
 
-_TG_EMOJI = re.compile(r'<tg-emoji emoji-id="(\d+)">(.*?)</tg-emoji>', re.DOTALL)
+_TG_EMOJI = re.compile(r'''<tg-emoji\s+emoji-id\s*=\s*(?P<quote>["']?)(?P<id>[0-9]+)(?P=quote)\s*>(?P<text>.*?)</tg-emoji\s*>''', re.DOTALL | re.IGNORECASE)
 _PROTECTED_HTML = re.compile(r"<(pre|code)\b.*?</\1>", re.DOTALL | re.IGNORECASE)
 
 
@@ -77,7 +77,7 @@ def has_emoji(html: str) -> bool:
 
 def _emoji_links(html: str) -> str:
     def replace(match: re.Match[str]) -> str:
-        return f'<a href="tg://emoji?id={match.group(1)}">{match.group(2)}</a>'
+        return f'<a href="tg://emoji?id={match.group("id")}">{match.group("text")}</a>'
 
     parts: list[str] = []
     pos = 0
