@@ -1042,6 +1042,47 @@ class ModuleContext(ContextOperations):
             raise ResponseError("upload is unavailable")
         return await put(app, source, file_name=kwargs.get("file_name"), **{k: v for k, v in kwargs.items() if k != "file_name"})
 
+    async def read_attachment_text(self, *, reply: bool = False, max_bytes: int = 1048576) -> str | None:
+        from io import BytesIO
+        from relay.denylist import payload_hits_blocked
+
+        if type(reply) is not bool or type(max_bytes) is not int or not 1 <= max_bytes <= 4194304:
+            raise ValueError("attachment requires boolean reply and max_bytes between 1 and 4194304")
+        source = self._source
+        if source is None:
+            raise PermissionError("attachment requires a bound message")
+        def denied(message: Any) -> bool:
+            fields = {key: message.get(key) for key in ("chat_id", "peer_id", "from_id", "reply_to")} if hasattr(message, "get") else {}
+            return payload_hits_blocked({"peer": getattr(message, "chat_id", None), **fields})
+
+        if denied(source):
+            raise PermissionError("attachment targets a denied peer")
+        with trusted_scope():
+            if reply:
+                source = await self.reply(source)
+            if source is None:
+                return None
+            if denied(source):
+                raise PermissionError("attachment targets a denied peer")
+            attachment = self._attachment_of(source)
+            if attachment is None:
+                return None
+            if attachment.size is not None and attachment.size > max_bytes:
+                raise ValueError("attachment exceeds max_bytes")
+            app = getattr(self.runtime, "app", None)
+            if app is None:
+                raise ResponseError("download is unavailable")
+
+            class Buffer(BytesIO):
+                def write(self, data: Any) -> int:
+                    if self.tell() + len(data) > max_bytes:
+                        raise ValueError("attachment exceeds max_bytes")
+                    return super().write(data)
+
+            with Buffer() as buffer:
+                await take(app, attachment.raw, buffer)
+                return buffer.getvalue().decode("utf-8-sig")
+
     async def download_file(self, source: Any, destination: str | Path | None = None, **kwargs: Any) -> Any:
         app = getattr(self.runtime, "app", None)
         if app is None:

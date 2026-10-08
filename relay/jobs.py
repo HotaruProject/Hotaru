@@ -58,6 +58,10 @@ class Job:
         data = self.data
         url = str(data["url"])
         self.check_url(url)
+        method = data.get("method", "POST" if data.get("data") is not None else "GET")
+        if not isinstance(method, str) or method.upper() not in {"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"}:
+            raise ValueError("unsupported HTTP method")
+        method = method.upper()
         requested = data.get("timeout")
         timeout = aiohttp.ClientTimeout(total=max(1.0, float(requested))) if requested is not None else aiohttp.ClientTimeout(total=None, sock_connect=30, sock_read=120)
         limit = data.get("max_bytes")
@@ -65,7 +69,7 @@ class Job:
         result: dict[str, Any] = {"status": 0, "body": ""}
         connector = aiohttp.TCPConnector(resolver=PublicResolver(), use_dns_cache=False)
         async with aiohttp.ClientSession(timeout=timeout, connector=connector, trust_env=False) as session:
-            async with session.request("POST" if data.get("data") is not None else "GET", url,
+            async with session.request(method, url,
                                        headers=data.get("headers"), json=data.get("data"), allow_redirects=False) as response:
                 parser = Stream(self.events) if data.get("stream") and 200 <= response.status < 300 else None
                 body = bytearray()
@@ -80,7 +84,8 @@ class Job:
                         body.extend(chunk)
                 if parser:
                     await parser.feed(b"", final=True)
-                result = {"status": response.status, "body": body.decode("utf-8", "replace")}
+                result = {"status": response.status, "body": body.decode("utf-8", "replace"), "method": method,
+                          "headers": {key.lower(): value for key, value in response.headers.items()}}
         return result
 
     async def shell(self) -> dict[str, Any]:
