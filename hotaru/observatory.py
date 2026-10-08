@@ -109,6 +109,25 @@ def pretty_error(error: BaseException | None, *, frames: int = 4, note: str = ""
     return "\n".join(lines)
 
 
+def rotate_file(path: Path, max_bytes: int = 4 * 1024 * 1024, keep_files: int = 4) -> None:
+    try:
+        if path.stat().st_size < max_bytes:
+            return
+        for index in range(keep_files - 1, 0, -1):
+            source = path.with_suffix(f".{index}.jsonl")
+            target = path.with_suffix(f".{index + 1}.jsonl")
+            if source.exists():
+                source.replace(target)
+        path.replace(path.with_suffix(".1.jsonl"))
+        path.touch(exist_ok=True)
+        path.chmod(0o600)
+        for stale in sorted(path.parent.glob(f"{path.stem}.*.jsonl")):
+            if stale.stat().st_size == 0 and stale != path and not stale.name.endswith(".1.jsonl"):
+                stale.unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
 class Observatory:
     def __init__(
         self,
@@ -135,24 +154,6 @@ class Observatory:
 
     def _allowed(self, level: str) -> bool:
         return _numeric[norm_level(level)] >= _numeric[self.level]
-
-    def _rotate(self) -> None:
-        try:
-            if self.path.stat().st_size < self.max_bytes:
-                return
-            for index in range(self.keep_files - 1, 0, -1):
-                source = self.path.with_suffix(f".{index}.jsonl")
-                target = self.path.with_suffix(f".{index + 1}.jsonl")
-                if source.exists():
-                    source.replace(target)
-            self.path.replace(self.path.with_suffix(".1.jsonl"))
-            self.path.touch(exist_ok=True)
-            self.path.chmod(0o600)
-            for stale in sorted(self.path.parent.glob("*.jsonl")):
-                if stale.stat().st_size == 0 and stale != self.path and not stale.name.endswith(".1.jsonl"):
-                    stale.unlink(missing_ok=True)
-        except OSError:
-            pass
 
     def _module_tag(self) -> str:
         tag = _module.get()
@@ -203,7 +204,7 @@ class Observatory:
             with self.path.open("a", encoding="utf-8") as stream:
                 stream.write(line + "\n")
             self._failed = 0.0
-            self._rotate()
+            rotate_file(self.path, self.max_bytes, self.keep_files)
         except OSError:
             self._failed = now
 
