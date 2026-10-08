@@ -198,7 +198,13 @@ class Runtime:
             from goygram import security as goygram_security
             read_vault = getattr(goygram_security, "_read_vault")
             session_data: dict[str, Any] = cast('dict[str, Any]', read_vault(vault, Path(session_name).name) or {}) if vault.exists() else {}
+            import platform
+            from .update import current_commit
+
             self.app = GoyGram(
+                device_model="Hotaru",
+                system_version=f"{platform.system()} {platform.release()}",
+                app_version=f"Hotaru {current_commit()}",
                 bot_token=self.config.bot_token if self.config.api_id is None else None,
                 api_id=self.config.api_id,
                 api_hash=self.config.api_hash,
