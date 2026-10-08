@@ -870,6 +870,8 @@
     "all_chats": "すべてのチャットで全員が利用できます。"
   },
   "inline": {
+    "command_open": "{command} を開く",
+    "command_hint": "ボタンを押して検索語を入力し、インライン一覧から結果を選んでください。",
     "form": "Hotaruフォーム",
     "error": {
       "title": "エラー {code}",

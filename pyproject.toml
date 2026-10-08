@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "hotaru"
 dynamic = ["version"]
-description = "Hotaru userbot kernel on GoyGram"
+description = "A security-first Telegram userbot built on GoyGram"
 requires-python = ">=3.8"
 dependencies = [
     "goygram==0.8.17",
