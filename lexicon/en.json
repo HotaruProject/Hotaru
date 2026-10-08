@@ -870,6 +870,8 @@
     "all_chats": "Available to everyone in all chats."
   },
   "inline": {
+    "command_open": "Open {command}",
+    "command_hint": "Press the button and add your query. Choose a result from the inline list.",
     "form": "Hotaru form",
     "error": {
       "title": "Error {code}",

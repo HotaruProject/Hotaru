@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import gc
 import hashlib
+import html
 import inspect
 import json
 import logging
@@ -1275,12 +1276,22 @@ class Runtime:
             results: list[dict[str, Any]] = []
             for spec in sorted(registry.items(), key=lambda item: item.name):
                 meta = self._inline_command_meta(spec, language)
+                title = meta.get("title") or spec.name
+                body = meta.get("message") or html.escape(meta.get("description") or "")
                 results.append(InlineObj.article(
                     f"hotaru-inline:{spec.name}",
-                    meta.get("title") or spec.name,
-                    meta.get("message") or "",
+                    f"{spec.name} · {title}" if title != spec.name else spec.name,
+                    f"<b>Hotaru · {html.escape(title)}</b>\n"
+                    f"<code>{html.escape(spec.name)}</code> · {html.escape(spec.module_id)}\n\n"
+                    f"{body}\n\n{self.t('inline.command_hint')}",
                     description=meta.get("description") or None,
                     thumb_url=meta.get("thumb_url") or None,
+                    parse_mode="HTML",
+                    kbd={"inline_keyboard": [[{
+                        "text": self.t("inline.command_open", command=spec.name),
+                        "switch_inline_query_current_chat": f"{spec.name} ",
+                        "style": "primary",
+                    }]]},
                 ))
             return results
         name = parts[0].casefold()
