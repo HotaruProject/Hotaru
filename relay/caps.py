@@ -697,8 +697,8 @@ class CapabilityHost:
         if op == "set":
             value = payload.get("value")
             encoded = json.dumps(value, ensure_ascii=False, default=str)
-            if len(encoded) > 256 * 1024:
-                raise PermissionError("state value exceeds 256KB")
+            if len(encoded.encode("utf-8")) > 10 * 1024 * 1024:
+                raise PermissionError("state value exceeds 10MiB")
             namespace.set(key, value)
             return {"ok": True}
         if op == "delete":
