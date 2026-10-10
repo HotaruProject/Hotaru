@@ -148,8 +148,49 @@ def _heartbeat_loop():
         except Exception:
             return
 
-_PROTO_BYTES_KEY = "$bytes"
 
+_CPU_LIMIT_SECONDS = 45.0
+_CLK_TCK = float(os.sysconf("SC_CLK_TCK") or 100)
+_active_cpu = {}
+_cpu_lock = threading.Lock()
+
+
+def _thread_cpu(tid):
+    """utime+stime of one worker thread, straight from /proc."""
+    try:
+        with open("/proc/self/task/%d/stat" % tid, "rb") as handle:
+            data = handle.read()
+        fields = data[data.rindex(b")") + 2:].split()
+        return (int(fields[11]) + int(fields[12])) / _CLK_TCK
+    except Exception:
+        return 0.0
+
+
+def _cpu_watch_loop():
+    """A request that burns CPU without ever returning wedges its pool thread for
+    good, and the heartbeat keeps the host thinking the worker is busy (the
+    `Running...` card stays forever). Report an error for that request, then die
+    so the host restarts the module.
+
+    ponytail: this only sees CPU; a request parked in a blocking syscall forever
+    still holds its slot, raise _CPU_LIMIT_SECONDS only if a module legitimately
+    computes that long in one command.
+    """
+    while True:
+        time.sleep(1.0)
+        for rid, (tid, base) in list(_active_cpu.items()):
+            if _thread_cpu(tid) - base < _CPU_LIMIT_SECONDS:
+                continue
+            _host_emit({
+                "ok": False,
+                "rid": rid,
+                "error": "ExecutionError: burned %.0fs of CPU without finishing" % _CPU_LIMIT_SECONDS,
+                "trace": "",
+            })
+            os._exit(71)
+
+
+_PROTO_BYTES_KEY = "$bytes"
 
 def _proto_default(value):
     if isinstance(value, (bytes, bytearray)):
@@ -1067,6 +1108,7 @@ def main():
         sys.exit(1)
     _host_emit({"ok": True, "commands": list(cfg.get("commands", []))})
     threading.Thread(target=_heartbeat_loop, daemon=True).start()
+    threading.Thread(target=_cpu_watch_loop, daemon=True).start()
 
     def _execute(req):
         if "cb" in req:
@@ -1224,10 +1266,15 @@ def main():
     def _task(req):
         _LOCAL.rid = req.get("rid") or 0
         _busy(1)
+        tid = threading.get_native_id()
+        with _cpu_lock:
+            _active_cpu[_LOCAL.rid] = (tid, _thread_cpu(tid))
         try:
             out = _execute(req)
         finally:
             _busy(-1)
+            with _cpu_lock:
+                _active_cpu.pop(_LOCAL.rid, None)
         out["rid"] = _LOCAL.rid
         try:
             _host_emit(out)
@@ -1408,6 +1455,32 @@ class SandboxError(RuntimeError):
         self.worker_trace = trace
 
 
+def apply_tree_pids_cap(limit: int = 512) -> str:
+    """Cap the process count of the whole bot tree via cgroup v2.
+
+    Module code runs as root, where RLIMIT_NPROC is not enforced, so a fork bomb
+    in a snippet would otherwise take the machine down with the userbot on it.
+    Degrades to a status string when cgroups are not delegated.
+    """
+    try:
+        with open("/proc/self/cgroup", "r", encoding="utf-8") as handle:
+            relative = handle.read().strip().splitlines()[-1].split("::", 1)[-1]
+        base = os.path.join("/sys/fs/cgroup", relative.lstrip("/"))
+        with open(os.path.join(base, "pids.current"), "r", encoding="utf-8") as handle:
+            current = int(handle.read().strip())
+        target = os.path.join(base, "pids.max")
+        with open(target, "r", encoding="utf-8") as handle:
+            existing = handle.read().strip()
+        if existing != "max":
+            return "already %s" % existing
+        value = max(limit, current + 256)
+        with open(target, "w", encoding="utf-8") as handle:
+            handle.write(str(value))
+        return "pids.max=%d" % value
+    except Exception as exc:
+        return "unavailable (%s)" % type(exc).__name__
+
+
 def _json_dict(text: str) -> dict[str, Any]:
     value = cast(object, _proto_loads(text))
     return cast('dict[str, Any]', value) if isinstance(value, dict) else {}
@@ -1464,16 +1537,28 @@ class ModuleSandbox:
             self._sandbox_base = SANDBOX_BASE_ROOT
         os.makedirs(self._sandbox_base, exist_ok=True)
         os.chmod(self._sandbox_base, 0o700)
+        self._pids_cap = apply_tree_pids_cap()
+        observatory = getattr(runtime, "observatory", None)
+        if observatory is not None:
+            observatory.emit("sandbox", "pids_cap", status=self._pids_cap)
 
     def _make_preexec(self, namespaces: bool = True, deps: str | None = None) -> Any:
         if not namespaces:
+            nproc = self.nproc
+
             def portable() -> None:
                 import os as _os
+                import resource as _resource
 
                 try:
                     _os.setsid()
                 except Exception:
                     pass
+                for what, value in ((_resource.RLIMIT_NPROC, (nproc, nproc)), (_resource.RLIMIT_CORE, (0, 0))):
+                    try:
+                        _resource.setrlimit(what, value)
+                    except Exception:
+                        pass
 
             return portable
         python_path = self._python
