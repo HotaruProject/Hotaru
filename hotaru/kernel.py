@@ -191,7 +191,7 @@ class Kernel:
             result = await task
         except asyncio.CancelledError:
             return None
-        except Exception as exc:
+        except (Exception, SystemExit) as exc:
             log.error("command failed: %s", type(exc).__name__, exc_info=exc)
             if self.response_service is not None:
                 try:
