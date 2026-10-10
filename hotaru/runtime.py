@@ -2237,11 +2237,11 @@ class Runtime:
         except (OSError, ValueError):
             return False
 
-    async def activate_module(self, path: str | Path, *, health: Any = None) -> Any:
+    async def activate_module(self, path: str | Path, *, health: Any = None, backup: bool = True) -> Any:
         if self.modules is None or self.kernel is None:
             raise RuntimeError("build the runtime before activating modules")
         is_kernel = self._is_kernel_path(path)
-        if not is_kernel:
+        if not is_kernel and backup:
             self._backup_before_activation(path)
         result = await self.modules.activate_source(
             path, self.kernel, health=health, sandbox=self.sandbox, is_kernel=is_kernel,
@@ -2394,7 +2394,7 @@ class Runtime:
             raise ValueError("module id mismatch")
         if not self._caps_consented(module_id, loaded.manifest):
             raise ValueError("capabilities changed; !trust required")
-        await self.activate_module(source_path)
+        await self.activate_module(source_path, backup=False)
 
     def _emit_restore_event(self, event: str, module_id: str, detail: str) -> None:
         if self.observatory is not None:
