@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import json
 import http.client
 import ipaddress
@@ -11,6 +12,7 @@ import shutil
 import stat
 from pathlib import Path
 import subprocess
+import urllib.error
 import urllib.parse
 import urllib.request
 from functools import partial
@@ -103,7 +105,7 @@ PROVIDERS: dict[str, dict[str, Any]] = {
     },
     "net": {
         "title": "Network",
-        "detail": "outbound HTTP(S) requests to the internet; private/internal targets and denied hosts are blocked",
+        "detail": "outbound internet access to public hosts over http, https, ws, wss, tcp, tls and udp; custom methods, headers, query params, json or raw bodies, base64 responses and live streams; private/internal targets and denied hosts are blocked",
         "side_effect": "write",
     },
     "state": {
@@ -144,6 +146,31 @@ PROVIDERS: dict[str, dict[str, Any]] = {
 }
 
 KNOWN = frozenset(PROVIDERS)
+
+NET_SCHEMES: dict[str, int] = {"http": 80, "https": 443, "ws": 80, "wss": 443, "tcp": 0, "tls": 0, "udp": 0}
+NET_METHODS = frozenset({"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"})
+
+
+def _net_number(value: Any, default: float, low: float, high: float) -> float:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return default
+    return max(low, min(high, number))
+
+
+def _net_headers(value: Any) -> dict[str, str] | None:
+    if not isinstance(value, dict) or not value:
+        return None
+    items = cast("dict[Any, Any]", value)
+    if len(items) > 32:
+        raise PermissionError("net headers limit exceeded")
+    headers: dict[str, str] = {}
+    for key, item in items.items():
+        if not isinstance(key, str) or not isinstance(item, str) or len(key) > 256 or len(item) > 8192:
+            raise PermissionError("net headers must be strings up to 8192 characters")
+        headers[key] = item
+    return headers
 
 
 def describe(capabilities: tuple[str, ...], t: Callable[..., str] | None = None) -> str:
@@ -300,7 +327,7 @@ class CapabilityHost:
                 await self.close_jobs(module_id, capability)
             raise PermissionError(f"capability not granted to module: {capability}")
         with trusted_scope():
-            if capability in {"net", "shell"} and payload.get("op") in {"start", "poll", "cancel", "forget"}:
+            if capability in {"net", "shell"} and payload.get("op") in {"start", "poll", "cancel", "forget", "send", "close"}:
                 return await self._job_op(module_id, capability, payload)
             if capability == "mt":
                 return await self._mt_call(module_id, payload, meta)
@@ -345,7 +372,10 @@ class CapabilityHost:
         job = self.jobs.get(key)
         if job is None:
             raise PermissionError("request unavailable")
-        if op in {"cancel", "forget"}:
+        if op == "send":
+            job.send(payload.get("data"), bool(payload.get("binary")))
+            return {"ok": True}
+        if op in {"cancel", "forget", "close"}:
             self.jobs.pop(key)
             job.task.cancel()
             await asyncio.gather(job.task, return_exceptions=True)
@@ -353,6 +383,13 @@ class CapabilityHost:
         events: list[dict[str, str]] = []
         while not job.events.empty():
             events.append(job.events.get_nowait())
+        if not events and not job.done:
+            wait = payload.get("wait")
+            if isinstance(wait, (int, float)) and wait > 0:
+                try:
+                    events.append(await asyncio.wait_for(job.events.get(), min(float(wait), 30.0)))
+                except asyncio.TimeoutError:
+                    pass
         result = {"done": job.done, "result": job.result, "error": job.error, "events": events}
         if kind == "shell":
             result.update({name: (job.result or {}).get(name, "") for name in ("stdout", "stderr")})
@@ -607,20 +644,24 @@ class CapabilityHost:
 
     def _check_net_target(self, url: str) -> urllib.parse.ParseResult:
         parsed = urllib.parse.urlparse(url)
-        if parsed.scheme not in ("http", "https"):
+        default = NET_SCHEMES.get(parsed.scheme)
+        if default is None:
             raise PermissionError("net url scheme is not allowed")
-        hostname = parsed.hostname
         if parsed.username is not None or parsed.password is not None:
             raise PermissionError("net url credentials are not allowed")
+        hostname = parsed.hostname
         if not hostname:
             raise PermissionError("net url must contain a hostname")
         hostname = urllib.parse.unquote(hostname)
         if is_blocked_host(hostname):
             raise PermissionError("net url targets a denied host")
-        port = parsed.port or (443 if parsed.scheme == "https" else 80)
         try:
-            import ipaddress
-            import socket
+            port = parsed.port or default
+        except ValueError as exc:
+            raise PermissionError("net url contains an invalid port") from exc
+        if not port:
+            raise PermissionError("net url must contain a port")
+        try:
             for info in socket.getaddrinfo(hostname, port, proto=socket.IPPROTO_TCP):
                 addr = ipaddress.ip_address(info[4][0])
                 if not addr.is_global or addr.is_multicast:
@@ -637,28 +678,37 @@ class CapabilityHost:
         url = payload.get("url")
         if not isinstance(url, str) or not url:
             raise PermissionError("net capability requires a url")
+        if urllib.parse.urlparse(url).scheme not in ("http", "https"):
+            raise PermissionError("net requests support http and https; use ctx.stream() for ws, wss, tcp, tls and udp")
         self._check_net_target(url)
-        data = payload.get("data")
-        timeout = payload.get("timeout", 30)
+        headers = _net_headers(payload.get("headers"))
+        params = payload.get("params")
+        if isinstance(params, (dict, list, tuple)):
+            url = f"{url}{'&' if '?' in url else '?'}{urllib.parse.urlencode(cast(Any, params), doseq=True)}"
+        elif isinstance(params, str) and params:
+            url = f"{url}{'&' if '?' in url else '?'}{params}"
+        document = payload.get("json", payload.get("data"))
+        raw_body = payload.get("body")
+        if isinstance(raw_body, str):
+            raw_body = raw_body.encode()
+        elif isinstance(raw_body, (bytes, bytearray)):
+            raw_body = bytes(raw_body)
+        else:
+            raw_body = None
+        method = str(payload.get("method") or "").upper()
+        if not method:
+            method = "POST" if document is not None or raw_body is not None else "GET"
+        if method not in NET_METHODS:
+            raise PermissionError("net method is not allowed")
+        timeout = _net_number(payload.get("timeout"), 30.0, 0.0, 300.0)
+        limit = int(_net_number(payload.get("max_bytes"), 8 * 1024 * 1024, 1.0, 64 * 1024 * 1024))
+        binary = bool(payload.get("binary"))
+        if document is not None:
+            raw_body = json.dumps(document).encode()
+            headers = {"Content-Type": "application/json", **(headers or {})}
+        request_headers = {"User-Agent": f"hotaru/{module_id}", **(headers or {})}
         try:
-            timeout = float(timeout)
-        except (TypeError, ValueError):
-            timeout = 30.0
-        if timeout <= 0:
-            timeout = None
-        limit = payload.get("max_bytes")
-        limit = int(limit) if isinstance(limit, (int, float)) and int(limit) > 0 else 8 * 1024 * 1024
-        try:
-            if data is not None:
-                body = json.dumps(data).encode()
-                request = urllib.request.Request(
-                    url,
-                    data=body,
-                    headers={"Content-Type": "application/json", "User-Agent": f"hotaru/{module_id}"},
-                    method="POST",
-                )
-            else:
-                request = urllib.request.Request(url, headers={"User-Agent": f"hotaru/{module_id}"}, method="GET")
+            request = urllib.request.Request(url, data=raw_body, headers=request_headers, method=method)
 
             host = self
 
@@ -668,16 +718,33 @@ class CapabilityHost:
                     return super().redirect_request(req, fp, code, msg, headers, newurl)
 
             opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), _PublicHTTPHandler(), _PublicHTTPSHandler(), _CheckedRedirect())
-            with opener.open(request, timeout=timeout) as response:
-                raw = response.read(limit + 1)
-                truncated = len(raw) > limit
-                if truncated:
-                    raw = raw[:limit]
-                return {"status": response.status, "body": raw.decode("utf-8", errors="replace"), "truncated": truncated}
+            response: Any = None
+            try:
+                response = opener.open(request, timeout=timeout or None)
+            except urllib.error.HTTPError as exc:
+                # 4xx/5xx are normal answers: the caller wants the status and the body
+                response = exc
+            try:
+                raw = cast(bytes, response.read(limit + 1))
+                status = int(getattr(response, "status", None) or getattr(response, "code", 0))
+                final = getattr(response, "url", None) or url
+                response_headers = {key.lower(): value for key, value in cast("dict[str, Any]", response.headers or {}).items()}
+            finally:
+                response.close()
         except PermissionError:
             raise
         except Exception as exc:
             raise OSError(f"net fetch failed: {type(exc).__name__}") from exc
+        truncated = len(raw) > limit
+        raw = raw[:limit]
+        result: dict[str, Any] = {"status": status, "headers": response_headers, "url": final, "method": method,
+                                  "size": len(raw), "truncated": truncated}
+        if binary:
+            result["encoding"] = "base64"
+            result["body"] = base64.b64encode(raw).decode()
+        else:
+            result["body"] = raw.decode("utf-8", "replace")
+        return result
 
     def _state_op(self, module_id: str, payload: dict[str, Any], meta: dict[str, Any]) -> Any:
         state = self.runtime.state

@@ -704,6 +704,100 @@ class ContextOperations:
             return await self._ctx_operation(name, *args, **kwargs)
         return operation
 
+    async def cap(self, capability: str, payload: dict[str, Any] | None = None) -> Any:
+        raise NotImplementedError("capabilities are not available in this context")
+
+    async def net(self, url: str, *, method: str | None = None, headers: dict[str, str] | None = None,
+                  params: Any = None, data: Any = None, json: Any = None, body: Any = None,
+                  timeout: float = 10.0, max_bytes: int | None = None, binary: bool = False) -> dict[str, Any]:
+        """One outbound request to a public host. Any HTTP method, headers, query params, JSON or raw body.
+
+        Returns status, response headers, the final url, the body (base64 when binary=True) and a size/truncated flag.
+        """
+        payload = {"url": url, "method": method, "headers": headers, "params": params, "timeout": timeout,
+                   "data": data if data is not None else json, "body": body, "max_bytes": max_bytes, "binary": binary}
+        return cast("dict[str, Any]", await self.cap("net", {key: value for key, value in payload.items() if value is not None}))
+
+    async def stream(self, url: str, *, headers: dict[str, str] | None = None, timeout: float | None = None,
+                     max_bytes: int | None = None) -> "NetStream":
+        """Open a live connection: ws, wss, tcp, tls or udp. Iterate the returned stream for messages."""
+        payload: dict[str, Any] = {"op": "start", "url": url, "headers": headers}
+        if timeout is not None:
+            payload["timeout"] = timeout
+        if max_bytes is not None:
+            payload["max_bytes"] = max_bytes
+        started = await self.cap("net", payload)
+        body = cast("dict[str, Any]", started) if isinstance(started, dict) else {}
+        key = body.get("id")
+        if not isinstance(key, str) or not key:
+            raise RuntimeError("network stream was not opened")
+        return NetStream(self, key)
+
+
+class NetStream:
+    """Live connection opened through the net capability.
+
+    Events look like {"event": "open"|"message"|"close", "data": <str>, "binary": "1" when base64}.
+    """
+
+    def __init__(self, context: Any, key: str) -> None:
+        self._context = context
+        self.id = key
+        self.closed = False
+        self._pending: list[dict[str, Any]] = []
+
+    async def _op(self, payload: dict[str, Any]) -> Any:
+        payload["id"] = self.id
+        return await self._context.cap("net", payload)
+
+    async def send(self, data: Any, *, binary: bool = False) -> None:
+        if self.closed:
+            raise ValueError("stream is closed")
+        await self._op({"op": "send", "data": data, "binary": binary})
+
+    async def recv(self, timeout: float = 20.0) -> dict[str, Any] | None:
+        """Next event, or None once the connection ended."""
+        if self._pending:
+            return await self._finish(self._pending.pop(0))
+        while True:
+            state = cast("dict[str, Any]", await self._op({"op": "poll", "wait": timeout}))
+            events = state.get("events")
+            if isinstance(events, list) and events:
+                queued = cast("list[dict[str, Any]]", events)
+                self._pending.extend(queued[1:])
+                return await self._finish(queued[0])
+            if state.get("done"):
+                await self._finish({"event": "close"})
+                return None
+
+    async def _finish(self, event: dict[str, Any]) -> dict[str, Any]:
+        if event.get("event") == "close":
+            self.closed = True
+            try:
+                await self._op({"op": "forget"})
+            except Exception:
+                pass
+        return event
+
+    async def close(self) -> None:
+        if self.closed:
+            return
+        self.closed = True
+        try:
+            await self._op({"op": "close"})
+        except Exception:
+            pass
+
+    def __aiter__(self) -> "NetStream":
+        return self
+
+    async def __anext__(self) -> dict[str, Any]:
+        event = await self.recv()
+        if event is None or event.get("event") == "close":
+            self.closed = True
+            raise StopAsyncIteration
+        return event
+
 
 def _ctx_text(value: Any) -> dict[str, Any]:
     if isinstance(value, str) and value.strip():

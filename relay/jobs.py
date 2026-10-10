@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import codecs
 import ipaddress
+import json
 import os
 import re
 import signal
 import socket
+import ssl
+import urllib.parse
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
 from uuid import uuid4
@@ -31,6 +35,7 @@ class PublicResolver(AbstractResolver):
 
 class Job:
     inline_tail = 262144
+    stream_schemes = frozenset({"ws", "wss", "tcp", "tls", "udp"})
 
     def __init__(self, kind: str, data: dict[str, Any], check_url: Callable[[str], Any], workspace: Path) -> None:
         self.kind = kind
@@ -39,6 +44,7 @@ class Job:
         self.workspace = workspace
         self.token = uuid4().hex
         self.events: asyncio.Queue[dict[str, str]] = asyncio.Queue(64)
+        self.out: asyncio.Queue[tuple[Any, bool]] = asyncio.Queue(64)
         self.result: dict[str, Any] | None = None
         self.error: str | None = None
         self.done = False
@@ -46,13 +52,119 @@ class Job:
 
     async def run(self) -> None:
         try:
-            self.result = await (self.net() if self.kind == "net" else self.shell())
+            if self.kind != "net":
+                self.result = await self.shell()
+            elif urllib.parse.urlparse(str(self.data.get("url", ""))).scheme in self.stream_schemes:
+                self.result = await self.stream()
+            else:
+                self.result = await self.net()
         except asyncio.CancelledError:
             self.error = "CancelledError"
         except Exception as exc:
             self.error = type(exc).__name__
         finally:
             self.done = True
+            # wake a long-polling reader so a finished stream is noticed at once
+            self.emit("close", "")
+
+    def send(self, data: Any, binary: bool = False) -> None:
+        if self.done:
+            raise ValueError("request is closed")
+        if binary:
+            payload: Any = base64.b64decode(data) if isinstance(data, str) else bytes(data)
+        else:
+            payload = data if isinstance(data, str) else json.dumps(data, ensure_ascii=False, default=str)
+        if self.out.full():
+            raise ValueError("send queue is full")
+        self.out.put_nowait((payload, binary))
+
+    def emit(self, event: str, data: str, binary: bool = False) -> None:
+        while self.events.full():
+            self.events.get_nowait()
+        self.events.put_nowait({"event": event, "data": data, "binary": "1" if binary else ""})
+
+    async def stream(self) -> dict[str, Any]:
+        self.check_url(str(self.data["url"]))
+        headers = {str(key): str(value) for key, value in self.data.get("headers", {}).items()} if isinstance(self.data.get("headers"), dict) else {}
+        limit = self.data.get("max_bytes")
+        limit = int(limit) if isinstance(limit, (int, float)) and int(limit) > 0 else 8 * 1024 * 1024
+        if urllib.parse.urlparse(str(self.data["url"])).scheme in {"ws", "wss"}:
+            return await self.websocket(str(self.data["url"]), headers, limit)
+        return await self.stream_socket(str(self.data["url"]), limit)
+
+    async def websocket(self, url: str, headers: dict[str, str], limit: int) -> dict[str, Any]:
+        timeout = aiohttp.ClientTimeout(total=None, sock_connect=30, sock_read=None)
+        connector = aiohttp.TCPConnector(resolver=PublicResolver(), use_dns_cache=False)
+        async with aiohttp.ClientSession(timeout=timeout, connector=connector, trust_env=False) as session:
+            async with session.ws_connect(url, headers=headers, max_msg_size=limit, heartbeat=30) as socket:
+                self.emit("open", "")
+                writer = asyncio.create_task(self.pump(socket))
+                try:
+                    async for message in socket:
+                        if message.type == aiohttp.WSMsgType.TEXT:
+                            self.emit("message", message.data)
+                        elif message.type == aiohttp.WSMsgType.BINARY:
+                            self.emit("message", base64.b64encode(message.data).decode(), binary=True)
+                        elif message.type in {aiohttp.WSMsgType.CLOSE, aiohttp.WSMsgType.CLOSED, aiohttp.WSMsgType.ERROR}:
+                            break
+                finally:
+                    writer.cancel()
+                    await asyncio.gather(writer, return_exceptions=True)
+        return {"closed": True}
+
+    async def stream_socket(self, url: str, limit: int) -> dict[str, Any]:
+        parsed = urllib.parse.urlparse(url)
+        host = urllib.parse.unquote(parsed.hostname or "")
+        port = parsed.port or 0
+        loop = asyncio.get_running_loop()
+        datagram = parsed.scheme == "udp"
+        resolved: Any = (await loop.getaddrinfo(host, port, type=socket.SOCK_DGRAM if datagram else socket.SOCK_STREAM))[0][4]
+        target = (str(resolved[0]), int(resolved[1]))
+        if datagram:
+            transport, _ = await loop.create_datagram_endpoint(lambda: _Datagram(self, limit), remote_addr=target)
+            self.emit("open", "")
+            try:
+                while True:
+                    payload, binary = await self.out.get()
+                    transport.sendto(payload if binary else payload.encode())
+            finally:
+                transport.close()
+            return {"closed": True}
+        secure = parsed.scheme == "tls"
+        reader, writer = await asyncio.open_connection(target[0], target[1], ssl=ssl.create_default_context() if secure else None, server_hostname=host if secure else None)
+        self.emit("open", "")
+        try:
+            writer_task = asyncio.create_task(self.pump_bytes(writer))
+            try:
+                while True:
+                    chunk = await reader.read(limit if limit < 65536 else 65536)
+                    if not chunk:
+                        break
+                    self.emit_bytes(chunk)
+            finally:
+                writer_task.cancel()
+                await asyncio.gather(writer_task, return_exceptions=True)
+        finally:
+            writer.close()
+            await asyncio.gather(writer.wait_closed(), return_exceptions=True)
+        return {"closed": True}
+
+    def emit_bytes(self, chunk: bytes) -> None:
+        try:
+            self.emit("message", chunk.decode())
+        except UnicodeDecodeError:
+            self.emit("message", base64.b64encode(chunk).decode(), binary=True)
+
+    async def pump(self, socket: Any) -> None:
+        while True:
+            payload, binary = await self.out.get()
+            await (socket.send_bytes(payload) if binary else socket.send_str(payload))
+
+    async def pump_bytes(self, writer: asyncio.StreamWriter) -> None:
+        while True:
+            payload, binary = await self.out.get()
+            writer.write(payload if binary else payload.encode())
+            await writer.drain()
 
     async def net(self) -> dict[str, Any]:
         data = self.data
@@ -167,6 +279,15 @@ class Job:
                 os.killpg(proc.pid, signal.SIGKILL)
         except ProcessLookupError:
             pass
+
+
+class _Datagram(asyncio.DatagramProtocol):
+    def __init__(self, job: Job, limit: int) -> None:
+        self.job = job
+        self.limit = limit
+
+    def datagram_received(self, data: bytes, addr: Any) -> None:
+        self.job.emit_bytes(data[: self.limit])
 
 
 class Stream:

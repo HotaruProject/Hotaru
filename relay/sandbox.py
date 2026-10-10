@@ -356,8 +356,10 @@ def _mt_call(method, **kwargs):
     return _cap_call("mt", {"method": method, "kwargs": kwargs})
 
 
-def _net_call(url, data=None, timeout=10.0):
-    return _cap_call("net", {"url": url, "data": data, "timeout": timeout})
+def _net_call(url, data=None, timeout=10.0, **options):
+    payload = {key: value for key, value in options.items() if value is not None}
+    payload.update(url=url, data=data, timeout=timeout)
+    return _cap_call("net", payload)
 
 
 def _respond_call(payload):
@@ -695,9 +697,6 @@ class SandboxContext(ContextOperations):
 
     async def mt(self, method, **kwargs):
         return _mt_call(method, **kwargs)
-
-    async def net(self, url, *, data=None, timeout=10.0):
-        return _net_call(url, data=data, timeout=timeout)
 
     @property
     def tg(self):

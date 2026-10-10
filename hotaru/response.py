@@ -618,9 +618,6 @@ class ModuleContext(ContextOperations):
     async def mt(self, method: str, **kwargs: Any) -> Any:
         return await self.cap("mt", {"method": method, "kwargs": kwargs})
 
-    async def net(self, url: str, *, data: dict[str, Any] | None = None, timeout: float = 10.0) -> dict[str, Any]:
-        return await self.cap("net", {"url": url, "data": data, "timeout": timeout})
-
     async def premium(self) -> bool:
         if self.runtime is not None and hasattr(self.runtime, "is_premium"):
             val = await self.runtime.is_premium()
