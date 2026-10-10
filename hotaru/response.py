@@ -258,6 +258,8 @@ class ResponseService:
                 plain, entities = to_entities(text)
                 payload["entities"] = entities
                 text = plain
+        if output == "edit" and not hasattr(message, "edit"):
+            output = "reply"
         if output in ("edit", "auto") and hasattr(message, "edit"):
             try:
                 result = await message.edit(text or "", **payload)

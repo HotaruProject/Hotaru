@@ -259,9 +259,19 @@ class OutputUpdater:
         if self.msg:
             kwargs["output"] = "edit"
         try:
-            self.msg = await self.ctx.respond(text, **kwargs)
+            result = await self.ctx.respond(text, **kwargs)
+            if getattr(result, "delivered", True) is False:
+                raise RuntimeError("response was not delivered: %s" % getattr(result, "action", "?"))
+            self.msg = result
         except Exception as exc:
-            logging.getLogger(__name__).error("executor response failed: %s", type(exc).__name__)
+            logging.getLogger(__name__).error("executor response failed: %s", type(exc).__name__, exc_info=True)
+            if not final:
+                return
+            kwargs.pop("output", None)
+            try:
+                self.msg = await self.ctx.respond(text, **kwargs)
+            except Exception as exc2:
+                logging.getLogger(__name__).error("executor final fallback failed: %s", type(exc2).__name__, exc_info=True)
 
     async def _send(self, sections: list[Any] | None = None, returncode: int | None = None, final: bool = False) -> None:
         async with self._lock:
