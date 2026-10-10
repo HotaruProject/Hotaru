@@ -1471,9 +1471,13 @@ def apply_tree_pids_cap(limit: int = 512) -> str:
         target = os.path.join(base, "pids.max")
         with open(target, "r", encoding="utf-8") as handle:
             existing = handle.read().strip()
-        if existing != "max":
-            return "already %s" % existing
         value = max(limit, current + 256)
+        try:
+            already = int(existing)
+        except ValueError:
+            already = 0
+        if already and already <= value:
+            return "already %s" % existing
         with open(target, "w", encoding="utf-8") as handle:
             handle.write(str(value))
         return "pids.max=%d" % value
