@@ -49,7 +49,7 @@ from .registry import Handler
 from .response import FormHandle, ModuleContextFactory, ResponseService, reply_message_id
 from .security import SecurityGate
 from .state import StateStore
-from .supervisor import ConnectionRecovery, ConnectionSupervisor
+from .supervisor import ConnectionRecovery, ConnectionSupervisor, LoopGuard
 from .tasks import TaskSupervisor
 
 IDLE_WORKER_SECONDS = 1800.0
@@ -133,6 +133,8 @@ class Runtime:
     supervisor: ConnectionSupervisor | None = None
     security: SecurityGate | None = None
     sandbox: ModuleSandbox | None = None
+    _loop_guard: LoopGuard | None = None
+    _loop_guard_task: asyncio.Task[None] | None = None
     form_sender: Any = None
     cap_host: CapabilityHost | None = None
     lexicon: Lexicon | None = None
@@ -2575,10 +2577,22 @@ class Runtime:
             self.observatory.emit("forum", "transport_ready")
         await self._ensure_forum()
 
+    def _start_loop_guard(self) -> None:
+        guard = LoopGuard(on_stall=self._loop_guard_stall)
+        if not guard.start():
+            return
+        self._loop_guard = guard
+        self._loop_guard_task = asyncio.create_task(guard.tick(), name="hotaru:loop-guard-tick")
+
+    def _loop_guard_stall(self, stalls: int, stalled: float) -> None:
+        if self.observatory is not None:
+            self.observatory.emit("kernel", "loop_stall", "crit", stalls=stalls, blocked=round(stalled, 1))
+
     async def run(self) -> None:
         if self.app is None:
             self.build()
         assert self.app is not None
+        self._start_loop_guard()
         try:
             await self.authorize()
             set_premium(await self.is_premium())
@@ -2660,6 +2674,11 @@ class Runtime:
             if self._forum_setup_task is not None and not self._forum_setup_task.done():
                 self._forum_setup_task.cancel()
                 await asyncio.gather(self._forum_setup_task, return_exceptions=True)
+            if self._loop_guard_task is not None and not self._loop_guard_task.done():
+                self._loop_guard_task.cancel()
+                await asyncio.gather(self._loop_guard_task, return_exceptions=True)
+            if self._loop_guard is not None:
+                self._loop_guard.stop()
             if self.inline is not None:
                 await self.inline.stop()
             if self._forms is not None:

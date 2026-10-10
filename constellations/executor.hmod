@@ -1537,6 +1537,8 @@ async def command_py(ctx: Any, invocation: Any) -> Any:
         return await _py_run(ctx, invocation)
     except asyncio.CancelledError:
         raise
+    except SystemExit as exc:
+        await _fail(ctx, RuntimeError(f"SystemExit: {exc}" if exc.code else "SystemExit"))
     except Exception as exc:
         await _fail(ctx, exc)
 
@@ -1631,6 +1633,8 @@ async def _py_run(ctx: Any, invocation: Any) -> Any:
             await eval_task
     except asyncio.CancelledError:
         error_trace = ctx.t('kernel.executor.cancelled')
+    except SystemExit as exc:
+        error_trace = f"SystemExit: {exc}" if exc.code else "SystemExit"
     except Exception as exc:
         error_trace = _trace(exc)
     finally:

@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import asyncio
 import enum
+import signal
+import threading
 import time
 from dataclasses import dataclass, field
+from types import FrameType
 from typing import Any, Awaitable, Callable
 
 from goygram.errors import ConnectionClosedError
@@ -125,6 +128,102 @@ class ConnectionRecovery:
         if task is not None and not task.done():
             task.cancel()
             await asyncio.gather(task, return_exceptions=True)
+
+
+class LoopGuard:
+    """Abort module code that blocks the kernel's event loop.
+
+    Kernel (constellation) modules run inside this process, so one `while True`
+    in a command freezes the whole userbot: no updates, no commands, no health
+    checks — the process is alive but mute. A watchdog thread watches the loop's
+    tick and, when it stalls, raises TimeoutError inside the main thread, which
+    unwinds the offending frame and lets the command fail with a normal error.
+
+    This is the same mechanism as pytest-timeout's signal method; stdlib only, no
+    new dependency. Signals are delivered to the main thread only, so a blocking
+    C call or a wedged sandbox worker (separate process, has its own guard in
+    relay/sandbox.py) is out of reach: repeated stalls are then counted and
+    reported instead of silently spinning.
+    """
+
+    def __init__(
+        self,
+        *,
+        stall_seconds: float = 20.0,
+        interval: float = 0.5,
+        strikes: int = 3,
+        on_stall: Callable[[int, float], Any] | None = None,
+    ) -> None:
+        if stall_seconds <= 0 or interval <= 0 or strikes < 1:
+            raise ValueError("invalid loop guard settings")
+        self.stall_seconds = stall_seconds
+        self.interval = interval
+        self.strikes = strikes
+        self.on_stall = on_stall
+        self.stalls = 0
+        self._tick = time.monotonic()
+        self._strike = 0
+        self._stop = threading.Event()
+        self._thread: threading.Thread | None = None
+
+    def start(self) -> bool:
+        if not hasattr(signal, "SIGALRM") or not hasattr(signal, "pthread_kill"):
+            return False
+        try:
+            signal.signal(signal.SIGALRM, self._interrupt)
+        except ValueError:
+            return False
+        self._thread = threading.Thread(target=self._watch, name="hotaru:loop-guard", daemon=True)
+        self._thread.start()
+        return True
+
+    def _interrupt(self, signum: int, frame: FrameType | None) -> None:
+        raise TimeoutError(f"blocked the event loop for over {self.stall_seconds:.0f}s")
+
+    async def tick(self) -> None:
+        while not self._stop.is_set():
+            self._tick = time.monotonic()
+            await asyncio.sleep(self.interval)
+
+    def _watch(self) -> None:
+        while not self._stop.wait(self.interval):
+            stalled = time.monotonic() - self._tick
+            if stalled < self.stall_seconds:
+                self._strike = 0
+                continue
+            self.stalls += 1
+            self._strike += 1
+            if self._strike > self.strikes:
+                self._strike = 0
+                if self.on_stall is not None:
+                    self.on_stall(self.stalls, stalled)
+            else:
+                self._fire()
+            self._await_resume()
+
+    def _await_resume(self, timeout: float = 5.0) -> None:
+        """Let the loop breathe before firing again: a second signal landing while
+        the first error is being handled would kill the error path itself."""
+        deadline = time.monotonic() + timeout
+        seen = self._tick
+        while time.monotonic() < deadline:
+            if self._stop.wait(0.05):
+                return
+            if self._tick != seen:
+                self._strike = 0
+                return
+
+    def _fire(self) -> None:
+        ident = threading.main_thread().ident
+        if ident is None:
+            return
+        try:
+            signal.pthread_kill(ident, signal.SIGALRM)
+        except (OSError, ValueError):
+            self._stop.set()
+
+    def stop(self) -> None:
+        self._stop.set()
 
 
 class Health(enum.Enum):
