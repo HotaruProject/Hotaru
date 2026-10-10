@@ -194,7 +194,10 @@ class LoopGuard:
 
     @staticmethod
     def _sample() -> tuple[str, int] | None:
-        frame = sys._current_frames().get(threading.main_thread().ident)
+        ident = threading.main_thread().ident
+        if ident is None:
+            return None
+        frame = sys._current_frames().get(ident)  # type: ignore
         return None if frame is None else (frame.f_code.co_filename, frame.f_lasti)
 
     def _watch(self) -> None:
