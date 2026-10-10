@@ -152,6 +152,7 @@ def _heartbeat_loop():
 _CPU_LIMIT_SECONDS = 45.0
 _CLK_TCK = float(os.sysconf("SC_CLK_TCK") or 100)
 _active_cpu = {}
+_warned_cpu = {}
 _cpu_lock = threading.Lock()
 
 
@@ -167,27 +168,32 @@ def _thread_cpu(tid):
 
 
 def _cpu_watch_loop():
-    """A request that burns CPU without ever returning wedges its pool thread for
-    good, and the heartbeat keeps the host thinking the worker is busy (the
-    `Running...` card stays forever). Report an error for that request, then die
-    so the host restarts the module.
+    """Report a request that burns a lot of CPU without returning, without
+    touching it: a module may legitimately compute for minutes in one command,
+    and the heartbeat already proves the worker is alive. Nothing here kills the
+    worker or fails the request; the operator stays in control via `kill`/reload.
 
     ponytail: this only sees CPU; a request parked in a blocking syscall forever
-    still holds its slot, raise _CPU_LIMIT_SECONDS only if a module legitimately
-    computes that long in one command.
+    still holds its slot.
     """
     while True:
         time.sleep(1.0)
-        for rid, (tid, base) in list(_active_cpu.items()):
-            if _thread_cpu(tid) - base < _CPU_LIMIT_SECONDS:
-                continue
-            _host_emit({
-                "ok": False,
-                "rid": rid,
-                "error": "ExecutionError: burned %.0fs of CPU without finishing" % _CPU_LIMIT_SECONDS,
-                "trace": "",
-            })
-            os._exit(71)
+        _cpu_scan_once()
+
+
+def _cpu_scan_once():
+    for rid, (tid, base) in list(_active_cpu.items()):
+        burned = _thread_cpu(tid) - base
+        if burned < _CPU_LIMIT_SECONDS or rid in _warned_cpu:
+            continue
+        _warned_cpu[rid] = True
+        try:
+            _host_emit({"log": "request %s has burned %.0fs of CPU and is still running" % (rid, burned), "stream": "stderr"})
+        except Exception:
+            pass
+    for rid in list(_warned_cpu):
+        if rid not in _active_cpu:
+            _warned_cpu.pop(rid, None)
 
 
 _PROTO_BYTES_KEY = "$bytes"
