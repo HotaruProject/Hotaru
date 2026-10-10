@@ -2586,7 +2586,8 @@ class Runtime:
 
     def _loop_guard_stall(self, stalls: int, stalled: float) -> None:
         if self.observatory is not None:
-            self.observatory.emit("kernel", "loop_stall", "crit", stalls=stalls, blocked=round(stalled, 1))
+            self.observatory.emit("kernel", "loop_stall", "warn", stalls=stalls, blocked=round(stalled, 1),
+                                  note="module code does not yield and cannot be interrupted mid-call")
 
     async def run(self) -> None:
         if self.app is None:

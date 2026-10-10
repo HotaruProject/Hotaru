@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import enum
 import signal
+import sys
 import threading
 import time
 from dataclasses import dataclass, field
@@ -140,10 +141,13 @@ class LoopGuard:
     unwinds the offending frame and lets the command fail with a normal error.
 
     This is the same mechanism as pytest-timeout's signal method; stdlib only, no
-    new dependency. Signals are delivered to the main thread only, so a blocking
-    C call or a wedged sandbox worker (separate process, has its own guard in
-    relay/sandbox.py) is out of reach: repeated stalls are then counted and
-    reported instead of silently spinning.
+    new dependency. A signal only lands when the interpreter executes Python
+    bytecode again, so a stall inside a C call (`67**67**67` grinding through
+    CPython's big-int pow) would keep the very signal meant to abort it pending
+    until that call returns — and then throw the result away with a traceback
+    from this file. So the guard fires only on positive evidence that Python
+    bytecode is running now: the main thread's frame moved since the last sample.
+    A frozen frame is reported (on_stall) and left alone until it returns.
     """
 
     def __init__(
@@ -163,6 +167,9 @@ class LoopGuard:
         self.stalls = 0
         self._tick = time.monotonic()
         self._strike = 0
+        self._last_frame: tuple[str, int] | None = None
+        self._runnable = False
+        self._stuck_reported = False
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
 
@@ -185,13 +192,31 @@ class LoopGuard:
             self._tick = time.monotonic()
             await asyncio.sleep(self.interval)
 
+    @staticmethod
+    def _sample() -> tuple[str, int] | None:
+        frame = sys._current_frames().get(threading.main_thread().ident)
+        return None if frame is None else (frame.f_code.co_filename, frame.f_lasti)
+
     def _watch(self) -> None:
         while not self._stop.wait(self.interval):
             stalled = time.monotonic() - self._tick
+            frame = self._sample()
             if stalled < self.stall_seconds:
                 self._strike = 0
+                self._runnable = False
+                self._stuck_reported = False
+                self._last_frame = frame
                 continue
             self.stalls += 1
+            if frame is not None and self._last_frame is not None and frame != self._last_frame:
+                self._runnable = True
+            self._last_frame = frame
+            if not self._runnable:
+                if not self._stuck_reported:
+                    self._stuck_reported = True
+                    if self.on_stall is not None:
+                        self.on_stall(self.stalls, stalled)
+                continue
             self._strike += 1
             if self._strike > self.strikes:
                 self._strike = 0
