@@ -640,6 +640,13 @@ class _MsgProxy:
     def from_id(self) -> int | None:
         return self.user_id
 
+    @property
+    def regdate(self) -> dict[str, str | int | bool]:
+        uid = self.user_id
+        if uid is None or uid <= 0:
+            raise ValueError("regdate requires a message from a user")
+        return _tools(self.__dict__["_ctx"]).datereg(uid)
+
 
     @property
     def first_name(self) -> str:
