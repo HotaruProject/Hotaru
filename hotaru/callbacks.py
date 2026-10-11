@@ -519,10 +519,6 @@ class CallbackRouter:
         return self.store.issue(binding, {"module": module_id, "action_id": action_id, "payload": payload})
 
     def _foreign(self, callback: Any) -> bool:
-        """A press on a button that was never issued to this user: ignored without an answer.
-
-        Owners and the user a card was issued to go on to the command access checks.
-        """
         access = getattr(self.runtime, "access", None)
         actor = self._optional(callback, "from_id")
         if access is None or not isinstance(actor, int) or actor <= 0:
