@@ -28,7 +28,18 @@ class MessageOperations:
 
     @property
     def user_id(self) -> int | None:
-        return self._peer_id(self._g("from_id", "sender_id", "user_id"))
+        sender = self._g("from_id", "sender_id", "user_id")
+        if sender is not None:
+            return self._peer_id(sender)
+        if self._g("_") != "message" or self._g("post"):
+            return None
+        if self.is_me:
+            runtime = getattr(self.ctx, "runtime", None)
+            app = getattr(runtime, "app", None)
+            uid = getattr(getattr(app, "session", None), "self_id", None)
+            return uid if isinstance(uid, int) and not isinstance(uid, bool) else None
+        peer = self._g("peer_id")
+        return self._peer_id(peer) if _msg_field(peer, "_") == "peerUser" else None
 
 
     @property

@@ -634,7 +634,18 @@ class _MsgProxy:
 
     @property
     def user_id(self) -> int | None:
-        return self._peer_id(self._g("from_id", "sender_id", "user_id"))
+        sender = self._g("from_id", "sender_id", "user_id")
+        if sender is not None:
+            return self._peer_id(sender)
+        if self._g("_") != "message" or self._g("post"):
+            return None
+        if self._g("out") or self._g("is_me"):
+            runtime = getattr(self.__dict__["_ctx"], "runtime", None)
+            app = getattr(runtime, "app", None)
+            uid = getattr(getattr(app, "session", None), "self_id", None)
+            return uid if isinstance(uid, int) and not isinstance(uid, bool) else None
+        peer = self._g("peer_id")
+        return self._peer_id(peer) if _msg_field(peer, "_") == "peerUser" else None
 
     @property
     def from_id(self) -> int | None:
@@ -646,6 +657,81 @@ class _MsgProxy:
         if uid is None or uid <= 0:
             raise ValueError("regdate requires a message from a user")
         return _tools(self.__dict__["_ctx"]).regdate(uid)
+
+    async def regdate_live(self) -> dict[str, str | int | bool]:
+        uid = self.user_id
+        if not isinstance(uid, int) or isinstance(uid, bool) or uid <= 0:
+            raise ValueError("regdate_live requires a message from a user")
+        ctx = self.__dict__["_ctx"]
+        month = None
+        not_after = None
+        status: list[str] = []
+
+        def result() -> dict[str, str | int | bool]:
+            data = dict(_tools(ctx).regdate(uid, registration_month=month, not_after=not_after))
+            data["evidence_status"] = ";".join(status)
+            return data
+
+        try:
+            sender = await asyncio.wait_for(self.get_sender(), 5)
+        except Exception as exc:
+            status.append("sender:unverified:" + type(exc).__name__)
+            return result()
+        if sender is None:
+            status.append("sender:unavailable")
+            return result()
+        if (_msg_field(sender, "_") != "user" or _msg_field(sender, "id") != uid
+                or _msg_field(sender, "bot") or _msg_field(sender, "deleted")):
+            raise ValueError("regdate_live requires a known human user")
+        if _msg_field(sender, "self"):
+            peer = {"_": "inputPeerSelf"}
+            user = {"_": "inputUserSelf"}
+        else:
+            access_hash = _msg_field(sender, "access_hash")
+            if (not isinstance(access_hash, int) or isinstance(access_hash, bool)
+                    or not access_hash or _msg_field(sender, "min")):
+                status.append("sender:unusable_access_hash")
+                return result()
+            peer = {"_": "inputPeerUser", "user_id": uid, "access_hash": access_hash}
+            user = {"_": "inputUser", "user_id": uid, "access_hash": access_hash}
+
+        async def request(method: str, **kwargs: Any) -> Any:
+            body = await ctx.cap("mt", {"method": method, "kwargs": {**kwargs, "retry": 0}, "timeout": 5})
+            if _msg_field(body, "ok") is False:
+                raise RuntimeError("evidence RPC failed")
+            return _msg_field(body, "result", body)
+
+        try:
+            body = await request("messages.getPeerSettings", peer=peer)
+            if _msg_field(body, "_") != "messages.peerSettings":
+                raise ValueError("invalid peer settings response")
+            value = _msg_field(_msg_field(body, "settings"), "registration_month")
+            if value is None:
+                status.append("registration_month:unavailable")
+            elif isinstance(value, str) and re.fullmatch(r"(0[1-9]|1[0-2])\.20[0-9]{2}", value):
+                month = value
+                status.append("registration_month:available")
+            else:
+                status.append("registration_month:invalid")
+        except Exception as exc:
+            status.append("registration_month:error:" + type(exc).__name__)
+        try:
+            body = await request("photos.getUserPhotos", user_id=user, offset=0, max_id=0, limit=1)
+            if _msg_field(body, "_") not in {"photos.photos", "photos.photosSlice"}:
+                raise ValueError("invalid photos response")
+            photos = _msg_field(body, "photos")
+            if not isinstance(photos, list):
+                raise ValueError("invalid photos vector")
+            dates = [_msg_field(photo, "date") for photo in cast("list[object]", photos)[:1] if _msg_field(photo, "_") == "photo"]
+            valid = [stamp for stamp in dates if isinstance(stamp, int) and not isinstance(stamp, bool) and 0 < stamp <= time.time()]
+            if valid:
+                not_after = time.strftime("%Y-%m-%d", time.gmtime(min(valid)))
+                status.append("photo:upper_bound")
+            else:
+                status.append("photo:unavailable")
+        except Exception as exc:
+            status.append("photo:error:" + type(exc).__name__)
+        return result()
 
 
     @property
