@@ -645,7 +645,7 @@ class _MsgProxy:
         uid = self.user_id
         if uid is None or uid <= 0:
             raise ValueError("regdate requires a message from a user")
-        return _tools(self.__dict__["_ctx"]).datereg(uid)
+        return _tools(self.__dict__["_ctx"]).regdate(uid)
 
 
     @property

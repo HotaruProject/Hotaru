@@ -1188,7 +1188,7 @@ async def search(values: Any, query: object, *, key: Any = None, limit: object =
     return [entry[2] for entry in sorted(heap, reverse=True)]
 
 
-_DATEREG_POINTS = (
+_REGDATE_POINTS = (
     (217509, 1381494240), (2768400, 1383242400), (6256671, 1389230743), (11538510, 1391104800),
     (11538514, 1391212800), (15835240, 1392832800), (23646070, 1393351200), (38015510, 1393632000),
     (44634660, 1396720800), (44634663, 1398751134), (46145305, 1400112000), (54845230, 1403287200),
@@ -1231,7 +1231,7 @@ _DATEREG_POINTS = (
 )
 
 
-_DATEREG_ERRORS = (
+_REGDATE_ERRORS = (
     (217509, 27), (1000000, 29), (2768400, 30), (2768409, 30),
     (6256671, 30), (7679610, 30), (11538510, 35), (11538514, 60),
     (15835240, 60), (15835244, 66), (23646070, 60), (23646077, 60),
@@ -1358,7 +1358,7 @@ _DATEREG_ERRORS = (
 )
 
 
-def _datereg_interpolate(points: tuple[tuple[int, int], ...], uid: int) -> float:
+def _regdate_interpolate(points: tuple[tuple[int, int], ...], uid: int) -> float:
     if uid <= points[0][0]:
         return float(points[0][1])
     if uid >= points[-1][0]:
@@ -1375,18 +1375,18 @@ def _datereg_interpolate(points: tuple[tuple[int, int], ...], uid: int) -> float
 
 
 # https://github.com/sepiol026-wq/telegram-id-age-research
-def datereg(user_id: int | str) -> dict[str, str | int | bool]:
+def regdate(user_id: int | str) -> dict[str, str | int | bool]:
     if isinstance(user_id, str):
         user_id = user_id.strip()
         if not user_id.isascii() or not user_id.isdecimal():
-            raise ValueError("datereg requires a numeric Telegram user ID")
+            raise ValueError("regdate requires a numeric Telegram user ID")
         user_id = int(user_id)
     if isinstance(user_id, bool) or not isinstance(user_id, int):
-        raise TypeError("datereg requires a numeric Telegram user ID")
-    if not _DATEREG_POINTS[0][0] <= user_id <= _DATEREG_POINTS[-1][0]:
-        raise ValueError("user ID is outside the datereg calibration range")
-    stamp = _datereg_interpolate(_DATEREG_POINTS, user_id)
-    error = int(_datereg_interpolate(_DATEREG_ERRORS, user_id))
+        raise TypeError("regdate requires a numeric Telegram user ID")
+    if not _REGDATE_POINTS[0][0] <= user_id <= _REGDATE_POINTS[-1][0]:
+        raise ValueError("user ID is outside the regdate calibration range")
+    stamp = _regdate_interpolate(_REGDATE_POINTS, user_id)
+    error = int(_regdate_interpolate(_REGDATE_ERRORS, user_id))
     now = datetime.now(timezone.utc)
     date = datetime.fromtimestamp(min(stamp, now.timestamp()), timezone.utc).date()
     return {
@@ -1400,7 +1400,7 @@ def datereg(user_id: int | str) -> dict[str, str | int | bool]:
 
 
 TOOLKIT_FUNCS = {
-    "datereg": datereg,
+    "regdate": regdate,
     "template_fields": template_fields,
     "template_names": template_names,
     "template_render": template_render,
