@@ -366,53 +366,14 @@
         "whois": {
           "description": "ユーザーの権限",
           "usage": "[ID|@username] [command]"
-        },
-        "owadd": {
-          "description": "オーナーを追加"
-        },
-        "owrm": {
-          "description": "オーナーを削除"
-        },
-        "owls": {
-          "description": "オーナー一覧"
-        },
-        "sgnew": {
-          "description": "権限グループを作成"
-        },
-        "sgls": {
-          "description": "グループ一覧"
-        },
-        "sg": {
-          "description": "グループのメンバーとルール"
-        },
-        "sgdel": {
-          "description": "グループを削除"
-        },
-        "sgadd": {
-          "description": "メンバーを追加"
-        },
-        "sgrm": {
-          "description": "メンバーを削除"
-        },
-        "rule": {
-          "description": "アクセスルールを追加"
-        },
-        "rulerm": {
-          "description": "ルールを削除"
-        },
-        "ruleclr": {
-          "description": "ルールを消去"
         }
       },
-      "usage": "使い方:\n!owadd <user_id|reply> — owner を付与\n!owrm <user_id|reply> — owner を取り消す\n!owls — オーナー一覧\n!sgnew <name> — 権限グループを作成\n!sgls — グループ一覧\n!sg <name> — グループのメンバーと権限\n!sgdel <name> — グループを削除\n!sgadd <name> <user_id|reply> — グループに追加\n!sgrm <name> <user_id|reply> — グループから除外\n!rule <user|chat|sgroup> <target> <command|module>/<name> [期限] — ルールを追加\n!rulerm — ルールを削除\n!ruleclr — 対象のルールを全消去\n!perm <user_id> <admin|trusted|everyone> [remove] — 権限の付与/取り消し\n!perms — 権限一覧\n!whois <user_id> — ユーザーの権限",
       "bad_group": "グループ名: 英数字のみ、32文字まで。",
-      "no_groups": "権限グループはありません。作成: !sgnew <name>",
       "bad_duration": "期限: 数字 + s/m/h/d/w、または forever。",
       "bad_rule": "ルール: command/名前 または module/名前。",
       "self_owner": "このユーザーはすでにアカウントのオーナーです。",
       "empty": "付与された権限はありません。!perm <user_id> <role> を使用。",
-      "bad_label": "不明な権限: {label}。",
-      "no_owner_grant": "owner は !owadd で付与されます。"
+      "bad_label": "不明な権限: {label}。"
     },
     "lg": "ログ末尾:\n{lines}",
     "commands": {
@@ -751,30 +712,10 @@
   },
   "acl": {
     "owners": "<b>オーナー</b><br>",
-    "account": " · アカウント",
-    "protected": " · 保護済み",
-    "failed": "<b>エラー:</b> <i>{error}</i>",
-    "owner_added": "<code>{user_id}</code> <b>にオーナー権限を付与しました</b>",
-    "owner_exists": "<code>{user_id}</code> はすでにオーナーです",
-    "owner_removed": "<code>{user_id}</code> <b>のオーナー権限を取り消しました</b>",
-    "owner_missing": "<code>{user_id}</code> は追加のオーナーではありません",
-    "group_created": "<b>グループを作成しました:</b> <code>{name}</code>",
-    "group_deleted": "<b>グループを削除しました:</b> <code>{name}</code>",
     "group_missing": "グループ <code>{name}</code> が見つかりません",
     "group_item": "<b>{name}</b> — ユーザー: {users}、ルール: {rules}",
     "groups": "<b>権限グループ</b><br>",
-    "group_detail": "<b>グループ {name}</b><br><b>ユーザー</b><br>{users}<br><b>ルール</b><br>{rules}",
-    "member_exists": "<code>{user_id}</code> はすでに <code>{name}</code> に所属しています",
-    "member_missing": "<code>{user_id}</code> は <code>{name}</code> に所属していません",
-    "member_added": "<code>{user_id}</code> を <code>{name}</code> <b>に追加しました</b>",
-    "member_removed": "<code>{user_id}</code> を <code>{name}</code> <b>から削除しました</b>",
-    "duration": "（期間: {duration}）",
     "group_rule": "<b>ルールを追加しました:</b> sgroup <code>{target}</code> → {kind}/{rule}{until}",
-    "rule_added": "<b>ルールを追加しました:</b> {kind} <code>{target}</code> → {type}/{rule}{until}",
-    "rule_removed": "<b>ルールを削除しました</b>",
-    "nothing_remove": "削除するものがありません",
-    "rules_cleared": "<b>ルールを消去しました</b>",
-    "nothing_clear": "消去するものがありません",
     "permissions": "<b>権限</b><br>",
     "user_groups": "<br>グループ: <code>{groups}</code>",
     "user_detail": "<code>{user_id}</code> · <b>{permissions}</b>",
@@ -783,16 +724,12 @@
     "nothing_revoke": "取り消す権限がありません",
     "grant_failed": "<b>権限の付与に失敗しました:</b> <i>{error}</i>",
     "granted": "<code>{user_id}</code> に <code>{label}</code> <b>権限を付与しました</b>",
-    "self_owner": "このユーザーはすでにアカウントの所有者です。",
     "bad_group": "グループ名は32文字以内の英数字で入力してください。",
-    "no_groups": "グループはありません。",
     "bad_duration": "1m、1h、1d、1w または forever。最大100年。",
     "bad_rule": "ルールは command/名前 または module/名前 を指定してください。",
     "empty": "付与された権限がありません。{prefix}perm <user_id> <ロール> を使ってください。",
     "bad_label": "不明な権限: {label}",
-    "no_owner_grant": "オーナー権限の付与には {prefix}owadd を使ってください。",
-    "usage": "<code>{prefix}owadd &lt;user_id|reply&gt;</code> — オーナーを追加\n<code>{prefix}owrm &lt;user_id|reply&gt;</code> — オーナーを削除\n<code>{prefix}owls</code> — オーナー一覧\n<code>{prefix}sgnew &lt;name&gt;</code> — 権限グループを作成\n<code>{prefix}sgls</code> — グループ一覧\n<code>{prefix}sg &lt;name&gt;</code> — グループのメンバーとルール\n<code>{prefix}sgdel &lt;name&gt;</code> — グループを削除\n<code>{prefix}sgadd &lt;name&gt; &lt;user_id|reply&gt;</code> — メンバーを追加\n<code>{prefix}sgrm &lt;name&gt; &lt;user_id|reply&gt;</code> — メンバーを削除\n<code>{prefix}rule &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;command|module&gt;/&lt;name&gt; [expiry]</code> — アクセスルールを追加\n<code>{prefix}rulerm &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;rule&gt;</code> — ルールを削除\n<code>{prefix}ruleclr &lt;user|chat|sgroup&gt; [target]</code> — ルールを消去\n<code>{prefix}perm &lt;user_id&gt; &lt;admin|trusted|everyone&gt; [remove]</code> — 権限を付与・取り消し\n<code>{prefix}perms</code> — 権限一覧\n<code>{prefix}whois &lt;user_id&gt;</code> — ユーザーの権限",
-    "account_owner": "アカウントの所有者は削除できません。",
+    "no_owner_grant": "オーナー権限の付与には {prefix}perms を使ってください。",
     "owner_confirm": "<code>{user_id}</code> に全権限を付与しますか？",
     "confirm": "承認",
     "clear_confirm": "<code>{scope}</code> のルールを消去しますか？",
@@ -853,19 +790,7 @@
     "syntax": {
       "perms": "<code>{prefix}perms [ID|@username]</code>",
       "whois": "<code>{prefix}whois [ID|@username] [command]</code>",
-      "perm": "<code>{prefix}perm [ID|@username|command/name] &lt;role&gt; [remove]</code>",
-      "owadd": "<code>{prefix}owadd [ID|@username]</code>",
-      "owrm": "<code>{prefix}owrm [ID|@username]</code>",
-      "owls": "<code>{prefix}owls</code>",
-      "sgnew": "<code>{prefix}sgnew &lt;name&gt;</code>",
-      "sgdel": "<code>{prefix}sgdel &lt;name&gt;</code>",
-      "sgls": "<code>{prefix}sgls</code>",
-      "sg": "<code>{prefix}sg &lt;name&gt;</code>",
-      "sgadd": "<code>{prefix}sgadd &lt;name&gt; [ID|@username]</code>",
-      "sgrm": "<code>{prefix}sgrm &lt;name&gt; [ID|@username]</code>",
-      "rule": "<code>{prefix}rule &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;command/name|module/name&gt; [1h|forever]</code>",
-      "rulerm": "<code>{prefix}rulerm &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;command/name|module/name|*&gt;</code>",
-      "ruleclr": "<code>{prefix}ruleclr &lt;user|chat|sgroup&gt; [target]</code>"
+      "perm": "<code>{prefix}perm [ID|@username|command/name] &lt;role&gt; [remove]</code>"
     },
     "all_chats": "すべてのチャットで全員が利用できます。"
   },

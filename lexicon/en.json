@@ -405,53 +405,14 @@
         "whois": {
           "description": "Show user permissions",
           "usage": "[ID|@username] [command]"
-        },
-        "owadd": {
-          "description": "Add owner"
-        },
-        "owrm": {
-          "description": "Remove owner"
-        },
-        "owls": {
-          "description": "List owners"
-        },
-        "sgnew": {
-          "description": "Create permission group"
-        },
-        "sgls": {
-          "description": "List groups"
-        },
-        "sg": {
-          "description": "Show group members and rules"
-        },
-        "sgdel": {
-          "description": "Delete group"
-        },
-        "sgadd": {
-          "description": "Add group member"
-        },
-        "sgrm": {
-          "description": "Remove group member"
-        },
-        "rule": {
-          "description": "Add access rule"
-        },
-        "rulerm": {
-          "description": "Remove rule"
-        },
-        "ruleclr": {
-          "description": "Clear rules"
         }
       },
-      "usage": "usage:\n!owadd <user_id|reply> — grant owner\n!owrm <user_id|reply> — revoke owner\n!owls — list owners\n!sgnew <name> — create a security group\n!sgls — list groups\n!sg <name> — show group users and rules\n!sgdel <name> — delete a group\n!sgadd <name> <user_id|reply> — add a user to a group\n!sgrm <name> <user_id|reply> — remove a user from a group\n!rule <user|chat|sgroup> <target> <command|module>/<name> [expiry] — add a rule\n!rulerm — remove a rule\n!ruleclr — clear rules for a target\n!perm <user_id> <admin|trusted|everyone> [remove] — grant/revoke a permission\n!perms — list permissions\n!whois <user_id> — user permissions",
       "bad_group": "Group name: letters and digits only, up to 32 characters.",
-      "no_groups": "No security groups. Create one: !sgnew <name>",
       "bad_duration": "Expiry: number + s/m/h/d/w, or forever.",
       "bad_rule": "Rule: command/name or module/name.",
       "self_owner": "This user is already the account owner.",
       "empty": "No permissions granted. Use !perm <user_id> <role>.",
-      "bad_label": "Unknown permission: {label}.",
-      "no_owner_grant": "Owner is granted via !owadd."
+      "bad_label": "Unknown permission: {label}."
     },
     "lg": "log tail:\n{lines}",
     "commands": {
@@ -751,30 +712,10 @@
   },
   "acl": {
     "owners": "<b>Owners</b><br>",
-    "account": " · account",
-    "protected": " · protected",
-    "failed": "<b>Failed:</b> <i>{error}</i>",
-    "owner_added": "<b>Granted</b> owner to <code>{user_id}</code>",
-    "owner_exists": "<code>{user_id}</code> is already an owner",
-    "owner_removed": "<b>Revoked</b> owner from <code>{user_id}</code>",
-    "owner_missing": "<code>{user_id}</code> is not an extra owner",
-    "group_created": "<b>Created group</b> <code>{name}</code>",
-    "group_deleted": "<b>Deleted group</b> <code>{name}</code>",
     "group_missing": "Group <code>{name}</code> not found",
     "group_item": "<b>{name}</b> — {users} users, {rules} rules",
     "groups": "<b>Security groups</b><br>",
-    "group_detail": "<b>Group {name}</b><br><b>Users</b><br>{users}<br><b>Rules</b><br>{rules}",
-    "member_exists": "<code>{user_id}</code> is already in <code>{name}</code>",
-    "member_missing": "<code>{user_id}</code> is not in <code>{name}</code>",
-    "member_added": "<b>Added</b> <code>{user_id}</code> to <code>{name}</code>",
-    "member_removed": "<b>Removed</b> <code>{user_id}</code> from <code>{name}</code>",
-    "duration": " for {duration}",
     "group_rule": "<b>Rule added:</b> sgroup <code>{target}</code> → {kind}/{rule}{until}",
-    "rule_added": "<b>Rule added:</b> {kind} <code>{target}</code> → {type}/{rule}{until}",
-    "rule_removed": "<b>Rule removed</b>",
-    "nothing_remove": "nothing to remove",
-    "rules_cleared": "<b>Rules cleared</b>",
-    "nothing_clear": "nothing to clear",
     "permissions": "<b>Permissions</b><br>",
     "user_groups": "<br>groups: <code>{groups}</code>",
     "user_detail": "<code>{user_id}</code> · <b>{permissions}</b>",
@@ -783,16 +724,12 @@
     "nothing_revoke": "nothing to revoke",
     "grant_failed": "<b>Grant failed:</b> <i>{error}</i>",
     "granted": "<b>Granted</b> <code>{label}</code> to <code>{user_id}</code>",
-    "self_owner": "This user already owns the account.",
     "bad_group": "Group name: letters and digits, up to 32 characters.",
-    "no_groups": "No groups.",
     "bad_duration": "Use 1m, 1h, 1d, 1w or forever. Maximum: 100 years.",
     "bad_rule": "Rule: command/name or module/name.",
     "empty": "No granted permissions. Use {prefix}perm <user_id> <role>.",
     "bad_label": "Unknown permission: {label}",
-    "no_owner_grant": "Use {prefix}owadd to grant owner access.",
-    "usage": "<code>{prefix}owadd &lt;user_id|reply&gt;</code> — Add owner\n<code>{prefix}owrm &lt;user_id|reply&gt;</code> — Remove owner\n<code>{prefix}owls</code> — List owners\n<code>{prefix}sgnew &lt;name&gt;</code> — Create permission group\n<code>{prefix}sgls</code> — List groups\n<code>{prefix}sg &lt;name&gt;</code> — Show group members and rules\n<code>{prefix}sgdel &lt;name&gt;</code> — Delete group\n<code>{prefix}sgadd &lt;name&gt; &lt;user_id|reply&gt;</code> — Add group member\n<code>{prefix}sgrm &lt;name&gt; &lt;user_id|reply&gt;</code> — Remove group member\n<code>{prefix}rule &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;command|module&gt;/&lt;name&gt; [expiry]</code> — Add access rule\n<code>{prefix}rulerm &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;rule&gt;</code> — Remove rule\n<code>{prefix}ruleclr &lt;user|chat|sgroup&gt; [target]</code> — Clear rules\n<code>{prefix}perm &lt;user_id&gt; &lt;admin|trusted|everyone&gt; [remove]</code> — Grant or revoke permission\n<code>{prefix}perms</code> — List permissions\n<code>{prefix}whois &lt;user_id&gt;</code> — Show user permissions",
-    "account_owner": "The account owner cannot be removed.",
+    "no_owner_grant": "Use {prefix}perms to grant owner access.",
     "owner_confirm": "Grant <code>{user_id}</code> full access?",
     "confirm": "Confirm",
     "clear_confirm": "Clear rules for <code>{scope}</code>?",
@@ -853,19 +790,7 @@
     "syntax": {
       "perms": "<code>{prefix}perms [ID|@username]</code>",
       "whois": "<code>{prefix}whois [ID|@username] [command]</code>",
-      "perm": "<code>{prefix}perm [ID|@username|command/name] &lt;role&gt; [remove]</code>",
-      "owadd": "<code>{prefix}owadd [ID|@username]</code>",
-      "owrm": "<code>{prefix}owrm [ID|@username]</code>",
-      "owls": "<code>{prefix}owls</code>",
-      "sgnew": "<code>{prefix}sgnew &lt;name&gt;</code>",
-      "sgdel": "<code>{prefix}sgdel &lt;name&gt;</code>",
-      "sgls": "<code>{prefix}sgls</code>",
-      "sg": "<code>{prefix}sg &lt;name&gt;</code>",
-      "sgadd": "<code>{prefix}sgadd &lt;name&gt; [ID|@username]</code>",
-      "sgrm": "<code>{prefix}sgrm &lt;name&gt; [ID|@username]</code>",
-      "rule": "<code>{prefix}rule &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;command/name|module/name&gt; [1h|forever]</code>",
-      "rulerm": "<code>{prefix}rulerm &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;command/name|module/name|*&gt;</code>",
-      "ruleclr": "<code>{prefix}ruleclr &lt;user|chat|sgroup&gt; [target]</code>"
+      "perm": "<code>{prefix}perm [ID|@username|command/name] &lt;role&gt; [remove]</code>"
     },
     "all_chats": "Available to everyone in all chats."
   },
