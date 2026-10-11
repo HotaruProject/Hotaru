@@ -22,10 +22,12 @@
       "description": "Hotaru configuration module",
       "commands": {
         "conf": {
-          "description": "Open settings"
+          "description": "Open settings",
+          "usage": "[module] [parameter|reset] [value]"
         },
         "config": {
-          "description": "Open settings"
+          "description": "Open settings",
+          "usage": "[module] [parameter|reset] [value]"
         }
       },
       "template_fields": "Available template fields",
@@ -88,7 +90,8 @@
       "description": "Hotaru self-updater",
       "commands": {
         "upd": {
-          "description": "Check and apply update"
+          "description": "Check and apply update",
+          "usage": "[force]"
         },
         "updlog": {
           "description": "Show update changelog"
@@ -178,10 +181,12 @@
       "description": "Hotaru help module",
       "commands": {
         "hlp": {
-          "description": "Show help catalog"
+          "description": "Show help catalog",
+          "usage": "[module]"
         },
         "help": {
-          "description": "Show help catalog"
+          "description": "Show help catalog",
+          "usage": "[module]"
         }
       }
     },
@@ -189,10 +194,12 @@
       "description": "Translation management",
       "commands": {
         "lang": {
-          "description": "Show or change language"
+          "description": "Show or change language",
+          "usage": "[language]"
         },
         "language": {
-          "description": "Show or change language"
+          "description": "Show or change language",
+          "usage": "[language]"
         }
       },
       "native": {
@@ -251,13 +258,16 @@
       "description": "Account management",
       "commands": {
         "acc": {
-          "description": "Manage an account"
+          "description": "Manage an account",
+          "usage": "[number] [start|stop|restart|on|off|del]"
         },
         "acca": {
-          "description": "Add or log in to an account"
+          "description": "Add or log in to an account",
+          "usage": "[ID|cancel|password] [password]"
         },
         "accs": {
-          "description": "Open account panel"
+          "description": "Open account panel",
+          "usage": "[number]"
         }
       },
       "usage": "<b>Accounts</b>\n<code>{prefix}acca [user_id]</code> · add via QR / Phone\n<code>{prefix}acca cancel</code> · cancel login\n<code>{prefix}accs [#]</code> · account panel\n<code>{prefix}acc [#]</code> · account panel\n<code>{prefix}acc 2 start|stop|restart|on|off|del</code>",
@@ -396,11 +406,12 @@
       "description": "Access control",
       "commands": {
         "perms": {
-          "description": "List permissions"
+          "description": "List permissions",
+          "usage": "[ID|@username]"
         },
         "perm": {
           "description": "Grant or revoke permission",
-          "usage": "[ID|@username|command/name] <role> [remove]"
+          "usage": "[ID|@username|command/name] [role] [remove]"
         },
         "whois": {
           "description": "Show user permissions",
@@ -422,16 +433,19 @@
       "description": "Alias and prefix management",
       "commands": {
         "alias": {
-          "description": "Create a command alias"
+          "description": "Create a command alias",
+          "usage": "[alias] [command]"
         },
         "rmalias": {
-          "description": "Remove a command alias"
+          "description": "Remove a command alias",
+          "usage": "[alias]"
         },
         "lsalias": {
           "description": "List command aliases"
         },
         "prefix": {
-          "description": "Change command prefix"
+          "description": "Change command prefix",
+          "usage": "[prefix]"
         }
       }
     },
@@ -454,7 +468,8 @@
       "logs_sent": "Logs sent: {count} entries",
       "commands": {
         "logs": {
-          "description": "Userbot logs with a file"
+          "description": "Userbot logs with a file",
+          "usage": "[on|off|status|level] [count] [component]"
         }
       },
       "pending": "pending",
@@ -491,10 +506,12 @@
       "description": "Run Python and shell commands",
       "commands": {
         "py": {
-          "description": "Run Python code"
+          "description": "Run Python code",
+          "usage": "[-so] [code]"
         },
         "sh": {
-          "description": "Run a shell command"
+          "description": "Run a shell command",
+          "usage": "[-so] [command]"
         },
         "kill": {
           "description": "Stop a running command"
@@ -505,22 +522,28 @@
       "description": "Module management",
       "commands": {
         "ld": {
-          "description": "Load a module"
+          "description": "Load a module",
+          "usage": "[url|path]"
         },
         "ul": {
-          "description": "Unload a module"
+          "description": "Unload a module",
+          "usage": "[module] [-p]"
         },
         "rl": {
-          "description": "Reload a module"
+          "description": "Reload a module",
+          "usage": "[module] [force]"
         },
         "ex": {
-          "description": "Export a module"
+          "description": "Export a module",
+          "usage": "[module]"
         },
         "rs": {
-          "description": "Reset module data"
+          "description": "Reset module data",
+          "usage": "[module]"
         },
         "resetdb": {
-          "description": "Reset module data"
+          "description": "Reset module data",
+          "usage": "[module]"
         }
       }
     },

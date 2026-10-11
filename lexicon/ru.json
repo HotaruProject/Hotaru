@@ -22,10 +22,12 @@
       "description": "Модуль конфигурации Hotaru",
       "commands": {
         "conf": {
-          "description": "Открыть настройки"
+          "description": "Открыть настройки",
+          "usage": "[модуль] [параметр|reset] [значение]"
         },
         "config": {
-          "description": "Открыть настройки"
+          "description": "Открыть настройки",
+          "usage": "[модуль] [параметр|reset] [значение]"
         }
       },
       "template_fields": "Доступные поля шаблона",
@@ -88,7 +90,8 @@
       "description": "Автообновление Hotaru",
       "commands": {
         "upd": {
-          "description": "Проверить и применить обновление"
+          "description": "Проверить и применить обновление",
+          "usage": "[force]"
         },
         "updlog": {
           "description": "Показать ченджлог"
@@ -178,10 +181,12 @@
       "description": "Модуль помощи Hotaru",
       "commands": {
         "hlp": {
-          "description": "Каталог помощи"
+          "description": "Каталог помощи",
+          "usage": "[модуль]"
         },
         "help": {
-          "description": "Каталог помощи"
+          "description": "Каталог помощи",
+          "usage": "[модуль]"
         }
       }
     },
@@ -189,10 +194,12 @@
       "description": "Управление переводами",
       "commands": {
         "lang": {
-          "description": "Показать или изменить язык"
+          "description": "Показать или изменить язык",
+          "usage": "[язык]"
         },
         "language": {
-          "description": "Показать или изменить язык"
+          "description": "Показать или изменить язык",
+          "usage": "[язык]"
         }
       },
       "native": {
@@ -251,13 +258,16 @@
       "description": "Управление аккаунтами",
       "commands": {
         "acc": {
-          "description": "Управление аккаунтом"
+          "description": "Управление аккаунтом",
+          "usage": "[номер] [start|stop|restart|on|off|del]"
         },
         "acca": {
-          "description": "Добавить аккаунт или войти"
+          "description": "Добавить аккаунт или войти",
+          "usage": "[ID|cancel|password] [пароль]"
         },
         "accs": {
-          "description": "Открыть панель аккаунтов"
+          "description": "Открыть панель аккаунтов",
+          "usage": "[номер]"
         }
       },
       "usage": "<b>Аккаунты</b>\n<code>{prefix}acca [user_id]</code> · добавить по QR / номеру\n<code>{prefix}acca cancel</code> · отменить вход\n<code>{prefix}accs [#]</code> · панель аккаунтов\n<code>{prefix}acc [#]</code> · панель аккаунтов\n<code>{prefix}acc 2 start|stop|restart|on|off|del</code>",
@@ -396,15 +406,16 @@
       "description": "Управление правами",
       "commands": {
         "perms": {
-          "description": "Список прав"
+          "description": "Список прав",
+          "usage": "[ID|@username]"
         },
         "perm": {
           "description": "Выдать или отозвать права",
-          "usage": "[ID|@username|command/name] <role> [remove]"
+          "usage": "[ID|@username|command/имя] [роль] [remove]"
         },
         "whois": {
           "description": "Права пользователя",
-          "usage": "[ID|@username] [command]"
+          "usage": "[ID|@username] [команда]"
         }
       },
       "bad_group": "Имя группы: только буквы и цифры, до 32 символов.",
@@ -434,7 +445,8 @@
       "logs_sent": "Логи отправлены: {count} записей",
       "commands": {
         "logs": {
-          "description": "Логи юзербота с файлом"
+          "description": "Логи юзербота с файлом",
+          "usage": "[on|off|status|уровень] [количество] [компонент]"
         }
       },
       "pending": "ожидание",
@@ -456,16 +468,19 @@
       "description": "Управление алиасами и префиксом",
       "commands": {
         "alias": {
-          "description": "Создать алиас команды"
+          "description": "Создать алиас команды",
+          "usage": "[алиас] [команда]"
         },
         "rmalias": {
-          "description": "Удалить алиас команды"
+          "description": "Удалить алиас команды",
+          "usage": "[алиас]"
         },
         "lsalias": {
           "description": "Показать алиасы команд"
         },
         "prefix": {
-          "description": "Сменить префикс команд"
+          "description": "Сменить префикс команд",
+          "usage": "[префикс]"
         }
       }
     },
@@ -491,10 +506,12 @@
       "description": "Выполнение Python и команд оболочки",
       "commands": {
         "py": {
-          "description": "Выполнить код Python"
+          "description": "Выполнить код Python",
+          "usage": "[-so] [код]"
         },
         "sh": {
-          "description": "Выполнить команду оболочки"
+          "description": "Выполнить команду оболочки",
+          "usage": "[-so] [команда]"
         },
         "kill": {
           "description": "Остановить выполняющуюся команду"
@@ -505,22 +522,28 @@
       "description": "Управление модулями",
       "commands": {
         "ld": {
-          "description": "Загрузить модуль"
+          "description": "Загрузить модуль",
+          "usage": "[ссылка|путь]"
         },
         "ul": {
-          "description": "Выгрузить модуль"
+          "description": "Выгрузить модуль",
+          "usage": "[модуль] [-p]"
         },
         "rl": {
-          "description": "Перезагрузить модуль"
+          "description": "Перезагрузить модуль",
+          "usage": "[модуль] [force]"
         },
         "ex": {
-          "description": "Экспортировать модуль"
+          "description": "Экспортировать модуль",
+          "usage": "[модуль]"
         },
         "rs": {
-          "description": "Очистить данные модуля"
+          "description": "Очистить данные модуля",
+          "usage": "[модуль]"
         },
         "resetdb": {
-          "description": "Очистить данные модуля"
+          "description": "Очистить данные модуля",
+          "usage": "[модуль]"
         }
       }
     },

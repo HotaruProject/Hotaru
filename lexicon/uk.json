@@ -80,10 +80,12 @@
       "description": "Модуль допомоги Hotaru",
       "commands": {
         "hlp": {
-          "description": "Каталог допомоги"
+          "description": "Каталог допомоги",
+          "usage": "[модуль]"
         },
         "help": {
-          "description": "Каталог допомоги"
+          "description": "Каталог допомоги",
+          "usage": "[модуль]"
         }
       }
     },
@@ -114,7 +116,8 @@
       "description": "Автооновлення Hotaru",
       "commands": {
         "upd": {
-          "description": "Перевірити і застосувати оновлення"
+          "description": "Перевірити і застосувати оновлення",
+          "usage": "[force]"
         },
         "updlog": {
           "description": "Показати ченджлог"
@@ -150,10 +153,12 @@
       "description": "Керування перекладами",
       "commands": {
         "lang": {
-          "description": "Показати або змінити мову"
+          "description": "Показати або змінити мову",
+          "usage": "[мова]"
         },
         "language": {
-          "description": "Показати або змінити мову"
+          "description": "Показати або змінити мову",
+          "usage": "[мова]"
         }
       },
       "native": {
@@ -212,13 +217,16 @@
       "description": "Керування акаунтами",
       "commands": {
         "acc": {
-          "description": "Керування акаунтом"
+          "description": "Керування акаунтом",
+          "usage": "[номер] [start|stop|restart|on|off|del]"
         },
         "acca": {
-          "description": "Додати акаунт або увійти"
+          "description": "Додати акаунт або увійти",
+          "usage": "[ID|cancel|password] [пароль]"
         },
         "accs": {
-          "description": "Відкрити панель акаунтів"
+          "description": "Відкрити панель акаунтів",
+          "usage": "[номер]"
         }
       },
       "usage": "<b>Акаунти</b>\n<code>{prefix}acca [user_id]</code> · додати за QR / номером\n<code>{prefix}acca cancel</code> · скасувати вхід\n<code>{prefix}accs [#]</code> · панель акаунтів\n<code>{prefix}acc [#]</code> · панель акаунтів\n<code>{prefix}acc 2 start|stop|restart|on|off|del</code>",
@@ -357,15 +365,16 @@
       "description": "Керування правами",
       "commands": {
         "perms": {
-          "description": "Список прав"
+          "description": "Список прав",
+          "usage": "[ID|@username]"
         },
         "perm": {
           "description": "Надати або відкликати права",
-          "usage": "[ID|@username|command/name] <role> [remove]"
+          "usage": "[ID|@username|command/ім'я] [роль] [remove]"
         },
         "whois": {
           "description": "Права користувача",
-          "usage": "[ID|@username] [command]"
+          "usage": "[ID|@username] [команда]"
         }
       },
       "bad_group": "Назва групи: лише літери та цифри, до 32 символів.",
@@ -383,10 +392,12 @@
       "description": "Модуль конфігурації Hotaru",
       "commands": {
         "conf": {
-          "description": "Відкрити налаштування"
+          "description": "Відкрити налаштування",
+          "usage": "[модуль] [параметр|reset] [значення]"
         },
         "config": {
-          "description": "Відкрити налаштування"
+          "description": "Відкрити налаштування",
+          "usage": "[модуль] [параметр|reset] [значення]"
         }
       },
       "template_fields": "Доступні поля шаблону",
@@ -419,16 +430,19 @@
       "description": "Керування аліасами та префіксом",
       "commands": {
         "alias": {
-          "description": "Створити аліас команди"
+          "description": "Створити аліас команди",
+          "usage": "[аліас] [команда]"
         },
         "rmalias": {
-          "description": "Видалити аліас команди"
+          "description": "Видалити аліас команди",
+          "usage": "[аліас]"
         },
         "lsalias": {
           "description": "Показати аліаси команд"
         },
         "prefix": {
-          "description": "Змінити префікс команд"
+          "description": "Змінити префікс команд",
+          "usage": "[префікс]"
         }
       }
     },
@@ -460,7 +474,8 @@
       "logs_sent": "Логи надіслано: {count} записів",
       "commands": {
         "logs": {
-          "description": "Логи юзербота з файлом"
+          "description": "Логи юзербота з файлом",
+          "usage": "[on|off|status|рівень] [кількість] [компонент]"
         }
       },
       "pending": "очікування",
@@ -497,10 +512,12 @@
       "description": "Виконання Python і команд оболонки",
       "commands": {
         "py": {
-          "description": "Виконати код Python"
+          "description": "Виконати код Python",
+          "usage": "[-so] [код]"
         },
         "sh": {
-          "description": "Виконати команду оболонки"
+          "description": "Виконати команду оболонки",
+          "usage": "[-so] [команда]"
         },
         "kill": {
           "description": "Зупинити активну команду"
@@ -511,22 +528,28 @@
       "description": "Керування модулями",
       "commands": {
         "ld": {
-          "description": "Завантажити модуль"
+          "description": "Завантажити модуль",
+          "usage": "[посилання|шлях]"
         },
         "ul": {
-          "description": "Вивантажити модуль"
+          "description": "Вивантажити модуль",
+          "usage": "[модуль] [-p]"
         },
         "rl": {
-          "description": "Перезавантажити модуль"
+          "description": "Перезавантажити модуль",
+          "usage": "[модуль] [force]"
         },
         "ex": {
-          "description": "Експортувати модуль"
+          "description": "Експортувати модуль",
+          "usage": "[модуль]"
         },
         "rs": {
-          "description": "Очистити дані модуля"
+          "description": "Очистити дані модуля",
+          "usage": "[модуль]"
         },
         "resetdb": {
-          "description": "Очистити дані модуля"
+          "description": "Очистити дані модуля",
+          "usage": "[модуль]"
         }
       }
     },

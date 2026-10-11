@@ -80,10 +80,12 @@
       "description": "Hotaru көмек модулі",
       "commands": {
         "hlp": {
-          "description": "Көмек каталогы"
+          "description": "Көмек каталогы",
+          "usage": "[модуль]"
         },
         "help": {
-          "description": "Көмек каталогы"
+          "description": "Көмек каталогы",
+          "usage": "[модуль]"
         }
       }
     },
@@ -114,7 +116,8 @@
       "description": "Hotaru жаңарту",
       "commands": {
         "upd": {
-          "description": "Жаңартуды тексеру және қолдану"
+          "description": "Жаңартуды тексеру және қолдану",
+          "usage": "[force]"
         },
         "updlog": {
           "description": "Өзгерістер тізімі"
@@ -150,10 +153,12 @@
       "description": "Аудармаларды басқару",
       "commands": {
         "lang": {
-          "description": "Тілді көрсету немесе өзгерту"
+          "description": "Тілді көрсету немесе өзгерту",
+          "usage": "[тіл]"
         },
         "language": {
-          "description": "Тілді көрсету немесе өзгерту"
+          "description": "Тілді көрсету немесе өзгерту",
+          "usage": "[тіл]"
         }
       },
       "native": {
@@ -212,13 +217,16 @@
       "description": "Аккаунттарды басқару",
       "commands": {
         "acc": {
-          "description": "Аккаунтты басқару"
+          "description": "Аккаунтты басқару",
+          "usage": "[нөмір] [start|stop|restart|on|off|del]"
         },
         "acca": {
-          "description": "Аккаунт қосу немесе кіру"
+          "description": "Аккаунт қосу немесе кіру",
+          "usage": "[ID|cancel|password] [құпиясөз]"
         },
         "accs": {
-          "description": "Аккаунттар тақтасын ашу"
+          "description": "Аккаунттар тақтасын ашу",
+          "usage": "[нөмір]"
         }
       },
       "usage": "<b>Аккаунттар</b>\n<code>{prefix}acca [user_id]</code> · QR / нөмір арқылы қосу\n<code>{prefix}acca cancel</code> · кіруден бас тарту\n<code>{prefix}accs [#]</code> · аккаунттар панелі\n<code>{prefix}acc [#]</code> · аккаунттар панелі\n<code>{prefix}acc 2 start|stop|restart|on|off|del</code>",
@@ -357,15 +365,16 @@
       "description": "Құқықтарды басқару",
       "commands": {
         "perms": {
-          "description": "Құқықтар тізімі"
+          "description": "Құқықтар тізімі",
+          "usage": "[ID|@username]"
         },
         "perm": {
           "description": "Құқық беру немесе қайтару",
-          "usage": "[ID|@username|command/name] <role> [remove]"
+          "usage": "[ID|@username|command/атау] [рөл] [remove]"
         },
         "whois": {
           "description": "Пайдаланушы құқықтары",
-          "usage": "[ID|@username] [command]"
+          "usage": "[ID|@username] [команда]"
         }
       },
       "bad_group": "Топ атауы: тек әріптер мен цифрлар, 32 таңбаға дейін.",
@@ -383,10 +392,12 @@
       "description": "Hotaru конфигурация модулі",
       "commands": {
         "conf": {
-          "description": "Параметрлерді ашу"
+          "description": "Параметрлерді ашу",
+          "usage": "[модуль] [параметр|reset] [мән]"
         },
         "config": {
-          "description": "Параметрлерді ашу"
+          "description": "Параметрлерді ашу",
+          "usage": "[модуль] [параметр|reset] [мән]"
         }
       },
       "template_fields": "Қолжетімді үлгі өрістері",
@@ -419,16 +430,19 @@
       "description": "Бүркеншік аттар мен префиксті басқару",
       "commands": {
         "alias": {
-          "description": "Командаға бүркеншік ат беру"
+          "description": "Командаға бүркеншік ат беру",
+          "usage": "[алиас] [команда]"
         },
         "rmalias": {
-          "description": "Команданың бүркеншік атын жою"
+          "description": "Команданың бүркеншік атын жою",
+          "usage": "[алиас]"
         },
         "lsalias": {
           "description": "Команда бүркеншік аттарының тізімі"
         },
         "prefix": {
-          "description": "Команда префиксін өзгерту"
+          "description": "Команда префиксін өзгерту",
+          "usage": "[префикс]"
         }
       }
     },
@@ -460,7 +474,8 @@
       "logs_sent": "Логтар жіберілді: {count} жазба",
       "commands": {
         "logs": {
-          "description": "Юзербот логтары файлмен бірге"
+          "description": "Юзербот логтары файлмен бірге",
+          "usage": "[on|off|status|деңгей] [саны] [компонент]"
         }
       },
       "pending": "күтілуде",
@@ -497,10 +512,12 @@
       "description": "Python және қабықша командаларын орындау",
       "commands": {
         "py": {
-          "description": "Python кодын орындау"
+          "description": "Python кодын орындау",
+          "usage": "[-so] [код]"
         },
         "sh": {
-          "description": "Қабықша командасын орындау"
+          "description": "Қабықша командасын орындау",
+          "usage": "[-so] [команда]"
         },
         "kill": {
           "description": "Орындалып жатқан команданы тоқтату"
@@ -511,22 +528,28 @@
       "description": "Модульдерді басқару",
       "commands": {
         "ld": {
-          "description": "Модульді жүктеу"
+          "description": "Модульді жүктеу",
+          "usage": "[сілтеме|жол]"
         },
         "ul": {
-          "description": "Модульді тоқтату"
+          "description": "Модульді тоқтату",
+          "usage": "[модуль] [-p]"
         },
         "rl": {
-          "description": "Модульді қайта жүктеу"
+          "description": "Модульді қайта жүктеу",
+          "usage": "[модуль] [force]"
         },
         "ex": {
-          "description": "Модульді экспорттау"
+          "description": "Модульді экспорттау",
+          "usage": "[модуль]"
         },
         "rs": {
-          "description": "Модуль деректерін тазарту"
+          "description": "Модуль деректерін тазарту",
+          "usage": "[модуль]"
         },
         "resetdb": {
-          "description": "Модуль деректерін тазарту"
+          "description": "Модуль деректерін тазарту",
+          "usage": "[модуль]"
         }
       }
     },
