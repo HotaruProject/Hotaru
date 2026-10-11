@@ -47,7 +47,7 @@ class Kernel:
         self.security: SecurityGate | None = None
         self.sandbox: Any = None
         self.tasks = TaskSupervisor()
-        self._seen: OrderedDict[tuple[str, int | str | None, int], None] = OrderedDict()
+        self._seen: OrderedDict[tuple[int | str | None, int], str | None] = OrderedDict()
         self._seen_limit = seen_limit
         self._running: dict[tuple[int | str | None, int], asyncio.Task[Any]] = {}
         self.suspended = False
@@ -137,11 +137,14 @@ class Kernel:
             return None
         message_id = self._message_id(message)
         chat_id = getattr(message, "chat_id", None)
-        key = (source, chat_id, message_id)
-        if source != "edit" and key in self._seen:
-            return None
+        key = (chat_id, message_id)
+        text = getattr(message, "text", None)
+        if key in self._seen:
+            if source != "edit" or self._seen[key] == text:
+                return None
+            self._remember(key, text)
         invocation = self.parser.parse(
-            getattr(message, "text", None),
+            text,
             source=source,
             message_id=message_id,
             chat_id=chat_id,
@@ -165,7 +168,7 @@ class Kernel:
             verdict = self.security.check(message, transport="mt", module_id=spec.module_id, is_group=self._is_group(message), authorized=True)
             if verdict is not AccessVerdict.ALLOW:
                 return None
-        self._remember(key)
+        self._remember(key, text)
         if self.suspended and not spec.kernel:
             return None
         task_key = (chat_id, message_id)
@@ -345,8 +348,8 @@ class Kernel:
             raise ValueError("message must expose an integer id")
         return value
 
-    def _remember(self, key: tuple[str, int | str | None, int]) -> None:
-        self._seen[key] = None
+    def _remember(self, key: tuple[int | str | None, int], text: str | None) -> None:
+        self._seen[key] = text
         self._seen.move_to_end(key)
         while len(self._seen) > self._seen_limit:
             self._seen.popitem(last=False)
