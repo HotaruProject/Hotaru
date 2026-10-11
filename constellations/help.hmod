@@ -110,7 +110,8 @@ async def _show_help(ctx: Any, invocation: Any) -> Any:
         for command in manifest.commands:
             details = manifest.command_details(command, runtime.language())
             command_description = details.get("description", "")
-            line = f"<code>{_escape(runtime.config.prefix)}{_escape(command)}</code>"
+            usage = details.get("usage", "")
+            line = f"<code>{_escape(runtime.config.prefix)}{_escape(command)}{' ' + _escape(usage) if usage else ''}</code>"
             if command_description:
                 line += f" — {_escape(command_description)}"
             command_lines.append(line)

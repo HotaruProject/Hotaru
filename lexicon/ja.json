@@ -80,10 +80,12 @@
       "description": "Hotaru ヘルプモジュール",
       "commands": {
         "hlp": {
-          "description": "ヘルプカタログ"
+          "description": "ヘルプカタログ",
+          "usage": "[モジュール]"
         },
         "help": {
-          "description": "ヘルプカタログ"
+          "description": "ヘルプカタログ",
+          "usage": "[モジュール]"
         }
       }
     },
@@ -114,7 +116,8 @@
       "description": "Hotaru 自動更新",
       "commands": {
         "upd": {
-          "description": "更新の確認と適用"
+          "description": "更新の確認と適用",
+          "usage": "[force]"
         },
         "updlog": {
           "description": "変更ログ表示"
@@ -150,10 +153,12 @@
       "description": "翻訳設定",
       "commands": {
         "lang": {
-          "description": "言語を表示または変更"
+          "description": "言語を表示または変更",
+          "usage": "[言語]"
         },
         "language": {
-          "description": "言語を表示または変更"
+          "description": "言語を表示または変更",
+          "usage": "[言語]"
         }
       },
       "native": {
@@ -212,13 +217,16 @@
       "description": "アカウント管理",
       "commands": {
         "acc": {
-          "description": "アカウントの管理"
+          "description": "アカウントの管理",
+          "usage": "[番号] [start|stop|restart|on|off|del]"
         },
         "acca": {
-          "description": "アカウントの追加・ログイン"
+          "description": "アカウントの追加・ログイン",
+          "usage": "[ID|cancel|password] [パスワード]"
         },
         "accs": {
-          "description": "アカウント一覧を開く"
+          "description": "アカウント一覧を開く",
+          "usage": "[番号]"
         }
       },
       "usage": "<b>アカウント</b>\n<code>{prefix}acca [user_id]</code> · QR / 電話番号で追加\n<code>{prefix}acca cancel</code> · ログインをキャンセル\n<code>{prefix}accs [#]</code> · アカウントパネル\n<code>{prefix}acc [#]</code> · アカウントパネル\n<code>{prefix}acc 2 start|stop|restart|on|off|del</code>",
@@ -357,15 +365,16 @@
       "description": "権限管理",
       "commands": {
         "perms": {
-          "description": "権限一覧"
+          "description": "権限一覧",
+          "usage": "[ID|@username]"
         },
         "perm": {
           "description": "権限を付与・取り消し",
-          "usage": "[ID|@username|command/name] <role> [remove]"
+          "usage": "[ID|@username|command/名前] [ロール] [remove]"
         },
         "whois": {
           "description": "ユーザーの権限",
-          "usage": "[ID|@username] [command]"
+          "usage": "[ID|@username] [コマンド]"
         }
       },
       "bad_group": "グループ名: 英数字のみ、32文字まで。",
@@ -383,10 +392,12 @@
       "description": "Hotaru 設定モジュール",
       "commands": {
         "conf": {
-          "description": "設定を開く"
+          "description": "設定を開く",
+          "usage": "[モジュール] [パラメータ|reset] [値]"
         },
         "config": {
-          "description": "設定を開く"
+          "description": "設定を開く",
+          "usage": "[モジュール] [パラメータ|reset] [値]"
         }
       },
       "template_fields": "利用可能なテンプレート変数",
@@ -419,16 +430,19 @@
       "description": "別名とプレフィックスの管理",
       "commands": {
         "alias": {
-          "description": "コマンドの別名を作成"
+          "description": "コマンドの別名を作成",
+          "usage": "[エイリアス] [コマンド]"
         },
         "rmalias": {
-          "description": "コマンドの別名を削除"
+          "description": "コマンドの別名を削除",
+          "usage": "[エイリアス]"
         },
         "lsalias": {
           "description": "コマンドエイリアスの一覧を表示"
         },
         "prefix": {
-          "description": "コマンドのプレフィックスを変更"
+          "description": "コマンドのプレフィックスを変更",
+          "usage": "[プレフィックス]"
         }
       }
     },
@@ -460,7 +474,8 @@
       "logs_sent": "ログを送信しました: {count} 件",
       "commands": {
         "logs": {
-          "description": "ユーザーボットのログとファイル"
+          "description": "ユーザーボットのログとファイル",
+          "usage": "[on|off|status|レベル] [件数] [コンポーネント]"
         }
       },
       "pending": "待機中",
@@ -497,10 +512,12 @@
       "description": "Pythonとシェルコマンドの実行",
       "commands": {
         "py": {
-          "description": "Pythonコードを実行"
+          "description": "Pythonコードを実行",
+          "usage": "[-so] [コード]"
         },
         "sh": {
-          "description": "シェルコマンドを実行"
+          "description": "シェルコマンドを実行",
+          "usage": "[-so] [コマンド]"
         },
         "kill": {
           "description": "実行中のコマンドを停止"
@@ -511,22 +528,28 @@
       "description": "モジュール管理",
       "commands": {
         "ld": {
-          "description": "モジュールを読み込む"
+          "description": "モジュールを読み込む",
+          "usage": "[URL|パス]"
         },
         "ul": {
-          "description": "モジュールを停止"
+          "description": "モジュールを停止",
+          "usage": "[モジュール] [-p]"
         },
         "rl": {
-          "description": "モジュールを再読み込み"
+          "description": "モジュールを再読み込み",
+          "usage": "[モジュール] [force]"
         },
         "ex": {
-          "description": "モジュールをエクスポート"
+          "description": "モジュールをエクスポート",
+          "usage": "[モジュール]"
         },
         "rs": {
-          "description": "モジュールのデータをリセット"
+          "description": "モジュールのデータをリセット",
+          "usage": "[モジュール]"
         },
         "resetdb": {
-          "description": "モジュールのデータをリセット"
+          "description": "モジュールのデータをリセット",
+          "usage": "[モジュール]"
         }
       }
     },
