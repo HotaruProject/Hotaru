@@ -366,53 +366,14 @@
         "whois": {
           "description": "Права користувача",
           "usage": "[ID|@username] [command]"
-        },
-        "owadd": {
-          "description": "Додати власника"
-        },
-        "owrm": {
-          "description": "Видалити власника"
-        },
-        "owls": {
-          "description": "Список власників"
-        },
-        "sgnew": {
-          "description": "Створити групу прав"
-        },
-        "sgls": {
-          "description": "Список груп"
-        },
-        "sg": {
-          "description": "Учасники та правила групи"
-        },
-        "sgdel": {
-          "description": "Видалити групу"
-        },
-        "sgadd": {
-          "description": "Додати учасника"
-        },
-        "sgrm": {
-          "description": "Видалити учасника"
-        },
-        "rule": {
-          "description": "Додати правило доступу"
-        },
-        "rulerm": {
-          "description": "Видалити правило"
-        },
-        "ruleclr": {
-          "description": "Очистити правила"
         }
       },
-      "usage": "використання:\n!owadd <user_id|reply> — надати owner\n!owrm <user_id|reply> — зняти owner\n!owls — власники\n!sgnew <name> — створити групу прав\n!sgls — список груп\n!sg <name> — учасники та права групи\n!sgdel <name> — видалити групу\n!sgadd <name> <user_id|reply> — додати юзера в групу\n!sgrm <name> <user_id|reply> — прибрати юзера з групи\n!rule <user|chat|sgroup> <target> <command|module>/<name> [термін] — надати право\n!rulerm — прибрати правило\n!ruleclr — очистити всі правила цілі\n!perm <user_id> <admin|trusted|everyone> [remove] — надати/зняти право\n!perms — список прав\n!whois <user_id> — права користувача",
       "bad_group": "Назва групи: лише літери та цифри, до 32 символів.",
-      "no_groups": "Груп прав немає. Створи: !sgnew <name>",
       "bad_duration": "Термін: число + s/m/h/d/w, або forever.",
       "bad_rule": "Правило: command/назва або module/назва.",
       "self_owner": "Цей користувач вже є власником акаунта.",
       "empty": "Наданих прав немає. Використай !perm <user_id> <role>.",
-      "bad_label": "Невідоме право: {label}.",
-      "no_owner_grant": "Право owner надається через !owadd."
+      "bad_label": "Невідоме право: {label}."
     },
     "lg": "хвіст логів:\n{lines}",
     "commands": {
@@ -751,30 +712,10 @@
   },
   "acl": {
     "owners": "<b>Власники</b><br>",
-    "account": " · акаунт",
-    "protected": " · захищено",
-    "failed": "<b>Помилка:</b> <i>{error}</i>",
-    "owner_added": "<code>{user_id}</code> <b>додано до власників</b>",
-    "owner_exists": "<code>{user_id}</code> уже власник",
-    "owner_removed": "У <code>{user_id}</code> <b>знято права власника</b>",
-    "owner_missing": "<code>{user_id}</code> не призначено власником",
-    "group_created": "<b>Створено групу</b> <code>{name}</code>",
-    "group_deleted": "<b>Видалено групу</b> <code>{name}</code>",
     "group_missing": "Групу <code>{name}</code> не знайдено",
     "group_item": "<b>{name}</b> — учасників: {users}, правил: {rules}",
     "groups": "<b>Групи прав</b><br>",
-    "group_detail": "<b>Група {name}</b><br><b>Учасники</b><br>{users}<br><b>Правила</b><br>{rules}",
-    "member_exists": "<code>{user_id}</code> уже в групі <code>{name}</code>",
-    "member_missing": "<code>{user_id}</code> немає в групі <code>{name}</code>",
-    "member_added": "<code>{user_id}</code> <b>додано до</b> <code>{name}</code>",
-    "member_removed": "<code>{user_id}</code> <b>видалено з</b> <code>{name}</code>",
-    "duration": " на {duration}",
     "group_rule": "<b>Правило додано:</b> sgroup <code>{target}</code> → {kind}/{rule}{until}",
-    "rule_added": "<b>Правило додано:</b> {kind} <code>{target}</code> → {type}/{rule}{until}",
-    "rule_removed": "<b>Правило видалено</b>",
-    "nothing_remove": "Видаляти нічого",
-    "rules_cleared": "<b>Правила очищено</b>",
-    "nothing_clear": "Очищати нічого",
     "permissions": "<b>Права</b><br>",
     "user_groups": "<br>Групи: <code>{groups}</code>",
     "user_detail": "<code>{user_id}</code> · <b>{permissions}</b>",
@@ -783,16 +724,12 @@
     "nothing_revoke": "Відкликати нічого",
     "grant_failed": "<b>Не вдалося надати права:</b> <i>{error}</i>",
     "granted": "<code>{user_id}</code> <b>надано</b> <code>{label}</code>",
-    "self_owner": "Цей користувач уже володіє акаунтом.",
     "bad_group": "Назва групи: літери й цифри, до 32 символів.",
-    "no_groups": "Груп немає.",
     "bad_duration": "Вкажи 1m, 1h, 1d, 1w або forever. Максимум — 100 років.",
     "bad_rule": "Правило: command/назва або module/назва.",
     "empty": "Наданих прав немає. Використай {prefix}perm <user_id> <роль>.",
     "bad_label": "Невідоме право: {label}",
-    "no_owner_grant": "Права власника надаються через {prefix}owadd.",
-    "usage": "<code>{prefix}owadd &lt;user_id|reply&gt;</code> — Додати власника\n<code>{prefix}owrm &lt;user_id|reply&gt;</code> — Видалити власника\n<code>{prefix}owls</code> — Список власників\n<code>{prefix}sgnew &lt;name&gt;</code> — Створити групу прав\n<code>{prefix}sgls</code> — Список груп\n<code>{prefix}sg &lt;name&gt;</code> — Учасники та правила групи\n<code>{prefix}sgdel &lt;name&gt;</code> — Видалити групу\n<code>{prefix}sgadd &lt;name&gt; &lt;user_id|reply&gt;</code> — Додати учасника\n<code>{prefix}sgrm &lt;name&gt; &lt;user_id|reply&gt;</code> — Видалити учасника\n<code>{prefix}rule &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;command|module&gt;/&lt;name&gt; [expiry]</code> — Додати правило доступу\n<code>{prefix}rulerm &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;rule&gt;</code> — Видалити правило\n<code>{prefix}ruleclr &lt;user|chat|sgroup&gt; [target]</code> — Очистити правила\n<code>{prefix}perm &lt;user_id&gt; &lt;admin|trusted|everyone&gt; [remove]</code> — Надати або відкликати права\n<code>{prefix}perms</code> — Список прав\n<code>{prefix}whois &lt;user_id&gt;</code> — Права користувача",
-    "account_owner": "Власника акаунта не можна видалити.",
+    "no_owner_grant": "Права власника надаються через {prefix}perms.",
     "owner_confirm": "Надати <code>{user_id}</code> повний доступ?",
     "confirm": "Підтвердити",
     "clear_confirm": "Очистити правила для <code>{scope}</code>?",
@@ -853,19 +790,7 @@
     "syntax": {
       "perms": "<code>{prefix}perms [ID|@username]</code>",
       "whois": "<code>{prefix}whois [ID|@username] [command]</code>",
-      "perm": "<code>{prefix}perm [ID|@username|command/name] &lt;role&gt; [remove]</code>",
-      "owadd": "<code>{prefix}owadd [ID|@username]</code>",
-      "owrm": "<code>{prefix}owrm [ID|@username]</code>",
-      "owls": "<code>{prefix}owls</code>",
-      "sgnew": "<code>{prefix}sgnew &lt;name&gt;</code>",
-      "sgdel": "<code>{prefix}sgdel &lt;name&gt;</code>",
-      "sgls": "<code>{prefix}sgls</code>",
-      "sg": "<code>{prefix}sg &lt;name&gt;</code>",
-      "sgadd": "<code>{prefix}sgadd &lt;name&gt; [ID|@username]</code>",
-      "sgrm": "<code>{prefix}sgrm &lt;name&gt; [ID|@username]</code>",
-      "rule": "<code>{prefix}rule &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;command/name|module/name&gt; [1h|forever]</code>",
-      "rulerm": "<code>{prefix}rulerm &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;command/name|module/name|*&gt;</code>",
-      "ruleclr": "<code>{prefix}ruleclr &lt;user|chat|sgroup&gt; [target]</code>"
+      "perm": "<code>{prefix}perm [ID|@username|command/name] &lt;role&gt; [remove]</code>"
     },
     "all_chats": "Доступно всім у всіх чатах."
   },

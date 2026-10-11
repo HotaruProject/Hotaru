@@ -366,53 +366,14 @@
         "whois": {
           "description": "Пайдаланушы құқықтары",
           "usage": "[ID|@username] [command]"
-        },
-        "owadd": {
-          "description": "Ие қосу"
-        },
-        "owrm": {
-          "description": "Иені жою"
-        },
-        "owls": {
-          "description": "Иелер тізімі"
-        },
-        "sgnew": {
-          "description": "Құқық тобын құру"
-        },
-        "sgls": {
-          "description": "Топтар тізімі"
-        },
-        "sg": {
-          "description": "Топ мүшелері мен ережелері"
-        },
-        "sgdel": {
-          "description": "Топты жою"
-        },
-        "sgadd": {
-          "description": "Қатысушы қосу"
-        },
-        "sgrm": {
-          "description": "Қатысушыны жою"
-        },
-        "rule": {
-          "description": "Рұқсат ережесін қосу"
-        },
-        "rulerm": {
-          "description": "Ережені жою"
-        },
-        "ruleclr": {
-          "description": "Ережелерді тазарту"
         }
       },
-      "usage": "колданылуы:\n!owadd <user_id|reply> — owner беру\n!owrm <user_id|reply> — owner алу\n!owls — иелер\n!sgnew <name> — құқықтар тобын құру\n!sgls — топтар тізімі\n!sg <name> — топ қатысушылары мен ережелері\n!sgdel <name> — топты жою\n!sgadd <name> <user_id|reply> — топқа қосу\n!sgrm <name> <user_id|reply> — топтан шығару\n!rule <user|chat|sgroup> <target> <command|module>/<name> [мерзім] — ереже беру\n!rulerm — ережені жою\n!ruleclr — барлық ережелерді тазарту\n!perm <user_id> <admin|trusted|everyone> [remove] — құқық беру/алу\n!perms — құқықтар тізімі\n!whois <user_id> — пайдаланушы құқықтары",
       "bad_group": "Топ атауы: тек әріптер мен цифрлар, 32 таңбаға дейін.",
-      "no_groups": "Құқықтар топтары жоқ. Құр: !sgnew <name>",
       "bad_duration": "Мерзім: сан + s/m/h/d/w, немесе forever.",
       "bad_rule": "Ереже: command/атау немесе module/атау.",
       "self_owner": "Бұл пайдаланушы аккаунт иесі болып табылады.",
       "empty": "Берілген құқықтар жоқ. !perm <user_id> <role> қолданыңыз.",
-      "bad_label": "Белгісіз құқық: {label}.",
-      "no_owner_grant": "Owner !owadd арқылы беріледі."
+      "bad_label": "Белгісіз құқық: {label}."
     },
     "lg": "лог төменгі бөлігі:\n{lines}",
     "commands": {
@@ -751,30 +712,10 @@
   },
   "acl": {
     "owners": "<b>Иелер</b><br>",
-    "account": " · аккаунт",
-    "protected": " · қорғалған",
-    "failed": "<b>Қате:</b> <i>{error}</i>",
-    "owner_added": "<code>{user_id}</code> <b>иелер қатарына қосылды</b>",
-    "owner_exists": "<code>{user_id}</code> әлдеқашан иесі",
-    "owner_removed": "<code>{user_id}</code> <b>ие құқығынан айырылды</b>",
-    "owner_missing": "<code>{user_id}</code> ие болып тағайындалмаған",
-    "group_created": "<code>{name}</code> <b>тобы құрылды</b>",
-    "group_deleted": "<code>{name}</code> <b>тобы жойылды</b>",
     "group_missing": "<code>{name}</code> тобы табылмады",
     "group_item": "<b>{name}</b> — қатысушылар: {users}, ережелер: {rules}",
     "groups": "<b>Құқық топтары</b><br>",
-    "group_detail": "<b>{name} тобы</b><br><b>Қатысушылар</b><br>{users}<br><b>Ережелер</b><br>{rules}",
-    "member_exists": "<code>{user_id}</code> әлдеқашан <code>{name}</code> тобында",
-    "member_missing": "<code>{user_id}</code> <code>{name}</code> тобында жоқ",
-    "member_added": "<code>{user_id}</code> <code>{name}</code> <b>тобына қосылды</b>",
-    "member_removed": "<code>{user_id}</code> <code>{name}</code> <b>тобынан шығарылды</b>",
-    "duration": " {duration} мерзімге",
     "group_rule": "<b>Ереже қосылды:</b> sgroup <code>{target}</code> → {kind}/{rule}{until}",
-    "rule_added": "<b>Ереже қосылды:</b> {kind} <code>{target}</code> → {type}/{rule}{until}",
-    "rule_removed": "<b>Ереже жойылды</b>",
-    "nothing_remove": "Жоятын ештеңе жоқ",
-    "rules_cleared": "<b>Ережелер тазартылды</b>",
-    "nothing_clear": "Тазартатын ештеңе жоқ",
     "permissions": "<b>Құқықтар</b><br>",
     "user_groups": "<br>Топтар: <code>{groups}</code>",
     "user_detail": "<code>{user_id}</code> · <b>{permissions}</b>",
@@ -783,16 +724,12 @@
     "nothing_revoke": "Қайтаратын құқық жоқ",
     "grant_failed": "<b>Құқық беру орындалмады:</b> <i>{error}</i>",
     "granted": "<code>{user_id}</code> үшін <code>{label}</code> <b>құқығы берілді</b>",
-    "self_owner": "Бұл пайдаланушы аккаунттың иесі.",
     "bad_group": "Топ атауы: әріптер мен сандар, 32 таңбаға дейін.",
-    "no_groups": "Топтар жоқ.",
     "bad_duration": "1m, 1h, 1d, 1w немесе forever енгіз. Ең көбі — 100 жыл.",
     "bad_rule": "Ереже: command/атау немесе module/атау.",
     "empty": "Берілген құқықтар жоқ. {prefix}perm <user_id> <рөл> командасын қолдан.",
     "bad_label": "Белгісіз құқық: {label}",
-    "no_owner_grant": "Ие құқығы {prefix}owadd арқылы беріледі.",
-    "usage": "<code>{prefix}owadd &lt;user_id|reply&gt;</code> — Ие қосу\n<code>{prefix}owrm &lt;user_id|reply&gt;</code> — Иені жою\n<code>{prefix}owls</code> — Иелер тізімі\n<code>{prefix}sgnew &lt;name&gt;</code> — Құқық тобын құру\n<code>{prefix}sgls</code> — Топтар тізімі\n<code>{prefix}sg &lt;name&gt;</code> — Топ мүшелері мен ережелері\n<code>{prefix}sgdel &lt;name&gt;</code> — Топты жою\n<code>{prefix}sgadd &lt;name&gt; &lt;user_id|reply&gt;</code> — Қатысушы қосу\n<code>{prefix}sgrm &lt;name&gt; &lt;user_id|reply&gt;</code> — Қатысушыны жою\n<code>{prefix}rule &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;command|module&gt;/&lt;name&gt; [expiry]</code> — Рұқсат ережесін қосу\n<code>{prefix}rulerm &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;rule&gt;</code> — Ережені жою\n<code>{prefix}ruleclr &lt;user|chat|sgroup&gt; [target]</code> — Ережелерді тазарту\n<code>{prefix}perm &lt;user_id&gt; &lt;admin|trusted|everyone&gt; [remove]</code> — Құқық беру немесе қайтару\n<code>{prefix}perms</code> — Құқықтар тізімі\n<code>{prefix}whois &lt;user_id&gt;</code> — Пайдаланушы құқықтары",
-    "account_owner": "Аккаунт иесін жоюға болмайды.",
+    "no_owner_grant": "Ие құқығы {prefix}perms арқылы беріледі.",
     "owner_confirm": "<code>{user_id}</code> пайдаланушысына толық рұқсат берілсін бе?",
     "confirm": "Растау",
     "clear_confirm": "<code>{scope}</code> ережелері тазартылсын ба?",
@@ -853,19 +790,7 @@
     "syntax": {
       "perms": "<code>{prefix}perms [ID|@username]</code>",
       "whois": "<code>{prefix}whois [ID|@username] [command]</code>",
-      "perm": "<code>{prefix}perm [ID|@username|command/name] &lt;role&gt; [remove]</code>",
-      "owadd": "<code>{prefix}owadd [ID|@username]</code>",
-      "owrm": "<code>{prefix}owrm [ID|@username]</code>",
-      "owls": "<code>{prefix}owls</code>",
-      "sgnew": "<code>{prefix}sgnew &lt;name&gt;</code>",
-      "sgdel": "<code>{prefix}sgdel &lt;name&gt;</code>",
-      "sgls": "<code>{prefix}sgls</code>",
-      "sg": "<code>{prefix}sg &lt;name&gt;</code>",
-      "sgadd": "<code>{prefix}sgadd &lt;name&gt; [ID|@username]</code>",
-      "sgrm": "<code>{prefix}sgrm &lt;name&gt; [ID|@username]</code>",
-      "rule": "<code>{prefix}rule &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;command/name|module/name&gt; [1h|forever]</code>",
-      "rulerm": "<code>{prefix}rulerm &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;command/name|module/name|*&gt;</code>",
-      "ruleclr": "<code>{prefix}ruleclr &lt;user|chat|sgroup&gt; [target]</code>"
+      "perm": "<code>{prefix}perm [ID|@username|command/name] &lt;role&gt; [remove]</code>"
     },
     "all_chats": "Барлық чатта барлығына қолжетімді."
   },
