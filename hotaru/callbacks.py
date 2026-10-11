@@ -518,11 +518,32 @@ class CallbackRouter:
     def issue_module(self, module_id: str, action_id: str, binding: CallbackBinding, payload: Any = None) -> str:
         return self.store.issue(binding, {"module": module_id, "action_id": action_id, "payload": payload})
 
+    def _foreign(self, callback: Any) -> bool:
+        """A press on a button that was never issued to this user: ignored without an answer.
+
+        Owners and the user a card was issued to go on to the command access checks.
+        """
+        access = getattr(self.runtime, "access", None)
+        actor = self._optional(callback, "from_id")
+        if access is None or not isinstance(actor, int) or actor <= 0:
+            return True
+        if access.is_owner(actor):
+            return False
+        data = getattr(callback, "data", "")
+        if isinstance(data, (bytes, bytearray)):
+            data = data.decode("utf-8", "replace")
+        if not isinstance(data, str):
+            return True
+        mid = self._optional(callback, "msg_id")
+        try:
+            self.store.peek(data, CallbackBinding(actor, self._optional(callback, "chat_id"), mid if isinstance(mid, int) else None))
+        except CallbackDenied:
+            return True
+        return False
+
     async def dispatch(self, callback: Any) -> object:
-        if self.runtime is not None:
-            access = getattr(self.runtime, "access", None)
-            if access is None or not access.is_owner(self._optional(callback, "from_id")):
-                return None
+        if self.runtime is not None and self._foreign(callback):
+            return None
         mid = self._optional(callback, "msg_id")
         binding = CallbackBinding(
             actor=self._required(callback, "from_id"),
