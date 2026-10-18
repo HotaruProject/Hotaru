@@ -357,8 +357,6 @@ class CapabilityHost:
         if capability == "logs":
             return self._logs_op(module_id, payload)
         elif capability == "fetch":
-            if not self._allowed(module_id, "mt"):
-                raise PermissionError("capability not granted to module: mt")
             return await self._fetch_op(module_id, payload)
         elif not self._allowed(module_id, capability):
             if capability in {"net", "shell"}:
