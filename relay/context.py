@@ -1198,8 +1198,6 @@ CTX_CATALOG: dict[str, tuple[Any, ...]] = {
     'set_channel_profile_tab': ('channels.setMainProfileTab', ['channel', 'tab'], {'channel': 'InputChannel', 'tab': 'ProfileTab'}, {'channel': '$peer'}, []),
     'edit_member_rank': ('messages.editChatParticipantRank', ['peer', 'participant', 'rank'], {'peer': 'InputPeer', 'participant': 'InputPeer', 'rank': 'string'}, {'peer': '$peer'}, []),
     'create_chat_invite': ('messages.exportChatInvite', ['peer'], {'legacy_revoke_permanent': 'flags.2?true', 'request_needed': 'flags.3?true', 'peer': 'InputPeer', 'expire_date': 'flags.0?int', 'usage_limit': 'flags.1?int', 'title': 'flags.4?string', 'subscription_pricing': 'flags.5?StarsSubscriptionPricing'}, {'peer': '$peer'}, ['subscription_pricing']),
-    'inspect_chat_invite': ('messages.checkChatInvite', ['hash'], {'hash': 'string'}, {}, []),
-    'join_chat_invite': ('messages.importChatInvite', ['hash'], {'hash': 'string'}, {}, []),
     'chat_invites': ('messages.getExportedChatInvites', ['peer', 'admin_id', 'limit'], {'revoked': 'flags.3?true', 'peer': 'InputPeer', 'admin_id': 'InputUser', 'offset_date': 'flags.2?int', 'offset_link': 'flags.2?string', 'limit': 'int'}, {'peer': '$peer', 'limit': 50}, []),
     'chat_invite_details': ('messages.getExportedChatInvite', ['peer', 'link'], {'peer': 'InputPeer', 'link': 'string'}, {'peer': '$peer'}, []),
     'edit_chat_invite': ('messages.editExportedChatInvite', ['peer', 'link'], {'revoked': 'flags.2?true', 'peer': 'InputPeer', 'link': 'string', 'expire_date': 'flags.0?int', 'usage_limit': 'flags.1?int', 'request_needed': 'flags.3?Bool', 'title': 'flags.4?string'}, {'peer': '$peer'}, []),

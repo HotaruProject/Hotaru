@@ -643,8 +643,11 @@ def _module_import_probe(target: Path, names: Sequence[str]) -> list[str]:
 
 
 def _http_text(url: str, *, timeout: float, accept: str = "application/json") -> str | None:
+    if not url.startswith("https://pypi.org/"):
+        return None
     headers = {"User-Agent": _HTTP_AGENT, "Accept": accept, "Accept-Encoding": "gzip"}
     try:
+        # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
         with urlopen(Request(url, headers=headers), timeout=timeout) as response:
             raw = response.read()
             if response.headers.get("Content-Encoding") == "gzip":
