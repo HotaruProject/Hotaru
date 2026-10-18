@@ -80,10 +80,12 @@
       "description": "Модуль допомоги Hotaru",
       "commands": {
         "hlp": {
-          "description": "Каталог допомоги"
+          "description": "Каталог допомоги",
+          "usage": "[модуль]"
         },
         "help": {
-          "description": "Каталог допомоги"
+          "description": "Каталог допомоги",
+          "usage": "[модуль]"
         }
       }
     },
@@ -114,7 +116,8 @@
       "description": "Автооновлення Hotaru",
       "commands": {
         "upd": {
-          "description": "Перевірити і застосувати оновлення"
+          "description": "Перевірити і застосувати оновлення",
+          "usage": "[force]"
         },
         "updlog": {
           "description": "Показати ченджлог"
@@ -150,11 +153,20 @@
       "description": "Керування перекладами",
       "commands": {
         "lang": {
-          "description": "Показати або змінити мову"
+          "description": "Показати або змінити мову",
+          "usage": "[мова]"
         },
         "language": {
-          "description": "Показати або змінити мову"
+          "description": "Показати або змінити мову",
+          "usage": "[мова]"
         }
+      },
+      "native": {
+        "ru": "Русский",
+        "en": "English",
+        "kz": "Қазақша",
+        "uk": "Українська",
+        "ja": "日本語"
       }
     },
     "test-features": {
@@ -205,13 +217,16 @@
       "description": "Керування акаунтами",
       "commands": {
         "acc": {
-          "description": "Керування акаунтом"
+          "description": "Керування акаунтом",
+          "usage": "[номер] [start|stop|restart|on|off|del]"
         },
         "acca": {
-          "description": "Додати акаунт або увійти"
+          "description": "Додати акаунт або увійти",
+          "usage": "[ID|cancel|password] [пароль]"
         },
         "accs": {
-          "description": "Відкрити панель акаунтів"
+          "description": "Відкрити панель акаунтів",
+          "usage": "[номер]"
         }
       },
       "usage": "<b>Акаунти</b>\n<code>{prefix}acca [user_id]</code> · додати за QR / номером\n<code>{prefix}acca cancel</code> · скасувати вхід\n<code>{prefix}accs [#]</code> · панель акаунтів\n<code>{prefix}acc [#]</code> · панель акаунтів\n<code>{prefix}acc 2 start|stop|restart|on|off|del</code>",
@@ -350,62 +365,24 @@
       "description": "Керування правами",
       "commands": {
         "perms": {
-          "description": "Список прав"
+          "description": "Список прав",
+          "usage": "[ID|@username]"
         },
         "perm": {
           "description": "Надати або відкликати права",
-          "usage": "[ID|@username|command/name] <role> [remove]"
+          "usage": "[ID|@username|command/ім'я] [роль] [remove]"
         },
         "whois": {
           "description": "Права користувача",
-          "usage": "[ID|@username] [command]"
-        },
-        "owadd": {
-          "description": "Додати власника"
-        },
-        "owrm": {
-          "description": "Видалити власника"
-        },
-        "owls": {
-          "description": "Список власників"
-        },
-        "sgnew": {
-          "description": "Створити групу прав"
-        },
-        "sgls": {
-          "description": "Список груп"
-        },
-        "sg": {
-          "description": "Учасники та правила групи"
-        },
-        "sgdel": {
-          "description": "Видалити групу"
-        },
-        "sgadd": {
-          "description": "Додати учасника"
-        },
-        "sgrm": {
-          "description": "Видалити учасника"
-        },
-        "rule": {
-          "description": "Додати правило доступу"
-        },
-        "rulerm": {
-          "description": "Видалити правило"
-        },
-        "ruleclr": {
-          "description": "Очистити правила"
+          "usage": "[ID|@username] [команда]"
         }
       },
-      "usage": "використання:\n!owadd <user_id|reply> — надати owner\n!owrm <user_id|reply> — зняти owner\n!owls — власники\n!sgnew <name> — створити групу прав\n!sgls — список груп\n!sg <name> — учасники та права групи\n!sgdel <name> — видалити групу\n!sgadd <name> <user_id|reply> — додати юзера в групу\n!sgrm <name> <user_id|reply> — прибрати юзера з групи\n!rule <user|chat|sgroup> <target> <command|module>/<name> [термін] — надати право\n!rulerm — прибрати правило\n!ruleclr — очистити всі правила цілі\n!perm <user_id> <admin|trusted|everyone> [remove] — надати/зняти право\n!perms — список прав\n!whois <user_id> — права користувача",
       "bad_group": "Назва групи: лише літери та цифри, до 32 символів.",
-      "no_groups": "Груп прав немає. Створи: !sgnew <name>",
       "bad_duration": "Термін: число + s/m/h/d/w, або forever.",
       "bad_rule": "Правило: command/назва або module/назва.",
       "self_owner": "Цей користувач вже є власником акаунта.",
       "empty": "Наданих прав немає. Використай !perm <user_id> <role>.",
-      "bad_label": "Невідоме право: {label}.",
-      "no_owner_grant": "Право owner надається через !owadd."
+      "bad_label": "Невідоме право: {label}."
     },
     "lg": "хвіст логів:\n{lines}",
     "commands": {
@@ -415,32 +392,57 @@
       "description": "Модуль конфігурації Hotaru",
       "commands": {
         "conf": {
-          "description": "Відкрити налаштування"
+          "description": "Відкрити налаштування",
+          "usage": "[модуль] [параметр|reset] [значення]"
         },
         "config": {
-          "description": "Відкрити налаштування"
+          "description": "Відкрити налаштування",
+          "usage": "[модуль] [параметр|reset] [значення]"
         }
       },
       "template_fields": "Доступні поля шаблону",
       "shared_prefix": "Поточний префікс команд",
       "shared_uptime": "Час роботи в секундах",
       "template_syntax": "Використовуйте {{name}}, числовий формат {{name:.2f}} та {{{{ / }}}} для буквальних дужок. Значення екрануються для HTML.",
-      "template_preview": "Попередній перегляд (HTML, приклади значень)"
+      "template_preview": "Попередній перегляд (HTML, приклади значень)",
+      "directory_empty": "<b>Конфігурація</b>\n\nНемає модулів із налаштуваннями.",
+      "directory": "<b>Конфігурація</b>\n\nВиберіть модуль:",
+      "module_missing_error": "<b>Помилка:</b> Модуль <code>{module}</code> не знайдено.",
+      "no_settings": "<b>Помилка:</b> Модуль <code>{module}</code> не має налаштувань.",
+      "parameter_missing_error": "<b>Помилка:</b> Параметр <code>{parameter}</code> не знайдено.",
+      "empty": "(порожньо)",
+      "parameter_details": "• Значення: <code>{value}</code>\n• Тип: <code>{type}</code>\n• За замовчуванням: <code>{default}</code>\n",
+      "parameter_description": "• Опис: <i>{description}</i>\n",
+      "template_unavailable": "Поле шаблону недоступне або не експортоване: {name}",
+      "error": "Помилка: {error}",
+      "boolean_true": "🔘 Так",
+      "boolean_false": "⚪️ Ні",
+      "minimum": "Мінімум: {value}",
+      "maximum": "Максимум: {value}",
+      "enter": "✏️ Ввести",
+      "new_value": "Нове значення {parameter}",
+      "reset": "🔄 Скинути",
+      "module_missing": "Модуль <code>{module}</code> не знайдено.",
+      "parameter_missing": "Параметр <code>{parameter}</code> не знайдено.",
+      "error_html": "Помилка: <code>{error}</code>"
     },
     "settings": {
       "description": "Керування аліасами та префіксом",
       "commands": {
         "alias": {
-          "description": "Створити аліас команди"
+          "description": "Створити аліас команди",
+          "usage": "[аліас] [команда]"
         },
         "rmalias": {
-          "description": "Видалити аліас команди"
+          "description": "Видалити аліас команди",
+          "usage": "[аліас]"
         },
         "lsalias": {
           "description": "Показати аліаси команд"
         },
         "prefix": {
-          "description": "Змінити префікс команд"
+          "description": "Змінити префікс команд",
+          "usage": "[префікс]"
         }
       }
     },
@@ -472,10 +474,21 @@
       "logs_sent": "Логи надіслано: {count} записів",
       "commands": {
         "logs": {
-          "description": "Логи юзербота з файлом"
+          "description": "Логи юзербота з файлом",
+          "usage": "[on|off|status|рівень] [кількість] [компонент]"
         }
       },
-      "pending": "очікування"
+      "pending": "очікування",
+      "config": {
+        "level": "Мінімальний рівень записуваних логів",
+        "batch_size": "Кількість подій в одному повідомленні",
+        "auto_topic": "Автоматично керувати темою логів у форумі"
+      },
+      "config_fields": {
+        "level": "Мінімальний рівень записуваних логів",
+        "batch_size": "Кількість подій в одному повідомленні",
+        "auto_topic": "Автоматично керувати темою логів у форумі"
+      }
     },
     "executor": {
       "heading": "<b>Виконавець</b> | <code>{elapsed:.1f} мс</code>",
@@ -499,10 +512,12 @@
       "description": "Виконання Python і команд оболонки",
       "commands": {
         "py": {
-          "description": "Виконати код Python"
+          "description": "Виконати код Python",
+          "usage": "[-so] [код]"
         },
         "sh": {
-          "description": "Виконати команду оболонки"
+          "description": "Виконати команду оболонки",
+          "usage": "[-so] [команда]"
         },
         "kill": {
           "description": "Зупинити активну команду"
@@ -513,22 +528,28 @@
       "description": "Керування модулями",
       "commands": {
         "ld": {
-          "description": "Завантажити модуль"
+          "description": "Завантажити модуль",
+          "usage": "[посилання|шлях]"
         },
         "ul": {
-          "description": "Вивантажити модуль"
+          "description": "Вивантажити модуль",
+          "usage": "[модуль] [-p]"
         },
         "rl": {
-          "description": "Перезавантажити модуль"
+          "description": "Перезавантажити модуль",
+          "usage": "[модуль] [force]"
         },
         "ex": {
-          "description": "Експортувати модуль"
+          "description": "Експортувати модуль",
+          "usage": "[модуль]"
         },
         "rs": {
-          "description": "Очистити дані модуля"
+          "description": "Очистити дані модуля",
+          "usage": "[модуль]"
         },
         "resetdb": {
-          "description": "Очистити дані модуля"
+          "description": "Очистити дані модуля",
+          "usage": "[модуль]"
         }
       }
     },
@@ -566,14 +587,21 @@
         "info": {
           "description": "Інформація про юзербота"
         }
+      },
+      "empty_template": "Шаблон інформації порожній",
+      "bad_placeholder": "Некоректний заповнювач: {error}",
+      "config": {
+        "template": "Шаблон .info, заповнювачі {version} {uptime} {modules}"
+      },
+      "config_fields": {
+        "template": "Шаблон .info, заповнювачі {version} {uptime} {modules}"
       }
     }
   },
   "inline_commands_hint": "Обери команду — введи @<бот> і її назву в будь-якому чаті",
   "settings": {
     "runtime_unavailable": "Сервіс недоступний",
-    "usage_alias": "Використання: {prefix}alias <аліас> <команда>",
-    "alias_invalid": "Аліас: 1–32 символи, літери будь-яких мов, цифри та _; не може починатися з цифри.",
+    "usage_alias": "Використання: {prefix}alias <аліас> <команда з аргументами>",
     "alias_exists": "Команда вже існує: {alias}",
     "command_not_found": "Команду не знайдено: {command}\nДоступні: {known}",
     "alias_taken": "Аліас зайнято: {alias} → {command}. Видали через {prefix}rmalias {alias}.",
@@ -707,30 +735,10 @@
   },
   "acl": {
     "owners": "<b>Власники</b><br>",
-    "account": " · акаунт",
-    "protected": " · захищено",
-    "failed": "<b>Помилка:</b> <i>{error}</i>",
-    "owner_added": "<code>{user_id}</code> <b>додано до власників</b>",
-    "owner_exists": "<code>{user_id}</code> уже власник",
-    "owner_removed": "У <code>{user_id}</code> <b>знято права власника</b>",
-    "owner_missing": "<code>{user_id}</code> не призначено власником",
-    "group_created": "<b>Створено групу</b> <code>{name}</code>",
-    "group_deleted": "<b>Видалено групу</b> <code>{name}</code>",
     "group_missing": "Групу <code>{name}</code> не знайдено",
     "group_item": "<b>{name}</b> — учасників: {users}, правил: {rules}",
     "groups": "<b>Групи прав</b><br>",
-    "group_detail": "<b>Група {name}</b><br><b>Учасники</b><br>{users}<br><b>Правила</b><br>{rules}",
-    "member_exists": "<code>{user_id}</code> уже в групі <code>{name}</code>",
-    "member_missing": "<code>{user_id}</code> немає в групі <code>{name}</code>",
-    "member_added": "<code>{user_id}</code> <b>додано до</b> <code>{name}</code>",
-    "member_removed": "<code>{user_id}</code> <b>видалено з</b> <code>{name}</code>",
-    "duration": " на {duration}",
     "group_rule": "<b>Правило додано:</b> sgroup <code>{target}</code> → {kind}/{rule}{until}",
-    "rule_added": "<b>Правило додано:</b> {kind} <code>{target}</code> → {type}/{rule}{until}",
-    "rule_removed": "<b>Правило видалено</b>",
-    "nothing_remove": "Видаляти нічого",
-    "rules_cleared": "<b>Правила очищено</b>",
-    "nothing_clear": "Очищати нічого",
     "permissions": "<b>Права</b><br>",
     "user_groups": "<br>Групи: <code>{groups}</code>",
     "user_detail": "<code>{user_id}</code> · <b>{permissions}</b>",
@@ -739,16 +747,12 @@
     "nothing_revoke": "Відкликати нічого",
     "grant_failed": "<b>Не вдалося надати права:</b> <i>{error}</i>",
     "granted": "<code>{user_id}</code> <b>надано</b> <code>{label}</code>",
-    "self_owner": "Цей користувач уже володіє акаунтом.",
     "bad_group": "Назва групи: літери й цифри, до 32 символів.",
-    "no_groups": "Груп немає.",
     "bad_duration": "Вкажи 1m, 1h, 1d, 1w або forever. Максимум — 100 років.",
     "bad_rule": "Правило: command/назва або module/назва.",
     "empty": "Наданих прав немає. Використай {prefix}perm <user_id> <роль>.",
     "bad_label": "Невідоме право: {label}",
-    "no_owner_grant": "Права власника надаються через {prefix}owadd.",
-    "usage": "<code>{prefix}owadd &lt;user_id|reply&gt;</code> — Додати власника\n<code>{prefix}owrm &lt;user_id|reply&gt;</code> — Видалити власника\n<code>{prefix}owls</code> — Список власників\n<code>{prefix}sgnew &lt;name&gt;</code> — Створити групу прав\n<code>{prefix}sgls</code> — Список груп\n<code>{prefix}sg &lt;name&gt;</code> — Учасники та правила групи\n<code>{prefix}sgdel &lt;name&gt;</code> — Видалити групу\n<code>{prefix}sgadd &lt;name&gt; &lt;user_id|reply&gt;</code> — Додати учасника\n<code>{prefix}sgrm &lt;name&gt; &lt;user_id|reply&gt;</code> — Видалити учасника\n<code>{prefix}rule &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;command|module&gt;/&lt;name&gt; [expiry]</code> — Додати правило доступу\n<code>{prefix}rulerm &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;rule&gt;</code> — Видалити правило\n<code>{prefix}ruleclr &lt;user|chat|sgroup&gt; [target]</code> — Очистити правила\n<code>{prefix}perm &lt;user_id&gt; &lt;admin|trusted|everyone&gt; [remove]</code> — Надати або відкликати права\n<code>{prefix}perms</code> — Список прав\n<code>{prefix}whois &lt;user_id&gt;</code> — Права користувача",
-    "account_owner": "Власника акаунта не можна видалити.",
+    "no_owner_grant": "Права власника надаються через {prefix}perms.",
     "owner_confirm": "Надати <code>{user_id}</code> повний доступ?",
     "confirm": "Підтвердити",
     "clear_confirm": "Очистити правила для <code>{scope}</code>?",
@@ -809,23 +813,13 @@
     "syntax": {
       "perms": "<code>{prefix}perms [ID|@username]</code>",
       "whois": "<code>{prefix}whois [ID|@username] [command]</code>",
-      "perm": "<code>{prefix}perm [ID|@username|command/name] &lt;role&gt; [remove]</code>",
-      "owadd": "<code>{prefix}owadd [ID|@username]</code>",
-      "owrm": "<code>{prefix}owrm [ID|@username]</code>",
-      "owls": "<code>{prefix}owls</code>",
-      "sgnew": "<code>{prefix}sgnew &lt;name&gt;</code>",
-      "sgdel": "<code>{prefix}sgdel &lt;name&gt;</code>",
-      "sgls": "<code>{prefix}sgls</code>",
-      "sg": "<code>{prefix}sg &lt;name&gt;</code>",
-      "sgadd": "<code>{prefix}sgadd &lt;name&gt; [ID|@username]</code>",
-      "sgrm": "<code>{prefix}sgrm &lt;name&gt; [ID|@username]</code>",
-      "rule": "<code>{prefix}rule &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;command/name|module/name&gt; [1h|forever]</code>",
-      "rulerm": "<code>{prefix}rulerm &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;command/name|module/name|*&gt;</code>",
-      "ruleclr": "<code>{prefix}ruleclr &lt;user|chat|sgroup&gt; [target]</code>"
+      "perm": "<code>{prefix}perm [ID|@username|command/name] &lt;role&gt; [remove]</code>"
     },
     "all_chats": "Доступно всім у всіх чатах."
   },
   "inline": {
+    "command_open": "Відкрити {command}",
+    "command_hint": "Натисни кнопку й допиши запит. Результат обереш в інлайн-списку.",
     "form": "Форма Hotaru",
     "error": {
       "title": "Помилка {code}",

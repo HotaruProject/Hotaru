@@ -22,17 +22,39 @@
       "description": "Hotaru configuration module",
       "commands": {
         "conf": {
-          "description": "Open settings"
+          "description": "Open settings",
+          "usage": "[module] [parameter|reset] [value]"
         },
         "config": {
-          "description": "Open settings"
+          "description": "Open settings",
+          "usage": "[module] [parameter|reset] [value]"
         }
       },
       "template_fields": "Available template fields",
       "shared_prefix": "Current command prefix",
       "shared_uptime": "Runtime uptime in seconds",
       "template_syntax": "Use {{name}}, numeric {{name:.2f}}, and {{{{ / }}}} for literal braces. Values are HTML-escaped.",
-      "template_preview": "Preview (HTML, example values)"
+      "template_preview": "Preview (HTML, example values)",
+      "directory_empty": "<b>Configuration</b>\n\nNo configurable modules.",
+      "directory": "<b>Configuration</b>\n\nChoose a module:",
+      "module_missing_error": "<b>Error:</b> Module <code>{module}</code> not found.",
+      "no_settings": "<b>Error:</b> Module <code>{module}</code> has no settings.",
+      "parameter_missing_error": "<b>Error:</b> Parameter <code>{parameter}</code> not found.",
+      "empty": "(empty)",
+      "parameter_details": "• Value: <code>{value}</code>\n• Type: <code>{type}</code>\n• Default: <code>{default}</code>\n",
+      "parameter_description": "• Description: <i>{description}</i>\n",
+      "template_unavailable": "Template field unavailable or not exported: {name}",
+      "error": "Error: {error}",
+      "boolean_true": "🔘 True",
+      "boolean_false": "⚪️ False",
+      "minimum": "Minimum: {value}",
+      "maximum": "Maximum: {value}",
+      "enter": "✏️ Enter",
+      "new_value": "New value for {parameter}",
+      "reset": "🔄 Reset",
+      "module_missing": "Module <code>{module}</code> not found.",
+      "parameter_missing": "Parameter <code>{parameter}</code> not found.",
+      "error_html": "Error: <code>{error}</code>"
     },
     "power": {
       "already_stopped": "Userbot is already stopped.",
@@ -68,7 +90,8 @@
       "description": "Hotaru self-updater",
       "commands": {
         "upd": {
-          "description": "Check and apply update"
+          "description": "Check and apply update",
+          "usage": "[force]"
         },
         "updlog": {
           "description": "Show update changelog"
@@ -158,10 +181,12 @@
       "description": "Hotaru help module",
       "commands": {
         "hlp": {
-          "description": "Show help catalog"
+          "description": "Show help catalog",
+          "usage": "[module]"
         },
         "help": {
-          "description": "Show help catalog"
+          "description": "Show help catalog",
+          "usage": "[module]"
         }
       }
     },
@@ -169,11 +194,20 @@
       "description": "Translation management",
       "commands": {
         "lang": {
-          "description": "Show or change language"
+          "description": "Show or change language",
+          "usage": "[language]"
         },
         "language": {
-          "description": "Show or change language"
+          "description": "Show or change language",
+          "usage": "[language]"
         }
+      },
+      "native": {
+        "ru": "Русский",
+        "en": "English",
+        "kz": "Қазақша",
+        "uk": "Українська",
+        "ja": "日本語"
       }
     },
     "test-features": {
@@ -224,13 +258,16 @@
       "description": "Account management",
       "commands": {
         "acc": {
-          "description": "Manage an account"
+          "description": "Manage an account",
+          "usage": "[number] [start|stop|restart|on|off|del]"
         },
         "acca": {
-          "description": "Add or log in to an account"
+          "description": "Add or log in to an account",
+          "usage": "[ID|cancel|password] [password]"
         },
         "accs": {
-          "description": "Open account panel"
+          "description": "Open account panel",
+          "usage": "[number]"
         }
       },
       "usage": "<b>Accounts</b>\n<code>{prefix}acca [user_id]</code> · add via QR / Phone\n<code>{prefix}acca cancel</code> · cancel login\n<code>{prefix}accs [#]</code> · account panel\n<code>{prefix}acc [#]</code> · account panel\n<code>{prefix}acc 2 start|stop|restart|on|off|del</code>",
@@ -369,62 +406,24 @@
       "description": "Access control",
       "commands": {
         "perms": {
-          "description": "List permissions"
+          "description": "List permissions",
+          "usage": "[ID|@username]"
         },
         "perm": {
           "description": "Grant or revoke permission",
-          "usage": "[ID|@username|command/name] <role> [remove]"
+          "usage": "[ID|@username|command/name] [role] [remove]"
         },
         "whois": {
           "description": "Show user permissions",
           "usage": "[ID|@username] [command]"
-        },
-        "owadd": {
-          "description": "Add owner"
-        },
-        "owrm": {
-          "description": "Remove owner"
-        },
-        "owls": {
-          "description": "List owners"
-        },
-        "sgnew": {
-          "description": "Create permission group"
-        },
-        "sgls": {
-          "description": "List groups"
-        },
-        "sg": {
-          "description": "Show group members and rules"
-        },
-        "sgdel": {
-          "description": "Delete group"
-        },
-        "sgadd": {
-          "description": "Add group member"
-        },
-        "sgrm": {
-          "description": "Remove group member"
-        },
-        "rule": {
-          "description": "Add access rule"
-        },
-        "rulerm": {
-          "description": "Remove rule"
-        },
-        "ruleclr": {
-          "description": "Clear rules"
         }
       },
-      "usage": "usage:\n!owadd <user_id|reply> — grant owner\n!owrm <user_id|reply> — revoke owner\n!owls — list owners\n!sgnew <name> — create a security group\n!sgls — list groups\n!sg <name> — show group users and rules\n!sgdel <name> — delete a group\n!sgadd <name> <user_id|reply> — add a user to a group\n!sgrm <name> <user_id|reply> — remove a user from a group\n!rule <user|chat|sgroup> <target> <command|module>/<name> [expiry] — add a rule\n!rulerm — remove a rule\n!ruleclr — clear rules for a target\n!perm <user_id> <admin|trusted|everyone> [remove] — grant/revoke a permission\n!perms — list permissions\n!whois <user_id> — user permissions",
       "bad_group": "Group name: letters and digits only, up to 32 characters.",
-      "no_groups": "No security groups. Create one: !sgnew <name>",
       "bad_duration": "Expiry: number + s/m/h/d/w, or forever.",
       "bad_rule": "Rule: command/name or module/name.",
       "self_owner": "This user is already the account owner.",
       "empty": "No permissions granted. Use !perm <user_id> <role>.",
-      "bad_label": "Unknown permission: {label}.",
-      "no_owner_grant": "Owner is granted via !owadd."
+      "bad_label": "Unknown permission: {label}."
     },
     "lg": "log tail:\n{lines}",
     "commands": {
@@ -434,16 +433,19 @@
       "description": "Alias and prefix management",
       "commands": {
         "alias": {
-          "description": "Create a command alias"
+          "description": "Create a command alias",
+          "usage": "[alias] [command]"
         },
         "rmalias": {
-          "description": "Remove a command alias"
+          "description": "Remove a command alias",
+          "usage": "[alias]"
         },
         "lsalias": {
           "description": "List command aliases"
         },
         "prefix": {
-          "description": "Change command prefix"
+          "description": "Change command prefix",
+          "usage": "[prefix]"
         }
       }
     },
@@ -466,10 +468,21 @@
       "logs_sent": "Logs sent: {count} entries",
       "commands": {
         "logs": {
-          "description": "Userbot logs with a file"
+          "description": "Userbot logs with a file",
+          "usage": "[on|off|status|level] [count] [component]"
         }
       },
-      "pending": "pending"
+      "pending": "pending",
+      "config": {
+        "level": "Minimum log level to record",
+        "batch_size": "Log events to batch per message",
+        "auto_topic": "Automatically manage the logs topic in the forum"
+      },
+      "config_fields": {
+        "level": "Minimum log level to record",
+        "batch_size": "Log events to batch per message",
+        "auto_topic": "Automatically manage the logs topic in the forum"
+      }
     },
     "executor": {
       "heading": "<b>Executor</b> | <code>{elapsed:.1f}ms</code>",
@@ -493,10 +506,12 @@
       "description": "Run Python and shell commands",
       "commands": {
         "py": {
-          "description": "Run Python code"
+          "description": "Run Python code",
+          "usage": "[-so] [code]"
         },
         "sh": {
-          "description": "Run a shell command"
+          "description": "Run a shell command",
+          "usage": "[-so] [command]"
         },
         "kill": {
           "description": "Stop a running command"
@@ -507,22 +522,28 @@
       "description": "Module management",
       "commands": {
         "ld": {
-          "description": "Load a module"
+          "description": "Load a module",
+          "usage": "[url|path]"
         },
         "ul": {
-          "description": "Unload a module"
+          "description": "Unload a module",
+          "usage": "[module] [-p]"
         },
         "rl": {
-          "description": "Reload a module"
+          "description": "Reload a module",
+          "usage": "[module] [force]"
         },
         "ex": {
-          "description": "Export a module"
+          "description": "Export a module",
+          "usage": "[module]"
         },
         "rs": {
-          "description": "Reset module data"
+          "description": "Reset module data",
+          "usage": "[module]"
         },
         "resetdb": {
-          "description": "Reset module data"
+          "description": "Reset module data",
+          "usage": "[module]"
         }
       }
     },
@@ -560,6 +581,14 @@
         "info": {
           "description": "Show userbot info"
         }
+      },
+      "empty_template": "The info template is empty",
+      "bad_placeholder": "Invalid placeholder: {error}",
+      "config": {
+        "template": "Info template; placeholders: {version} {uptime} {modules}"
+      },
+      "config_fields": {
+        "template": "Info template; placeholders: {version} {uptime} {modules}"
       }
     }
   },
@@ -593,8 +622,7 @@
   "inline_commands_hint": "Pick a command — type @<bot> and its name in any chat",
   "settings": {
     "runtime_unavailable": "Runtime unavailable",
-    "usage_alias": "Usage: {prefix}alias <alias> <command>",
-    "alias_invalid": "Alias: 1–32 characters, Unicode letters, digits and _; cannot start with a digit.",
+    "usage_alias": "Usage: {prefix}alias <alias> <command with arguments>",
     "alias_exists": "Command already exists: {alias}",
     "command_not_found": "Command not found: {command}\nAvailable: {known}",
     "alias_taken": "Alias is taken: {alias} → {command}. Remove it with {prefix}rmalias {alias}.",
@@ -707,30 +735,10 @@
   },
   "acl": {
     "owners": "<b>Owners</b><br>",
-    "account": " · account",
-    "protected": " · protected",
-    "failed": "<b>Failed:</b> <i>{error}</i>",
-    "owner_added": "<b>Granted</b> owner to <code>{user_id}</code>",
-    "owner_exists": "<code>{user_id}</code> is already an owner",
-    "owner_removed": "<b>Revoked</b> owner from <code>{user_id}</code>",
-    "owner_missing": "<code>{user_id}</code> is not an extra owner",
-    "group_created": "<b>Created group</b> <code>{name}</code>",
-    "group_deleted": "<b>Deleted group</b> <code>{name}</code>",
     "group_missing": "Group <code>{name}</code> not found",
     "group_item": "<b>{name}</b> — {users} users, {rules} rules",
     "groups": "<b>Security groups</b><br>",
-    "group_detail": "<b>Group {name}</b><br><b>Users</b><br>{users}<br><b>Rules</b><br>{rules}",
-    "member_exists": "<code>{user_id}</code> is already in <code>{name}</code>",
-    "member_missing": "<code>{user_id}</code> is not in <code>{name}</code>",
-    "member_added": "<b>Added</b> <code>{user_id}</code> to <code>{name}</code>",
-    "member_removed": "<b>Removed</b> <code>{user_id}</code> from <code>{name}</code>",
-    "duration": " for {duration}",
     "group_rule": "<b>Rule added:</b> sgroup <code>{target}</code> → {kind}/{rule}{until}",
-    "rule_added": "<b>Rule added:</b> {kind} <code>{target}</code> → {type}/{rule}{until}",
-    "rule_removed": "<b>Rule removed</b>",
-    "nothing_remove": "nothing to remove",
-    "rules_cleared": "<b>Rules cleared</b>",
-    "nothing_clear": "nothing to clear",
     "permissions": "<b>Permissions</b><br>",
     "user_groups": "<br>groups: <code>{groups}</code>",
     "user_detail": "<code>{user_id}</code> · <b>{permissions}</b>",
@@ -739,16 +747,12 @@
     "nothing_revoke": "nothing to revoke",
     "grant_failed": "<b>Grant failed:</b> <i>{error}</i>",
     "granted": "<b>Granted</b> <code>{label}</code> to <code>{user_id}</code>",
-    "self_owner": "This user already owns the account.",
     "bad_group": "Group name: letters and digits, up to 32 characters.",
-    "no_groups": "No groups.",
     "bad_duration": "Use 1m, 1h, 1d, 1w or forever. Maximum: 100 years.",
     "bad_rule": "Rule: command/name or module/name.",
     "empty": "No granted permissions. Use {prefix}perm <user_id> <role>.",
     "bad_label": "Unknown permission: {label}",
-    "no_owner_grant": "Use {prefix}owadd to grant owner access.",
-    "usage": "<code>{prefix}owadd &lt;user_id|reply&gt;</code> — Add owner\n<code>{prefix}owrm &lt;user_id|reply&gt;</code> — Remove owner\n<code>{prefix}owls</code> — List owners\n<code>{prefix}sgnew &lt;name&gt;</code> — Create permission group\n<code>{prefix}sgls</code> — List groups\n<code>{prefix}sg &lt;name&gt;</code> — Show group members and rules\n<code>{prefix}sgdel &lt;name&gt;</code> — Delete group\n<code>{prefix}sgadd &lt;name&gt; &lt;user_id|reply&gt;</code> — Add group member\n<code>{prefix}sgrm &lt;name&gt; &lt;user_id|reply&gt;</code> — Remove group member\n<code>{prefix}rule &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;command|module&gt;/&lt;name&gt; [expiry]</code> — Add access rule\n<code>{prefix}rulerm &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;rule&gt;</code> — Remove rule\n<code>{prefix}ruleclr &lt;user|chat|sgroup&gt; [target]</code> — Clear rules\n<code>{prefix}perm &lt;user_id&gt; &lt;admin|trusted|everyone&gt; [remove]</code> — Grant or revoke permission\n<code>{prefix}perms</code> — List permissions\n<code>{prefix}whois &lt;user_id&gt;</code> — Show user permissions",
-    "account_owner": "The account owner cannot be removed.",
+    "no_owner_grant": "Use {prefix}perms to grant owner access.",
     "owner_confirm": "Grant <code>{user_id}</code> full access?",
     "confirm": "Confirm",
     "clear_confirm": "Clear rules for <code>{scope}</code>?",
@@ -809,23 +813,13 @@
     "syntax": {
       "perms": "<code>{prefix}perms [ID|@username]</code>",
       "whois": "<code>{prefix}whois [ID|@username] [command]</code>",
-      "perm": "<code>{prefix}perm [ID|@username|command/name] &lt;role&gt; [remove]</code>",
-      "owadd": "<code>{prefix}owadd [ID|@username]</code>",
-      "owrm": "<code>{prefix}owrm [ID|@username]</code>",
-      "owls": "<code>{prefix}owls</code>",
-      "sgnew": "<code>{prefix}sgnew &lt;name&gt;</code>",
-      "sgdel": "<code>{prefix}sgdel &lt;name&gt;</code>",
-      "sgls": "<code>{prefix}sgls</code>",
-      "sg": "<code>{prefix}sg &lt;name&gt;</code>",
-      "sgadd": "<code>{prefix}sgadd &lt;name&gt; [ID|@username]</code>",
-      "sgrm": "<code>{prefix}sgrm &lt;name&gt; [ID|@username]</code>",
-      "rule": "<code>{prefix}rule &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;command/name|module/name&gt; [1h|forever]</code>",
-      "rulerm": "<code>{prefix}rulerm &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;command/name|module/name|*&gt;</code>",
-      "ruleclr": "<code>{prefix}ruleclr &lt;user|chat|sgroup&gt; [target]</code>"
+      "perm": "<code>{prefix}perm [ID|@username|command/name] &lt;role&gt; [remove]</code>"
     },
     "all_chats": "Available to everyone in all chats."
   },
   "inline": {
+    "command_open": "Open {command}",
+    "command_hint": "Press the button and add your query. Choose a result from the inline list.",
     "form": "Hotaru form",
     "error": {
       "title": "Error {code}",

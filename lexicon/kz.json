@@ -80,10 +80,12 @@
       "description": "Hotaru көмек модулі",
       "commands": {
         "hlp": {
-          "description": "Көмек каталогы"
+          "description": "Көмек каталогы",
+          "usage": "[модуль]"
         },
         "help": {
-          "description": "Көмек каталогы"
+          "description": "Көмек каталогы",
+          "usage": "[модуль]"
         }
       }
     },
@@ -114,7 +116,8 @@
       "description": "Hotaru жаңарту",
       "commands": {
         "upd": {
-          "description": "Жаңартуды тексеру және қолдану"
+          "description": "Жаңартуды тексеру және қолдану",
+          "usage": "[force]"
         },
         "updlog": {
           "description": "Өзгерістер тізімі"
@@ -150,11 +153,20 @@
       "description": "Аудармаларды басқару",
       "commands": {
         "lang": {
-          "description": "Тілді көрсету немесе өзгерту"
+          "description": "Тілді көрсету немесе өзгерту",
+          "usage": "[тіл]"
         },
         "language": {
-          "description": "Тілді көрсету немесе өзгерту"
+          "description": "Тілді көрсету немесе өзгерту",
+          "usage": "[тіл]"
         }
+      },
+      "native": {
+        "ru": "Русский",
+        "en": "English",
+        "kz": "Қазақша",
+        "uk": "Українська",
+        "ja": "日本語"
       }
     },
     "test-features": {
@@ -205,13 +217,16 @@
       "description": "Аккаунттарды басқару",
       "commands": {
         "acc": {
-          "description": "Аккаунтты басқару"
+          "description": "Аккаунтты басқару",
+          "usage": "[нөмір] [start|stop|restart|on|off|del]"
         },
         "acca": {
-          "description": "Аккаунт қосу немесе кіру"
+          "description": "Аккаунт қосу немесе кіру",
+          "usage": "[ID|cancel|password] [құпиясөз]"
         },
         "accs": {
-          "description": "Аккаунттар тақтасын ашу"
+          "description": "Аккаунттар тақтасын ашу",
+          "usage": "[нөмір]"
         }
       },
       "usage": "<b>Аккаунттар</b>\n<code>{prefix}acca [user_id]</code> · QR / нөмір арқылы қосу\n<code>{prefix}acca cancel</code> · кіруден бас тарту\n<code>{prefix}accs [#]</code> · аккаунттар панелі\n<code>{prefix}acc [#]</code> · аккаунттар панелі\n<code>{prefix}acc 2 start|stop|restart|on|off|del</code>",
@@ -350,62 +365,24 @@
       "description": "Құқықтарды басқару",
       "commands": {
         "perms": {
-          "description": "Құқықтар тізімі"
+          "description": "Құқықтар тізімі",
+          "usage": "[ID|@username]"
         },
         "perm": {
           "description": "Құқық беру немесе қайтару",
-          "usage": "[ID|@username|command/name] <role> [remove]"
+          "usage": "[ID|@username|command/атау] [рөл] [remove]"
         },
         "whois": {
           "description": "Пайдаланушы құқықтары",
-          "usage": "[ID|@username] [command]"
-        },
-        "owadd": {
-          "description": "Ие қосу"
-        },
-        "owrm": {
-          "description": "Иені жою"
-        },
-        "owls": {
-          "description": "Иелер тізімі"
-        },
-        "sgnew": {
-          "description": "Құқық тобын құру"
-        },
-        "sgls": {
-          "description": "Топтар тізімі"
-        },
-        "sg": {
-          "description": "Топ мүшелері мен ережелері"
-        },
-        "sgdel": {
-          "description": "Топты жою"
-        },
-        "sgadd": {
-          "description": "Қатысушы қосу"
-        },
-        "sgrm": {
-          "description": "Қатысушыны жою"
-        },
-        "rule": {
-          "description": "Рұқсат ережесін қосу"
-        },
-        "rulerm": {
-          "description": "Ережені жою"
-        },
-        "ruleclr": {
-          "description": "Ережелерді тазарту"
+          "usage": "[ID|@username] [команда]"
         }
       },
-      "usage": "колданылуы:\n!owadd <user_id|reply> — owner беру\n!owrm <user_id|reply> — owner алу\n!owls — иелер\n!sgnew <name> — құқықтар тобын құру\n!sgls — топтар тізімі\n!sg <name> — топ қатысушылары мен ережелері\n!sgdel <name> — топты жою\n!sgadd <name> <user_id|reply> — топқа қосу\n!sgrm <name> <user_id|reply> — топтан шығару\n!rule <user|chat|sgroup> <target> <command|module>/<name> [мерзім] — ереже беру\n!rulerm — ережені жою\n!ruleclr — барлық ережелерді тазарту\n!perm <user_id> <admin|trusted|everyone> [remove] — құқық беру/алу\n!perms — құқықтар тізімі\n!whois <user_id> — пайдаланушы құқықтары",
       "bad_group": "Топ атауы: тек әріптер мен цифрлар, 32 таңбаға дейін.",
-      "no_groups": "Құқықтар топтары жоқ. Құр: !sgnew <name>",
       "bad_duration": "Мерзім: сан + s/m/h/d/w, немесе forever.",
       "bad_rule": "Ереже: command/атау немесе module/атау.",
       "self_owner": "Бұл пайдаланушы аккаунт иесі болып табылады.",
       "empty": "Берілген құқықтар жоқ. !perm <user_id> <role> қолданыңыз.",
-      "bad_label": "Белгісіз құқық: {label}.",
-      "no_owner_grant": "Owner !owadd арқылы беріледі."
+      "bad_label": "Белгісіз құқық: {label}."
     },
     "lg": "лог төменгі бөлігі:\n{lines}",
     "commands": {
@@ -415,32 +392,57 @@
       "description": "Hotaru конфигурация модулі",
       "commands": {
         "conf": {
-          "description": "Параметрлерді ашу"
+          "description": "Параметрлерді ашу",
+          "usage": "[модуль] [параметр|reset] [мән]"
         },
         "config": {
-          "description": "Параметрлерді ашу"
+          "description": "Параметрлерді ашу",
+          "usage": "[модуль] [параметр|reset] [мән]"
         }
       },
       "template_fields": "Қолжетімді үлгі өрістері",
       "shared_prefix": "Ағымдағы пәрмен префиксі",
       "shared_uptime": "Жұмыс уақыты, секунд",
       "template_syntax": "{{name}}, сан пішімі {{name:.2f}}, ал жай жақшалар үшін {{{{ / }}}} пайдаланыңыз. Мәндер HTML үшін экрандалған.",
-      "template_preview": "Алдын ала қарау (HTML, мән үлгілері)"
+      "template_preview": "Алдын ала қарау (HTML, мән үлгілері)",
+      "directory_empty": "<b>Баптаулар</b>\n\nБапталатын модульдер жоқ.",
+      "directory": "<b>Баптаулар</b>\n\nМодульді таңдаңыз:",
+      "module_missing_error": "<b>Қате:</b> <code>{module}</code> модулі табылмады.",
+      "no_settings": "<b>Қате:</b> <code>{module}</code> модулінің баптаулары жоқ.",
+      "parameter_missing_error": "<b>Қате:</b> <code>{parameter}</code> параметрі табылмады.",
+      "empty": "(бос)",
+      "parameter_details": "• Мәні: <code>{value}</code>\n• Түрі: <code>{type}</code>\n• Әдепкі мәні: <code>{default}</code>\n",
+      "parameter_description": "• Сипаттамасы: <i>{description}</i>\n",
+      "template_unavailable": "Үлгі өрісі қолжетімсіз немесе экспортталмаған: {name}",
+      "error": "Қате: {error}",
+      "boolean_true": "🔘 Иә",
+      "boolean_false": "⚪️ Жоқ",
+      "minimum": "Ең аз мән: {value}",
+      "maximum": "Ең көп мән: {value}",
+      "enter": "✏️ Енгізу",
+      "new_value": "{parameter} параметрінің жаңа мәні",
+      "reset": "🔄 Қалпына келтіру",
+      "module_missing": "<code>{module}</code> модулі табылмады.",
+      "parameter_missing": "<code>{parameter}</code> параметрі табылмады.",
+      "error_html": "Қате: <code>{error}</code>"
     },
     "settings": {
       "description": "Бүркеншік аттар мен префиксті басқару",
       "commands": {
         "alias": {
-          "description": "Командаға бүркеншік ат беру"
+          "description": "Командаға бүркеншік ат беру",
+          "usage": "[алиас] [команда]"
         },
         "rmalias": {
-          "description": "Команданың бүркеншік атын жою"
+          "description": "Команданың бүркеншік атын жою",
+          "usage": "[алиас]"
         },
         "lsalias": {
           "description": "Команда бүркеншік аттарының тізімі"
         },
         "prefix": {
-          "description": "Команда префиксін өзгерту"
+          "description": "Команда префиксін өзгерту",
+          "usage": "[префикс]"
         }
       }
     },
@@ -472,10 +474,21 @@
       "logs_sent": "Логтар жіберілді: {count} жазба",
       "commands": {
         "logs": {
-          "description": "Юзербот логтары файлмен бірге"
+          "description": "Юзербот логтары файлмен бірге",
+          "usage": "[on|off|status|деңгей] [саны] [компонент]"
         }
       },
-      "pending": "күтілуде"
+      "pending": "күтілуде",
+      "config": {
+        "level": "Журналға жазылатын ең төменгі деңгей",
+        "batch_size": "Бір хабарламадағы оқиғалар саны",
+        "auto_topic": "Форумдағы журнал тақырыбын автоматты басқару"
+      },
+      "config_fields": {
+        "level": "Журналға жазылатын ең төменгі деңгей",
+        "batch_size": "Бір хабарламадағы оқиғалар саны",
+        "auto_topic": "Форумдағы журнал тақырыбын автоматты басқару"
+      }
     },
     "executor": {
       "heading": "<b>Орындаушы</b> | <code>{elapsed:.1f} мс</code>",
@@ -499,10 +512,12 @@
       "description": "Python және қабықша командаларын орындау",
       "commands": {
         "py": {
-          "description": "Python кодын орындау"
+          "description": "Python кодын орындау",
+          "usage": "[-so] [код]"
         },
         "sh": {
-          "description": "Қабықша командасын орындау"
+          "description": "Қабықша командасын орындау",
+          "usage": "[-so] [команда]"
         },
         "kill": {
           "description": "Орындалып жатқан команданы тоқтату"
@@ -513,22 +528,28 @@
       "description": "Модульдерді басқару",
       "commands": {
         "ld": {
-          "description": "Модульді жүктеу"
+          "description": "Модульді жүктеу",
+          "usage": "[сілтеме|жол]"
         },
         "ul": {
-          "description": "Модульді тоқтату"
+          "description": "Модульді тоқтату",
+          "usage": "[модуль] [-p]"
         },
         "rl": {
-          "description": "Модульді қайта жүктеу"
+          "description": "Модульді қайта жүктеу",
+          "usage": "[модуль] [force]"
         },
         "ex": {
-          "description": "Модульді экспорттау"
+          "description": "Модульді экспорттау",
+          "usage": "[модуль]"
         },
         "rs": {
-          "description": "Модуль деректерін тазарту"
+          "description": "Модуль деректерін тазарту",
+          "usage": "[модуль]"
         },
         "resetdb": {
-          "description": "Модуль деректерін тазарту"
+          "description": "Модуль деректерін тазарту",
+          "usage": "[модуль]"
         }
       }
     },
@@ -566,14 +587,21 @@
         "info": {
           "description": "Юзербот туралы ақпарат"
         }
+      },
+      "empty_template": "Ақпарат үлгісі бос",
+      "bad_placeholder": "Қате толтырғыш: {error}",
+      "config": {
+        "template": ".info үлгісі, толтырғыштар: {version} {uptime} {modules}"
+      },
+      "config_fields": {
+        "template": ".info үлгісі, толтырғыштар: {version} {uptime} {modules}"
       }
     }
   },
   "inline_commands_hint": "Команданы таңда — кез келген чатта @<бот> және оның атын тер",
   "settings": {
     "runtime_unavailable": "Қызмет қолжетімсіз",
-    "usage_alias": "Қолдану: {prefix}alias <бүркеншік_ат> <команда>",
-    "alias_invalid": "Бүркеншік ат: 1–32 таңба, кез келген тілдің әріптері, цифрлар және _; цифрдан басталмауы керек.",
+    "usage_alias": "Қолдану: {prefix}alias <бүркеншік_ат> <команда мен аргументтері>",
     "alias_exists": "Команда бұрыннан бар: {alias}",
     "command_not_found": "Команда табылмады: {command}\nҚолжетімді: {known}",
     "alias_taken": "Бүркеншік ат қолданылуда: {alias} → {command}. Жою: {prefix}rmalias {alias}.",
@@ -707,30 +735,10 @@
   },
   "acl": {
     "owners": "<b>Иелер</b><br>",
-    "account": " · аккаунт",
-    "protected": " · қорғалған",
-    "failed": "<b>Қате:</b> <i>{error}</i>",
-    "owner_added": "<code>{user_id}</code> <b>иелер қатарына қосылды</b>",
-    "owner_exists": "<code>{user_id}</code> әлдеқашан иесі",
-    "owner_removed": "<code>{user_id}</code> <b>ие құқығынан айырылды</b>",
-    "owner_missing": "<code>{user_id}</code> ие болып тағайындалмаған",
-    "group_created": "<code>{name}</code> <b>тобы құрылды</b>",
-    "group_deleted": "<code>{name}</code> <b>тобы жойылды</b>",
     "group_missing": "<code>{name}</code> тобы табылмады",
     "group_item": "<b>{name}</b> — қатысушылар: {users}, ережелер: {rules}",
     "groups": "<b>Құқық топтары</b><br>",
-    "group_detail": "<b>{name} тобы</b><br><b>Қатысушылар</b><br>{users}<br><b>Ережелер</b><br>{rules}",
-    "member_exists": "<code>{user_id}</code> әлдеқашан <code>{name}</code> тобында",
-    "member_missing": "<code>{user_id}</code> <code>{name}</code> тобында жоқ",
-    "member_added": "<code>{user_id}</code> <code>{name}</code> <b>тобына қосылды</b>",
-    "member_removed": "<code>{user_id}</code> <code>{name}</code> <b>тобынан шығарылды</b>",
-    "duration": " {duration} мерзімге",
     "group_rule": "<b>Ереже қосылды:</b> sgroup <code>{target}</code> → {kind}/{rule}{until}",
-    "rule_added": "<b>Ереже қосылды:</b> {kind} <code>{target}</code> → {type}/{rule}{until}",
-    "rule_removed": "<b>Ереже жойылды</b>",
-    "nothing_remove": "Жоятын ештеңе жоқ",
-    "rules_cleared": "<b>Ережелер тазартылды</b>",
-    "nothing_clear": "Тазартатын ештеңе жоқ",
     "permissions": "<b>Құқықтар</b><br>",
     "user_groups": "<br>Топтар: <code>{groups}</code>",
     "user_detail": "<code>{user_id}</code> · <b>{permissions}</b>",
@@ -739,16 +747,12 @@
     "nothing_revoke": "Қайтаратын құқық жоқ",
     "grant_failed": "<b>Құқық беру орындалмады:</b> <i>{error}</i>",
     "granted": "<code>{user_id}</code> үшін <code>{label}</code> <b>құқығы берілді</b>",
-    "self_owner": "Бұл пайдаланушы аккаунттың иесі.",
     "bad_group": "Топ атауы: әріптер мен сандар, 32 таңбаға дейін.",
-    "no_groups": "Топтар жоқ.",
     "bad_duration": "1m, 1h, 1d, 1w немесе forever енгіз. Ең көбі — 100 жыл.",
     "bad_rule": "Ереже: command/атау немесе module/атау.",
     "empty": "Берілген құқықтар жоқ. {prefix}perm <user_id> <рөл> командасын қолдан.",
     "bad_label": "Белгісіз құқық: {label}",
-    "no_owner_grant": "Ие құқығы {prefix}owadd арқылы беріледі.",
-    "usage": "<code>{prefix}owadd &lt;user_id|reply&gt;</code> — Ие қосу\n<code>{prefix}owrm &lt;user_id|reply&gt;</code> — Иені жою\n<code>{prefix}owls</code> — Иелер тізімі\n<code>{prefix}sgnew &lt;name&gt;</code> — Құқық тобын құру\n<code>{prefix}sgls</code> — Топтар тізімі\n<code>{prefix}sg &lt;name&gt;</code> — Топ мүшелері мен ережелері\n<code>{prefix}sgdel &lt;name&gt;</code> — Топты жою\n<code>{prefix}sgadd &lt;name&gt; &lt;user_id|reply&gt;</code> — Қатысушы қосу\n<code>{prefix}sgrm &lt;name&gt; &lt;user_id|reply&gt;</code> — Қатысушыны жою\n<code>{prefix}rule &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;command|module&gt;/&lt;name&gt; [expiry]</code> — Рұқсат ережесін қосу\n<code>{prefix}rulerm &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;rule&gt;</code> — Ережені жою\n<code>{prefix}ruleclr &lt;user|chat|sgroup&gt; [target]</code> — Ережелерді тазарту\n<code>{prefix}perm &lt;user_id&gt; &lt;admin|trusted|everyone&gt; [remove]</code> — Құқық беру немесе қайтару\n<code>{prefix}perms</code> — Құқықтар тізімі\n<code>{prefix}whois &lt;user_id&gt;</code> — Пайдаланушы құқықтары",
-    "account_owner": "Аккаунт иесін жоюға болмайды.",
+    "no_owner_grant": "Ие құқығы {prefix}perms арқылы беріледі.",
     "owner_confirm": "<code>{user_id}</code> пайдаланушысына толық рұқсат берілсін бе?",
     "confirm": "Растау",
     "clear_confirm": "<code>{scope}</code> ережелері тазартылсын ба?",
@@ -809,23 +813,13 @@
     "syntax": {
       "perms": "<code>{prefix}perms [ID|@username]</code>",
       "whois": "<code>{prefix}whois [ID|@username] [command]</code>",
-      "perm": "<code>{prefix}perm [ID|@username|command/name] &lt;role&gt; [remove]</code>",
-      "owadd": "<code>{prefix}owadd [ID|@username]</code>",
-      "owrm": "<code>{prefix}owrm [ID|@username]</code>",
-      "owls": "<code>{prefix}owls</code>",
-      "sgnew": "<code>{prefix}sgnew &lt;name&gt;</code>",
-      "sgdel": "<code>{prefix}sgdel &lt;name&gt;</code>",
-      "sgls": "<code>{prefix}sgls</code>",
-      "sg": "<code>{prefix}sg &lt;name&gt;</code>",
-      "sgadd": "<code>{prefix}sgadd &lt;name&gt; [ID|@username]</code>",
-      "sgrm": "<code>{prefix}sgrm &lt;name&gt; [ID|@username]</code>",
-      "rule": "<code>{prefix}rule &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;command/name|module/name&gt; [1h|forever]</code>",
-      "rulerm": "<code>{prefix}rulerm &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;command/name|module/name|*&gt;</code>",
-      "ruleclr": "<code>{prefix}ruleclr &lt;user|chat|sgroup&gt; [target]</code>"
+      "perm": "<code>{prefix}perm [ID|@username|command/name] &lt;role&gt; [remove]</code>"
     },
     "all_chats": "Барлық чатта барлығына қолжетімді."
   },
   "inline": {
+    "command_open": "{command} ашу",
+    "command_hint": "Батырманы басып, сұрауды толықтыр. Нәтижені инлайн тізімнен таңда.",
     "form": "Hotaru пішіні",
     "error": {
       "title": "Қате {code}",

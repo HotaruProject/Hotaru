@@ -8,23 +8,11 @@ HOTARU = {
             "type": "str",
             "default_key": "kernel.info.template",
             "max_len": 3000,
-            "description": "Шаблон .info, плейсхолдеры {version} {uptime} {modules}",
             "category": "General",
-        },
-    },
-    "lexicon": {
-        "en": {
-            "description": "Userbot info card",
-            "commands": {"info": {"description": "Show userbot info"}},
-        },
-        "ru": {
-            "description": "Карточка юзербота",
-            "commands": {"info": {"description": "Информация о юзерботе"}},
         },
     },
 }
 
-import subprocess
 import time
 from typing import TYPE_CHECKING, Dict, Union
 
@@ -35,16 +23,6 @@ if TYPE_CHECKING:
 
 def _placeholders(ctx: 'ModuleContext') -> Dict[str, Union[str, int]]:
     runtime = ctx.runtime
-    version = "unknown"
-    try:
-        out = subprocess.run(
-            ["git", "-C", "/root/Hotaru", "rev-parse", "--short", "HEAD"],
-            capture_output=True, timeout=5,
-        )
-        if out.returncode == 0:
-            version = out.stdout.decode().strip()
-    except Exception:
-        pass
     uptime_s = max(0, int(time.monotonic() - ctx.runtime.started_at))
     uptime = ctx.tools.duration(uptime_s, ctx.i18n.language)
     modules = 0
@@ -52,7 +30,7 @@ def _placeholders(ctx: 'ModuleContext') -> Dict[str, Union[str, int]]:
     if mod_mgr is not None and hasattr(mod_mgr, "items"):
         modules = len(mod_mgr.items())
     return {
-        "version": version,
+        "version": ctx.version,
         "uptime": uptime,
         "modules": modules,
     }
@@ -61,12 +39,12 @@ def _placeholders(ctx: 'ModuleContext') -> Dict[str, Union[str, int]]:
 async def command_info(ctx: 'ModuleContext', invocation: 'CommandInvocation') -> None:
     template = ctx.config.get("template")
     if not template:
-        await ctx.respond("info: template is empty")
+        await ctx.respond(ctx.t("kernel.info.empty_template"))
         return
     values = _placeholders(ctx)
     try:
         text = template.format(**values)
     except (KeyError, IndexError, ValueError) as exc:
-        await ctx.respond(f"info: bad placeholder {exc}")
+        await ctx.respond(ctx.t("kernel.info.bad_placeholder", error=str(exc)))
         return
     await ctx.respond(text, parse_mode="HTML", rich=True, rich_fallback="bot")

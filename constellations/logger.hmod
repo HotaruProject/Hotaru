@@ -11,7 +11,6 @@ HOTARU = {
             "type": "choice",
             "options": ["all", "debug", "info", "warn", "error", "fatal"],
             "default": "info",
-            "description": "Minimum log level to record",
             "category": "General",
         },
         "batch_size": {
@@ -19,13 +18,11 @@ HOTARU = {
             "default": 20,
             "minimum": 1,
             "maximum": 100,
-            "description": "Log events to batch per message",
             "category": "Performance",
         },
         "auto_topic": {
             "type": "bool",
             "default": True,
-            "description": "Automatically manage logs topic in forum",
             "category": "General",
         },
     },
@@ -38,7 +35,6 @@ from typing import Any, Dict, List, Mapping, cast
 
 import asyncio
 import html
-import re
 import time
 
 TOPIC_TITLE = "Logs"
@@ -100,7 +96,7 @@ def _fmt(ctx: Any, payload: Mapping[str, Any]) -> str:
 def _rich(ctx: Any, batch: List[Mapping[str, Any]]) -> dict[str, Any]:
     sources = {str(p.get("module") or p.get("component") or "-") for p in batch}
     blocks: List[dict[str, Any]] = [
-        {"_": "pageBlockHeading1", "text": {"_": "textPlain", "text": "Hotaru log"}},
+        {"_": "pageBlockHeading1", "text": {"_": "textPlain", "text": "Hotaru · " + ctx.t("kernel.logger.log")}},
         {"_": "pageBlockTable", "title": {"_": "textPlain", "text": ""}, "rows": [
             {"_": "pageTableRow", "cells": [
                 {"_": "pageTableCell", "header": index == 0, "text": {"_": "textPlain", "text": str(value)}}
@@ -150,11 +146,9 @@ def _sink(payload: Any) -> Any:
         return
     if payload.get("component") == "updater" and payload.get("event") in ("poller_uptodate", "poller_notified"):
         return
-    if (
-        payload.get("component") == "mtproto"
-        and payload.get("event") == "log"
-        and re.fullmatch(r"MTProto connection lost, reconnecting in [0-9]+\.[0-9]s", str(payload.get("msg") or ""))
-    ):
+    if payload.get("component") == "connection" and payload.get("event") in ("recovering", "recovered"):
+        return
+    if payload.get("component") == "mtproto" and payload.get("event") == "log" and payload.get("routine_transport") is True:
         return
     level = str(payload.get("level") or "info").lower()
     # Pass events whose numeric severity >= current floor (more severe = higher number).

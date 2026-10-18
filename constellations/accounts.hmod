@@ -345,10 +345,10 @@ class AccountUI:
     async def callback(self, ctx: Any, data: dict[str, Any]) -> None:
         if (ctx.from_id != data.get('actor', self.runtime.app.session.self_id)
                 or not (self.access.allows(ctx.from_id, 'view') or self.can_cancel(ctx.from_id, data))):
-            await ctx.answer(self.t('error.no_permission'), alert=True)
+            await ctx.respond(self.t('error.no_permission'), alert=True)
             return
         if data.get('key') != self.key:
-            await ctx.answer(self.t('reopen', prefix=self.runtime.config.prefix), alert=True)
+            await ctx.respond(self.t('reopen', prefix=self.runtime.config.prefix), alert=True)
             return
         action = data.get('action')
         if action in {'method', 'back', 'cancel', 'submit'}:
@@ -362,7 +362,7 @@ class AccountUI:
         ctx.account_view = (key, self.views[key])
         while len(self.views) > 128:
             self.views.pop(next(iter(self.views)))
-        await ctx.answer()
+        await ctx.respond()
         async with self.gate:
             if task is not None:
                 await asyncio.gather(task, return_exceptions=True)
@@ -370,7 +370,7 @@ class AccountUI:
                 try:
                     await self.change(ctx, data)
                 except AccountError as exc:
-                    await ctx.answer(self.error(exc), alert=True)
+                    await ctx.respond(self.error(exc), alert=True)
                 except Exception:
                     if action in {'list', 'view', 'rights'}:
                         handle = getattr(ctx, 'data', '')
@@ -649,35 +649,35 @@ class AccountLogin:
 
     async def callback(self, ctx: Any, data: dict[str, Any]) -> None:
         if ctx.from_id != self.actor:
-            await ctx.answer(self.t('error.no_permission'), alert=True)
+            await ctx.respond(self.t('error.no_permission'), alert=True)
             return
         if not self.sid or data.get('sid') != self.sid:
-            await ctx.answer(self.t('login.expired'), alert=True)
+            await ctx.respond(self.t('login.expired'), alert=True)
             return
         if data['action'] not in {'cancel', 'back'} and not self.ui.access.allows(self.actor, 'add'):
-            await ctx.answer(self.t('error.no_permission'), alert=True)
+            await ctx.respond(self.t('error.no_permission'), alert=True)
             await self.cancel()
             return
         if self.form is not None and data['action'] != 'submit':
             self.form.bind(ctx)
         if data['action'] in {'method', 'back'}:
             if self.choice is None or self.choice.done():
-                await ctx.answer(self.t('login.busy'))
+                await ctx.respond(self.t('login.busy'))
                 return
             method = 'back' if data['action'] == 'back' else data.get('method')
             if method not in {'qr', 'phone', 'back'}:
                 return
             task = self.task
             self.choice.set_result(method)
-            await ctx.answer()
+            await ctx.respond()
             if method == 'back' and task is not None:
                 await task
         elif data['action'] == 'cancel':
-            await ctx.answer()
+            await ctx.respond()
             await self.cancel(str(data['sid']))
         else:
             accepted = self.accept(str(data.get('entry', '')))
-            await ctx.answer(self.t('login.submitted') if accepted else self.t('login.input_expired'))
+            await ctx.respond(self.t('login.submitted') if accepted else self.t('login.input_expired'))
             if accepted:
                 await ctx.edit(self.t('login.submitted'), buttons=[])
 
