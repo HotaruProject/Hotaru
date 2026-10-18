@@ -1,0 +1,55 @@
+language: ru-RU
+
+tone_instructions: >-
+  Пиши по делу, без воды. Если в диффе есть вынос vault, session или ключей,
+  деструктивные RPC или ослабление гейта, говори об этом первым пунктом.
+
+reviews:
+  profile: assertive
+  auto_review:
+    enabled: true
+  request_changes_workflow: false
+  poem: false
+  in_progress_fortune: false
+  sequence_diagrams: false
+  collapse_walkthrough: true
+  review_status: true
+  path_instructions:
+    - path: "**/*.hmod"
+      instructions: >-
+        Модуль Hotaru (исполняемый код, не данные). Проверь в первую очередь
+        всё, на что нацелены правила hotaru-* в .semgrep/hotaru-security.yml:
+        вынос содержимого хранилища сессий, vault или ключей наружу (сеть,
+        Telegram, файлы вне каталога души), вызовы уничтожающих аккаунт или
+        сбрасывающих авторизации RPC, распаковку и исполнение закодированных
+        блобов, скрытые сетевые обращения, чтение чужого модульного
+        пространства имён, обход ограничений песочницы.
+    - path: "relay/**"
+      instructions: >-
+        Ограничительный слой ядра. Проверь, не ослаблены ли capability-политика,
+        denylist пиров и хостов, проверки владельца, границы песочницы и
+        обработка callback.
+    - path: "hotaru/**"
+      instructions: >-
+        Ядро. Любое изменение хранилища состояния, ключей, vault или транспорта
+        считай чувствительным: опиши, что именно стало доступно наружу.
+    - path: ".github/**"
+      instructions: >-
+        CI и branch-гейт. Ослабление обязательных проверок, политики Semgrep
+        или CODEOWNERS считай подозрительным и скажи об этом прямо.
+  tools:
+    gitleaks:
+      enabled: true
+    trufflehog:
+      enabled: true
+    semgrep:
+      enabled: true
+    zizmor:
+      enabled: true
+    actionlint:
+      enabled: true
+    osvScanner:
+      enabled: true
+
+chat:
+  auto_reply: true
