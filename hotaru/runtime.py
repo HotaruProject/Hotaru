@@ -1720,7 +1720,8 @@ class Runtime:
                 if self._is_kernel_module(module_id):
                     raise PermissionError(self.t("runtime.protected", module_id=module_id))
                 caps = list(candidate.manifest.capabilities)
-                if not self._caps_consented(module_id, candidate.manifest):
+                is_first_load = module_id not in self.state.module_ids()
+                if is_first_load or not self._caps_consented(module_id, candidate.manifest, candidate.digest):
                     return candidate, "confirm"
                 source_text = candidate.source
                 old_path = self.relay_dir / f"{module_id}.hmod"
@@ -1728,7 +1729,7 @@ class Runtime:
                 previous = self.state.namespace(module_id).all()
                 loaded = self.stager.stage_text(source_text, self.relay_dir)
                 if not caps:
-                    self._mark_caps_consent(module_id, [])
+                    self._mark_caps_consent(module_id, [], candidate.digest)
                 if self.modules is not None and self.modules.get(module_id) is not None:
                     result = await self._reload_module(SimpleNamespace(args=(module_id,)), source=source_text)
                     if result == self.t("runtime.reloaded", module_id=module_id):
@@ -1903,7 +1904,7 @@ class Runtime:
                 candidate_loaded = self.modules.loader.load(candidate)
                 if candidate_loaded.manifest.module_id != module_id:
                     return self.t('runtime.id_mismatch', module_id=module_id)
-                if not self._caps_consented(module_id, candidate_loaded.manifest):
+                if not self._caps_consented(module_id, candidate_loaded.manifest, candidate_loaded.digest):
                     return await self._render_caps_screen(
                         module_id, candidate_loaded.manifest, candidate_loaded.source,
                         getattr(invocation, "chat_id", None), getattr(invocation, "message_id", 0),
@@ -1994,44 +1995,30 @@ class Runtime:
 
 
 
-    def _caps_fingerprint(self, manifest: Any) -> str:
-        import hashlib
-
-        payload = json.dumps([manifest.module_id, sorted(manifest.capabilities)], separators=(",", ":"))
-        return hashlib.sha256(payload.encode()).hexdigest()[:16]
-
-    def _approved_caps(self, module_id: str) -> set[str]:
+    def _approved_caps(self, module_id: str, digest: str | None = None) -> set[str]:
         if self.state is None or module_id not in self.state.module_ids():
             return set()
         namespace = self.state.namespace(module_id)
         consent = namespace.get("caps-consent")
-        if isinstance(consent, list):
-            values = cast("list[object]", consent)
-            return {value for value in values if isinstance(value, str)} if all(isinstance(value, str) for value in values) else set()
-        if isinstance(consent, str) and self.modules is not None:
-            active = self.modules.get(module_id)
-            manifest = active.loaded.manifest if active is not None else None
-            if manifest is None:
-                expected = self.relay_dir / f"{module_id}.hmod"
-                source_path = namespace.get("sourcepath")
-                if not isinstance(source_path, str) or Path(source_path).absolute() != expected.absolute() or expected.is_symlink():
-                    return set()
-                try:
-                    manifest = self.modules.loader.load(expected).manifest
-                except (OSError, ValueError):
-                    return set()
-            if manifest.module_id == module_id and self._caps_fingerprint(manifest) == consent:
-                approved = set(manifest.capabilities)
-                namespace.set("caps-consent", sorted(approved))
-                return approved
-        return set()
+        if not isinstance(consent, dict):
+            return set()
+        consent_map = cast("dict[str, object]", consent)
+        stored_digest = consent_map.get("digest")
+        caps_value = consent_map.get("capabilities")
+        if not isinstance(stored_digest, str) or not isinstance(caps_value, list):
+            return set()
+        if digest is not None and stored_digest != digest:
+            return set()
+        values = cast("list[object]", caps_value)
+        return {value for value in values if isinstance(value, str)}
 
-    def _caps_consented(self, module_id: str, manifest: Any) -> bool:
-        return manifest.module_id == module_id and set(manifest.capabilities).issubset(self._approved_caps(module_id))
+    def _caps_consented(self, module_id: str, manifest: Any, digest: str) -> bool:
+        return manifest.module_id == module_id and set(manifest.capabilities).issubset(self._approved_caps(module_id, digest))
 
-    def _mark_caps_consent(self, module_id: str, capabilities: list[str]) -> None:
+    def _mark_caps_consent(self, module_id: str, capabilities: list[str], digest: str) -> None:
         if self.state is not None:
-            self.state.namespace(module_id).set("caps-consent", sorted(self._approved_caps(module_id) | set(capabilities)))
+            approved = self._approved_caps(module_id, digest) | set(capabilities)
+            self.state.namespace(module_id).set("caps-consent", {"digest": digest, "capabilities": sorted(approved)})
 
     async def _render_caps_screen(self, module_id: str, manifest: Any, source: str, chat_id: int | str | None, message_id: int) -> tuple[str, list[list[dict[str, str]]]] | str:
         capabilities = sorted(set(manifest.capabilities) - self._approved_caps(module_id))
@@ -2089,7 +2076,7 @@ class Runtime:
             granted = set(cast("list[str]", capabilities))
             if not granted.issubset(requested) or not (requested - self._approved_caps(module_id)).issubset(granted):
                 raise ValueError("capability approval changed")
-            self._mark_caps_consent(module_id, sorted(granted))
+            self._mark_caps_consent(module_id, sorted(granted), candidate.digest)
             loaded, action = await self.load_module(candidate.source)
             if action not in {"loaded", "updated"}:
                 raise RuntimeError(action)
@@ -2392,7 +2379,7 @@ class Runtime:
         loaded = self.modules.loader.load(source_path)
         if loaded.manifest.module_id != module_id:
             raise ValueError("module id mismatch")
-        if not self._caps_consented(module_id, loaded.manifest):
+        if not self._caps_consented(module_id, loaded.manifest, loaded.digest):
             raise ValueError("capabilities changed; !trust required")
         await self.activate_module(source_path, backup=False)
 
