@@ -19,7 +19,7 @@ from functools import partial
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any, Callable, cast
 
-from .denylist import is_blocked_host, payload_hits_blocked
+from .denylist import is_blocked_host, is_blocked_peer, payload_hits_blocked
 from .firewall import trusted_scope
 from hotaru.plainfmt import rich_to_plain
 from hotaru.capabilities import BehaviorEnvelope
@@ -51,11 +51,13 @@ MT_BLOCKED = frozenset({
     "account.deleteaccount",
     "account.resetauthorization",
     "account.resetauthorizations",
+    "account.resetpassword",
     "account.updatepasswordsettings",
     "account.setpasswordemail",
     "account.confirmpasswordemail",
     "account.resendpasswordemail",
     "account.changephone",
+    "account.sendchangephonecode",
     "account.invalidatesignincodes",
     "account.registerdevice",
     "account.unregisterdevice",
@@ -65,15 +67,49 @@ MT_BLOCKED = frozenset({
     "account.getpasswordsettings",
     "account.gettmppassword",
     "account.getauthorizations",
+    "account.getallsecurevalues",
+    "account.updateusername",
     "account.setglobalprivacysettings",
     "account.setprivacypremiumrequired",
     "account.setprivacy",
     "account.reportpeer",
-    "payments.sendpaymentform",
-    "payments.validaterequestedinfo",
-    "payments.clearsavedinfo",
+    "messages.searchglobal",
     "users.setsecurevalueerrors",
 })
+
+MT_BLOCKED_PREFIXES = ("payments.",)
+
+
+def _entry_hits_blocked_peer(item: Any) -> bool:
+    if not isinstance(item, dict):
+        return False
+    entry = cast('dict[str, Any]', item)
+    for attr in ("from_id", "peer_id", "user_id", "sender_id"):
+        if is_blocked_peer(entry.get(attr)):
+            return True
+    if entry.get("id") is not None and str(entry.get("_", "")).lower() in {"user", "userempty"}:
+        if is_blocked_peer(entry.get("id")):
+            return True
+    return False
+
+
+def scrub_blocked_peers(value: Any, *, _depth: int = 0) -> Any:
+    if _depth > 32:
+        return value
+    if isinstance(value, dict):
+        mapping = cast('dict[str, Any]', value)
+        for key in ("messages", "dialogs", "chats", "users", "updates"):
+            items = mapping.get(key)
+            if isinstance(items, list):
+                kept: list[Any] = [item for item in cast('list[Any]', items) if not _entry_hits_blocked_peer(item)]
+                mapping[key] = [scrub_blocked_peers(item, _depth=_depth + 1) for item in kept]
+        for key, inner in mapping.items():
+            if key not in ("messages", "dialogs", "chats", "users", "updates"):
+                mapping[key] = scrub_blocked_peers(inner, _depth=_depth + 1)
+        return mapping
+    if isinstance(value, list):
+        return [scrub_blocked_peers(item, _depth=_depth + 1) for item in cast('list[Any]', value)]
+    return value
 
 
 def normalize_method(name: str) -> str:
@@ -321,6 +357,8 @@ class CapabilityHost:
         if capability == "logs":
             return self._logs_op(module_id, payload)
         elif capability == "fetch":
+            if not self._allowed(module_id, "mt"):
+                raise PermissionError("capability not granted to module: mt")
             return await self._fetch_op(module_id, payload)
         elif not self._allowed(module_id, capability):
             if capability in {"net", "shell"}:
@@ -433,7 +471,7 @@ class CapabilityHost:
                 min_id=0,
                 hash=0,
             )
-            body = _result_body(result)
+            body = cast('dict[str, Any]', scrub_blocked_peers(_result_body(result)))
             messages = body.get("messages")
             return [cast('dict[str, Any]', message) for message in cast('list[Any]', messages) if isinstance(message, dict)] if isinstance(messages, list) else []
 
@@ -559,7 +597,7 @@ class CapabilityHost:
         canonical = normalize_method(lowered).lower()
         if "." not in canonical:
             raise PermissionError("mt capability requires a namespaced RPC method")
-        if canonical.startswith(("auth.", "phone.")) or canonical in MT_BLOCKED:
+        if canonical.startswith(("auth.", "phone.") + MT_BLOCKED_PREFIXES) or canonical in MT_BLOCKED:
             raise PermissionError(f"mt method is blocked by policy: {method}")
         if payload_hits_blocked(payload):
             raise PermissionError("mt payload targets a denied peer")
@@ -598,7 +636,7 @@ class CapabilityHost:
             raise ValueError("MT timeout must be between 0 and 60 seconds")
         request = getattr(app, rpcname(method))(**kwargs)
         result = await request if timeout is None else await asyncio.wait_for(request, float(timeout))
-        return _result_body(result)
+        return scrub_blocked_peers(_result_body(result))
 
     def _audit_mt(self, module_id: str, method: str, payload: dict[str, Any]) -> None:
         observatory = getattr(self.runtime, "observatory", None)

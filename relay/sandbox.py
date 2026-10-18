@@ -1667,7 +1667,7 @@ class ModuleSandbox:
                 bind_ro(dev, dev, False, dev=True)
             tmp_dir = os.path.join(newroot, "tmp")
             os.makedirs(tmp_dir, exist_ok=True)
-            mount(b"tmpfs", tmp_dir.encode(), b"tmpfs", MS_NOSUID | MS_NODEV, b"mode=1777")
+            mount(b"tmpfs", tmp_dir.encode(), b"tmpfs", MS_NOSUID | MS_NODEV, b"mode=1777,size=64m")
             os.makedirs(os.path.join(newroot, "old_root"), exist_ok=True)
             os.chdir(newroot)
             if libc.pivot_root(b".", b"./old_root") != 0:
@@ -1706,6 +1706,12 @@ class ModuleSandbox:
                 str(self.runtime.config.session_dir),
                 str(self.runtime.config.session_dir / f"{self.runtime.config.session_name}.vault"),
                 str(self.runtime.config.session_dir / f"{self.runtime.config.session_name}.session"),
+                os.path.join(os.environ.get("HOME") or os.path.expanduser("~"), ".ssh"),
+                os.path.join(os.environ.get("HOME") or os.path.expanduser("~"), ".config", "gh"),
+                os.path.join(os.environ.get("HOME") or os.path.expanduser("~"), ".gitconfig"),
+                os.path.join(os.environ.get("HOME") or os.path.expanduser("~"), ".cache", "hotaru", "module-deps"),
+                str(Path(__file__).resolve().parent.parent),
+                str(Path(__file__).resolve().parent.parent / ".env"),
             ],
         }
         home = os.environ.get("HOME") or os.path.expanduser("~")
@@ -1774,9 +1780,13 @@ class ModuleSandbox:
             return
         observatory.emit("module", "output", level=level, module=module_id, msg=text[:2048])
 
+    _MAX_LINE_BYTES = 1 << 20
+
     def _readline(self, process: subprocess.Popen[bytes]) -> str | None:
         assert process.stdout is not None
-        line = process.stdout.readline()
+        line = process.stdout.readline(self._MAX_LINE_BYTES)
+        if len(line) >= self._MAX_LINE_BYTES and not line.endswith(b"\n"):
+            raise ValueError("worker output line size limit exceeded")
         return line.decode("utf-8", errors="replace").strip() if line else None
 
     def deps_root(self) -> Path:
@@ -2183,11 +2193,9 @@ class ModuleSandbox:
                             raise PermissionError("callback store is unavailable")
                         item["_action_id"] = action_id
                         item["_payload"] = button.get("payload")
-                    elif button.get("callback_data"):
-                        item["callback_data"] = button["callback_data"]
                     else:
                         for k, v in button.items():
-                            if k not in item:
+                            if k not in item and k != "callback_data":
                                 item[k] = v
                     out_row.append(item)
                 normalized.append(out_row)
