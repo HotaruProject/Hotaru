@@ -378,13 +378,13 @@ async def command_upd(ctx: Any, invocation: Any) -> Any:
         return
 
     async def update_handler(callback: Any, payload: Any) -> Any:
-        await callback.answer(ctx.t('kernel.updater.updating'))
+        await callback.respond(ctx.t('kernel.updater.updating'))
         _pending_from_callback(ctx, callback)
         await _run_update(ctx)
 
     async def ignore_handler(callback: Any, payload: Any) -> Any:
         ctx.state.set("notified_commit", latest)
-        await callback.answer(ctx.t('kernel.updater.ignored_toast'))
+        await callback.respond(ctx.t('kernel.updater.ignored_toast'))
         try:
             await callback.edit(f"<b>{ctx.t('kernel.updater.ignored')}</b>")
         except Exception:
@@ -455,13 +455,13 @@ async def task_poller(ctx: Any) -> Any:
         return
 
     async def update_handler(callback: Any, payload: Any) -> Any:
-        await callback.answer(ctx.t('kernel.updater.updating'))
+        await callback.respond(ctx.t('kernel.updater.updating'))
         _pending_from_callback(ctx, callback)
         await _run_update(ctx)
 
     async def ignore_handler(callback: Any, payload: Any) -> Any:
         ctx.state.set("notified_commit", latest)
-        await callback.answer(ctx.t('kernel.updater.ignored_toast'))
+        await callback.respond(ctx.t('kernel.updater.ignored_toast'))
         try:
             await callback.edit(f"<b>{ctx.t('kernel.updater.ignored')}</b>")
         except Exception:

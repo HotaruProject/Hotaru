@@ -19,6 +19,7 @@ from relay.firewall import module_scope
 from relay.emoji import to_entities, to_rich
 from goygram.types.kbd import kbd_to_tl
 from relay.rpc import delete_chat_msg
+from .observatory import rotate_file
 
 
 def _cb_log(data: dict[str, Any]) -> None:
@@ -27,6 +28,7 @@ def _cb_log(data: dict[str, Any]) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("a", encoding="utf-8") as fh:
             fh.write(json.dumps(data, ensure_ascii=False, default=str) + "\n")
+        rotate_file(path)
     except Exception:
         pass
 
@@ -60,9 +62,11 @@ class CallbackContext:
                     self.inline_message_id = inline_message_id
 
     def __getattr__(self, name: str) -> Any:
+        if name == "answer":
+            raise AttributeError("use respond")
         return getattr(self._callback, name)
 
-    async def answer(self, text: str | None = None, **kwargs: Any) -> Any:
+    async def respond(self, text: str | None = None, **kwargs: Any) -> Any:
         kwargs.pop("show_alert", None)
         alert = kwargs.pop("alert", False)
         return await self._callback.answer(text, alert=alert, **kwargs)
@@ -246,7 +250,7 @@ class CallbackContext:
 
     async def delete(self) -> Any:
         try:
-            await self.answer()
+            await self.respond()
         except Exception:
             pass
         runtime = getattr(self, "_hotaru_runtime", None)
@@ -468,7 +472,7 @@ class CallbackRouter:
     @staticmethod
     async def _default_close_handler(callback: Any, payload: Any = None) -> Any:
         try:
-            await callback.answer()
+            await callback.respond()
         except Exception:
             pass
         deleter = getattr(callback, "delete", None)
@@ -514,7 +518,28 @@ class CallbackRouter:
     def issue_module(self, module_id: str, action_id: str, binding: CallbackBinding, payload: Any = None) -> str:
         return self.store.issue(binding, {"module": module_id, "action_id": action_id, "payload": payload})
 
+    def _foreign(self, callback: Any) -> bool:
+        access = getattr(self.runtime, "access", None)
+        actor = self._optional(callback, "from_id")
+        if access is None or not isinstance(actor, int) or actor <= 0:
+            return True
+        if access.is_owner(actor):
+            return False
+        data = getattr(callback, "data", "")
+        if isinstance(data, (bytes, bytearray)):
+            data = data.decode("utf-8", "replace")
+        if not isinstance(data, str):
+            return True
+        mid = self._optional(callback, "msg_id")
+        try:
+            self.store.peek(data, CallbackBinding(actor, self._optional(callback, "chat_id"), mid if isinstance(mid, int) else None))
+        except CallbackDenied:
+            return True
+        return False
+
     async def dispatch(self, callback: Any) -> object:
+        if self.runtime is not None and self._foreign(callback):
+            return None
         mid = self._optional(callback, "msg_id")
         binding = CallbackBinding(
             actor=self._required(callback, "from_id"),
@@ -532,6 +557,11 @@ class CallbackRouter:
             from types import SimpleNamespace
             access = getattr(self.runtime, "access", None)
             module_id = value.get("module")
+            modules = getattr(self.runtime, "modules", None)
+            if isinstance(module_id, str) and modules is not None and (
+                modules.get(module_id) is None or module_id in modules._stopping
+            ):
+                raise CallbackDenied("module is no longer active")
             form_id = value.get("form_id")
             form = cast('Runtime', self.runtime).get_form(form_id) if isinstance(form_id, str) else None
             if form_id and form is None:
@@ -691,11 +721,17 @@ class CallbackRouter:
         if handler is None:
             self.store.unconsume(data)
             raise CallbackDenied("callback action is unavailable")
-        with module_scope(str(value.get("module") or "")):
-            result = handler(CallbackContext(callback, self.runtime), value.get("payload"))
-            if inspect.isawaitable(result):
-                return await result
-            return result
+        async def invoke() -> object:
+            with module_scope(str(value.get("module") or "")):
+                result = handler(CallbackContext(callback, self.runtime), value.get("payload"))
+                if inspect.isawaitable(result):
+                    return await result
+                return result
+        tasks = getattr(self.runtime, "tasks", None)
+        owner = value.get("module")
+        if tasks is not None and isinstance(owner, str):
+            return await tasks.spawn(owner, invoke(), name=f"hotaru:callback:{owner}")
+        return await invoke()
 
     @staticmethod
     def _required(callback: Any, name: str) -> int | str:

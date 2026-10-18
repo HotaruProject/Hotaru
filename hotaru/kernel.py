@@ -47,7 +47,7 @@ class Kernel:
         self.security: SecurityGate | None = None
         self.sandbox: Any = None
         self.tasks = TaskSupervisor()
-        self._seen: OrderedDict[tuple[str, int | str | None, int], None] = OrderedDict()
+        self._seen: OrderedDict[tuple[int | str | None, int], str | None] = OrderedDict()
         self._seen_limit = seen_limit
         self._running: dict[tuple[int | str | None, int], asyncio.Task[Any]] = {}
         self.suspended = False
@@ -110,7 +110,7 @@ class Kernel:
             assert self.sandbox is not None
             await self.sandbox.call(watcher.module_id, watcher.name, [], payload, source=message, target=f"watcher_{watcher.name}")
         except Exception as exc:
-            log.error("sandbox watcher failed: %s", type(exc).__name__)
+            log.error("sandbox watcher failed: %s", type(exc).__name__, exc_info=exc)
 
     async def _invoke_watcher(self, watcher: Any, context: Any, message: Any) -> None:
         try:
@@ -119,10 +119,10 @@ class Kernel:
                 if inspect.isawaitable(result):
                     await result
         except Exception as exc:
-            log.error("watcher failed: %s", type(exc).__name__)
+            log.error("watcher failed: %s", type(exc).__name__, exc_info=exc)
 
     def command_name(self, text: str | None) -> str | None:
-        invocation = self.parser.parse(text, source="command", message_id=0, chat_id=None)
+        invocation = self.parser.parse(text, source="command", message_id=0, chat_id=None, aliases=self.registry.alias_map())
         if invocation is None:
             return None
         spec = self.registry.resolve(invocation)
@@ -137,15 +137,19 @@ class Kernel:
             return None
         message_id = self._message_id(message)
         chat_id = getattr(message, "chat_id", None)
-        key = (source, chat_id, message_id)
-        if source != "edit" and key in self._seen:
-            return None
+        key = (chat_id, message_id)
+        text = getattr(message, "text", None)
+        if key in self._seen:
+            if source != "edit" or self._seen[key] == text:
+                return None
+            self._remember(key, text)
         invocation = self.parser.parse(
-            getattr(message, "text", None),
+            text,
             source=source,
             message_id=message_id,
             chat_id=chat_id,
             message=message,
+            aliases=self.registry.alias_map(),
         )
         if invocation is None:
             return None
@@ -164,7 +168,7 @@ class Kernel:
             verdict = self.security.check(message, transport="mt", module_id=spec.module_id, is_group=self._is_group(message), authorized=True)
             if verdict is not AccessVerdict.ALLOW:
                 return None
-        self._remember(key)
+        self._remember(key, text)
         if self.suspended and not spec.kernel:
             return None
         task_key = (chat_id, message_id)
@@ -190,14 +194,14 @@ class Kernel:
             result = await task
         except asyncio.CancelledError:
             return None
-        except Exception as exc:
-            log.error("command failed: %s", type(exc).__name__)
+        except (Exception, SystemExit) as exc:
+            log.error("command failed: %s", type(exc).__name__, exc_info=exc)
             if self.response_service is not None:
                 try:
-                    text = type(exc).__name__
-                    return await context.respond(text) if context is not None else await self.response_service.answer(message, text=text, output="auto")
+                    text = f"{type(exc).__name__}: {exc}"[:300]
+                    return await context.respond(text) if context is not None else await self.response_service.respond(message, text=text, output="auto")
                 except Exception as response_exc:
-                    log.error("command error response failed: %s", type(response_exc).__name__)
+                    log.error("command error response failed: %s", type(response_exc).__name__, exc_info=response_exc)
                     return None
             return None
         if spec.kernel and self.response_service is not None:
@@ -207,9 +211,9 @@ class Kernel:
                     text, buttons = values
                     if context is not None:
                         return await context.respond(text, buttons=buttons)
-                    return await self.response_service.answer(message, text=text, buttons=buttons, output="auto")
+                    return await self.response_service.respond(message, text=text, buttons=buttons, output="auto")
             if isinstance(result, str):
-                return await context.respond(result) if context is not None else await self.response_service.answer(message, text=result, output="auto")
+                return await context.respond(result) if context is not None else await self.response_service.respond(message, text=result, output="auto")
         return cast(object, result)
 
     async def _invoke(self, spec: Any, invocation: CommandInvocation, message: Any, context: Any = None) -> object:
@@ -344,8 +348,8 @@ class Kernel:
             raise ValueError("message must expose an integer id")
         return value
 
-    def _remember(self, key: tuple[str, int | str | None, int]) -> None:
-        self._seen[key] = None
+    def _remember(self, key: tuple[int | str | None, int], text: str | None) -> None:
+        self._seen[key] = text
         self._seen.move_to_end(key)
         while len(self._seen) > self._seen_limit:
             self._seen.popitem(last=False)

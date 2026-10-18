@@ -6,7 +6,7 @@ import secrets
 import time
 from typing import Any, Awaitable, Callable, cast
 
-from .caps import MT_BLOCKED, normalize_method
+from .caps import MT_BLOCKED, MT_BLOCKED_PREFIXES, normalize_method
 from .rpc import rpcname
 from .denylist import payload_hits_blocked
 from .firewall import trusted_scope
@@ -73,7 +73,7 @@ class Gateway:
             raise PermissionError("mt method name is required")
         lowered = method.strip().lower()
         canonical = normalize_method(lowered).lower()
-        if canonical.startswith(("auth.", "phone.")) or canonical in MT_BLOCKED:
+        if canonical.startswith(("auth.", "phone.") + MT_BLOCKED_PREFIXES) or canonical in MT_BLOCKED:
             raise PermissionError(f"mt method is blocked by policy: {method}")
 
     async def call(self, method: str, kwargs: dict[str, Any] | None = None) -> Any:
@@ -1283,7 +1283,7 @@ class InlineHelper:
     def rich_article(self, title: str, html_text: str, *, result_id: str | None = None, description: str | None = None, buttons: Any = None, **kw: Any) -> dict[str, Any]:
         return self.rich(result_id or secrets.token_urlsafe(10), title, html_text, buttons=buttons, description=description, **kw)
 
-    async def answer(self, query: Any, results: list[dict[str, Any]], **kw: Any) -> Any:
+    async def respond(self, query: Any, results: list[dict[str, Any]], **kw: Any) -> Any:
         return await query.answer(results=results, **kw)
 
     def photo(self, result_id: str, title: str, photo: str, *, caption: str = "", buttons: Any = None, **kw: Any) -> dict[str, Any]:
@@ -1374,7 +1374,7 @@ class InlineHelper:
         return self.article(result_id, title, text, **kw)
 
     async def show(self, query: Any, title: str, text: str, **kw: Any) -> Any:
-        return await self.answer(query, [self.article(secrets.token_hex(6), title, text, **kw)])
+        return await self.respond(query, [self.article(secrets.token_hex(6), title, text, **kw)])
 
     async def from_query(self, query: Any, title: str, text: str, **kw: Any) -> Any:
         return await self.show(query, title, text, **kw)
@@ -1480,7 +1480,7 @@ class UiHelper:
             text = self._router.runtime.t("common.close")
         async def handler(callback: Any, payload: Any) -> Any:
             try:
-                await callback.answer()
+                await callback.respond()
             except Exception:
                 pass
             deleter = getattr(callback, "delete", None)
@@ -1546,7 +1546,7 @@ class ModulesHelper:
     async def hashes(self) -> Any:
         return await self._host.cap("modules", {"op": "hashes"})
 
-    async def load(self, url: str | None = None, text: str | None = None, source: str | None = None) -> Any:
+    async def load(self, source: str | None = None, *, url: str | None = None, text: str | None = None) -> Any:
         payload: dict[str, Any] = {"op": "load"}
         if url is not None:
             payload["url"] = url

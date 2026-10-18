@@ -3,19 +3,26 @@ from __future__ import annotations
 import __future__
 import asyncio
 import base64
+import itertools
 import json
 import os
 import subprocess
 import sys
 import sysconfig
 import tempfile
+import threading
 import time
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Sequence, cast
 
 from . import toolkit as _toolkit
+from . import context as _context
+from . import translation as _translation
 from hotaru.callbacks import CallbackBinding
 from relay.firewall import trusted_scope
+
+_CONTEXT_SOURCE = Path(_context.__file__).read_text(encoding="utf-8")
+_TRANSLATION_SOURCE = Path(_translation.__file__).read_text(encoding="utf-8")
 
 _TOOLKIT_SOURCE = Path(_toolkit.__file__).read_text(encoding="utf-8")
 
@@ -65,25 +72,131 @@ WORKER_SOURCE = r'''
 import asyncio
 import __future__
 import base64
-import contextlib
 import io
+import itertools
 import json
 import os
 try:
     import resource
 except ImportError:
     resource = None
+import queue
 import socket
 import sys
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from types import SimpleNamespace
 import re as _re
 
 _HOST_OUT = sys.stdout
+_HOST_LOCK = threading.Lock()
+_HEARTBEAT_SECONDS = 2.0
+_LOCAL = threading.local()
+_reply_wait = {}
+_reply_ids = itertools.count(1)
+_busy_lock = threading.Lock()
+_busy_count = 0
+
+
+def _host_raw(text):
+    with _HOST_LOCK:
+        _HOST_OUT.write(text)
+        _HOST_OUT.flush()
+
+
+def _host_emit(payload):
+    _host_raw(_proto_dumps(payload) + "\n")
+
+
+def _busy(delta):
+    global _busy_count
+    with _busy_lock:
+        _busy_count += delta
+
+
+def _fail(exc):
+    import traceback
+    frames = [line for line in traceback.format_tb(exc.__traceback__) if 'File "<string>"' not in line]
+    return {
+        "ok": False,
+        "error": "%s: %s" % (type(exc).__name__, exc),
+        "trace": "".join(frames)[-2000:],
+    }
+
+
+def _ask(payload):
+    cid = next(_reply_ids)
+    payload["cid"] = cid
+    payload["rid"] = getattr(_LOCAL, "rid", 0)
+    waiter = _reply_wait[cid] = queue.Queue(maxsize=1)
+    try:
+        _host_emit(payload)
+        return waiter.get()
+    finally:
+        _reply_wait.pop(cid, None)
+
+
+def _heartbeat_loop():
+    while True:
+        time.sleep(_HEARTBEAT_SECONDS)
+        if _busy_count <= 0:
+            continue
+        try:
+            _host_emit({"_hb": 1})
+        except Exception:
+            return
+
+
+_CPU_LIMIT_SECONDS = 45.0
+_CLK_TCK = float(os.sysconf("SC_CLK_TCK") or 100)
+_active_cpu = {}
+_warned_cpu = {}
+_cpu_lock = threading.Lock()
+
+
+def _thread_cpu(tid):
+    """utime+stime of one worker thread, straight from /proc."""
+    try:
+        with open("/proc/self/task/%d/stat" % tid, "rb") as handle:
+            data = handle.read()
+        fields = data[data.rindex(b")") + 2:].split()
+        return (int(fields[11]) + int(fields[12])) / _CLK_TCK
+    except Exception:
+        return 0.0
+
+
+def _cpu_watch_loop():
+    """Report a request that burns a lot of CPU without returning, without
+    touching it: a module may legitimately compute for minutes in one command,
+    and the heartbeat already proves the worker is alive. Nothing here kills the
+    worker or fails the request; the operator stays in control via `kill`/reload.
+
+    ponytail: this only sees CPU; a request parked in a blocking syscall forever
+    still holds its slot.
+    """
+    while True:
+        time.sleep(1.0)
+        _cpu_scan_once()
+
+
+def _cpu_scan_once():
+    for rid, (tid, base) in list(_active_cpu.items()):
+        burned = _thread_cpu(tid) - base
+        if burned < _CPU_LIMIT_SECONDS or rid in _warned_cpu:
+            continue
+        _warned_cpu[rid] = True
+        try:
+            _host_emit({"log": "request %s has burned %.0fs of CPU and is still running" % (rid, burned), "stream": "stderr"})
+        except Exception:
+            pass
+    for rid in list(_warned_cpu):
+        if rid not in _active_cpu:
+            _warned_cpu.pop(rid, None)
+
 
 _PROTO_BYTES_KEY = "$bytes"
-
 
 def _proto_default(value):
     if isinstance(value, (bytes, bytearray)):
@@ -190,9 +303,10 @@ def install_seccomp():
         raise OSError("seccomp filter installation failed")
 
 
-def install_firewall(protected, namespaces=False):
+def install_firewall(protected, namespaces=False, deps_root=""):
     roots = [str(Path(item).resolve()) for item in protected]
     native_root = str((Path(os.__file__).resolve().parent / "lib-dynload").resolve()) + os.sep
+    module_deps = str(Path(deps_root).resolve()) + os.sep if deps_root else ""
 
     def deny_process(*args, **kwargs):
         raise PermissionError("module process escape is denied")
@@ -210,7 +324,9 @@ def install_firewall(protected, namespaces=False):
         if event == "import" and args and str(args[0]).split(".", 1)[0].casefold() in {"goygram", "hotaru", "relay"}:
             raise PermissionError("module cannot import Hotaru/GoyGram internals; use capability proxies")
         if not namespaces and event == "import" and len(args) > 1 and args[1]:
-            if not str(Path(os.fsdecode(args[1])).resolve()).startswith(native_root):
+            resolved = str(Path(os.fsdecode(args[1])).resolve())
+            pure_python_dep = bool(module_deps) and resolved.startswith(module_deps) and not resolved.endswith((".so", ".pyd", ".dylib"))
+            if not resolved.startswith(native_root) and not pure_python_dep:
                 raise PermissionError("portable sandbox only permits standard-library native extensions")
         if event in {"open", "os.open"} and args and isinstance(args[0], (str, bytes)):
             if not namespaces and args[1] is None and not os.path.isabs(args[0]):
@@ -234,7 +350,7 @@ def install_firewall(protected, namespaces=False):
     sys.addaudithook(audit)
 
 
-def apply_limits(mem_mb, file_mb, nofile, cpu_seconds, net_blocked):
+def apply_policy(net_blocked):
     if net_blocked:
         real_socket = socket.socket
 
@@ -254,33 +370,17 @@ def apply_limits(mem_mb, file_mb, nofile, cpu_seconds, net_blocked):
         socket.create_connection = lambda *a, **k: (_ for _ in ()).throw(OSError("network is blocked"))
         socket.getaddrinfo = lambda *a, **k: (_ for _ in ()).throw(OSError("network is blocked"))
     try:
-        if mem_mb > 0:
-            resource.setrlimit(resource.RLIMIT_AS, (mem_mb * 1024 * 1024, mem_mb * 1024 * 1024))
-        if file_mb > 0:
-            resource.setrlimit(resource.RLIMIT_FSIZE, (file_mb * 1024 * 1024, file_mb * 1024 * 1024))
-        if nofile > 0:
-            resource.setrlimit(resource.RLIMIT_NOFILE, (nofile, nofile))
-        if cpu_seconds > 0:
-            resource.setrlimit(resource.RLIMIT_CPU, (cpu_seconds, cpu_seconds))
         resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
     except Exception:
         pass
 
 
 def _cap_call(name, payload):
-    req = _proto_dumps({"cap": name, "payload": payload})
-    _HOST_OUT.write(req + "\n")
-    _HOST_OUT.flush()
-    while True:
-        line = sys.stdin.readline()
-        if not line:
-            raise OSError("host closed the sandbox channel")
-        resp = _proto_loads(line)
-        if resp.get("kind") != "cap_result":
-            continue
-        if not resp.get("ok"):
-            raise PermissionError(resp.get("error", "capability denied"))
-        return resp.get("result")
+    resp = _ask({"cap": name, "payload": payload})
+    if not resp.get("ok"):
+        error = {"PermissionError": PermissionError, "OSError": OSError, "TimeoutError": TimeoutError, "ConnectionError": ConnectionError, "ValueError": ValueError, "TypeError": TypeError}.get(resp.get("error_type", "PermissionError"), RuntimeError)
+        raise error(resp.get("error", "capability failed"))
+    return resp.get("result")
 
 
 class _WorkerLogs:
@@ -303,24 +403,17 @@ def _mt_call(method, **kwargs):
     return _cap_call("mt", {"method": method, "kwargs": kwargs})
 
 
-def _net_call(url, data=None, timeout=10.0):
-    return _cap_call("net", {"url": url, "data": data, "timeout": timeout})
+def _net_call(url, data=None, timeout=10.0, **options):
+    payload = {key: value for key, value in options.items() if value is not None}
+    payload.update(url=url, data=data, timeout=timeout)
+    return _cap_call("net", payload)
 
 
 def _respond_call(payload):
-    req = _proto_dumps({"respond": payload})
-    _HOST_OUT.write(req + "\n")
-    _HOST_OUT.flush()
-    while True:
-        line = sys.stdin.readline()
-        if not line:
-            raise OSError("host closed the sandbox channel")
-        resp = _proto_loads(line)
-        if resp.get("kind") != "respond_result":
-            continue
-        if not resp.get("ok"):
-            raise PermissionError(resp.get("error", "respond failed"))
-        return resp.get("result")
+    resp = _ask({"respond": payload})
+    if not resp.get("ok"):
+        raise PermissionError(resp.get("error", "respond failed"))
+    return resp.get("result")
 
 
 class _StateProxy:
@@ -365,21 +458,11 @@ _sandbox_callbacks = {}
 
 
 def _cb_respond_call(data):
-    _HOST_OUT.write(_proto_dumps({"cb_respond": data}) + "\n")
-    _HOST_OUT.flush()
-    while True:
-        line = sys.stdin.readline()
-        if not line:
-            raise OSError("host closed the sandbox channel")
-        line = line.strip()
-        if not line:
-            continue
-        msg = _proto_loads(line)
-        if "cb_respond_result" in msg:
-            result = msg["cb_respond_result"]
-            if not result.get("ok"):
-                raise PermissionError(result.get("error", "cb_respond failed"))
-            return result.get("result")
+    msg = _ask({"cb_respond": data})
+    result = msg.get("cb_respond_result") or {}
+    if not result.get("ok"):
+        raise PermissionError(result.get("error", "cb_respond failed"))
+    return result.get("result")
 
 
 class SandboxCallbackProxy:
@@ -388,8 +471,8 @@ class SandboxCallbackProxy:
     def __init__(self, cb_data):
         self._data = cb_data
 
-    async def answer(self, text="", alert=False):
-        return _cb_respond_call({"action": "answer", "text": str(text), "alert": bool(alert)})
+    async def respond(self, text="", alert=False):
+        return _cb_respond_call({"action": "respond", "text": str(text), "alert": bool(alert)})
 
     async def edit(self, text, **kwargs):
         return _cb_respond_call({"action": "edit", "text": str(text), **{k: v for k, v in kwargs.items() if isinstance(v, (str, int, float, bool, list, dict, type(None)))}})
@@ -436,7 +519,11 @@ _template_providers = {}
 _template_resolving = set()
 
 
-class SandboxContext:
+class ContextOperations:
+    pass
+
+
+class SandboxContext(ContextOperations):
     def __init__(self, tools, payload):
         payload = payload or {}
         self.chat_id = payload.get("chat_id")
@@ -446,6 +533,10 @@ class SandboxContext:
         self.state = _StateProxy()
         self.tools = SimpleNamespace(**{k: v for k, v in (tools or {}).items()})
         self._msg = payload
+
+    @property
+    def version(self):
+        return self._msg["version"]
 
     @property
     def uptime(self):
@@ -477,6 +568,10 @@ class SandboxContext:
                 finally:
                     _template_resolving.discard(name)
         return _cap_call("$template", {"key": key, "values": values, "local": local})
+
+    @property
+    def config(self):
+        return dict(self._msg.get("config", {}))
 
     @property
     def i18n(self):
@@ -553,39 +648,48 @@ class SandboxContext:
         import html as _html
         return _html.escape(str(value), quote=False)
 
+    async def _ctx_prepare(self, text, parse_mode, buttons):
+        return _respond_call({"prepare": {"text": text, "parse_mode": parse_mode, "buttons": buttons}})
+
     async def respond(self, content=None, **kwargs):
+        if any(key in kwargs for key in ("peer", "chat_id", "message_id", "target")):
+            return await self._ctx_operation("respond", content, **kwargs)
         return _respond_call({"content": content, "kwargs": kwargs})
 
-    async def smart_answer(self, content=None, **kwargs):
-        return await self.respond(content, **kwargs)
+    async def send(self, text, **kwargs):
+        kwargs.setdefault("output", "reply")
+        return await self.respond(text, **kwargs)
 
-    async def answer(self, text=None, **kwargs):
-        if text is not None:
-            kwargs["text"] = text
-        value = kwargs.pop("text", "")
-        return _respond_call({"content": value, "kwargs": kwargs})
+    async def edit(self, text, **kwargs):
+        if any(key in kwargs for key in ("peer", "chat_id", "message_id", "target")):
+            return await self._ctx_operation("edit", text, **kwargs)
+        return await self.respond(text, output="edit", **kwargs)
+
+    async def smart_respond(self, content=None, **kwargs):
+        return await self.respond(content, **kwargs)
 
     async def reply_html(self, text, **kwargs):
         kwargs.setdefault("output", "reply")
-        return await self.answer(text, **kwargs)
+        return await self.respond(text, **kwargs)
 
     async def edit_html(self, text, **kwargs):
         kwargs.setdefault("output", "edit")
-        return await self.answer(text, **kwargs)
+        return await self.respond(text, **kwargs)
 
-    async def answer_file(self, media, **kwargs):
+    async def respond_file(self, media, caption=None, **kwargs):
+        kwargs.setdefault("output", "auto")
+        kwargs.setdefault("caption", caption)
         return await self.send_file(media, kwargs.pop("caption", None), **kwargs)
 
-    async def answer_media(self, media, **kwargs):
-        kwargs.setdefault("output", "reply")
+    async def respond_media(self, media, **kwargs):
+        kwargs.setdefault("output", "auto")
         return await self.send_file(media, **kwargs)
 
-    async def answer_rich(self, rich_message, **kwargs):
-        return await self.send_rich(rich_message, **kwargs)
+    async def respond_rich(self, rich_message, **kwargs):
+        return await self.respond(rich_message, rich=True, **kwargs)
 
     async def send_rich(self, html, **kwargs):
-        kwargs["rich"] = True
-        return _respond_call({"content": html, "kwargs": kwargs})
+        return await self._ctx_operation("send_rich", html, **kwargs)
 
     async def inline_form(self, text, buttons=None, form_handle=False, **kwargs):
         return _respond_call({"content": text, "form_handle": bool(form_handle), "kwargs": {"buttons": buttons, "output": "inline", **kwargs}})
@@ -604,14 +708,27 @@ class SandboxContext:
     def ui(self):
         return _UiProxy(self.t)
 
+    async def _ctx_media_rpc(self, method, **kwargs):
+        return _respond_call({"media_rpc": {"method": method, "kwargs": kwargs}})
+
     async def send_file(self, media, caption=None, **kwargs):
-        kwargs["media"] = media
-        return _respond_call({"content": caption or "", "kwargs": kwargs})
+        output = kwargs.pop("output", "send")
+        explicit = any(key in kwargs for key in ("peer", "chat_id", "message_id", "target"))
+        if output in {"auto", "edit"} and not explicit and self._msg.get("out"):
+            return await self._ctx_operation("edit_media", media, caption=caption, **kwargs)
+        operation = "reply_file" if output in {"auto", "reply"} and not explicit else "send_file"
+        return await self._ctx_operation(operation, media, caption, **kwargs)
+
+    async def send_media(self, media, caption=None, **kwargs):
+        return await self.send_file(media, caption, **kwargs)
 
     async def upload_file(self, source, **kwargs):
         return _cap_call("assets", {"op": "upload", "file": source, "filename": kwargs.get("file_name")})
 
-    async def download_file(self, source, destination, **kwargs):
+    async def read_attachment_text(self, *, reply=False, max_bytes=1048576):
+        return _cap_call("fetch", {"op": "attachment_text", "reply": reply, "max_bytes": max_bytes})
+
+    async def download_file(self, source, destination=None, **kwargs):
         return _cap_call("assets", {"op": "download", "message": source, "destination": destination})
 
     def file_media(self, up, *, mime="application/octet-stream", file_name=None, force_file=True):
@@ -628,9 +745,6 @@ class SandboxContext:
     async def mt(self, method, **kwargs):
         return _mt_call(method, **kwargs)
 
-    async def net(self, url, *, data=None, timeout=10.0):
-        return _net_call(url, data=data, timeout=timeout)
-
     @property
     def tg(self):
         return _TgProxy()
@@ -642,6 +756,12 @@ class SandboxContext:
     @property
     def inline(self):
         return _InlineProxy()
+
+    async def load_module(self, source):
+        return await self.modules.load(source)
+
+    async def unload_module(self, module_id, *, purge=False):
+        return await self.modules.unload(module_id, purge=purge)
 
     @property
     def modules(self):
@@ -666,8 +786,8 @@ class _RichProxy:
     async def edit(self, message_id, html, **kwargs):
         return _respond_call({"content": html, "kwargs": {"rich": True, "output": "edit", "message_id": message_id, **kwargs}})
 
-    async def answer(self, html, **kwargs):
-        return self.send(html, **kwargs)
+    async def respond(self, html, **kwargs):
+        return await self.send(html, **kwargs)
 
 
 class _UiProxy:
@@ -856,7 +976,7 @@ class SandboxInlineQuery:
     def from_id(self):
         return None
 
-    async def answer(self, results=None, **kwargs):
+    async def respond(self, results=None, **kwargs):
         self._answered = True
         return {"ok": True, "results": results or []}
 
@@ -882,7 +1002,7 @@ class _ModulesProxy:
     async def hashes(self):
         return _cap_call("modules", {"op": "hashes"})
 
-    async def load(self, url=None, text=None, source=None):
+    async def load(self, source=None, *, url=None, text=None):
         payload = {"op": "load"}
         if url is not None:
             payload["url"] = url
@@ -909,24 +1029,25 @@ def _build_tools(source):
     return dict(func_map)
 
 
-class _ModuleOutput(io.TextIOBase):
-    def __init__(self, real, stream_name):
-        self.real = real
+class _LogSink(io.TextIOBase):
+    def __init__(self, stream_name):
         self.stream_name = stream_name
-        self._buf = ""
 
     def write(self, data):
         if not isinstance(data, str):
             data = str(data)
-        self._buf += data
-        while "\n" in self._buf:
-            line, self._buf = self._buf.split("\n", 1)
+        buffers = getattr(_LOCAL, "logs", None)
+        if buffers is None:
+            buffers = _LOCAL.logs = {}
+        buf = buffers.get(self.stream_name, "") + data
+        while "\n" in buf:
+            line, buf = buf.split("\n", 1)
             if line.strip():
                 try:
-                    self.real.write(json.dumps({"log": line[:2000], "stream": self.stream_name}) + "\n")
-                    self.real.flush()
+                    _host_raw(json.dumps({"log": line[:2000], "stream": self.stream_name}) + "\n")
                 except Exception:
                     pass
+        buffers[self.stream_name] = buf
         return len(data)
 
     def flush(self):
@@ -936,15 +1057,10 @@ class _ModuleOutput(io.TextIOBase):
         return False
 
 
-@contextlib.contextmanager
-def _capture_module_output():
-    old_out, old_err = sys.stdout, sys.stderr
-    sys.stdout = _ModuleOutput(old_out, "stdout")
-    sys.stderr = _ModuleOutput(old_err, "stderr")
-    try:
-        yield
-    finally:
-        sys.stdout, sys.stderr = old_out, old_err
+def install_output_capture():
+    _LOCAL.logs = {}
+    sys.stdout = _LogSink("stdout")
+    sys.stderr = _LogSink("stderr")
 
 
 def main():
@@ -970,40 +1086,37 @@ def main():
             if _exc.errno != _errno.EPERM:
                 sys.stderr.write(f"seccomp self-test failed: splice errno={_exc.errno}\n")
                 sys.exit(1)
-    install_firewall(cfg.get("protected", []), cfg.get("namespaces", False))
-    apply_limits(
-        cfg.get("mem_mb", 256),
-        cfg.get("file_mb", 16),
-        cfg.get("nofile", 64),
-        cfg.get("cpu_seconds", 1800),
-        cfg.get("net_blocked", True),
-    )
+    install_firewall(cfg.get("protected", []), cfg.get("namespaces", False), cfg.get("deps_root", ""))
+    apply_policy(cfg.get("net_blocked", True))
+    install_output_capture()
+    context_ns = {}
+    exec(compile(cfg["context_source"], "hotaru_context", "exec"), context_ns, context_ns)
+    SandboxContext.__bases__ = (context_ns["ContextOperations"],)
+    translation_ns = {}
+    exec(compile(cfg["translation_source"], "hotaru_translation", "exec"), translation_ns, translation_ns)
+    SandboxContext._ctx_translate_text = staticmethod(translation_ns["translate"])
     tools = _build_tools(cfg.get("toolkit_source", ""))
     ns = {"__name__": cfg.get("module_id", "sandbox"), "cap": _cap_call, "mt": _mt_call, "net": _net_call, "tools": SimpleNamespace(**tools), "logs": _WorkerLogs()}
     try:
-        with _capture_module_output():
-            code = compile(cfg["source"], cfg.get("module_id", "sandbox"), "exec", flags=__future__.annotations.compiler_flag, dont_inherit=True)
-            exec(code, ns, ns)
-            for name, definition in ns.get("HOTARU", {}).get("template_fields", {}).items():
-                if "provider" in definition:
-                    _template_providers[cfg["module_id"] + "/" + name] = ns["template_" + definition["provider"]]
+        code = compile(cfg["source"], cfg.get("module_id", "sandbox"), "exec", flags=__future__.annotations.compiler_flag, dont_inherit=True)
+        exec(code, ns, ns)
+        for name, definition in ns.get("HOTARU", {}).get("template_fields", {}).items():
+            if "provider" in definition:
+                _template_providers[cfg["module_id"] + "/" + name] = ns["template_" + definition["provider"]]
     except BaseException as exc:
         trace = exc.__traceback__
         while trace is not None and trace.tb_next is not None:
             trace = trace.tb_next
-        sys.stdout.write(_proto_dumps({"ok": False, "error": type(exc).__name__, "detail": str(exc)[:400], "line": trace.tb_lineno if trace is not None else 0}) + "\n")
-        sys.stdout.flush()
+        failure = _fail(exc)
+        failure["detail"] = str(exc)[:400]
+        failure["line"] = trace.tb_lineno if trace is not None else 0
+        _host_emit(failure)
         sys.exit(1)
-    sys.stdout.write(_proto_dumps({"ok": True, "commands": list(cfg.get("commands", []))}) + "\n")
-    sys.stdout.flush()
-    while True:
-        line = sys.stdin.readline()
-        if not line:
-            break
-        line = line.strip()
-        if not line:
-            continue
-        req = _proto_loads(line)
+    _host_emit({"ok": True, "commands": list(cfg.get("commands", []))})
+    threading.Thread(target=_heartbeat_loop, daemon=True).start()
+    threading.Thread(target=_cpu_watch_loop, daemon=True).start()
+
+    def _execute(req):
         if "cb" in req:
             cb_data = req["cb"]
             action_id = cb_data.get("action_id")
@@ -1015,10 +1128,8 @@ def main():
                         asyncio.run(cb_proxy.delete())
                         out = {"ok": True, "result": None}
                     except BaseException as exc:
-                        out = {"ok": False, "error": type(exc).__name__}
-                    sys.stdout.write(_proto_dumps(out) + "\n")
-                    sys.stdout.flush()
-                    continue
+                        out = _fail(exc)
+                    return out
                 import hashlib as _hashlib
                 import types as _types
                 mod_name = str(cb_data.get("module_id", ""))
@@ -1108,24 +1219,21 @@ def main():
             else:
                 cb_proxy = SandboxCallbackProxy(cb_data)
                 try:
-                    with _capture_module_output():
-                        import inspect as _inspect
-                        try:
-                            sig = _inspect.signature(cb_handler)
-                        except (TypeError, ValueError):
-                            sig = None
-                        if sig is not None and len(sig.parameters) == 1:
-                            result = cb_handler(cb_proxy)
-                        else:
-                            result = cb_handler(cb_proxy, cb_data.get("payload"))
-                        if asyncio.iscoroutine(result):
-                            result = asyncio.run(result)
+                    import inspect as _inspect
+                    try:
+                        sig = _inspect.signature(cb_handler)
+                    except (TypeError, ValueError):
+                        sig = None
+                    if sig is not None and len(sig.parameters) == 1:
+                        result = cb_handler(cb_proxy)
+                    else:
+                        result = cb_handler(cb_proxy, cb_data.get("payload"))
+                    if asyncio.iscoroutine(result):
+                        result = asyncio.run(result)
                     out = {"ok": True, "result": result}
                 except BaseException as exc:
-                    out = {"ok": False, "error": type(exc).__name__}
-            sys.stdout.write(_proto_dumps(out) + "\n")
-            sys.stdout.flush()
-            continue
+                    out = _fail(exc)
+            return out
         try:
             target = req.get("target") or ("command_" + req["command"])
             handler = ns.get(target)
@@ -1137,10 +1245,9 @@ def main():
                 ctx = SandboxContext(tools, {**payload, "args": args})
                 if str(target).startswith("inline_"):
                     query = SandboxInlineQuery(payload)
-                    with _capture_module_output():
-                        result = handler(query, tuple(args))
-                        if asyncio.iscoroutine(result):
-                            result = asyncio.run(result)
+                    result = handler(query, tuple(args))
+                    if asyncio.iscoroutine(result):
+                        result = asyncio.run(result)
                     out = {"ok": True, "result": result}
                 else:
                     invocation = SimpleNamespace(
@@ -1151,18 +1258,51 @@ def main():
                         message_id=payload.get("message_id"),
                         chat_id=payload.get("chat_id"),
                     )
-                    with _capture_module_output():
-                        if payload.get("source") in ("lifecycle", "template"):
-                            result = _invoke_lifecycle(handler, ctx)
-                        else:
-                            result = handler(ctx, invocation)
-                        if asyncio.iscoroutine(result):
-                            result = asyncio.run(result)
+                    if payload.get("source") in ("lifecycle", "template", "task"):
+                        result = _invoke_lifecycle(handler, ctx)
+                    else:
+                        result = handler(ctx, invocation)
+                    if asyncio.iscoroutine(result):
+                        result = asyncio.run(result)
                     out = {"ok": True, "result": result}
         except BaseException as exc:
-            out = {"ok": False, "error": type(exc).__name__}
-        sys.stdout.write(_proto_dumps(out) + "\n")
-        sys.stdout.flush()
+            out = _fail(exc)
+        return out
+
+    def _task(req):
+        _LOCAL.rid = req.get("rid") or 0
+        _busy(1)
+        tid = threading.get_native_id()
+        with _cpu_lock:
+            _active_cpu[_LOCAL.rid] = (tid, _thread_cpu(tid))
+        try:
+            out = _execute(req)
+        finally:
+            _busy(-1)
+            with _cpu_lock:
+                _active_cpu.pop(_LOCAL.rid, None)
+        out["rid"] = _LOCAL.rid
+        try:
+            _host_emit(out)
+        except Exception:
+            pass
+
+    with ThreadPoolExecutor() as pool:
+        while True:
+            line = sys.stdin.readline()
+            if not line:
+                break
+            line = line.strip()
+            if not line:
+                continue
+            message = _proto_loads(line)
+            cid = message.get("cid")
+            if cid is not None:
+                waiter = _reply_wait.get(cid)
+                if waiter is not None:
+                    waiter.put(message)
+                continue
+            pool.submit(_task, message)
 
 
 main()
@@ -1312,8 +1452,43 @@ SECCOMP_POLICY = {
 }
 
 
+
+
+
 class SandboxError(RuntimeError):
-    pass
+    def __init__(self, message: str, trace: str = "") -> None:
+        super().__init__(message)
+        self.worker_trace = trace
+
+
+def apply_tree_pids_cap(limit: int = 512) -> str:
+    """Cap the process count of the whole bot tree via cgroup v2.
+
+    Module code runs as root, where RLIMIT_NPROC is not enforced, so a fork bomb
+    in a snippet would otherwise take the machine down with the userbot on it.
+    Degrades to a status string when cgroups are not delegated.
+    """
+    try:
+        with open("/proc/self/cgroup", "r", encoding="utf-8") as handle:
+            relative = handle.read().strip().splitlines()[-1].split("::", 1)[-1]
+        base = os.path.join("/sys/fs/cgroup", relative.lstrip("/"))
+        with open(os.path.join(base, "pids.current"), "r", encoding="utf-8") as handle:
+            current = int(handle.read().strip())
+        target = os.path.join(base, "pids.max")
+        with open(target, "r", encoding="utf-8") as handle:
+            existing = handle.read().strip()
+        value = max(limit, current + 256)
+        try:
+            already = int(existing)
+        except ValueError:
+            already = 0
+        if already and already <= value:
+            return "already %s" % existing
+        with open(target, "w", encoding="utf-8") as handle:
+            handle.write(str(value))
+        return "pids.max=%d" % value
+    except Exception as exc:
+        return "unavailable (%s)" % type(exc).__name__
 
 
 def _json_dict(text: str) -> dict[str, Any]:
@@ -1326,34 +1501,35 @@ class ModuleSandbox:
         self,
         runtime: Any,
         *,
-        mem_mb: int = 256,
-        file_mb: int = 16,
-        nofile: int = 64,
-        cpu_seconds: int = 1800,
         nproc: int = 64,
-        spawn_timeout: float = 10.0,
-        call_timeout: float = 15.0,
+        spawn_timeout: float = 60.0,
+        idle_timeout: float = 300.0,
     ) -> None:
         self.runtime = runtime
-        self.mem_mb = mem_mb
-        self.file_mb = file_mb
-        self.nofile = nofile
-        self.cpu_seconds = cpu_seconds
         self.nproc = nproc
         self.spawn_timeout = spawn_timeout
-        self.call_timeout = call_timeout
+        self.idle_timeout = idle_timeout
         self._workers: dict[str, subprocess.Popen[bytes]] = {}
         self._booted: dict[str, bool] = {}
         self._last_use: dict[str, float] = {}
+        self._activity: dict[str, float] = {}
         self._module_defs: dict[str, tuple[str, list[str]]] = {}
-        self._respond_sources: dict[str, Any] = {}
-        self._respond_contexts: dict[str, Any] = {}
+        self._module_deps: dict[str, str] = {}
+        self._respond_sources: dict[Any, Any] = {}
+        self._respond_contexts: dict[Any, Any] = {}
         self._cb_waiters: dict[tuple[str, str], asyncio.Future[Any]] = {}
-        self._active_callback: dict[str, Any] = {}
+        self._active_callback: dict[Any, Any] = {}
         self._cb_respond_pending: dict[str, list[dict[str, Any]]] = {}
         self._pending_caps: dict[str, list[dict[str, Any]]] = {}
         self._respond_pending: dict[str, list[dict[str, Any]]] = {}
         self._roundtrip_locks: dict[str, asyncio.Lock] = {}
+        self._waiters: dict[str, dict[int, asyncio.Future[Any]]] = {}
+        self._readers: dict[str, threading.Thread] = {}
+        self._pumps: dict[str, asyncio.Task[None]] = {}
+        self._queues: dict[str, asyncio.Queue[Any]] = {}
+        self._pump_tasks: set[asyncio.Task[Any]] = set()
+        self._rids = itertools.count(1)
+        self._stdin_lock: asyncio.Lock | None = None
         self._python = os.path.realpath(sys.executable)
         self._stdlib = sysconfig.get_paths()["stdlib"]
         self._stdlib_dst = f"/opt/py/lib/python{sys.version_info.major}.{sys.version_info.minor}"
@@ -1371,27 +1547,36 @@ class ModuleSandbox:
             self._sandbox_base = SANDBOX_BASE_ROOT
         os.makedirs(self._sandbox_base, exist_ok=True)
         os.chmod(self._sandbox_base, 0o700)
+        self._pids_cap = apply_tree_pids_cap()
+        observatory = getattr(runtime, "observatory", None)
+        if observatory is not None:
+            observatory.emit("sandbox", "pids_cap", status=self._pids_cap)
 
-    def _make_preexec(self, namespaces: bool = True) -> Any:
+    def _make_preexec(self, namespaces: bool = True, deps: str | None = None) -> Any:
         if not namespaces:
+            nproc = self.nproc
+
             def portable() -> None:
                 import os as _os
+                import resource as _resource
 
                 try:
                     _os.setsid()
                 except Exception:
                     pass
+                for what, value in ((_resource.RLIMIT_NPROC, (nproc, nproc)), (_resource.RLIMIT_CORE, (0, 0))):
+                    try:
+                        _resource.setrlimit(what, value)
+                    except Exception:
+                        pass
 
             return portable
         python_path = self._python
         stdlib_path = self._stdlib
         stdlib_dst = self._stdlib_dst
         sandbox_base = self._sandbox_base
-        mem_mb = self.mem_mb
-        file_mb = self.file_mb
-        nofile = self.nofile
-        cpu_seconds = self.cpu_seconds
         nproc = self.nproc
+        deps_path = deps
 
         def preexec() -> None:
             import ctypes
@@ -1446,7 +1631,7 @@ class ModuleSandbox:
                 except OSError:
                     pass
             newroot = tempfile.mkdtemp(prefix="root.", dir=sandbox_base)
-            mount(b"tmpfs", newroot.encode(), b"tmpfs", MS_NOSUID | MS_NODEV, b"size=8m,mode=0755")
+            mount(b"tmpfs", newroot.encode(), b"tmpfs", MS_NOSUID | MS_NODEV, b"mode=0755")
 
             def bind_ro(src: str, dst: str, is_dir: bool, dev: bool = False) -> None:
                 dst_abs = os.path.join(newroot, dst.lstrip("/"))
@@ -1465,6 +1650,8 @@ class ModuleSandbox:
 
             bind_ro(python_path, "/usr/bin/python3", False)
             bind_ro(stdlib_path, stdlib_dst, True)
+            if deps_path:
+                bind_ro(deps_path, "/opt/pkgs", True)
             bind_ro("/usr/lib", "/usr/lib", True)
             if os.path.isdir("/usr/lib64"):
                 bind_ro("/usr/lib64", "/usr/lib64", True)
@@ -1480,7 +1667,7 @@ class ModuleSandbox:
                 bind_ro(dev, dev, False, dev=True)
             tmp_dir = os.path.join(newroot, "tmp")
             os.makedirs(tmp_dir, exist_ok=True)
-            mount(b"tmpfs", tmp_dir.encode(), b"tmpfs", MS_NOSUID | MS_NODEV, b"size=32m,mode=1777")
+            mount(b"tmpfs", tmp_dir.encode(), b"tmpfs", MS_NOSUID | MS_NODEV, b"mode=1777,size=64m")
             os.makedirs(os.path.join(newroot, "old_root"), exist_ok=True)
             os.chdir(newroot)
             if libc.pivot_root(b".", b"./old_root") != 0:
@@ -1490,11 +1677,7 @@ class ModuleSandbox:
                 raise OSError(ctypes.get_errno(), "old root detach failed")
             os.rmdir("/old_root")
             os.umask(0o077)
-            resource.setrlimit(resource.RLIMIT_AS, (mem_mb * 1024 * 1024, mem_mb * 1024 * 1024))
-            resource.setrlimit(resource.RLIMIT_FSIZE, (file_mb * 1024 * 1024, file_mb * 1024 * 1024))
-            resource.setrlimit(resource.RLIMIT_NOFILE, (nofile, nofile))
             resource.setrlimit(resource.RLIMIT_NPROC, (nproc, nproc))
-            resource.setrlimit(resource.RLIMIT_CPU, (cpu_seconds, cpu_seconds))
             resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
             if not rootless:
                 os.setgroups([])
@@ -1506,23 +1689,29 @@ class ModuleSandbox:
     def _spawn(self, module_id: str, source: str, commands: list[str], *, namespaces: bool | None = None) -> subprocess.Popen[bytes]:
         if namespaces is None:
             namespaces = self._namespaces
+        deps = self._module_deps.get(module_id)
         hello = {
             "module_id": module_id,
             "source": source,
             "commands": commands,
             "toolkit_source": _TOOLKIT_SOURCE,
-            "mem_mb": self.mem_mb,
-            "file_mb": self.file_mb,
-            "nofile": self.nofile,
-            "cpu_seconds": self.cpu_seconds,
+            "context_source": _CONTEXT_SOURCE,
+            "translation_source": _TRANSLATION_SOURCE,
             "net_blocked": True,
             "seccomp": SECCOMP_POLICY,
             "seccomp_required": namespaces,
             "namespaces": namespaces,
+            "deps_root": deps or "",
             "protected": [
                 str(self.runtime.config.session_dir),
                 str(self.runtime.config.session_dir / f"{self.runtime.config.session_name}.vault"),
                 str(self.runtime.config.session_dir / f"{self.runtime.config.session_name}.session"),
+                os.path.join(os.environ.get("HOME") or os.path.expanduser("~"), ".ssh"),
+                os.path.join(os.environ.get("HOME") or os.path.expanduser("~"), ".config", "gh"),
+                os.path.join(os.environ.get("HOME") or os.path.expanduser("~"), ".gitconfig"),
+                os.path.join(os.environ.get("HOME") or os.path.expanduser("~"), ".cache", "hotaru", "module-deps"),
+                str(Path(__file__).resolve().parent.parent),
+                str(Path(__file__).resolve().parent.parent / ".env"),
             ],
         }
         home = os.environ.get("HOME") or os.path.expanduser("~")
@@ -1532,14 +1721,14 @@ class ModuleSandbox:
         }
         if namespaces:
             argv = ["/usr/bin/python3", "-s", "-c", WORKER_SOURCE]
-            env = {"PATH": "/usr/bin:/bin", "HOME": "/tmp", "PYTHONPATH": "", "PYTHONHOME": "/opt/py", **cli_config}
+            env = {"PATH": "/usr/bin:/bin", "HOME": "/tmp", "PYTHONPATH": "/opt/pkgs" if deps else "", "PYTHONHOME": "/opt/py", **cli_config}
             cwd = "/"
         else:
             argv = [self._python, "-s", "-S", "-c", WORKER_SOURCE]
             env = {
                 "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
                 "HOME": self._sandbox_base,
-                "PYTHONPATH": "",
+                "PYTHONPATH": deps or "",
                 "PYTHONDONTWRITEBYTECODE": "1",
                 "TMPDIR": self._sandbox_base,
                 "LANG": "C.UTF-8",
@@ -1553,7 +1742,7 @@ class ModuleSandbox:
             stderr=subprocess.PIPE,
             cwd=cwd,
             env=env,
-            preexec_fn=self._make_preexec(namespaces),
+            preexec_fn=self._make_preexec(namespaces, deps),
         )
         assert process.stdin is not None and process.stdout is not None
         process.stdin.write((_proto_dumps(hello) + "\n").encode("utf-8"))
@@ -1571,7 +1760,7 @@ class ModuleSandbox:
             detail = str(payload.get("detail") or "")
             line = int(payload.get("line") or 0)
             location = f" line {line}" if line else ""
-            raise SandboxError(f"sandbox worker failed to boot: {payload.get('error', 'no output')}{location}: {detail} {stderr_tail}".strip())
+            raise SandboxError(f"sandbox worker failed to boot: {payload.get('error', 'no output')}{location}: {detail} {stderr_tail}".strip(), payload.get("trace") or "")
         self._workers[module_id] = process
         self._booted[module_id] = True
         self._last_use[module_id] = time.monotonic()
@@ -1591,10 +1780,30 @@ class ModuleSandbox:
             return
         observatory.emit("module", "output", level=level, module=module_id, msg=text[:2048])
 
+    _MAX_LINE_BYTES = 1 << 20
+
     def _readline(self, process: subprocess.Popen[bytes]) -> str | None:
         assert process.stdout is not None
-        line = process.stdout.readline()
+        line = process.stdout.readline(self._MAX_LINE_BYTES)
+        if len(line) >= self._MAX_LINE_BYTES and not line.endswith(b"\n"):
+            raise ValueError("worker output line size limit exceeded")
         return line.decode("utf-8", errors="replace").strip() if line else None
+
+    def deps_root(self) -> Path:
+        base = os.environ.get("XDG_CACHE_HOME") or os.path.join(os.path.expanduser("~"), ".cache")
+        return Path(base) / "hotaru" / "module-deps"
+
+    async def ensure_module_deps(self, module_id: str, source: str, extra: Sequence[str] = ()) -> str | None:
+        from hotaru.deps import install_module_deps
+
+        root = self.deps_root()
+        loop = asyncio.get_running_loop()
+        path = await loop.run_in_executor(None, lambda: install_module_deps(root, module_id, source, extra))
+        if path:
+            self._module_deps[module_id] = path
+        else:
+            self._module_deps.pop(module_id, None)
+        return path
 
     async def start_module(self, module_id: str, source: str, commands: list[str]) -> bool:
         self._module_defs[module_id] = (source, commands)
@@ -1608,36 +1817,41 @@ class ModuleSandbox:
     async def call(self, module_id: str, command: str, args: list[str], payload: dict[str, Any], source: Any = None, target: str | None = None, context: Any = None) -> Any:
         context = context or self.runtime.context_factory.create(module_id, source)
         config = context.config
-        payload = dict(payload, started_at=self.runtime.started_at, templates={
+        payload = dict(payload, version=context.version, started_at=self.runtime.started_at, config={
+            key: config.get(key) for key in config.schema
+        }, templates={
             key: {"value": config.get(key), "fields": field.template_fields, "legacy_braces": field.legacy_braces}
             for key, field in config.schema.items() if field.template_fields is not None
         })
         payload.setdefault("language", context.i18n.language)
         payload["from_id"] = getattr(source, "from_id", None)
         payload["prefix"] = self.runtime.config.prefix
-        async with self._roundtrip_lock(module_id):
-            self._respond_contexts[module_id] = context
-            if source is not None:
-                self._respond_sources[module_id] = source
-            try:
-                result = await asyncio.wait_for(self._roundtrip(module_id, {"command": command, "args": args, "payload": payload, "target": target}), timeout=self.call_timeout)
-            finally:
-                self._respond_contexts.pop(module_id, None)
-                if source is not None:
-                    self._respond_sources.pop(module_id, None)
+        rid = self._next_rid()
+        self._respond_contexts[(module_id, rid)] = context
+        if source is not None:
+            self._respond_sources[(module_id, rid)] = source
+        try:
+            result = await self._roundtrip(module_id, {"command": command, "args": args, "payload": payload, "target": target}, rid)
+        finally:
+            self._respond_contexts.pop((module_id, rid), None)
+            self._respond_sources.pop((module_id, rid), None)
         if not isinstance(result, dict) or not result.get("ok"):
-            raise SandboxError(f"sandbox call failed: {result.get('error') if isinstance(result, dict) else 'malformed'}")
+            detail = result.get("error", "malformed") if isinstance(result, dict) else "malformed"
+            raise SandboxError(f"sandbox call failed: {detail}", (result.get("trace") or "") if isinstance(result, dict) else "")
         return result.get("result")
 
     async def cap_call(self, module_id: str, capability: str, payload: dict[str, Any]) -> Any:
-        result = await self.roundtrip(module_id, {"command": "$cap." + capability, "args": [], "payload": payload})
+        result = await self._roundtrip(module_id, {"command": "$cap." + capability, "args": [], "payload": payload})
         if not isinstance(result, dict) or not result.get("ok"):
-            raise SandboxError(f"sandbox capability failed: {result.get('error') if isinstance(result, dict) else 'malformed'}")
+            detail = result.get("error", "malformed") if isinstance(result, dict) else "malformed"
+            raise SandboxError(f"sandbox capability failed: {detail}", (result.get("trace") or "") if isinstance(result, dict) else "")
         return result.get("result")
 
-    async def roundtrip(self, module_id: str, request: dict[str, Any]) -> dict[str, Any] | None:
-        async with self._roundtrip_lock(module_id):
-            return await self._roundtrip(module_id, request)
+    async def roundtrip(self, module_id: str, request: dict[str, Any], rid: int | None = None) -> dict[str, Any] | None:
+        return await self._roundtrip(module_id, request, rid)
+
+    def _next_rid(self) -> int:
+        return next(self._rids)
 
     def _roundtrip_lock(self, module_id: str) -> asyncio.Lock:
         lock = self._roundtrip_locks.get(module_id)
@@ -1646,62 +1860,135 @@ class ModuleSandbox:
             self._roundtrip_locks[module_id] = lock
         return lock
 
-    async def _roundtrip(self, module_id: str, request: dict[str, Any]) -> dict[str, Any] | None:
-        self._last_use[module_id] = time.monotonic()
+    def _write_lock(self) -> asyncio.Lock:
+        if self._stdin_lock is None:
+            self._stdin_lock = asyncio.Lock()
+        return self._stdin_lock
+
+    async def _ensure_worker(self, module_id: str) -> subprocess.Popen[bytes]:
         process = self._workers.get(module_id)
-        if (process is None or process.poll() is not None) and module_id in self._module_defs:
+        if process is None or process.poll() is not None:
+            if module_id not in self._module_defs:
+                raise SandboxError(f"sandbox worker is not running: {module_id}")
             source, commands = self._module_defs[module_id]
             loop = asyncio.get_running_loop()
             await loop.run_in_executor(None, lambda: self._spawn_worker(module_id, source, commands))
             process = self._workers.get(module_id)
         if process is None or process.poll() is not None:
             raise SandboxError(f"sandbox worker is not running: {module_id}")
+        self._start_reader(module_id, process)
+        return process
+
+    def _start_reader(self, module_id: str, process: subprocess.Popen[bytes]) -> None:
+        reader = self._readers.get(module_id)
+        if reader is not None and reader.is_alive():
+            return
         loop = asyncio.get_running_loop()
-        def _roundtrip() -> Any:
-            assert process.stdin is not None
-            process.stdin.write((_proto_dumps(request) + "\n").encode("utf-8"))
-            process.stdin.flush()
+        queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
+        self._queues[module_id] = queue
+
+        def read() -> None:
             while True:
                 line = self._readline(process)
                 if not line:
-                    raise SandboxError(f"sandbox worker died during call: {module_id}")
-                message = _json_dict(line)
+                    break
+                loop.call_soon_threadsafe(queue.put_nowait, _json_dict(line))
+            loop.call_soon_threadsafe(queue.put_nowait, None)
+
+        thread = threading.Thread(target=read, daemon=True)
+        self._readers[module_id] = thread
+        thread.start()
+        self._pumps[module_id] = loop.create_task(self._pump(module_id, queue))
+
+    async def _pump(self, module_id: str, queue: asyncio.Queue[dict[str, Any] | None]) -> None:
+        try:
+            while True:
+                message = await queue.get()
+                if message is None:
+                    break
+                self._activity[module_id] = time.monotonic()
                 if "cap" in message:
                     self._pending_caps.setdefault(module_id, []).append(message)
+                    self._spawn_pump_task(self._serve_caps(module_id))
+                    continue
+                if "respond" in message:
+                    self._respond_pending.setdefault(module_id, []).append(message)
+                    self._spawn_pump_task(self._serve_respond(module_id))
+                    continue
+                if "cb_respond" in message:
+                    self._cb_respond_pending.setdefault(module_id, []).append(message)
+                    self._spawn_pump_task(self._serve_cb_respond(module_id))
                     continue
                 if "log" in message:
                     self._sink_worker_log(module_id, message)
                     continue
-                if "respond" in message:
-                    self._respond_pending.setdefault(module_id, []).append(message)
-                    continue
-                if "cb_respond" in message:
-                    self._cb_respond_pending.setdefault(module_id, []).append(message)
-                    continue
-                return message
+                rid = message.get("rid")
+                waiter = self._waiters.get(module_id, {}).pop(rid, None) if isinstance(rid, int) else None
+                if waiter is not None and not waiter.done():
+                    waiter.set_result(message)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            pass
+        finally:
+            if self._queues.get(module_id) is queue:
+                self._kill_worker(module_id, SandboxError(f"sandbox worker stopped: {module_id}"))
 
-        task = asyncio.ensure_future(loop.run_in_executor(None, _roundtrip))
-        try:
-            while True:
-                try:
-                    return await asyncio.wait_for(asyncio.shield(task), timeout=0.05)
-                except asyncio.TimeoutError:
-                    if self._pending_caps.get(module_id):
-                        await self._serve_caps(module_id)
-                    if self._respond_pending.get(module_id):
-                        await self._serve_respond(module_id)
-                    if self._cb_respond_pending.get(module_id):
-                        await self._serve_cb_respond(module_id)
-        except (Exception, asyncio.CancelledError):
+    def _spawn_pump_task(self, coro: Any) -> None:
+        task: asyncio.Task[Any] = asyncio.create_task(coro)
+        self._pump_tasks.add(task)
+        task.add_done_callback(self._pump_tasks.discard)
+        task.add_done_callback(lambda done: done.cancelled() or done.exception())
+
+    def _fail_waiters(self, module_id: str, error: Exception) -> None:
+        for waiter in self._waiters.pop(module_id, {}).values():
+            if not waiter.done():
+                waiter.set_exception(error)
+
+    def _kill_worker(self, module_id: str, error: Exception) -> None:
+        process = self._workers.get(module_id)
+        if process is not None and process.poll() is None:
             try:
                 process.kill()
             except ProcessLookupError:
                 pass
-            await asyncio.gather(task, return_exceptions=True)
-            self._pending_caps.pop(module_id, None)
-            self._respond_pending.pop(module_id, None)
-            self._cb_respond_pending.pop(module_id, None)
-            raise
+        self._fail_waiters(module_id, error)
+
+    async def _roundtrip(self, module_id: str, request: dict[str, Any], rid: int | None = None) -> dict[str, Any] | None:
+        self._last_use[module_id] = time.monotonic()
+        process = await self._ensure_worker(module_id)
+        rid = rid if rid is not None else self._next_rid()
+        loop = asyncio.get_running_loop()
+        started = self._activity[module_id] = time.monotonic()
+        waiter: asyncio.Future[dict[str, Any]] = loop.create_future()
+        waiter.add_done_callback(lambda done: done.cancelled() or done.exception())
+        self._waiters.setdefault(module_id, {})[rid] = waiter
+        try:
+            async with self._roundtrip_lock(module_id):
+                await self._write_reply(process, dict(request, rid=rid))
+            while True:
+                done, _ = await asyncio.wait({waiter}, timeout=0.2)
+                if done:
+                    return waiter.result()
+                last = self._activity.get(module_id, started)
+                window = self.idle_timeout if last > started else self.spawn_timeout
+                if time.monotonic() - last >= window:
+                    detail = f"sandbox worker stalled: no activity for {time.monotonic() - last:.0f}s ({module_id})"
+                    self._kill_worker(module_id, SandboxError(detail))
+                    raise SandboxError(detail)
+                if process.poll() is not None:
+                    raise SandboxError(f"sandbox worker died during call: {module_id}")
+        finally:
+            self._waiters.get(module_id, {}).pop(rid, None)
+
+    async def _write_reply(self, process: subprocess.Popen[bytes], reply: dict[str, Any]) -> None:
+        async with self._write_lock():
+            def write() -> None:
+                if process.poll() is None and process.stdin is not None:
+                    process.stdin.write((_proto_dumps(reply) + "\n").encode("utf-8"))
+                    process.stdin.flush()
+
+            await asyncio.get_running_loop().run_in_executor(None, write)
 
     async def _serve_caps(self, module_id: str) -> None:
         caps = self._pending_caps.pop(module_id, [])
@@ -1711,59 +1998,66 @@ class ModuleSandbox:
             name = message.get("cap")
             payload_value = message.get("payload")
             payload = cast('dict[str, Any]', payload_value) if isinstance(payload_value, dict) else {}
-            reply = {"kind": "cap_result", "ok": False, "error": "capability host is unavailable"}
+            rid = message.get("rid")
+            reply = {"kind": "cap_result", "cid": message.get("cid"), "ok": False, "error": "capability host is unavailable"}
             if cap_host is not None or name == "$template":
                 try:
                     if name == "$template":
-                        context = self._respond_contexts.get(module_id)
+                        context = self._respond_contexts.get((module_id, rid))
                         if context is None:
                             context = self.runtime.context_factory.create(module_id, None)
                         if set(payload) - {"key", "values", "local"} or not isinstance(payload.get("key"), str) or not isinstance(payload.get("local", {}), dict):
                             raise ValueError("Invalid template request")
                         result = await self.runtime.modules.render_template(context, payload["key"], payload.get("values", {}), payload.get("local", {}))
+                    elif name == "fetch" and payload.get("op") == "attachment_text":
+                        if set(payload) - {"op", "reply", "max_bytes"}:
+                            raise ValueError("Invalid attachment request")
+                        source = self._respond_sources.get((module_id, rid))
+                        if source is None:
+                            raise PermissionError("attachment requires a bound message")
+                        context = self.runtime.context_factory.create(module_id, source)
+                        result = await context.read_attachment_text(reply=payload.get("reply", False), max_bytes=payload.get("max_bytes", 1048576))
                     else:
                         if cap_host is None:
                             raise RuntimeError("capability host is unavailable")
                         result = await cap_host.call(module_id, name, payload)
-                    reply = {"kind": "cap_result", "ok": True, "result": result}
+                    reply = {"kind": "cap_result", "cid": message.get("cid"), "ok": True, "result": result}
                 except Exception as exc:
-                    reply = {"kind": "cap_result", "ok": False, "error": f"{type(exc).__name__}: {exc}"[:200]}
+                    reply = {"kind": "cap_result", "cid": message.get("cid"), "ok": False, "error_type": type(exc).__name__, "error": f"{type(exc).__name__}: {exc}"[:200]}
             if process is self._workers.get(module_id) and process is not None and process.poll() is None and process.stdin is not None:
-                process.stdin.write((_proto_dumps(reply) + "\n").encode("utf-8"))
-                process.stdin.flush()
+                await self._write_reply(process, reply)
 
     async def _serve_respond(self, module_id: str) -> None:
         pending = self._respond_pending.pop(module_id, [])
-        source = self._respond_sources.get(module_id)
         for message in pending:
             payload_value = message.get("respond")
             payload = cast('dict[str, Any]', payload_value) if isinstance(payload_value, dict) else {}
-            reply = {"kind": "respond_result", "ok": False, "error": "respond failed"}
+            source = self._respond_sources.get((module_id, message.get("rid")))
+            reply = {"kind": "respond_result", "cid": message.get("cid"), "ok": False, "error": "respond failed"}
             try:
                 result = await self._trusted_respond(module_id, source, payload)
-                reply = {"kind": "respond_result", "ok": True, "result": result}
+                reply = {"kind": "respond_result", "cid": message.get("cid"), "ok": True, "result": result}
             except Exception as exc:
-                reply = {"kind": "respond_result", "ok": False, "error": f"{type(exc).__name__}: {exc}"[:200]}
+                reply = {"kind": "respond_result", "cid": message.get("cid"), "ok": False, "error": f"{type(exc).__name__}: {exc}"[:200]}
             process = self._workers.get(module_id)
             if process is not None and process.poll() is None and process.stdin is not None:
-                process.stdin.write((_proto_dumps(reply) + "\n").encode("utf-8"))
-                process.stdin.flush()
+                await self._write_reply(process, reply)
 
     async def _serve_cb_respond(self, module_id: str) -> None:
         pending = self._cb_respond_pending.pop(module_id, [])
-        callback = getattr(self, "_active_callback", {}).get(module_id)
         process = self._workers.get(module_id)
         for message in pending:
             data_value = message.get("cb_respond")
             data = cast('dict[str, Any]', data_value) if isinstance(data_value, dict) else {}
+            callback = self._active_callback.get((module_id, message.get("rid")))
             result = {"ok": False, "error": "callback context is unavailable"}
             try:
                 if callback is None:
                     raise PermissionError("callback context is unavailable")
                 action = data.get("action")
-                if action == "answer":
+                if action == "respond":
                     with trusted_scope():
-                        value = await callback.answer(str(data.get("text", "")), alert=bool(data.get("alert", False)))
+                        value = await callback.respond(str(data.get("text", "")), alert=bool(data.get("alert", False)))
                 elif action == "edit":
                     kwargs: dict[str, Any] = {}
                     for k in ("parse_mode", "rich", "style"):
@@ -1790,12 +2084,18 @@ class ModuleSandbox:
             except Exception as exc:
                 result = {"ok": False, "error": f"{type(exc).__name__}: {exc}"[:200]}
             if process is not None and process.poll() is None and process.stdin is not None:
-                process.stdin.write((_proto_dumps({"cb_respond_result": result}) + "\n").encode("utf-8"))
-                process.stdin.flush()
+                await self._write_reply(process, {"cb_respond_result": result, "cid": message.get("cid")})
 
     async def _trusted_respond(self, module_id: str, source: Any, payload: dict[str, Any]) -> Any:
         from hotaru.response import FormHandle, Response
         from types import SimpleNamespace
+        if "prepare" in payload:
+            from hotaru.response import ModuleContext
+            prepare = payload["prepare"]
+            if not isinstance(prepare, dict):
+                raise ValueError("context preparation requires a mapping")
+            prepare = cast('dict[str, Any]', prepare)
+            return await getattr(ModuleContext, "_ctx_prepare")(prepare.get("text"), prepare.get("parse_mode"), prepare.get("buttons"))
         if "form" in payload:
             from hotaru.runtime import Runtime
             runtime = cast(Runtime, self.runtime)
@@ -1827,6 +2127,16 @@ class ModuleSandbox:
         if context is None:
             context = self.runtime.context_factory.create(module_id, source)
             self._respond_contexts[module_id] = context
+        context.retarget(source)
+        if "media_rpc" in payload:
+            media_rpc = payload["media_rpc"]
+            if not isinstance(media_rpc, dict):
+                raise ValueError("file response requires a mapping")
+            media_rpc = cast('dict[str, Any]', media_rpc)
+            media_kwargs = media_rpc.get("kwargs")
+            if not isinstance(media_kwargs, dict):
+                raise ValueError("file response arguments require a mapping")
+            return await context._ctx_media_rpc(str(media_rpc.get("method", "")), **cast('dict[str, Any]', media_kwargs))
         kwargs = dict(payload.get("kwargs") or {})
         if kwargs.get("media") is not None or kwargs.get("file") is not None or payload.get("content") is not None and not isinstance(payload["content"], str):
             raise PermissionError("sandbox respond media must go through files capability")
@@ -1883,11 +2193,9 @@ class ModuleSandbox:
                             raise PermissionError("callback store is unavailable")
                         item["_action_id"] = action_id
                         item["_payload"] = button.get("payload")
-                    elif button.get("callback_data"):
-                        item["callback_data"] = button["callback_data"]
                     else:
                         for k, v in button.items():
-                            if k not in item:
+                            if k not in item and k != "callback_data":
                                 item[k] = v
                     out_row.append(item)
                 normalized.append(out_row)
@@ -1901,8 +2209,8 @@ class ModuleSandbox:
 
     def _make_sandbox_cb(self, module_id: str, action_id: str) -> Any:
         async def handler(callback: Any, payload: Any) -> object:
-            self._active_callback = getattr(self, "_active_callback", {})
-            self._active_callback[module_id] = callback
+            rid = self._next_rid()
+            self._active_callback[(module_id, rid)] = callback
             request = {
                 "cb": {
                     "module_id": module_id,
@@ -1916,19 +2224,25 @@ class ModuleSandbox:
             }
             try:
                 with trusted_scope():
-                    result = await self.roundtrip(module_id, request)
+                    result = await self.roundtrip(module_id, request, rid)
                 if result is None:
                     raise PermissionError("sandbox callback failed: malformed")
                 if result.get("ok"):
                     return result.get("result")
                 raise PermissionError(f"sandbox callback failed: {result.get('error', 'malformed')}")
             finally:
-                self._active_callback.pop(module_id, None)
+                self._active_callback.pop((module_id, rid), None)
 
         return handler
 
     def stop_module(self, module_id: str) -> bool:
         process = self._workers.get(module_id)
+        pump = self._pumps.pop(module_id, None)
+        if pump is not None:
+            pump.cancel()
+        self._readers.pop(module_id, None)
+        self._queues.pop(module_id, None)
+        self._fail_waiters(module_id, SandboxError(f"sandbox worker stopped: {module_id}"))
         if process is not None and process.poll() is None:
             try:
                 process.terminate()
@@ -1939,12 +2253,14 @@ class ModuleSandbox:
                     process.wait(timeout=5)
                 except Exception as exc:
                     import logging
-                    logging.getLogger(__name__).error("sandbox stop failed: %s", type(exc).__name__)
+                    logging.getLogger(__name__).error("sandbox stop failed: %s", type(exc).__name__, exc_info=exc)
                     return False
         self._module_defs.pop(module_id, None)
+        self._module_deps.pop(module_id, None)
         self._workers.pop(module_id, None)
         self._booted.pop(module_id, None)
         self._last_use.pop(module_id, None)
+        self._activity.pop(module_id, None)
         return process is not None
 
     def reap_idle(self, idle_seconds: float) -> list[str]:
@@ -1955,8 +2271,7 @@ class ModuleSandbox:
                 continue
             if now - self._last_use.get(module_id, now) < idle_seconds:
                 continue
-            lock = self._roundtrip_locks.get(module_id)
-            if lock is not None and lock.locked():
+            if self._waiters.get(module_id):
                 continue
             try:
                 process.kill()

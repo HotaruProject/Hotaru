@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import gc
 import hashlib
+import html
 import inspect
 import json
 import logging
@@ -48,7 +49,7 @@ from .registry import Handler
 from .response import FormHandle, ModuleContextFactory, ResponseService, reply_message_id
 from .security import SecurityGate
 from .state import StateStore
-from .supervisor import ConnectionSupervisor
+from .supervisor import ConnectionRecovery, ConnectionSupervisor, LoopGuard
 from .tasks import TaskSupervisor
 
 IDLE_WORKER_SECONDS = 1800.0
@@ -66,12 +67,12 @@ class InputContext:
         self.inline_message_id = getattr(query, "msg_id", None)
 
     async def reject(self, text: str | None = None) -> Any:
-        return await self.answer(self.runtime.t("common.invalid_value") if text is None else text, alert=True)
+        return await self.respond(self.runtime.t("common.invalid_value") if text is None else text, alert=True)
 
     async def submit(self, text: str | None = None, **kwargs: Any) -> Any:
-        return await self.answer(text, **kwargs)
+        return await self.respond(text, **kwargs)
 
-    async def answer(self, text: str | None = None, **kwargs: Any) -> Any:
+    async def respond(self, text: str | None = None, **kwargs: Any) -> Any:
         answer = getattr(self.query, "answer", None)
         if callable(answer):
             return await cast(Awaitable[Any], answer(results=[], cache_time=0, is_personal=True))
@@ -132,6 +133,8 @@ class Runtime:
     supervisor: ConnectionSupervisor | None = None
     security: SecurityGate | None = None
     sandbox: ModuleSandbox | None = None
+    _loop_guard: LoopGuard | None = None
+    _loop_guard_task: asyncio.Task[None] | None = None
     form_sender: Any = None
     cap_host: CapabilityHost | None = None
     lexicon: Lexicon | None = None
@@ -147,6 +150,11 @@ class Runtime:
     _app_task: asyncio.Task[None] | None = None
     _premium_cache: bool | None = None
     _premium_checked_at: float = 0.0
+    _connection: ConnectionRecovery | None = None
+    _connection_task: asyncio.Task[None] | None = None
+    _unload_tasks: dict[str, asyncio.Task[str | None]] = field(default_factory=dict, repr=False)
+    _module_locks: dict[str, asyncio.Lock] = field(default_factory=dict, repr=False)
+    _premium_lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False)
     _forum_helper: Any = None
     forum_title: str = "Hotaru Userbot"
     _form_msgs: dict[int, tuple[Any, int]] | None = None
@@ -195,7 +203,13 @@ class Runtime:
             from goygram import security as goygram_security
             read_vault = getattr(goygram_security, "_read_vault")
             session_data: dict[str, Any] = cast('dict[str, Any]', read_vault(vault, Path(session_name).name) or {}) if vault.exists() else {}
+            import platform
+            from .update import current_commit
+
             self.app = GoyGram(
+                device_model="Hotaru",
+                system_version=f"{platform.system()} {platform.release()}",
+                app_version=f"Hotaru {current_commit()}",
                 bot_token=self.config.bot_token if self.config.api_id is None else None,
                 api_id=self.config.api_id,
                 api_hash=self.config.api_hash,
@@ -320,9 +334,9 @@ class Runtime:
         owner = self.kernel.owner_id if self.kernel is not None else None
         if owner is None:
             raise RuntimeError("form owner is missing")
-        if has_emoji(text):
-            text = text + EMOJI_PAD
         options = dict(options or {})
+        if has_emoji(text) and not options.get("rich"):
+            text = text + EMOJI_PAD
         actor = getattr(command, "from_id", None)
         if not isinstance(actor, int):
             getter = getattr(command, "get", None)
@@ -459,12 +473,14 @@ class Runtime:
         entry = (self._forms or {}).get(key)
         if entry is None:
             return
-        handle, _, text, buttons, _ = entry
+        handle, _, text, buttons, options = entry
+        if options.get("rich"):
+            return
         try:
             await self.edit_form(handle, text, buttons=buttons)
         except Exception as exc:
             if self.observatory is not None:
-                self.observatory.emit("inline", "emoji_refresh_failed", level="error", error=type(exc).__name__)
+                self.observatory.emit("inline", "emoji_refresh_failed", level="error", error=exc)
 
     async def restore_forms(self) -> int:
         if self.state is None:
@@ -553,6 +569,8 @@ class Runtime:
         return await self.restore_forms()
 
     async def unload_module_forms(self, module_id: str) -> int:
+        if self.callbacks is not None:
+            self.callbacks.unregister_module(module_id)
         if self.cap_host is not None:
             await self.cap_host.close_jobs(module_id)
         if self._forms is None or getattr(self, "closed", False):
@@ -598,6 +616,13 @@ class Runtime:
         options["delete_source"] = False
         actor = options.get("callback_actor")
         inline_form = source.src == "inline" or str(handle.key).startswith("inline:")
+        inline_id = None
+        if inline_form:
+            inline_id = getattr(source, "inline_message_id", None) or (self._form_inline_ids or {}).get(str(handle.key).split(":", 1)[-1])
+            if inline_id is None:
+                raise RuntimeError("inline form edit identity is unavailable")
+        elif self.inline is None or self.inline.bot_app is None:
+            raise RuntimeError("form bot transport is unavailable")
         rebound: list[list[dict[str, object]]] = []
         for row in cast('list[dict[str, object] | list[dict[str, object]]]', next_buttons or []):
             current: list[dict[str, object]] = []
@@ -612,9 +637,6 @@ class Runtime:
             rebound.append(current)
         next_buttons = rebound
         if inline_form:
-            inline_id = getattr(source, "inline_message_id", None) or (self._form_inline_ids or {}).get(str(handle.key).split(":", 1)[-1])
-            if inline_id is None:
-                raise RuntimeError("inline form edit identity is unavailable")
             callback = SimpleNamespace(src="mt", app=self.app, chat_id=source.chat_id, msg_id=source.id, inline_message_id=inline_id, from_id=actor, form_nonce=str(handle.key).split(":", 1)[-1])
             value = await CallbackContext(callback, self).edit(next_text, buttons=next_buttons, rich=bool(options.get("rich", False)))
         else:
@@ -912,7 +934,7 @@ class Runtime:
                 await self._delete_inline_source(command, chat_id, message_id)
             except Exception as exc:
                 if self.observatory is not None:
-                    self.observatory.emit("response", "source_cleanup_failed", error=type(exc).__name__)
+                    self.observatory.emit("response", "source_cleanup_failed", error=exc)
         sent = extract_sent_message(sent_result)
         if isinstance(sent, dict) and isinstance(sent.get("id"), int):
             if self._form_msgs is None:
@@ -1066,7 +1088,7 @@ class Runtime:
                 await result
         except Exception as exc:
             if self.observatory is not None:
-                self.observatory.emit("inline", "input_error", level="error", error=type(exc).__name__)
+                self.observatory.emit("inline", "input_error", level="error", error=exc)
         finally:
             if self._input_requests is not None:
                 self._input_requests.pop(token, None)
@@ -1187,7 +1209,7 @@ class Runtime:
                 await CallbackContext(callback, self).delete()
             except Exception as exc:
                 if self.observatory is not None:
-                    self.observatory.emit("inline", "transfer_cleanup_failed", level="error", error=type(exc).__name__)
+                    self.observatory.emit("inline", "transfer_cleanup_failed", level="error", error=exc)
                 return False
             return True
         chat_id = getattr(source, "chat_id", None)
@@ -1211,7 +1233,7 @@ class Runtime:
                         hist = await app.mt_messages_get_history(peer=peer, offset_id=0, offset_date=0, add_offset=0, limit=10, max_id=0, min_id=0, hash=0)
                 except Exception as exc:
                     if self.observatory is not None:
-                        self.observatory.emit("inline", "transfer_cleanup_failed", level="error", error=type(exc).__name__)
+                        self.observatory.emit("inline", "transfer_cleanup_failed", level="error", error=exc)
                     return False
                 body: Any = cast('dict[str, Any]', hist).get("result", hist) if isinstance(hist, dict) else hist
                 messages = cast('dict[str, Any]', body).get("messages") if isinstance(body, dict) else None
@@ -1235,7 +1257,7 @@ class Runtime:
                             deleted = True
                         except Exception as exc:
                             if self.observatory is not None:
-                                self.observatory.emit("inline", "transfer_cleanup_failed", level="error", error=type(exc).__name__)
+                                self.observatory.emit("inline", "transfer_cleanup_failed", level="error", error=exc)
                             return False
                     break
                 if deleted:
@@ -1256,12 +1278,22 @@ class Runtime:
             results: list[dict[str, Any]] = []
             for spec in sorted(registry.items(), key=lambda item: item.name):
                 meta = self._inline_command_meta(spec, language)
+                title = meta.get("title") or spec.name
+                body = meta.get("message") or html.escape(meta.get("description") or "")
                 results.append(InlineObj.article(
                     f"hotaru-inline:{spec.name}",
-                    meta.get("title") or spec.name,
-                    meta.get("message") or "",
+                    f"{spec.name} · {title}" if title != spec.name else spec.name,
+                    f"<b>Hotaru · {html.escape(title)}</b>\n"
+                    f"<code>{html.escape(spec.name)}</code> · {html.escape(spec.module_id)}\n\n"
+                    f"{body}\n\n{self.t('inline.command_hint')}",
                     description=meta.get("description") or None,
                     thumb_url=meta.get("thumb_url") or None,
+                    parse_mode="HTML",
+                    kbd={"inline_keyboard": [[{
+                        "text": self.t("inline.command_open", command=spec.name),
+                        "switch_inline_query_current_chat": f"{spec.name} ",
+                        "style": "primary",
+                    }]]},
                 ))
             return results
         name = parts[0].casefold()
@@ -1403,7 +1435,7 @@ class Runtime:
                 self.observatory.emit(
                     "inline",
                     "callback_error",
-                    error=type(exc).__name__,
+                    error=exc,
                     detail=str(exc)[:240],
                     tb=traceback.format_exc()[-4000:],
                     src=str(getattr(callback, "src", None)),
@@ -1563,6 +1595,10 @@ class Runtime:
         return value.casefold() if isinstance(value, str) and value.casefold() in SUPPORTED_LANGUAGES else "ru"
 
     async def is_premium(self, refresh: bool = False) -> bool:
+        async with self._premium_lock:
+            return await self._refresh_premium(refresh)
+
+    async def _refresh_premium(self, refresh: bool) -> bool:
         if not refresh and self._premium_cache is not None and (time.time() - getattr(self, "_premium_checked_at", 0.0)) < 60.0:
             return bool(self._premium_cache)
         app = self.app
@@ -1665,84 +1701,56 @@ class Runtime:
                     candidate = self.stager.stage_text(source, candidate_dir)
                 else:
                     candidate = self.stage_module(source, candidate_dir)
-                module_id = candidate.manifest.module_id
-                caps = list(getattr(candidate.manifest, "capabilities", ()) or ())
-                fingerprint = self._caps_fingerprint(candidate.manifest)
-                if caps and not self._caps_consented(module_id, fingerprint):
+        unloading = self._unload_tasks.get(candidate.manifest.module_id)
+        if unloading is not None:
+            await asyncio.shield(unloading)
+        task = asyncio.create_task(self._load_candidate(candidate))
+        task.add_done_callback(lambda done: done.cancelled() or done.exception())
+        return await asyncio.shield(task)
+
+    async def _load_candidate(self, candidate: Any) -> tuple[Any, str]:
+        module_id = candidate.manifest.module_id
+        with trusted_scope():
+            async with self._module_locks.setdefault(module_id, asyncio.Lock()):
+                if self.stager is None or self.state is None:
+                    raise RuntimeError(self.t('runtime.not_ready'))
+                unloading = self._unload_tasks.get(module_id)
+                if unloading is not None and unloading.done():
+                    self._unload_tasks.pop(module_id, None)
+                if self._is_kernel_module(module_id):
+                    raise PermissionError(self.t("runtime.protected", module_id=module_id))
+                caps = list(candidate.manifest.capabilities)
+                if not self._caps_consented(module_id, candidate.manifest, candidate.digest):
                     return candidate, "confirm"
                 source_text = candidate.source
-            loaded = self.stager.stage_text(source_text, self.relay_dir)
-            if not caps:
-                self._mark_caps_consent(module_id, fingerprint)
-            if self.modules is not None and self.modules.get(module_id) is not None:
-                result = await self._command_rl(SimpleNamespace(args=(module_id,)))
-                if result == self.t("runtime.reloaded", module_id=module_id):
-                    return loaded, "updated"
-                return loaded, result
-            try:
-                await self.activate_module(str(loaded.path))
-            except Exception as exc:
-                loaded.path.unlink(missing_ok=True)
-                self.state.delete_module(module_id)
-                if self.observatory is not None:
-                    self.observatory.emit("modules", "load_error", module=module_id, error=type(exc).__name__, detail=str(exc)[:240])
-                return loaded, self.t('runtime.load_failed', error=type(exc).__name__)
-            if self.observatory is not None:
-                self.observatory.emit("modules", "loaded", module=module_id, version=loaded.manifest.version)
-            return loaded, "loaded"
-
-    async def _command_ld(self, invocation: Any) -> str | tuple[str, list[Any]]:
-        if len(invocation.args) > 1:
-            return self.t('runtime.usage_load', prefix=self.config.prefix)
-        if invocation.args:
-            candidate = invocation.args[0]
-            if not (
-                candidate.startswith("https://")
-                or "\n" in candidate
-                or candidate.lstrip().startswith("HOTARU")
-                or Path(candidate).is_file()
-            ):
-                return self.t('runtime.usage_load', prefix=self.config.prefix)
-        temporary: Path | None = None
-        try:
-            if invocation.args:
-                source: str | Path = invocation.args[0]
-            else:
-                if invocation.message is None:
-                    return self.t('runtime.usage_load', prefix=self.config.prefix)
-                fd, raw_path = tempfile.mkstemp(prefix=".hotaru-download-", suffix=".hmod")
-                os.close(fd)
-                temporary = Path(raw_path)
+                old_path = self.relay_dir / f"{module_id}.hmod"
+                old_source = old_path.read_text(encoding="utf-8") if old_path.is_file() else None
+                previous = self.state.namespace(module_id).all()
+                loaded = self.stager.stage_text(source_text, self.relay_dir)
+                if not caps:
+                    self._mark_caps_consent(module_id, [], candidate.digest)
+                if self.modules is not None and self.modules.get(module_id) is not None:
+                    result = await self._reload_module(SimpleNamespace(args=(module_id,)), source=source_text)
+                    if result == self.t("runtime.reloaded", module_id=module_id):
+                        return loaded, "updated"
+                    return loaded, result
                 try:
-                    await self._download_module_message(invocation.message, temporary)
-                except ValueError as exc:
-                    if str(exc) in (self.t('runtime.file_missing'), self.t('runtime.file_document')):
-                        return self.t('runtime.usage_load', prefix=self.config.prefix)
-                    raise
-                source = temporary
-            loaded, action = await self.load_module(source)
-        except Exception as exc:
-            if self.observatory is not None:
-                self.observatory.emit("modules", "load_error", error=type(exc).__name__, detail=str(exc)[:240])
-            return self.t('runtime.load_error', error=type(exc).__name__, detail=str(exc)[:3500])
-        finally:
-            if temporary is not None:
-                temporary.unlink(missing_ok=True)
-        module_id = loaded.manifest.module_id
-        if action in {"loaded", "updated"}:
-            return self.t("runtime." + action, module_id=module_id, version=loaded.manifest.version)
-        if action != "confirm":
-            return action
-        screen = await self._render_caps_screen(
-            module_id,
-            loaded.manifest,
-            loaded.source,
-            invocation.chat_id,
-            invocation.message_id,
-        )
-        if isinstance(screen, tuple):
-            return screen
-        return self.t('runtime.load_screen', module_id=module_id, version=loaded.manifest.version, screen=screen)
+                    await self.activate_module(str(loaded.path))
+                except Exception as exc:
+                    if old_source is not None:
+                        self.stager.stage_text(old_source, self.relay_dir)
+                    else:
+                        loaded.path.unlink(missing_ok=True)
+                    self.state.delete_module(module_id)
+                    namespace = self.state.namespace(module_id)
+                    for key, value in previous.items():
+                        namespace.set(key, value)
+                    if self.observatory is not None:
+                        self.observatory.emit("modules", "load_error", module=module_id, error=type(exc).__name__, detail=str(exc)[:240])
+                    return loaded, self.t('runtime.load_failed', error=type(exc).__name__)
+                if self.observatory is not None:
+                    self.observatory.emit("modules", "loaded", module=module_id, version=loaded.manifest.version)
+                return loaded, "loaded"
 
     def purge_module_data(self, module_id: str) -> None:
         module_id = module_id.casefold()
@@ -1757,55 +1765,61 @@ class Runtime:
     async def unload_module(self, module_id: str, *, purge: bool = False) -> str | None:
         if self.modules is None or self.state is None:
             raise RuntimeError(self.t('runtime.not_ready'))
-        with trusted_scope():
-            module_id = module_id.casefold()
-            if self._is_kernel_module(module_id):
-                return self.t('runtime.protected', module_id=module_id)
-            active = self.modules.get(module_id)
-            self.state.namespace(module_id)
-            source_path = active.loaded.path if active is not None else self.relay_dir / f"{module_id}.hmod"
-            if not source_path.is_file():
-                return self.t('runtime.module_missing', module_id=module_id)
-            try:
-                self._backup_before_activation(source_path)
-                if active is not None:
-                    await self.deactivate_module(module_id)
-                source_path.unlink()
-            except Exception as exc:
-                if active is not None and self.modules.get(module_id) is None and source_path.is_file():
-                    try:
-                        await self.activate_module(str(source_path))
-                    except Exception:
-                        pass
-                if self.observatory is not None:
-                    self.observatory.emit("modules", "unload_error", module=module_id, error=type(exc).__name__, detail=str(exc)[:240])
-                return self.t('runtime.unload_failed', error=type(exc).__name__)
-            if purge:
-                self.purge_module_data(module_id)
-            if self.observatory is not None:
-                self.observatory.emit("modules", "unloaded", module=module_id, purged=purge)
-            return None
+        if type(purge) is not bool:
+            raise ValueError("purge must be a boolean")
+        module_id = module_id.casefold()
+        if self._is_kernel_module(module_id):
+            return self.t('runtime.protected', module_id=module_id)
+        task = self._unload_tasks.get(module_id)
+        if task is None:
+            caller = asyncio.current_task()
+            task = asyncio.create_task(self._unload_module(module_id, purge=purge, caller=caller))
+            self._unload_tasks[module_id] = task
+            task.add_done_callback(lambda done: done.cancelled() or done.exception())
+        result = await asyncio.shield(task)
+        if result is None and purge:
+            async with self._module_locks.setdefault(module_id, asyncio.Lock()):
+                if self._unload_tasks.get(module_id) is not task:
+                    raise RuntimeError("module changed during unload")
+                with trusted_scope():
+                    self.purge_module_data(module_id)
+        if result is not None:
+            self._unload_tasks.pop(module_id, None)
+        return result
 
-    async def _command_ul(self, invocation: Any) -> str:
-        if self.modules is None or self.state is None:
-            return self.t('runtime.not_ready')
-        flags = {"-c", "--clean", "-p", "--purge", "-r", "--reset", "-d", "--drop"}
-        purge = False
-        target_args: list[str] = []
-        for arg in invocation.args:
-            if arg.casefold() in flags:
-                purge = True
-            else:
-                target_args.append(arg)
-        if len(target_args) != 1:
-            return self.t('runtime.usage_unload', prefix=self.config.prefix)
-        module_id = target_args[0]
-        result = await self.unload_module(module_id, purge=purge)
-        if result:
-            return result
-        if purge:
-            return self.t('runtime.purged', module=module_id.casefold())
-        return self.t('runtime.unloaded', module=module_id.casefold())
+    async def _unload_module(self, module_id: str, *, purge: bool = False, caller: asyncio.Task[Any] | None = None) -> str | None:
+        async with self._module_locks.setdefault(module_id, asyncio.Lock()):
+            if self.modules is None or self.state is None:
+                raise RuntimeError(self.t('runtime.not_ready'))
+            with trusted_scope():
+                module_id = module_id.casefold()
+                if self._is_kernel_module(module_id):
+                    return self.t('runtime.protected', module_id=module_id)
+                active = self.modules.get(module_id)
+                self.state.namespace(module_id)
+                source_path = active.loaded.path if active is not None else self.relay_dir / f"{module_id}.hmod"
+                if not source_path.is_file() and active is None:
+                    return self.t('runtime.module_missing', module_id=module_id)
+                try:
+                    if source_path.is_file():
+                        self._backup_before_activation(source_path)
+                    if active is not None:
+                        await self.deactivate_module(module_id, caller=caller)
+                    source_path.unlink(missing_ok=True)
+                except Exception as exc:
+                    if active is not None and self.modules.get(module_id) is None and source_path.is_file():
+                        try:
+                            await self.activate_module(str(source_path))
+                        except Exception:
+                            pass
+                    if self.observatory is not None:
+                        self.observatory.emit("modules", "unload_error", module=module_id, error=type(exc).__name__, detail=str(exc)[:240])
+                    return self.t('runtime.unload_failed', error=type(exc).__name__)
+                if purge:
+                    self.purge_module_data(module_id)
+                if self.observatory is not None:
+                    self.observatory.emit("modules", "unloaded", module=module_id, purged=purge)
+                return None
 
     async def reset_module_database(self, module_id: str) -> str:
         if self.state is None or self.modules is None:
@@ -1820,18 +1834,36 @@ class Runtime:
             if active is None and not has_file and not has_state:
                 return self.t('runtime.module_missing', module_id=module_id)
 
-            self.purge_module_data(module_id)
-
-            if active is not None:
-                source_path = active.loaded.path
-                if source_path.is_file():
-                    try:
-                        await self.deactivate_module(module_id)
-                        await self.activate_module(str(source_path))
-                    except Exception as exc:
-                        if self.observatory is not None:
-                            self.observatory.emit("modules", "reset_reload_error", module=module_id, error=type(exc).__name__)
-                        return self.t('runtime.reset_failed', error=type(exc).__name__)
+            namespace = self.state.namespace(module_id)
+            source_path = active.loaded.path if active is not None else None
+            if source_path is not None and not source_path.is_file():
+                return self.t('runtime.reset_failed', error="FileNotFoundError")
+            previous = namespace.all()
+            try:
+                if active is not None:
+                    await self.deactivate_module(module_id)
+                with self.state.connection:
+                    self.state.connection.execute(
+                        "DELETE FROM module_state WHERE module_id = ? AND key NOT IN (?, ?, ?)",
+                        (module_id, "caps-consent", "sourcepath", "moduleversion"),
+                    )
+                if source_path is not None:
+                    await self.activate_module(str(source_path))
+            except Exception as exc:
+                if self.modules.get(module_id) is None:
+                    with self.state.connection:
+                        self.state.connection.execute("DELETE FROM module_state WHERE module_id = ?", (module_id,))
+                    for key, value in previous.items():
+                        namespace.set(key, value)
+                    if source_path is not None:
+                        try:
+                            await self.activate_module(str(source_path))
+                        except Exception as rollback_exc:
+                            if self.observatory is not None:
+                                self.observatory.emit("modules", "reset_rollback_error", module=module_id, error=type(rollback_exc).__name__)
+                if self.observatory is not None:
+                    self.observatory.emit("modules", "reset_reload_error", module=module_id, error=exc)
+                return self.t('runtime.reset_failed', error=type(exc).__name__)
 
             if self.observatory is not None:
                 self.observatory.emit("modules", "database_reset", module=module_id)
@@ -1844,7 +1876,14 @@ class Runtime:
             return self.t('runtime.usage_reset', prefix=self.config.prefix)
         return await self.reset_module_database(invocation.args[0])
 
-    async def _command_rl(self, invocation: Any) -> str:
+    async def _command_rl(self, invocation: Any, *, source: str | None = None) -> Any:
+        if not invocation.args:
+            return self.t('runtime.usage_reload', prefix=self.config.prefix)
+        module_id = str(invocation.args[0]).casefold()
+        async with self._module_locks.setdefault(module_id, asyncio.Lock()):
+            return await self._reload_module(invocation, source=source)
+
+    async def _reload_module(self, invocation: Any, *, source: str | None = None) -> Any:
         if len(invocation.args) not in (1, 2) or self.modules is None:
             return self.t('runtime.usage_reload', prefix=self.config.prefix)
         force = len(invocation.args) == 2 and invocation.args[1].casefold() == "force"
@@ -1864,12 +1903,19 @@ class Runtime:
                 candidate_loaded = self.modules.loader.load(candidate)
                 if candidate_loaded.manifest.module_id != module_id:
                     return self.t('runtime.id_mismatch', module_id=module_id)
+                if not self._caps_consented(module_id, candidate_loaded.manifest, candidate_loaded.digest):
+                    return await self._render_caps_screen(
+                        module_id, candidate_loaded.manifest, candidate_loaded.source,
+                        getattr(invocation, "chat_id", None), getattr(invocation, "message_id", 0),
+                    )
             await self.deactivate_module(module_id)
             try:
+                if source is not None and self.stager is not None:
+                    reload_path = self.stager.stage_text(source, self.relay_dir).path
                 await self.activate_module(str(reload_path))
             except Exception as exc:
                 if self.observatory is not None:
-                    self.observatory.emit("modules", "update_error", module=module_id, error=type(exc).__name__)
+                    self.observatory.emit("modules", "update_error", module=module_id, error=exc)
                 try:
                     if self.stager is None:
                         raise RuntimeError("module stager is unavailable")
@@ -1948,32 +1994,42 @@ class Runtime:
 
 
 
-    def _caps_fingerprint(self, manifest: Any) -> str:
-        import hashlib
-
-        payload = json.dumps([manifest.module_id, sorted(manifest.capabilities)], separators=(",", ":"))
-        return hashlib.sha256(payload.encode()).hexdigest()[:16]
-
-    def _caps_consented(self, module_id: str, fingerprint: str) -> bool:
+    def _approved_caps(self, module_id: str, digest: str | None = None) -> set[str]:
         if self.state is None or module_id not in self.state.module_ids():
-            return False
+            return set()
         namespace = self.state.namespace(module_id)
-        return namespace.get("caps-consent") == fingerprint
+        consent = namespace.get("caps-consent")
+        if not isinstance(consent, dict):
+            return set()
+        consent_map = cast("dict[str, object]", consent)
+        stored_digest = consent_map.get("digest")
+        caps_value = consent_map.get("capabilities")
+        if not isinstance(stored_digest, str) or not isinstance(caps_value, list):
+            return set()
+        if digest is not None and stored_digest != digest:
+            return set()
+        values = cast("list[object]", caps_value)
+        return {value for value in values if isinstance(value, str)}
 
-    def _mark_caps_consent(self, module_id: str, fingerprint: str) -> None:
+    def _caps_consented(self, module_id: str, manifest: Any, digest: str) -> bool:
+        return manifest.module_id == module_id and set(manifest.capabilities).issubset(self._approved_caps(module_id, digest))
+
+    def _mark_caps_consent(self, module_id: str, capabilities: list[str], digest: str) -> None:
         if self.state is not None:
-            self.state.namespace(module_id).set("caps-consent", fingerprint)
+            approved = self._approved_caps(module_id, digest) | set(capabilities)
+            self.state.namespace(module_id).set("caps-consent", {"digest": digest, "capabilities": sorted(approved)})
 
     async def _render_caps_screen(self, module_id: str, manifest: Any, source: str, chat_id: int | str | None, message_id: int) -> tuple[str, list[list[dict[str, str]]]] | str:
+        capabilities = sorted(set(manifest.capabilities) - self._approved_caps(module_id))
         if self.callbacks is None or self.kernel is None or self.kernel.owner_id is None or chat_id is None:
             lines = [self.t('runtime.caps_request', module_id=module_id, version=manifest.version)]
-            lines.append(describe_caps(manifest.capabilities, self.t) or self.t("common.none"))
+            lines.append(describe_caps(tuple(capabilities), self.t) or self.t("common.none"))
             lines.append(self.t('runtime.caps_retry'))
             return "\n".join(lines)
-        text = self.t("runtime.caps_request", module_id=module_id, version=manifest.version) + "\n" + (describe_caps(manifest.capabilities, self.t) or self.t("common.none"))
+        text = self.t("runtime.caps_request", module_id=module_id, version=manifest.version) + "\n" + (describe_caps(tuple(capabilities), self.t) or self.t("common.none"))
         confirm_handle = self.callbacks.store.issue(
             CallbackBinding(self.kernel.owner_id, chat_id, 0),
-            {"action": "caps_confirm", "payload": {"module": module_id, "source": source}},
+            {"action": "caps_confirm", "payload": {"module": module_id, "source": source, "digest": hashlib.sha256(source.encode("utf-8")).hexdigest(), "capabilities": capabilities}},
         )
         cancel_handle = self.callbacks.store.issue(
             CallbackBinding(self.kernel.owner_id, chat_id, 0),
@@ -1991,34 +2047,44 @@ class Runtime:
 
     async def _caps_cancel(self, callback: Any, payload: Any) -> object:
         if not isinstance(payload, dict):
-            await callback.answer(self.t('runtime.invalid_request'), alert=True)
+            await callback.respond(self.t('runtime.invalid_request'), alert=True)
             return None
         module_id = str(cast('dict[str, Any]', payload).get("module", "")).casefold()
-        await callback.answer(self.t('runtime.cancelled'))
+        await callback.respond(self.t('runtime.cancelled'))
         return await callback.edit(self.t('runtime.module_cancelled', module_id=module_id))
 
     async def _caps_confirm(self, callback: Any, payload: Any) -> object:
         if not isinstance(payload, dict) or self.modules is None or self.state is None or self.stager is None:
-            await callback.answer(self.t('runtime.invalid_request'), alert=True)
+            await callback.respond(self.t('runtime.invalid_request'), alert=True)
             return None
         module_id = str(cast('dict[str, Any]', payload).get("module", "")).casefold()
         source = cast('dict[str, Any]', payload).get("source")
         if not isinstance(source, str):
-            await callback.answer(self.t('runtime.source_missing'), alert=True)
+            await callback.respond(self.t('runtime.source_missing'), alert=True)
             return await callback.edit(self.t('runtime.module_missing', module_id=module_id))
         try:
-            loaded, action = await self.load_module(source)
-            if action == "confirm":
-                self._mark_caps_consent(module_id, self._caps_fingerprint(loaded.manifest))
-                loaded, action = await self.load_module(source)
+            request = cast("dict[str, Any]", payload)
+            capabilities = request.get("capabilities")
+            if not isinstance(capabilities, list) or not all(isinstance(value, str) for value in cast("list[object]", capabilities)):
+                raise ValueError("invalid capability approval")
+            with trusted_scope(), tempfile.TemporaryDirectory(prefix=".hotaru-consent-") as candidate_dir:
+                candidate = self.stager.stage_text(source, candidate_dir)
+            if candidate.manifest.module_id != module_id or candidate.digest != request.get("digest"):
+                raise ValueError("module approval mismatch")
+            requested = set(candidate.manifest.capabilities)
+            granted = set(cast("list[str]", capabilities))
+            if not granted.issubset(requested) or not (requested - self._approved_caps(module_id)).issubset(granted):
+                raise ValueError("capability approval changed")
+            self._mark_caps_consent(module_id, sorted(granted), candidate.digest)
+            loaded, action = await self.load_module(candidate.source)
             if action not in {"loaded", "updated"}:
                 raise RuntimeError(action)
         except Exception as exc:
             if self.observatory is not None:
                 self.observatory.emit("modules", "activation_error", module=module_id, error=type(exc).__name__, detail=str(exc)[:240])
-            await callback.answer(self.t('runtime.activation_failed'), alert=True)
+            await callback.respond(self.t('runtime.activation_failed'), alert=True)
             return await callback.edit(self.t('runtime.load_error', error=type(exc).__name__, detail=str(exc)[:120]))
-        await callback.answer(self.t('runtime.module_loaded'))
+        await callback.respond(self.t('runtime.module_loaded'))
         text = self.t('runtime.loaded', module_id=module_id, version=loaded.manifest.version)
         if getattr(callback, "inline_message_id", None) and getattr(callback, "app", None) is not None:
             inline_mid = callback.inline_message_id
@@ -2074,13 +2140,13 @@ class Runtime:
 
     async def _module_detail(self, callback: Any, payload: Any) -> object:
         if not isinstance(payload, str):
-            await callback.answer(self.t('runtime.invalid_module'), alert=True)
+            await callback.respond(self.t('runtime.invalid_module'), alert=True)
             return None
         return await callback.edit(self._module_detail_text(payload))
 
     async def _help_page(self, callback: Any, payload: Any) -> object:
         if not isinstance(payload, int) or payload < 0:
-            await callback.answer(self.t('runtime.invalid_page'), alert=True)
+            await callback.respond(self.t('runtime.invalid_page'), alert=True)
             return None
         result = self._help_render(payload, callback.chat_id, callback.msg_id)
         if isinstance(result, tuple):
@@ -2090,15 +2156,15 @@ class Runtime:
 
     async def _restore_confirm(self, callback: Any, payload: Any) -> object:
         if not isinstance(payload, str) or self.backups is None:
-            await callback.answer(self.t('runtime.invalid_restore'), alert=True)
+            await callback.respond(self.t('runtime.invalid_restore'), alert=True)
             return None
         try:
             plan = self.backups.plan(payload)
             await self.restore_filesystem(plan, self.relay_dir)
         except Exception as exc:
-            await callback.answer(self.t('runtime.restore_failed'), alert=True)
+            await callback.respond(self.t('runtime.restore_failed'), alert=True)
             return await callback.edit(self.t('runtime.restore_error', error=type(exc).__name__))
-        await callback.answer(self.t('runtime.restore_done'), alert=True)
+        await callback.respond(self.t('runtime.restore_done'), alert=True)
         return await callback.edit(self.t("runtime.restore_done"))
 
     def _event_error(self, error: Exception) -> None:
@@ -2157,16 +2223,19 @@ class Runtime:
         except (OSError, ValueError):
             return False
 
-    async def activate_module(self, path: str | Path, *, health: Any = None) -> Any:
+    async def activate_module(self, path: str | Path, *, health: Any = None, backup: bool = True) -> Any:
         if self.modules is None or self.kernel is None:
             raise RuntimeError("build the runtime before activating modules")
         is_kernel = self._is_kernel_path(path)
-        if not is_kernel:
+        if not is_kernel and backup:
             self._backup_before_activation(path)
         result = await self.modules.activate_source(
             path, self.kernel, health=health, sandbox=self.sandbox, is_kernel=is_kernel,
         )
         module_id = result.loaded.manifest.module_id
+        unloading = self._unload_tasks.get(module_id)
+        if unloading is not None and unloading.done():
+            self._unload_tasks.pop(module_id, None)
         namespace = self.state.namespace(module_id) if self.state is not None else None
         if namespace is not None:
             namespace.set("sourcepath", str(result.loaded.path))
@@ -2175,22 +2244,16 @@ class Runtime:
         return result
 
 
-    async def deactivate_module(self, module_id: str) -> bool:
+    async def deactivate_module(self, module_id: str, *, caller: asyncio.Task[Any] | None = None) -> bool:
         if self.modules is None:
             raise RuntimeError("build the runtime before deactivating modules")
-        was_sandbox = False
-        if self.sandbox is not None:
-            was_sandbox = module_id in getattr(self.sandbox, "_workers", {})
-            if not was_sandbox:
-                self.sandbox.stop_module(module_id)
-        try:
-            result = await self.modules.deactivate(module_id)
-        finally:
-            if self.sandbox is not None and was_sandbox:
-                self.sandbox.stop_module(module_id)
         if self.callbacks is not None:
             self.callbacks.unregister_module(module_id)
-        return result
+        try:
+            return await self.modules.deactivate(module_id, caller=caller)
+        finally:
+            if self.callbacks is not None:
+                self.callbacks.unregister_module(module_id)
 
     async def restore_backup(self, plan: Any, activate: Any, *, rollback: Any | None = None, timeout: float = 10.0) -> Any:
         if self.backups is None:
@@ -2296,11 +2359,11 @@ class Runtime:
             if not isinstance(source_path, str) or Path(source_path).absolute() != expected.absolute() or expected.is_symlink():
                 state.delete_module(module_id)
                 continue
-            if not isinstance(consent, str):
+            if not isinstance(consent, (str, list)):
                 self._emit_restore_event("restore_skipped", module_id, "consent missing")
                 continue
             try:
-                await asyncio.wait_for(self._restore_module(module_id, source_path, consent), timeout)
+                await asyncio.wait_for(self._restore_module(module_id, source_path), timeout)
             except asyncio.TimeoutError:
                 self._emit_restore_event("restore_timeout", module_id, "activation deadline exceeded")
                 continue
@@ -2310,14 +2373,14 @@ class Runtime:
             restored.append(module_id)
         return tuple(restored)
 
-    async def _restore_module(self, module_id: str, source_path: str, consent: str) -> None:
+    async def _restore_module(self, module_id: str, source_path: str) -> None:
         assert self.modules is not None
         loaded = self.modules.loader.load(source_path)
         if loaded.manifest.module_id != module_id:
             raise ValueError("module id mismatch")
-        if self._caps_fingerprint(loaded.manifest) != consent:
+        if not self._caps_consented(module_id, loaded.manifest, loaded.digest):
             raise ValueError("capabilities changed; !trust required")
-        await self.activate_module(source_path)
+        await self.activate_module(source_path, backup=False)
 
     def _emit_restore_event(self, event: str, module_id: str, detail: str) -> None:
         if self.observatory is not None:
@@ -2437,7 +2500,7 @@ class Runtime:
                     self.account_manager.sync_vaults()
             except Exception as exc:
                 if self.observatory is not None:
-                    self.observatory.emit("accounts", "sync_error", error=type(exc).__name__)
+                    self.observatory.emit("accounts", "sync_error", error=exc)
 
     def _ensure_primary_account(self, user_id: int) -> None:
         manager = self.account_manager
@@ -2500,12 +2563,29 @@ class Runtime:
             self.observatory.emit("forum", "transport_ready")
         await self._ensure_forum()
 
+    def _start_loop_guard(self) -> None:
+        guard = LoopGuard(on_stall=self._loop_guard_stall)
+        if not guard.start():
+            return
+        self._loop_guard = guard
+        self._loop_guard_task = asyncio.create_task(guard.tick(), name="hotaru:loop-guard-tick")
+
+    def _loop_guard_stall(self, stalls: int, stalled: float) -> None:
+        if self.observatory is not None:
+            self.observatory.emit("kernel", "loop_stall", "warn", stalls=stalls, blocked=round(stalled, 1),
+                                  note="module code does not yield and cannot be interrupted mid-call")
+
     async def run(self) -> None:
         if self.app is None:
             self.build()
         assert self.app is not None
+        self._start_loop_guard()
         try:
             await self.authorize()
+            set_premium(await self.is_premium())
+            if self.app.mt is not None:
+                self._connection = ConnectionRecovery(self.app.mt, self.observatory, "user")
+                self._connection_task = asyncio.create_task(self._connection.watch(), name="hotaru:user-health")
         except BaseException:
             await self.close()
             raise
@@ -2552,7 +2632,7 @@ class Runtime:
                         try:
                             self.account_manager.spawn(profile.account_number)
                         except Exception as exc:
-                            log.warning("Account #%s could not start: %s", profile.account_number, type(exc).__name__)
+                            log.warning("Account #%s could not start: %s", profile.account_number, type(exc).__name__, exc_info=exc)
         gc.collect()
         gc.freeze()
         self._app_task = asyncio.create_task(self.app.run(), name="hotaru:app")
@@ -2572,12 +2652,20 @@ class Runtime:
             return
         self.closed = True
         try:
+            if self._connection_task is not None:
+                self._connection_task.cancel()
+                await asyncio.gather(self._connection_task, return_exceptions=True)
             if self._form_gc_task is not None and not self._form_gc_task.done():
                 self._form_gc_task.cancel()
                 await asyncio.gather(self._form_gc_task, return_exceptions=True)
             if self._forum_setup_task is not None and not self._forum_setup_task.done():
                 self._forum_setup_task.cancel()
                 await asyncio.gather(self._forum_setup_task, return_exceptions=True)
+            if self._loop_guard_task is not None and not self._loop_guard_task.done():
+                self._loop_guard_task.cancel()
+                await asyncio.gather(self._loop_guard_task, return_exceptions=True)
+            if self._loop_guard is not None:
+                self._loop_guard.stop()
             if self.inline is not None:
                 await self.inline.stop()
             if self._forms is not None:
@@ -2594,7 +2682,9 @@ class Runtime:
             if self.tasks is not None:
                 await self.tasks.close()
             if self.sandbox is not None:
-                self.sandbox.stop_all()
+                await asyncio.get_running_loop().run_in_executor(None, self.sandbox.stop_all)
+            if self._connection is not None:
+                await self._connection.close()
             if self.app is not None:
                 await self.app.close()
             if self.state is not None:

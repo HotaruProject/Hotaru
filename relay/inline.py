@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Mapping, cast
 
 from goygram import Session
-from goygram.errors import ConnectionClosedError
+from goygram.errors import UnauthorizedError
 from relay.firewall import trusted_scope
 
 BOTFATHER = "@BotFather"
@@ -696,7 +696,13 @@ class InlineManager:
             if bot_user and bot_user.get("dc_id"):
                 bot_session.data["dc"] = bot_user["dc_id"]
 
+        import platform
+        from hotaru.update import current_commit
+
         app = GoyGram(
+            device_model="Hotaru",
+            system_version=f"{platform.system()} {platform.release()}",
+            app_version=f"Hotaru {current_commit()}",
             bot_token=self.info.token,
             api_id=self.runtime.config.api_id,
             api_hash=self.runtime.config.api_hash,
@@ -745,7 +751,8 @@ class InlineManager:
                 if self._is_auth_failure(exc):
                     self._forget_bot()
                 if self.runtime.observatory is not None:
-                    self.runtime.observatory.emit("inline", "poll_error", error=type(exc).__name__, detail=str(exc)[:240], delay=delay)
+                    event = "auth_error" if isinstance(exc, UnauthorizedError) or self._is_auth_failure(exc) else "poll_error"
+                    self.runtime.observatory.emit("inline", event, "error", error=type(exc).__name__, detail=str(exc)[:240], delay=delay)
             finally:
                 self.ready.clear()
                 if app is not None:
@@ -753,7 +760,7 @@ class InlineManager:
                         await app.close()
                     except Exception as exc:
                         if self.runtime.observatory is not None:
-                            self.runtime.observatory.emit("inline", "close_error", error=type(exc).__name__)
+                            self.runtime.observatory.emit("inline", "close_error", error=exc)
                 self.bot_app = None
             try:
                 await asyncio.wait_for(self._stop.wait(), timeout=delay)
@@ -762,7 +769,11 @@ class InlineManager:
             delay = min(delay * 2, 60.0)
 
     async def _poll(self, app: Any) -> None:
+        from hotaru.supervisor import ConnectionRecovery
+
         tasks: list[asyncio.Task[Any]] = []
+        recovery: ConnectionRecovery | None = None
+        warm: asyncio.Task[None] | None = None
         try:
             await app.core.fsm.start()
             tasks.append(asyncio.create_task(app.core.disp.consume(), name="hotaru:inline-dispatch"))
@@ -771,13 +782,14 @@ class InlineManager:
             if reader is None:
                 raise InlineError("inline bot reader did not start")
             tasks.append(reader)
+            recovery = ConnectionRecovery(app.mt, self.runtime.observatory, "inline", ready=self.ready)
             await self._probe(app)
             if any(task.done() for task in tasks):
                 raise InlineError("inline bot stopped during startup")
             self.ready.set()
             if self.runtime.observatory is not None:
                 self.runtime.observatory.emit("inline", "ready_set", self_id=app.session.self_id, dc=app.session.dc)
-            asyncio.create_task(self._warm_owner_peer(app), name="hotaru:inline-warm")
+            warm = asyncio.create_task(self._warm_owner_peer(app), name="hotaru:inline-warm")
             tasks.append(asyncio.create_task(self._watch_bot(app), name="hotaru:inline-health"))
             stop = asyncio.create_task(self._stop.wait(), name="hotaru:inline-stop")
             tasks.append(stop)
@@ -790,24 +802,20 @@ class InlineManager:
                 raise InlineError("inline bot polling stopped")
         finally:
             self.ready.clear()
+            if recovery is not None:
+                await recovery.close()
+            if warm is not None:
+                tasks.append(warm)
             for task in tasks:
                 task.cancel()
             await asyncio.gather(*tasks, return_exceptions=True)
 
     async def _probe(self, app: Any) -> None:
-        deadline = time.monotonic() + 3.0
-        while True:
-            try:
-                await asyncio.wait_for(app.mt.call("updates.getState", api_id=self.runtime.config.api_id), timeout=15.0)
-                await self._check_bot(app)
-                return
-            except (ConnectionError, ConnectionClosedError, TimeoutError, asyncio.TimeoutError):
-                if self._stop.is_set() or time.monotonic() >= deadline:
-                    raise
-                await asyncio.sleep(0.05)
+        await app.mt.call("updates.getState", api_id=self.runtime.config.api_id, retry=0)
+        await self._check_bot(app)
 
     async def _check_bot(self, app: Any) -> None:
-        await asyncio.wait_for(app.mt_users_get_users(id=[{"_": "inputUserSelf"}], retry=0), timeout=15.0)
+        await app.mt_users_get_users(id=[{"_": "inputUserSelf"}], retry=0)
 
     async def _watch_bot(self, app: Any) -> None:
         while not self._stop.is_set():
@@ -833,7 +841,7 @@ class InlineManager:
             except Exception as exc:
                 if not reported and runtime.observatory is not None:
                     reported = True
-                    runtime.observatory.emit("inline", "warmup_error", error=type(exc).__name__)
+                    runtime.observatory.emit("inline", "warmup_error", error=exc)
                 await asyncio.sleep(3.0)
                 continue
             entity = mt.entities.get(("user", owner))
@@ -854,9 +862,11 @@ class InlineManager:
         if reader is None or reader.done():
             return None
         try:
-            result = await mt.call("users.getUsers", id=[{"_": "inputPeerSelf"}])
+            result = await mt.call("users.getUsers", id=[{"_": "inputUserSelf"}])
         except Exception:
             return None
+        if isinstance(result, dict):
+            result = cast('dict[str, Any]', result).get("result", result)
         users: list[Any] = []
         if isinstance(result, list):
             users = cast('list[Any]', result)
@@ -974,7 +984,7 @@ class InlineManager:
                     await handler(update)
                 except Exception as exc:
                     if self.runtime.observatory is not None:
-                        self.runtime.observatory.emit("inline", "chosen_error", error=type(exc).__name__)
+                        self.runtime.observatory.emit("inline", "chosen_error", error=exc)
         finally:
             if token is not None:
                 requests = getattr(self.runtime, "_input_requests", None)
@@ -995,7 +1005,7 @@ class InlineManager:
                 await handler(message)
             except Exception as exc:
                 if self.runtime.observatory is not None:
-                    self.runtime.observatory.emit("inline", "pm_handler_error", error=type(exc).__name__)
+                    self.runtime.observatory.emit("inline", "pm_handler_error", error=exc)
 
     async def stop(self) -> None:
         self._stop.set()

@@ -80,10 +80,12 @@
       "description": "Hotaru ヘルプモジュール",
       "commands": {
         "hlp": {
-          "description": "ヘルプカタログ"
+          "description": "ヘルプカタログ",
+          "usage": "[モジュール]"
         },
         "help": {
-          "description": "ヘルプカタログ"
+          "description": "ヘルプカタログ",
+          "usage": "[モジュール]"
         }
       }
     },
@@ -114,7 +116,8 @@
       "description": "Hotaru 自動更新",
       "commands": {
         "upd": {
-          "description": "更新の確認と適用"
+          "description": "更新の確認と適用",
+          "usage": "[force]"
         },
         "updlog": {
           "description": "変更ログ表示"
@@ -150,11 +153,20 @@
       "description": "翻訳設定",
       "commands": {
         "lang": {
-          "description": "言語を表示または変更"
+          "description": "言語を表示または変更",
+          "usage": "[言語]"
         },
         "language": {
-          "description": "言語を表示または変更"
+          "description": "言語を表示または変更",
+          "usage": "[言語]"
         }
+      },
+      "native": {
+        "ru": "Русский",
+        "en": "English",
+        "kz": "Қазақша",
+        "uk": "Українська",
+        "ja": "日本語"
       }
     },
     "test-features": {
@@ -205,13 +217,16 @@
       "description": "アカウント管理",
       "commands": {
         "acc": {
-          "description": "アカウントの管理"
+          "description": "アカウントの管理",
+          "usage": "[番号] [start|stop|restart|on|off|del]"
         },
         "acca": {
-          "description": "アカウントの追加・ログイン"
+          "description": "アカウントの追加・ログイン",
+          "usage": "[ID|cancel|password] [パスワード]"
         },
         "accs": {
-          "description": "アカウント一覧を開く"
+          "description": "アカウント一覧を開く",
+          "usage": "[番号]"
         }
       },
       "usage": "<b>アカウント</b>\n<code>{prefix}acca [user_id]</code> · QR / 電話番号で追加\n<code>{prefix}acca cancel</code> · ログインをキャンセル\n<code>{prefix}accs [#]</code> · アカウントパネル\n<code>{prefix}acc [#]</code> · アカウントパネル\n<code>{prefix}acc 2 start|stop|restart|on|off|del</code>",
@@ -350,62 +365,24 @@
       "description": "権限管理",
       "commands": {
         "perms": {
-          "description": "権限一覧"
+          "description": "権限一覧",
+          "usage": "[ID|@username]"
         },
         "perm": {
           "description": "権限を付与・取り消し",
-          "usage": "[ID|@username|command/name] <role> [remove]"
+          "usage": "[ID|@username|command/名前] [ロール] [remove]"
         },
         "whois": {
           "description": "ユーザーの権限",
-          "usage": "[ID|@username] [command]"
-        },
-        "owadd": {
-          "description": "オーナーを追加"
-        },
-        "owrm": {
-          "description": "オーナーを削除"
-        },
-        "owls": {
-          "description": "オーナー一覧"
-        },
-        "sgnew": {
-          "description": "権限グループを作成"
-        },
-        "sgls": {
-          "description": "グループ一覧"
-        },
-        "sg": {
-          "description": "グループのメンバーとルール"
-        },
-        "sgdel": {
-          "description": "グループを削除"
-        },
-        "sgadd": {
-          "description": "メンバーを追加"
-        },
-        "sgrm": {
-          "description": "メンバーを削除"
-        },
-        "rule": {
-          "description": "アクセスルールを追加"
-        },
-        "rulerm": {
-          "description": "ルールを削除"
-        },
-        "ruleclr": {
-          "description": "ルールを消去"
+          "usage": "[ID|@username] [コマンド]"
         }
       },
-      "usage": "使い方:\n!owadd <user_id|reply> — owner を付与\n!owrm <user_id|reply> — owner を取り消す\n!owls — オーナー一覧\n!sgnew <name> — 権限グループを作成\n!sgls — グループ一覧\n!sg <name> — グループのメンバーと権限\n!sgdel <name> — グループを削除\n!sgadd <name> <user_id|reply> — グループに追加\n!sgrm <name> <user_id|reply> — グループから除外\n!rule <user|chat|sgroup> <target> <command|module>/<name> [期限] — ルールを追加\n!rulerm — ルールを削除\n!ruleclr — 対象のルールを全消去\n!perm <user_id> <admin|trusted|everyone> [remove] — 権限の付与/取り消し\n!perms — 権限一覧\n!whois <user_id> — ユーザーの権限",
       "bad_group": "グループ名: 英数字のみ、32文字まで。",
-      "no_groups": "権限グループはありません。作成: !sgnew <name>",
       "bad_duration": "期限: 数字 + s/m/h/d/w、または forever。",
       "bad_rule": "ルール: command/名前 または module/名前。",
       "self_owner": "このユーザーはすでにアカウントのオーナーです。",
       "empty": "付与された権限はありません。!perm <user_id> <role> を使用。",
-      "bad_label": "不明な権限: {label}。",
-      "no_owner_grant": "owner は !owadd で付与されます。"
+      "bad_label": "不明な権限: {label}。"
     },
     "lg": "ログ末尾:\n{lines}",
     "commands": {
@@ -415,32 +392,57 @@
       "description": "Hotaru 設定モジュール",
       "commands": {
         "conf": {
-          "description": "設定を開く"
+          "description": "設定を開く",
+          "usage": "[モジュール] [パラメータ|reset] [値]"
         },
         "config": {
-          "description": "設定を開く"
+          "description": "設定を開く",
+          "usage": "[モジュール] [パラメータ|reset] [値]"
         }
       },
       "template_fields": "利用可能なテンプレート変数",
       "shared_prefix": "現在のコマンド接頭辞",
       "shared_uptime": "起動後の経過秒数",
       "template_syntax": "{{name}}、数値書式 {{name:.2f}}、通常の波括弧には {{{{ / }}}} を使います。値はHTMLエスケープされます。",
-      "template_preview": "プレビュー（HTML、サンプル値）"
+      "template_preview": "プレビュー（HTML、サンプル値）",
+      "directory_empty": "<b>設定</b>\n\n設定可能なモジュールはありません。",
+      "directory": "<b>設定</b>\n\nモジュールを選択してください：",
+      "module_missing_error": "<b>エラー：</b> モジュール <code>{module}</code> が見つかりません。",
+      "no_settings": "<b>エラー：</b> モジュール <code>{module}</code> には設定項目がありません。",
+      "parameter_missing_error": "<b>エラー：</b> パラメーター <code>{parameter}</code> が見つかりません。",
+      "empty": "（空）",
+      "parameter_details": "• 値：<code>{value}</code>\n• 型：<code>{type}</code>\n• 既定値：<code>{default}</code>\n",
+      "parameter_description": "• 説明：<i>{description}</i>\n",
+      "template_unavailable": "テンプレート変数が利用できないか、公開されていません：{name}",
+      "error": "エラー：{error}",
+      "boolean_true": "🔘 はい",
+      "boolean_false": "⚪️ いいえ",
+      "minimum": "最小値：{value}",
+      "maximum": "最大値：{value}",
+      "enter": "✏️ 入力",
+      "new_value": "{parameter} の新しい値",
+      "reset": "🔄 リセット",
+      "module_missing": "モジュール <code>{module}</code> が見つかりません。",
+      "parameter_missing": "パラメーター <code>{parameter}</code> が見つかりません。",
+      "error_html": "エラー：<code>{error}</code>"
     },
     "settings": {
       "description": "別名とプレフィックスの管理",
       "commands": {
         "alias": {
-          "description": "コマンドの別名を作成"
+          "description": "コマンドの別名を作成",
+          "usage": "[エイリアス] [コマンド]"
         },
         "rmalias": {
-          "description": "コマンドの別名を削除"
+          "description": "コマンドの別名を削除",
+          "usage": "[エイリアス]"
         },
         "lsalias": {
           "description": "コマンドエイリアスの一覧を表示"
         },
         "prefix": {
-          "description": "コマンドのプレフィックスを変更"
+          "description": "コマンドのプレフィックスを変更",
+          "usage": "[プレフィックス]"
         }
       }
     },
@@ -472,10 +474,21 @@
       "logs_sent": "ログを送信しました: {count} 件",
       "commands": {
         "logs": {
-          "description": "ユーザーボットのログとファイル"
+          "description": "ユーザーボットのログとファイル",
+          "usage": "[on|off|status|レベル] [件数] [コンポーネント]"
         }
       },
-      "pending": "待機中"
+      "pending": "待機中",
+      "config": {
+        "level": "記録するログの最低レベル",
+        "batch_size": "1つのメッセージにまとめるイベント数",
+        "auto_topic": "フォーラムのログトピックを自動管理する"
+      },
+      "config_fields": {
+        "level": "記録するログの最低レベル",
+        "batch_size": "1つのメッセージにまとめるイベント数",
+        "auto_topic": "フォーラムのログトピックを自動管理する"
+      }
     },
     "executor": {
       "heading": "<b>実行</b> | <code>{elapsed:.1f} ミリ秒</code>",
@@ -499,10 +512,12 @@
       "description": "Pythonとシェルコマンドの実行",
       "commands": {
         "py": {
-          "description": "Pythonコードを実行"
+          "description": "Pythonコードを実行",
+          "usage": "[-so] [コード]"
         },
         "sh": {
-          "description": "シェルコマンドを実行"
+          "description": "シェルコマンドを実行",
+          "usage": "[-so] [コマンド]"
         },
         "kill": {
           "description": "実行中のコマンドを停止"
@@ -513,22 +528,28 @@
       "description": "モジュール管理",
       "commands": {
         "ld": {
-          "description": "モジュールを読み込む"
+          "description": "モジュールを読み込む",
+          "usage": "[URL|パス]"
         },
         "ul": {
-          "description": "モジュールを停止"
+          "description": "モジュールを停止",
+          "usage": "[モジュール] [-p]"
         },
         "rl": {
-          "description": "モジュールを再読み込み"
+          "description": "モジュールを再読み込み",
+          "usage": "[モジュール] [force]"
         },
         "ex": {
-          "description": "モジュールをエクスポート"
+          "description": "モジュールをエクスポート",
+          "usage": "[モジュール]"
         },
         "rs": {
-          "description": "モジュールのデータをリセット"
+          "description": "モジュールのデータをリセット",
+          "usage": "[モジュール]"
         },
         "resetdb": {
-          "description": "モジュールのデータをリセット"
+          "description": "モジュールのデータをリセット",
+          "usage": "[モジュール]"
         }
       }
     },
@@ -566,14 +587,21 @@
         "info": {
           "description": "ユーザーボットの情報"
         }
+      },
+      "empty_template": "情報テンプレートが空です",
+      "bad_placeholder": "無効なプレースホルダー: {error}",
+      "config": {
+        "template": ".info のテンプレート。プレースホルダー: {version} {uptime} {modules}"
+      },
+      "config_fields": {
+        "template": ".info のテンプレート。プレースホルダー: {version} {uptime} {modules}"
       }
     }
   },
   "inline_commands_hint": "コマンドを選択 — 任意のチャットで @<bot> とコマンド名を入力",
   "settings": {
     "runtime_unavailable": "サービスを利用できません",
-    "usage_alias": "使い方: {prefix}alias <別名> <コマンド>",
-    "alias_invalid": "別名は1～32文字で、各言語の文字、数字、_ が使用できます。数字で始めることはできません。",
+    "usage_alias": "使い方: {prefix}alias <別名> <コマンドと引数>",
     "alias_exists": "コマンドはすでに存在します: {alias}",
     "command_not_found": "コマンドが見つかりません: {command}\n使用可能: {known}",
     "alias_taken": "別名は使用中です: {alias} → {command}。{prefix}rmalias {alias} で削除できます。",
@@ -707,30 +735,10 @@
   },
   "acl": {
     "owners": "<b>オーナー</b><br>",
-    "account": " · アカウント",
-    "protected": " · 保護済み",
-    "failed": "<b>エラー:</b> <i>{error}</i>",
-    "owner_added": "<code>{user_id}</code> <b>にオーナー権限を付与しました</b>",
-    "owner_exists": "<code>{user_id}</code> はすでにオーナーです",
-    "owner_removed": "<code>{user_id}</code> <b>のオーナー権限を取り消しました</b>",
-    "owner_missing": "<code>{user_id}</code> は追加のオーナーではありません",
-    "group_created": "<b>グループを作成しました:</b> <code>{name}</code>",
-    "group_deleted": "<b>グループを削除しました:</b> <code>{name}</code>",
     "group_missing": "グループ <code>{name}</code> が見つかりません",
     "group_item": "<b>{name}</b> — ユーザー: {users}、ルール: {rules}",
     "groups": "<b>権限グループ</b><br>",
-    "group_detail": "<b>グループ {name}</b><br><b>ユーザー</b><br>{users}<br><b>ルール</b><br>{rules}",
-    "member_exists": "<code>{user_id}</code> はすでに <code>{name}</code> に所属しています",
-    "member_missing": "<code>{user_id}</code> は <code>{name}</code> に所属していません",
-    "member_added": "<code>{user_id}</code> を <code>{name}</code> <b>に追加しました</b>",
-    "member_removed": "<code>{user_id}</code> を <code>{name}</code> <b>から削除しました</b>",
-    "duration": "（期間: {duration}）",
     "group_rule": "<b>ルールを追加しました:</b> sgroup <code>{target}</code> → {kind}/{rule}{until}",
-    "rule_added": "<b>ルールを追加しました:</b> {kind} <code>{target}</code> → {type}/{rule}{until}",
-    "rule_removed": "<b>ルールを削除しました</b>",
-    "nothing_remove": "削除するものがありません",
-    "rules_cleared": "<b>ルールを消去しました</b>",
-    "nothing_clear": "消去するものがありません",
     "permissions": "<b>権限</b><br>",
     "user_groups": "<br>グループ: <code>{groups}</code>",
     "user_detail": "<code>{user_id}</code> · <b>{permissions}</b>",
@@ -739,16 +747,12 @@
     "nothing_revoke": "取り消す権限がありません",
     "grant_failed": "<b>権限の付与に失敗しました:</b> <i>{error}</i>",
     "granted": "<code>{user_id}</code> に <code>{label}</code> <b>権限を付与しました</b>",
-    "self_owner": "このユーザーはすでにアカウントの所有者です。",
     "bad_group": "グループ名は32文字以内の英数字で入力してください。",
-    "no_groups": "グループはありません。",
     "bad_duration": "1m、1h、1d、1w または forever。最大100年。",
     "bad_rule": "ルールは command/名前 または module/名前 を指定してください。",
     "empty": "付与された権限がありません。{prefix}perm <user_id> <ロール> を使ってください。",
     "bad_label": "不明な権限: {label}",
-    "no_owner_grant": "オーナー権限の付与には {prefix}owadd を使ってください。",
-    "usage": "<code>{prefix}owadd &lt;user_id|reply&gt;</code> — オーナーを追加\n<code>{prefix}owrm &lt;user_id|reply&gt;</code> — オーナーを削除\n<code>{prefix}owls</code> — オーナー一覧\n<code>{prefix}sgnew &lt;name&gt;</code> — 権限グループを作成\n<code>{prefix}sgls</code> — グループ一覧\n<code>{prefix}sg &lt;name&gt;</code> — グループのメンバーとルール\n<code>{prefix}sgdel &lt;name&gt;</code> — グループを削除\n<code>{prefix}sgadd &lt;name&gt; &lt;user_id|reply&gt;</code> — メンバーを追加\n<code>{prefix}sgrm &lt;name&gt; &lt;user_id|reply&gt;</code> — メンバーを削除\n<code>{prefix}rule &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;command|module&gt;/&lt;name&gt; [expiry]</code> — アクセスルールを追加\n<code>{prefix}rulerm &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;rule&gt;</code> — ルールを削除\n<code>{prefix}ruleclr &lt;user|chat|sgroup&gt; [target]</code> — ルールを消去\n<code>{prefix}perm &lt;user_id&gt; &lt;admin|trusted|everyone&gt; [remove]</code> — 権限を付与・取り消し\n<code>{prefix}perms</code> — 権限一覧\n<code>{prefix}whois &lt;user_id&gt;</code> — ユーザーの権限",
-    "account_owner": "アカウントの所有者は削除できません。",
+    "no_owner_grant": "オーナー権限の付与には {prefix}perms を使ってください。",
     "owner_confirm": "<code>{user_id}</code> に全権限を付与しますか？",
     "confirm": "承認",
     "clear_confirm": "<code>{scope}</code> のルールを消去しますか？",
@@ -809,23 +813,13 @@
     "syntax": {
       "perms": "<code>{prefix}perms [ID|@username]</code>",
       "whois": "<code>{prefix}whois [ID|@username] [command]</code>",
-      "perm": "<code>{prefix}perm [ID|@username|command/name] &lt;role&gt; [remove]</code>",
-      "owadd": "<code>{prefix}owadd [ID|@username]</code>",
-      "owrm": "<code>{prefix}owrm [ID|@username]</code>",
-      "owls": "<code>{prefix}owls</code>",
-      "sgnew": "<code>{prefix}sgnew &lt;name&gt;</code>",
-      "sgdel": "<code>{prefix}sgdel &lt;name&gt;</code>",
-      "sgls": "<code>{prefix}sgls</code>",
-      "sg": "<code>{prefix}sg &lt;name&gt;</code>",
-      "sgadd": "<code>{prefix}sgadd &lt;name&gt; [ID|@username]</code>",
-      "sgrm": "<code>{prefix}sgrm &lt;name&gt; [ID|@username]</code>",
-      "rule": "<code>{prefix}rule &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;command/name|module/name&gt; [1h|forever]</code>",
-      "rulerm": "<code>{prefix}rulerm &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;command/name|module/name|*&gt;</code>",
-      "ruleclr": "<code>{prefix}ruleclr &lt;user|chat|sgroup&gt; [target]</code>"
+      "perm": "<code>{prefix}perm [ID|@username|command/name] &lt;role&gt; [remove]</code>"
     },
     "all_chats": "すべてのチャットで全員が利用できます。"
   },
   "inline": {
+    "command_open": "{command} を開く",
+    "command_hint": "ボタンを押して検索語を入力し、インライン一覧から結果を選んでください。",
     "form": "Hotaruフォーム",
     "error": {
       "title": "エラー {code}",

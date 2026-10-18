@@ -31,13 +31,18 @@ class TaskSupervisor:
         task.add_done_callback(lambda finished: self._forget(module_id, finished))
         return task
 
-    async def cancel_module(self, module_id: str) -> None:
+    async def cancel_module(self, module_id: str, *, exclude: asyncio.Task[Any] | None = None, timeout: float = 5.0) -> None:
         current = asyncio.current_task()
-        tasks = tuple(task for task in self._tasks.get(module_id, ()) if task is not current)
+        tasks = tuple(task for task in self._tasks.get(module_id, ()) if task is not current and task is not exclude)
         for task in tasks:
             task.cancel()
         if tasks:
-            await asyncio.gather(*tasks, return_exceptions=True)
+            done, pending = await asyncio.wait(tasks, timeout=timeout)
+            for task in done:
+                if not task.cancelled():
+                    task.exception()
+            for task in pending:
+                task.add_done_callback(lambda done: done.cancelled() or done.exception())
         self._tasks.pop(module_id, None)
 
     async def close(self) -> None:
