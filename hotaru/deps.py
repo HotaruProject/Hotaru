@@ -622,27 +622,24 @@ def safe_spec(line: str) -> str:
 def _module_import_probe(target: Path, names: Sequence[str]) -> list[str]:
     if not names:
         return []
-    code = (
-        "import sys, importlib\n"
-        "bad = []\n"
-        "for name in sys.argv[1:]:\n"
-        "    try:\n"
-        "        importlib.import_module(name)\n"
-        "    except BaseException:\n"
-        "        bad.append(name)\n"
-        "sys.stdout.write('\\n'.join(bad))\n"
-    )
-    env = dict(os.environ)
-    env["PYTHONPATH"] = str(target)
-    env["PYTHONDONTWRITEBYTECODE"] = "1"
-    try:
-        result = subprocess.run([sys.executable, "-s", "-S", "-c", code, *names], capture_output=True, text=True, env=env, timeout=120.0)
-    except (OSError, subprocess.SubprocessError):
-        return list(names)
-    if result.returncode != 0:
-        return list(names)
-    reported = {line.strip() for line in result.stdout.splitlines() if line.strip()}
-    return [name for name in names if name in reported]
+    provided: set[str] = set()
+    if target.is_dir():
+        for dist_info in target.glob("*.dist-info"):
+            top_level = dist_info / "top_level.txt"
+            if top_level.is_file():
+                provided.update(line.strip() for line in top_level.read_text(encoding="utf-8", errors="replace").splitlines() if line.strip())
+            record = dist_info / "RECORD"
+            if record.is_file():
+                for line in record.read_text(encoding="utf-8", errors="replace").splitlines():
+                    path = line.split(",", 1)[0]
+                    if not path.endswith(".py"):
+                        continue
+                    parts = path.split("/")
+                    if len(parts) == 1:
+                        provided.add(parts[0][: -len(".py")])
+                    elif parts[-1] == "__init__.py":
+                        provided.add(parts[0])
+    return [name for name in names if name.split(".")[0] not in provided]
 
 
 def _http_text(url: str, *, timeout: float, accept: str = "application/json") -> str | None:

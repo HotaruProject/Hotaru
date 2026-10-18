@@ -91,6 +91,13 @@ class SecurityGate:
             return True
         return False
 
+    def _owner_or_admin(self, principal: Principal) -> bool:
+        if self.access is not None:
+            return self.access.allows(principal.user_id, Permission.OWNER | Permission.ADMIN)
+        if self.owner_id is not None and principal.user_id == self.owner_id:
+            return True
+        return False
+
     def _rate_ok(self, principal: Principal, policy: ModulePolicy | None, *, privileged: bool = False) -> bool:
         if privileged:
             return True
@@ -137,7 +144,7 @@ class SecurityGate:
 
     def check_callback(self, event: Any, *, transport: str, owner_binding: int | str | None = None) -> AccessVerdict:
         principal = self.principal_of(event, transport=transport)
-        if self._privileged(principal):
+        if self._owner_or_admin(principal):
             return AccessVerdict.ALLOW
         if owner_binding is not None and principal.user_id is not None:
             if str(principal.user_id) == str(owner_binding):
