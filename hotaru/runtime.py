@@ -1720,8 +1720,7 @@ class Runtime:
                 if self._is_kernel_module(module_id):
                     raise PermissionError(self.t("runtime.protected", module_id=module_id))
                 caps = list(candidate.manifest.capabilities)
-                is_first_load = module_id not in self.state.module_ids()
-                if is_first_load or not self._caps_consented(module_id, candidate.manifest, candidate.digest):
+                if not self._caps_consented(module_id, candidate.manifest, candidate.digest):
                     return candidate, "confirm"
                 source_text = candidate.source
                 old_path = self.relay_dir / f"{module_id}.hmod"
