@@ -499,7 +499,7 @@ class InlineManager:
             me = await app.get_me()
             if not isinstance(me, dict):
                 raise InlineError("inline bot token validation failed")
-            me_dict = cast('dict[str, Any]', me)
+            me_dict = me
             botid = me_dict.get("id")
             username = me_dict.get("username")
             if not isinstance(botid, int) or botid <= 0 or not isinstance(username, str) or not username or me_dict.get("is_bot") is not True:
