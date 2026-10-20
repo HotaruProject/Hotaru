@@ -617,7 +617,7 @@ class ModuleContext(ContextOperations):
             raise ResponseError("capabilities are not available")
         return await self.cap_host.call(self.module_id, capability, payload or {})
 
-    async def mt(self, method: str, **kwargs: Any) -> Any:
+    async def _mt_call(self, method: str, **kwargs: Any) -> Any:
         return await self.cap("mt", {"method": method, "kwargs": kwargs})
 
     async def premium(self) -> bool:

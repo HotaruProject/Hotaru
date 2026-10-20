@@ -742,7 +742,7 @@ class SandboxContext(ContextOperations):
     async def cap(self, capability, payload=None):
         return _cap_call(capability, payload or {})
 
-    async def mt(self, method, **kwargs):
+    async def _mt_call(self, method, **kwargs):
         return _mt_call(method, **kwargs)
 
     @property
@@ -1308,6 +1308,15 @@ def main():
 main()
 '''
 
+
+def _mt_layer_payload(runtime: Any) -> dict[str, int]:
+    mt = getattr(getattr(runtime, "app", None), "mt", None)
+    layer = getattr(mt, "layer", None)
+    if layer is not None and hasattr(layer, "to_dict"):
+        return cast(dict[str, int], layer.to_dict())
+    return _context.MTLayerInfo.from_value(layer).to_dict()
+
+
 SYSCALL_NUMBERS = {
     "read": 0, "write": 1, "open": 2, "close": 3, "stat": 4, "fstat": 5,
     "lstat": 6, "poll": 7, "lseek": 8, "mmap": 9, "mprotect": 10, "munmap": 11,
@@ -1817,7 +1826,7 @@ class ModuleSandbox:
     async def call(self, module_id: str, command: str, args: list[str], payload: dict[str, Any], source: Any = None, target: str | None = None, context: Any = None) -> Any:
         context = context or self.runtime.context_factory.create(module_id, source)
         config = context.config
-        payload = dict(payload, version=context.version, started_at=self.runtime.started_at, config={
+        payload = dict(payload, version=context.version, started_at=self.runtime.started_at, mt_layer=_mt_layer_payload(self.runtime), config={
             key: config.get(key) for key in config.schema
         }, templates={
             key: {"value": config.get(key), "fields": field.template_fields, "legacy_braces": field.legacy_braces}
@@ -2220,6 +2229,7 @@ class ModuleSandbox:
                     "message_id": getattr(callback, "msg_id", None),
                     "from_id": getattr(callback, "from_id", None),
                     "inline_message_id": getattr(callback, "inline_message_id", None),
+                    "mt_layer": _mt_layer_payload(self.runtime),
                 }
             }
             try:

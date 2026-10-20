@@ -11,6 +11,96 @@ def _msg_field(value: Any, key: str, default: Any = None) -> Any:
     return value.get(key, default) if hasattr(value, "get") else getattr(value, key, default)
 
 
+class MTLayerInfo(int):
+    _methods: int
+    _constructors: int
+
+    def __new__(cls, number: int, methods: int = 0, constructors: int = 0) -> MTLayerInfo:
+        value = cast(MTLayerInfo, int.__new__(cls, number))
+        value._methods = methods
+        value._constructors = constructors
+        return value
+
+    @property
+    def number(self) -> int:
+        return int(self)
+
+    @property
+    def methods(self) -> int:
+        return self._methods
+
+    @property
+    def constructors(self) -> int:
+        return self._constructors
+
+    def to_dict(self) -> dict[str, int]:
+        return {"number": self.number, "methods": self.methods, "constructors": self.constructors}
+
+    @classmethod
+    def from_value(cls, value: Any, info: Any = None) -> MTLayerInfo:
+        if isinstance(value, dict):
+            data = cast(dict[str, Any], value)
+            value = data.get("number", 0)
+        else:
+            data = cast(dict[str, Any], info) if isinstance(info, dict) else {}
+        try:
+            number = int(value)
+        except (TypeError, ValueError):
+            number = 0
+        try:
+            methods = int(data.get("methods", 0))
+        except (TypeError, ValueError):
+            methods = 0
+        try:
+            constructors = int(data.get("constructors", 0))
+        except (TypeError, ValueError):
+            constructors = 0
+        return cls(number, methods, constructors)
+
+
+def _mt_schema_info() -> dict[str, int]:
+    try:
+        from goygram import ext
+        info = cast(dict[str, Any], ext.schema_info()) if ext is not None else {}
+    except Exception:
+        info = {}
+    return {key: int(value) for key, value in info.items() if isinstance(value, int)}
+
+
+def install_mt_layer(app: Any) -> None:
+    mt = getattr(app, "mt", None)
+    if mt is None:
+        return
+    update_layer = getattr(mt, "update_layer", None)
+    if callable(update_layer):
+        def update(number: int) -> None:
+            update_layer(number)
+            mt.layer = MTLayerInfo.from_value(mt.layer, _mt_schema_info())
+        mt.update_layer = update
+    mt.layer = MTLayerInfo.from_value(getattr(mt, "layer", 0), _mt_schema_info())
+
+
+class MTContext:
+    def __init__(self, ctx: Any) -> None:
+        self._ctx = ctx
+
+    async def __call__(self, method: str, **kwargs: Any) -> Any:
+        return await self._ctx._mt_call(method, **kwargs)
+
+    @property
+    def layer(self) -> MTLayerInfo:
+        runtime = getattr(self._ctx, "runtime", None)
+        app = getattr(runtime, "app", None)
+        mt = getattr(app, "mt", None)
+        layer = getattr(mt, "layer", None)
+        if layer is not None:
+            if isinstance(layer, MTLayerInfo):
+                return layer
+            return MTLayerInfo.from_value(layer)
+        payload = getattr(self._ctx, "_msg", {})
+        return MTLayerInfo.from_value(payload.get("mt_layer", {}))
+
+
 class MessageOperations:
     def __init__(self, ctx: Any, raw: Any) -> None:
         self.ctx = ctx
@@ -674,6 +764,10 @@ CTX_OPERATIONS: dict[str, Callable[..., Awaitable[Any]]] = {
 
 
 class ContextOperations:
+    @property
+    def mt(self) -> MTContext:
+        return MTContext(self)
+
     async def _ctx_operation(self, name: str, *args: Any, target: Any = None, **kwargs: Any) -> Any:
         operation = CTX_OPERATIONS.get(name)
         if operation is None:
