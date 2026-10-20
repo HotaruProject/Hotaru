@@ -2001,6 +2001,8 @@ class Runtime:
             return set()
         namespace = self.state.namespace(module_id)
         consent = namespace.get("caps-consent")
+        if isinstance(consent, list):
+            return {value for value in consent if isinstance(value, str)}
         if not isinstance(consent, dict):
             return set()
         consent_map = cast("dict[str, object]", consent)
@@ -2355,13 +2357,15 @@ class Runtime:
             namespace = state.namespace(module_id)
             if modules.get(module_id) is not None:
                 continue
-            consent = namespace.get("caps-consent")
             source_path = namespace.get("sourcepath")
+            if self._is_kernel_module(module_id) or (isinstance(source_path, str) and self._is_kernel_path(source_path)):
+                continue
+            consent = namespace.get("caps-consent")
             expected = self.relay_dir / f"{module_id}.hmod"
             if not isinstance(source_path, str) or Path(source_path).absolute() != expected.absolute() or expected.is_symlink():
                 state.delete_module(module_id)
                 continue
-            if not isinstance(consent, (str, list)):
+            if not isinstance(consent, (str, list, dict)):
                 self._emit_restore_event("restore_skipped", module_id, "consent missing")
                 continue
             try:
@@ -2383,6 +2387,7 @@ class Runtime:
         if not self._caps_consented(module_id, loaded.manifest, loaded.digest):
             raise ValueError("capabilities changed; !trust required")
         await self.activate_module(source_path, backup=False)
+        self._mark_caps_consent(module_id, list(loaded.manifest.capabilities), loaded.digest)
 
     def _emit_restore_event(self, event: str, module_id: str, detail: str) -> None:
         if self.observatory is not None:
