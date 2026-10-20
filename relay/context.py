@@ -519,7 +519,7 @@ class MessageOperations:
     async def _rpc(self, method: str, *, _media_response: bool = False, **kwargs: Any) -> Any:
         if self._g("src", "source", default="mt") not in {"mt", "mtproto"}:
             raise ValueError("message operations require an MTProto message")
-        sender = self.ctx._ctx_media_rpc if _media_response else self.ctx.mt
+        sender = self.ctx._ctx_media_rpc if _media_response else getattr(self.ctx, "_ctx_call", self.ctx.mt)
         result = await sender(method, **kwargs)
         if _msg_field(result, "ok") is False:
             raise RuntimeError(f"{method}: {_msg_field(result, 'error', 'RPC failed')}")
@@ -768,6 +768,9 @@ class ContextOperations:
     def mt(self) -> MTContext:
         return MTContext(self)
 
+    async def _ctx_call(self, method: str, **kwargs: Any) -> Any:
+        return await self._mt_call(method, **kwargs)
+
     async def _ctx_operation(self, name: str, *args: Any, target: Any = None, **kwargs: Any) -> Any:
         operation = CTX_OPERATIONS.get(name)
         if operation is None:
@@ -998,7 +1001,8 @@ async def _ctx_append_todo(target: MessageOperations, items: Any) -> Any:
         prepared.append(item)
     if target.id is None:
         raise ValueError("message id is unavailable")
-    return await target.ctx.mt("messages.appendTodoList", peer=await target.get_input_chat(), msg_id=target.id, list=_ctx_todo_items(prepared))
+    sender = getattr(target.ctx, "_ctx_call", target.ctx.mt)
+    return await sender("messages.appendTodoList", peer=await target.get_input_chat(), msg_id=target.id, list=_ctx_todo_items(prepared))
 
 
 async def _ctx_close_poll(target: MessageOperations) -> Any:
@@ -1446,7 +1450,8 @@ def _catalog_operation(name: str, spec: tuple[Any, ...]) -> Callable[..., Awaita
             raise TypeError(name + ": missing " + ", ".join(missing))
         _catalog_guard(data)
         converted = {field: await _catalog_convert(target, field_types[field], value) for field, value in data.items() if value is not None}
-        return await target.ctx.mt(method, **converted)
+        sender = getattr(target.ctx, "_ctx_call", target.ctx.mt)
+        return await sender(method, **converted)
     operation.__name__ = name
     return operation
 
@@ -1469,7 +1474,11 @@ async def _ctx_translate(target: MessageOperations, text: Any, to_lang: str | No
         raise ValueError("translation requires text or a text message")
     async def telegram(value: str, language: str, source_language: str) -> str:
         try:
-            result = await target.ctx.cap("mt", {"method": "messages.translateText", "kwargs": {"text": [_ctx_text(value)], "to_lang": language}, "timeout": min(kwargs.get("timeout", 15.0), kwargs.get("attempt_timeout", 7.0))})
+            sender = getattr(target.ctx, "_ctx_call", None)
+            if sender is not None:
+                result = await sender("messages.translateText", text=[_ctx_text(value)], to_lang=language, timeout=min(kwargs.get("timeout", 15.0), kwargs.get("attempt_timeout", 7.0)))
+            else:
+                result = await target.ctx.cap("mt", {"method": "messages.translateText", "kwargs": {"text": [_ctx_text(value)], "to_lang": language}, "timeout": min(kwargs.get("timeout", 15.0), kwargs.get("attempt_timeout", 7.0))})
         except PermissionError:
             raise
         except Exception as exc:

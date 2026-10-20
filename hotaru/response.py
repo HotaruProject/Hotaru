@@ -620,6 +620,12 @@ class ModuleContext(ContextOperations):
     async def _mt_call(self, method: str, **kwargs: Any) -> Any:
         return await self.cap("mt", {"method": method, "kwargs": kwargs})
 
+    async def _ctx_call(self, method: str, **kwargs: Any) -> Any:
+        if self.cap_host is None:
+            raise ResponseError("capabilities are not available")
+        with trusted_scope():
+            return await self.cap_host._mt_call(self.module_id, {"method": method, "kwargs": kwargs}, {})
+
     async def premium(self) -> bool:
         if self.runtime is not None and hasattr(self.runtime, "is_premium"):
             val = await self.runtime.is_premium()
@@ -1020,7 +1026,7 @@ class ModuleContext(ContextOperations):
                 break
             with trusted_scope():
                 return await self.cap_host._mt_call(self.module_id, {"method": method, "kwargs": kwargs}, {})
-        return await self.mt(method, **kwargs)
+        return await self._ctx_call(method, **kwargs)
 
     async def send_file(self, file: Any, caption: str | None = None, **kwargs: Any) -> Response:
         output = kwargs.pop("output", "send")
@@ -1255,10 +1261,7 @@ class ModuleContext(ContextOperations):
         return Response(True, "reply", getattr(self._source, "src", None), result)
 
     async def _context_tg_call(self, method: str, data: dict[str, Any]) -> Any:
-        host = getattr(self, "cap_host", None)
-        if host is None:
-            raise ResponseError("capabilities are not available")
-        return await host.call(self.module_id, "mt", {"method": method, "kwargs": data})
+        return await self._ctx_call(method, **data)
 
     async def send(self, text: str, **kwargs: Any) -> Response:
         kwargs.setdefault("output", "reply")
