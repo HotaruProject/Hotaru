@@ -403,6 +403,14 @@ def _mt_call(method, **kwargs):
     return _cap_call("mt", {"method": method, "kwargs": kwargs})
 
 
+def _op_call(method, **kwargs):
+    resp = _ask({"op_call": {"method": method, "kwargs": kwargs}})
+    if not resp.get("ok"):
+        error = {"PermissionError": PermissionError, "OSError": OSError, "TimeoutError": TimeoutError, "ConnectionError": ConnectionError, "ValueError": ValueError, "TypeError": TypeError}.get(resp.get("error_type", "PermissionError"), RuntimeError)
+        raise error(resp.get("error", "operation failed"))
+    return resp.get("result")
+
+
 def _net_call(url, data=None, timeout=10.0, **options):
     payload = {key: value for key, value in options.items() if value is not None}
     payload.update(url=url, data=data, timeout=timeout)
@@ -744,6 +752,9 @@ class SandboxContext(ContextOperations):
 
     async def _mt_call(self, method, **kwargs):
         return _mt_call(method, **kwargs)
+
+    async def _ctx_call(self, method, **kwargs):
+        return _op_call(method, **kwargs)
 
     @property
     def tg(self):
@@ -1530,6 +1541,7 @@ class ModuleSandbox:
         self._active_callback: dict[Any, Any] = {}
         self._cb_respond_pending: dict[str, list[dict[str, Any]]] = {}
         self._pending_caps: dict[str, list[dict[str, Any]]] = {}
+        self._op_pending: dict[str, list[dict[str, Any]]] = {}
         self._respond_pending: dict[str, list[dict[str, Any]]] = {}
         self._roundtrip_locks: dict[str, asyncio.Lock] = {}
         self._waiters: dict[str, dict[int, asyncio.Future[Any]]] = {}
@@ -1704,7 +1716,7 @@ class ModuleSandbox:
             "source": source,
             "commands": commands,
             "toolkit_source": _TOOLKIT_SOURCE,
-            "context_source": _CONTEXT_SOURCE,
+            "context_source": Path(_context.__file__).read_text(encoding="utf-8") if _context.__file__ else _CONTEXT_SOURCE,
             "translation_source": _TRANSLATION_SOURCE,
             "net_blocked": True,
             "seccomp": SECCOMP_POLICY,
@@ -1920,6 +1932,10 @@ class ModuleSandbox:
                     self._pending_caps.setdefault(module_id, []).append(message)
                     self._spawn_pump_task(self._serve_caps(module_id))
                     continue
+                if "op_call" in message:
+                    self._op_pending.setdefault(module_id, []).append(message)
+                    self._spawn_pump_task(self._serve_op(module_id))
+                    continue
                 if "respond" in message:
                     self._respond_pending.setdefault(module_id, []).append(message)
                     self._spawn_pump_task(self._serve_respond(module_id))
@@ -2033,6 +2049,27 @@ class ModuleSandbox:
                     reply = {"kind": "cap_result", "cid": message.get("cid"), "ok": True, "result": result}
                 except Exception as exc:
                     reply = {"kind": "cap_result", "cid": message.get("cid"), "ok": False, "error_type": type(exc).__name__, "error": f"{type(exc).__name__}: {exc}"[:200]}
+            if process is self._workers.get(module_id) and process is not None and process.poll() is None and process.stdin is not None:
+                await self._write_reply(process, reply)
+
+    async def _serve_op(self, module_id: str) -> None:
+        pending = self._op_pending.pop(module_id, [])
+        process = self._workers.get(module_id)
+        cap_host = getattr(self.runtime, "cap_host", None)
+        for message in pending:
+            payload = message.get("op_call")
+            payload_dict = cast('dict[str, Any]', payload) if isinstance(payload, dict) else {}
+            method = payload_dict.get("method")
+            raw_kwargs = payload_dict.get("kwargs")
+            kwargs = cast('dict[str, Any]', raw_kwargs) if isinstance(raw_kwargs, dict) else {}
+            reply = {"kind": "op_result", "cid": message.get("cid"), "ok": False, "error": "capability host is unavailable"}
+            if cap_host is not None:
+                try:
+                    with trusted_scope():
+                        result = await cap_host._mt_call(module_id, {"method": method, "kwargs": kwargs}, {})
+                    reply = {"kind": "op_result", "cid": message.get("cid"), "ok": True, "result": result}
+                except Exception as exc:
+                    reply = {"kind": "op_result", "cid": message.get("cid"), "ok": False, "error_type": type(exc).__name__, "error": f"{type(exc).__name__}: {exc}"[:200]}
             if process is self._workers.get(module_id) and process is not None and process.poll() is None and process.stdin is not None:
                 await self._write_reply(process, reply)
 
@@ -2267,6 +2304,7 @@ class ModuleSandbox:
                     return False
         self._module_defs.pop(module_id, None)
         self._module_deps.pop(module_id, None)
+        self._op_pending.pop(module_id, None)
         self._workers.pop(module_id, None)
         self._booted.pop(module_id, None)
         self._last_use.pop(module_id, None)
