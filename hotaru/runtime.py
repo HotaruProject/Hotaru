@@ -33,6 +33,7 @@ from relay.sandbox import ModuleSandbox
 from relay.caps import CapabilityHost, describe as describe_caps
 from relay.rpc import delete_chat_msg
 from relay.firewall import install as install_firewall, trusted_scope
+from relay.context import install_mt_layer
 from relay.emoji import has_emoji, set_premium, to_entities, to_rich
 from goygram.sugar import extract_sent_message
 from goygram import GoyGram, Session
@@ -217,6 +218,7 @@ class Runtime:
                 session=Session(name=session_name, path=vault, data=session_data),
                 default_transport="mtproto" if self.config.api_id is not None else "api",
             )
+            install_mt_layer(self.app)
         finally:
             logging.disable(previous_disable)
         logging.getLogger("goygram").setLevel(logging.ERROR)
