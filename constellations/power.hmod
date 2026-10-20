@@ -89,10 +89,10 @@ async def sunrise(ctx: Any) -> Any:
             await ctx.tg.call("messages.editMessage", {"id": message_id, "rich_message": rich, "peer": bytes.fromhex(peer_hex)})
         else:
             await ctx.tg.edit_rich(message_id, html, peer=chat_id)
-    except Exception:
+    except (Exception, asyncio.CancelledError):
         try:
             await ctx.tg.edit_rich(message_id, html, peer=chat_id)
-        except Exception:
+        except (Exception, asyncio.CancelledError):
             pass
 
 async def sundown(ctx: Any) -> Any:

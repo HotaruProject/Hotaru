@@ -164,7 +164,7 @@ class ModuleManager:
             else:
                 result = hook(context)
             if inspect.isawaitable(result):
-                await asyncio.wait_for(result, timeout=self.timeout)
+                await asyncio.wait_for(result, timeout=max(self.timeout, 15.0))
 
     async def _rise_host(self, loaded: LoadedModule, namespace: dict[str, Any], kernel: Any, context: Any) -> None:
         if not loaded.manifest.rise:
@@ -220,7 +220,9 @@ class ModuleManager:
                 await runner()
             except Exception as exc:
                 log.error("deferred rise failed: %s", type(exc).__name__, exc_info=exc)
-                await self.deactivate(active.loaded.manifest.module_id)
+                binding = self._bindings.get(active.loaded.manifest.module_id)
+                if binding is None or not binding[2]:
+                    await self.deactivate(active.loaded.manifest.module_id)
 
     def rehydrate_form(self, module_id: str, payload: dict[str, Any]) -> Any:
         callback = self._rehydrators.get(module_id)
@@ -442,7 +444,7 @@ class ModuleManager:
                 continue
             result = method()
             if inspect.isawaitable(result):
-                await asyncio.wait_for(result, timeout=self.timeout)
+                await asyncio.wait_for(result, timeout=max(self.timeout, 15.0))
             return
 
     async def _cleanup_step(self, action: Callable[[], Any]) -> None:
