@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Literal, cast
 from collections.abc import Awaitable
 
-from goygram.errors import MessageNotModifiedError
+from goygram.errors import MessageNotModifiedError, MessageIdInvalidError, MessageNotFoundError, RPCError
 
 from .state import StateNamespace
 from .plainfmt import rich_to_plain
@@ -248,6 +248,12 @@ class ResponseService:
             payload["media"] = media
         if reply_to is not None:
             payload["reply_to"] = reply_to
+        if topic_id is None:
+            for name in ("topic_id", "message_thread_id", "top_msg_id"):
+                candidate = getattr(message, name, None) if not isinstance(message, dict) else message.get(name)
+                if isinstance(candidate, int) and candidate > 0:
+                    topic_id = candidate
+                    break
         if topic_id is not None:
             payload["topic_id"] = topic_id
         if text is not None and str(payload.get("parse_mode", "")).lower() == "html":
@@ -265,14 +271,35 @@ class ResponseService:
                 result = await message.edit(text or "", **payload)
             except MessageNotModifiedError:
                 return Response(True, "edit", getattr(message, "src", None), message)
+            except (MessageIdInvalidError, MessageNotFoundError, RPCError, Exception):
+                pass
             else:
                 return Response(True, "edit", getattr(message, "src", None), result)
-        if output == "edit":
-            return Response(False, "none", None)
-        if not hasattr(message, "reply"):
-            return Response(False, "none", None)
-        result = await message.reply(text or "", **payload)
-        return Response(True, "reply", getattr(message, "src", None), result)
+        if hasattr(message, "reply"):
+            try:
+                result = await message.reply(text or "", **payload)
+                return Response(True, "reply", getattr(message, "src", None), result)
+            except (MessageIdInvalidError, MessageNotFoundError, RPCError, Exception):
+                pass
+        chat_id = getattr(message, "chat_id", None) if not isinstance(message, dict) else message.get("chat_id")
+        app = getattr(message, "app", None) if not isinstance(message, dict) else message.get("app")
+        send_payload = {k: v for k, v in payload.items() if k not in ("reply_to", "id", "topic_id")}
+        if topic_id is not None:
+            send_payload["reply_to"] = {"_": "inputReplyToMessage", "reply_to_msg_id": int(topic_id), "top_msg_id": int(topic_id)}
+        if hasattr(message, "respond"):
+            try:
+                result = await message.respond(text or "", **send_payload)
+                return Response(True, "reply", getattr(message, "src", None), result)
+            except Exception:
+                pass
+        if chat_id is not None and app is not None and hasattr(app, "send_msg"):
+            try:
+                via = getattr(message, "src", None) if not isinstance(message, dict) else message.get("src")
+                result = await app.send_msg(chat_id, text or "", via=via, **send_payload)
+                return Response(True, "reply", getattr(message, "src", None), result)
+            except Exception:
+                pass
+        return Response(False, "none", None)
 
     async def smart(
         self,
@@ -1226,14 +1253,24 @@ class ModuleContext(ContextOperations):
         if output == "edit" and message_id is not None:
             data["id"] = int(message_id)
             data.pop("peer", None)
-            result = await self._context_tg_call("messages.editMessage", {"peer": peer, **data})
-            return Response(True, "edit", getattr(self._source, "src", None), result)
+            try:
+                result = await self._context_tg_call("messages.editMessage", {"peer": peer, **data})
+                return Response(True, "edit", getattr(self._source, "src", None), result)
+            except (MessageIdInvalidError, MessageNotFoundError, RPCError, Exception):
+                pass
         reply_to = kwargs.pop("reply_to", None) or reply_message_id(self._source) or getattr(self._source, "id", None)
         topic_id = kwargs.pop("topic_id", None) or self.topic_id
         if reply_to is not None:
             data["reply_to"] = {"_": "inputReplyToMessage", "reply_to_msg_id": int(reply_to), **( {"top_msg_id": int(topic_id)} if topic_id is not None else {})}
         data.update(kwargs)
-        result = await self._context_tg_call("messages.sendMessage", data)
+        try:
+            result = await self._context_tg_call("messages.sendMessage", data)
+        except MessageIdInvalidError:
+            if topic_id is not None:
+                data["reply_to"] = {"_": "inputReplyToMessage", "reply_to_msg_id": int(topic_id), "top_msg_id": int(topic_id)}
+            else:
+                data.pop("reply_to", None)
+            result = await self._context_tg_call("messages.sendMessage", data)
         response = Response(True, "reply", getattr(self._source, "src", None), result)
         self._remember_response(response)
         return response
@@ -1243,9 +1280,12 @@ class ModuleContext(ContextOperations):
         app = self.runtime.app
         rich_message = cast('dict[str, object]', html) if isinstance(html, dict) else {"_": "inputRichMessageHTML", **to_rich(html)}
         if output == "edit" and message_id is not None:
-            with trusted_scope():
-                result = await app.mt_messages_edit_message( peer=peer, id=int(message_id), message="", rich_message=rich_message)
-            return Response(True, "edit", getattr(self._source, "src", None), result)
+            try:
+                with trusted_scope():
+                    result = await app.mt_messages_edit_message( peer=peer, id=int(message_id), message="", rich_message=rich_message)
+                return Response(True, "edit", getattr(self._source, "src", None), result)
+            except (MessageIdInvalidError, MessageNotFoundError, RPCError, Exception):
+                pass
         reply_to = kwargs.pop("reply_to", None) or reply_message_id(self._source) or getattr(self._source, "id", None)
         topic_id = kwargs.pop("topic_id", None) or self.topic_id
         data = {"peer": peer, "message": "", "random_id": _secrets.randbits(63), "rich_message": rich_message}
@@ -1256,8 +1296,16 @@ class ModuleContext(ContextOperations):
             data["reply_to"] = reply_to_data
         kwargs.pop("parse_mode", None)
         data.update(kwargs)
-        with trusted_scope():
-            result = await app.mt_messages_send_message( **data)
+        try:
+            with trusted_scope():
+                result = await app.mt_messages_send_message( **data)
+        except MessageIdInvalidError:
+            if topic_id is not None:
+                data["reply_to"] = {"_": "inputReplyToMessage", "reply_to_msg_id": int(topic_id), "top_msg_id": int(topic_id)}
+            else:
+                data.pop("reply_to", None)
+            with trusted_scope():
+                result = await app.mt_messages_send_message( **data)
         return Response(True, "reply", getattr(self._source, "src", None), result)
 
     async def _context_tg_call(self, method: str, data: dict[str, Any]) -> Any:
