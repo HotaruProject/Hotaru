@@ -1535,6 +1535,8 @@ class ModuleSandbox:
         self._activity: dict[str, float] = {}
         self._module_defs: dict[str, tuple[str, list[str]]] = {}
         self._module_deps: dict[str, str] = {}
+        self._module_requires: dict[str, Sequence[str]] = {}
+        self._ensure_locks: dict[str, asyncio.Lock] = {}
         self._respond_sources: dict[Any, Any] = {}
         self._respond_contexts: dict[Any, Any] = {}
         self._cb_waiters: dict[tuple[str, str], asyncio.Future[Any]] = {}
@@ -1826,11 +1828,16 @@ class ModuleSandbox:
             self._module_deps.pop(module_id, None)
         return path
 
-    async def start_module(self, module_id: str, source: str, commands: list[str]) -> bool:
+    async def start_module(self, module_id: str, source: str, commands: list[str], *, requires: Sequence[str] = (), lazy: bool = False) -> bool:
         self._module_defs[module_id] = (source, commands)
+        self._module_requires[module_id] = tuple(requires)
+        if lazy:
+            return True
         current = self._workers.get(module_id)
         if current is not None and current.poll() is None:
             return True
+        if module_id not in self._module_deps:
+            await self.ensure_module_deps(module_id, source, requires)
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(None, lambda: self._spawn_worker(module_id, source, commands))
         return True
@@ -1887,18 +1894,22 @@ class ModuleSandbox:
         return self._stdin_lock
 
     async def _ensure_worker(self, module_id: str) -> subprocess.Popen[bytes]:
-        process = self._workers.get(module_id)
-        if process is None or process.poll() is not None:
-            if module_id not in self._module_defs:
-                raise SandboxError(f"sandbox worker is not running: {module_id}")
-            source, commands = self._module_defs[module_id]
-            loop = asyncio.get_running_loop()
-            await loop.run_in_executor(None, lambda: self._spawn_worker(module_id, source, commands))
+        async with self._ensure_locks.setdefault(module_id, asyncio.Lock()):
             process = self._workers.get(module_id)
-        if process is None or process.poll() is not None:
-            raise SandboxError(f"sandbox worker is not running: {module_id}")
-        self._start_reader(module_id, process)
-        return process
+            if process is None or process.poll() is not None:
+                if module_id not in self._module_defs:
+                    raise SandboxError(f"sandbox worker is not running: {module_id}")
+                source, commands = self._module_defs[module_id]
+                if module_id not in self._module_deps:
+                    requires = self._module_requires.get(module_id, ())
+                    await self.ensure_module_deps(module_id, source, requires)
+                loop = asyncio.get_running_loop()
+                await loop.run_in_executor(None, lambda: self._spawn_worker(module_id, source, commands))
+                process = self._workers.get(module_id)
+            if process is None or process.poll() is not None:
+                raise SandboxError(f"sandbox worker is not running: {module_id}")
+            self._start_reader(module_id, process)
+            return process
 
     def _start_reader(self, module_id: str, process: subprocess.Popen[bytes]) -> None:
         reader = self._readers.get(module_id)
@@ -2304,6 +2315,8 @@ class ModuleSandbox:
                     return False
         self._module_defs.pop(module_id, None)
         self._module_deps.pop(module_id, None)
+        self._module_requires.pop(module_id, None)
+        self._ensure_locks.pop(module_id, None)
         self._op_pending.pop(module_id, None)
         self._workers.pop(module_id, None)
         self._booted.pop(module_id, None)
