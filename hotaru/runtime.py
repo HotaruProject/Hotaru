@@ -153,6 +153,7 @@ class Runtime:
     _premium_checked_at: float = 0.0
     _connection: ConnectionRecovery | None = None
     _connection_task: asyncio.Task[None] | None = None
+    _prewarm_task: asyncio.Task[None] | None = None
     _unload_tasks: dict[str, asyncio.Task[str | None]] = field(default_factory=dict, repr=False)
     _module_locks: dict[str, asyncio.Lock] = field(default_factory=dict, repr=False)
     _premium_lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False)
@@ -2345,6 +2346,33 @@ class Runtime:
                 pending.pop(mid, None)
         return tuple(ordered)
 
+    def _load_tiers(self, module_ids: Iterable[str]) -> list[list[str]]:
+        module_ids = tuple(module_ids)
+        edges: dict[str, tuple[str, ...]] = {}
+        for module_id in module_ids:
+            after: Sequence[str] = ()
+            if self.modules is not None:
+                try:
+                    manifest = self.modules.manifest(module_id)
+                    after = manifest.after if manifest is not None else ()
+                except Exception:
+                    after = ()
+            edges[module_id] = tuple(dep for dep in after if dep in module_ids)
+        tiers: list[list[str]] = []
+        placed: set[str] = set()
+        pending = dict(edges)
+        while pending:
+            ready = [mid for mid, deps in pending.items() if all(dep in placed for dep in deps)]
+            if not ready:
+                ready = list(pending)
+                if self.observatory is not None:
+                    self.observatory.emit("modules", "load_cycle", modules=",".join(sorted(pending)))
+            tiers.append(sorted(ready))
+            for mid in ready:
+                placed.add(mid)
+                pending.pop(mid, None)
+        return tiers
+
     async def restore_enabled_modules(self, *, timeout: float = 60.0) -> tuple[str, ...]:
         if timeout <= 0:
             raise ValueError("timeout must be positive")
@@ -2353,30 +2381,37 @@ class Runtime:
         state = self.state
         modules = self.modules
         restored: list[str] = []
-        for module_id in self._load_order(state.module_ids()):
+
+        async def _restore_one(module_id: str) -> str | None:
             namespace = state.namespace(module_id)
             if modules.get(module_id) is not None:
-                continue
+                return None
             source_path = namespace.get("sourcepath")
             if self._is_kernel_module(module_id) or (isinstance(source_path, str) and self._is_kernel_path(source_path)):
-                continue
+                return None
             consent = namespace.get("caps-consent")
             expected = self.relay_dir / f"{module_id}.hmod"
             if not isinstance(source_path, str) or Path(source_path).absolute() != expected.absolute() or expected.is_symlink():
                 state.delete_module(module_id)
-                continue
+                return None
             if not isinstance(consent, (str, list, dict)):
                 self._emit_restore_event("restore_skipped", module_id, "consent missing")
-                continue
+                return None
             try:
                 await asyncio.wait_for(self._restore_module(module_id, source_path), timeout)
+                return module_id
             except asyncio.TimeoutError:
                 self._emit_restore_event("restore_timeout", module_id, "activation deadline exceeded")
-                continue
+                return None
             except Exception as exc:
                 self._emit_restore_event("restore_error", module_id, f"{type(exc).__name__}: {exc}"[:240])
-                continue
-            restored.append(module_id)
+                return None
+
+        for tier in self._load_tiers(state.module_ids()):
+            results = await asyncio.gather(*[_restore_one(mid) for mid in tier], return_exceptions=True)
+            for r in results:
+                if isinstance(r, str):
+                    restored.append(r)
         return tuple(restored)
 
     async def _restore_module(self, module_id: str, source_path: str) -> None:
@@ -2572,6 +2607,23 @@ class Runtime:
             self.observatory.emit("forum", "transport_ready")
         await self._ensure_forum()
 
+    async def _prewarm_sandboxes(self) -> None:
+        await asyncio.sleep(0.5)
+        if self.sandbox is None:
+            return
+        module_ids = tuple(self.sandbox._module_defs.keys())
+        for module_id in module_ids:
+            if self.closed or self._relaunch:
+                break
+            try:
+                worker = self.sandbox._workers.get(module_id)
+                if worker is None or worker.poll() is not None:
+                    await self.sandbox._ensure_worker(module_id)
+                    await asyncio.sleep(0.05)
+            except Exception as exc:
+                if self.observatory is not None:
+                    self.observatory.emit("sandbox", "prewarm_error", module=module_id, error=type(exc).__name__, detail=str(exc)[:120])
+
     def _start_loop_guard(self) -> None:
         guard = LoopGuard(on_stall=self._loop_guard_stall)
         if not guard.start():
@@ -2607,18 +2659,20 @@ class Runtime:
             hmod_paths = sorted(self.constellations_dir.glob("*.hmod"))
             if hasattr(self.modules, "begin_boot"):
                 self.modules.begin_boot()
-            for hmod_path in hmod_paths:
+            async def _load_constellation(hmod_path: Path) -> None:
                 try:
                     candidate = self.modules.loader.load(hmod_path)
                 except Exception:
-                    continue
+                    return
                 if self.modules.get(candidate.manifest.module_id) is not None:
-                    continue
+                    return
                 try:
                     await self.activate_module(str(hmod_path))
                 except Exception as exc:
                     if self.observatory is not None:
                         self.observatory.emit("modules", "kernel_load_error", path=hmod_path.name, error=type(exc).__name__, detail=str(exc)[:240])
+
+            await asyncio.gather(*[_load_constellation(p) for p in hmod_paths], return_exceptions=True)
         await self.restore_enabled_modules()
         if kernel_task is not None:
             try:
@@ -2633,6 +2687,8 @@ class Runtime:
             await self.modules.end_boot()
         if self.supervisor is not None:
             self.supervisor.mark_ready(mt=self.app.mt is not None, bot=self.app.bot is not None)
+        if self.sandbox is not None:
+            self._prewarm_task = asyncio.create_task(self._prewarm_sandboxes(), name="hotaru:prewarm-sandboxes")
         if self.account_manager is not None and self.app.session.self_id is not None:
             profile = self.account_manager.find_by_user(self.app.session.self_id)
             if profile is not None:
@@ -2674,6 +2730,9 @@ class Runtime:
             if self._forum_setup_task is not None and not self._forum_setup_task.done():
                 self._forum_setup_task.cancel()
                 await asyncio.gather(self._forum_setup_task, return_exceptions=True)
+            if self._prewarm_task is not None and not self._prewarm_task.done():
+                self._prewarm_task.cancel()
+                await asyncio.gather(self._prewarm_task, return_exceptions=True)
             if self._loop_guard_task is not None and not self._loop_guard_task.done():
                 self._loop_guard_task.cancel()
                 await asyncio.gather(self._loop_guard_task, return_exceptions=True)

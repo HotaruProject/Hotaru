@@ -331,11 +331,13 @@ class ModuleManager:
         if sandbox is not None:
             self._sandbox_ref = sandbox
         if not is_kernel and sandbox is not None:
-            try:
-                await sandbox.ensure_module_deps(loaded.manifest.module_id, loaded.source, requires)
-            except Exception as exc:
-                import traceback; traceback.print_exc(); raise ActivationError(f"module dependencies failed: {loaded.manifest.module_id}") from exc
-            await sandbox.start_module(loaded.manifest.module_id, loaded.source, list(loaded.manifest.commands))
+            is_lazy = self._booting
+            if not is_lazy:
+                try:
+                    await sandbox.ensure_module_deps(loaded.manifest.module_id, loaded.source, requires)
+                except Exception as exc:
+                    import traceback; traceback.print_exc(); raise ActivationError(f"module dependencies failed: {loaded.manifest.module_id}") from exc
+            await sandbox.start_module(loaded.manifest.module_id, loaded.source, list(loaded.manifest.commands), requires=requires, lazy=is_lazy)
             for name in loaded.manifest.commands:
                 if not name.isidentifier():
                     import traceback; traceback.print_exc(); raise ActivationError(f"module command is invalid: {name}")
