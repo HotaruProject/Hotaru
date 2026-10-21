@@ -75,9 +75,11 @@ MT_BLOCKED = frozenset({
     "account.reportpeer",
     "messages.searchglobal",
     "users.setsecurevalueerrors",
+    "contacts.exportnopaidmessagestoken",
+    "contacts.importnopaidmessagestoken",
 })
 
-MT_BLOCKED_PREFIXES = ("payments.",)
+MT_BLOCKED_PREFIXES = ("payments.", "wallet.")
 
 
 def _entry_hits_blocked_peer(item: Any) -> bool:
