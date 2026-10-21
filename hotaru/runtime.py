@@ -154,6 +154,8 @@ class Runtime:
     _connection: ConnectionRecovery | None = None
     _connection_task: asyncio.Task[None] | None = None
     _prewarm_task: asyncio.Task[None] | None = None
+    _premium_task: asyncio.Task[None] | None = None
+    _kernel_finish_task: asyncio.Task[None] | None = None
     _unload_tasks: dict[str, asyncio.Task[str | None]] = field(default_factory=dict, repr=False)
     _module_locks: dict[str, asyncio.Lock] = field(default_factory=dict, repr=False)
     _premium_lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False)
@@ -2624,6 +2626,13 @@ class Runtime:
                 if self.observatory is not None:
                     self.observatory.emit("sandbox", "prewarm_error", module=module_id, error=type(exc).__name__, detail=str(exc)[:120])
 
+    async def _init_premium(self) -> None:
+        try:
+            prem = await self.is_premium(refresh=True)
+            set_premium(prem)
+        except Exception:
+            pass
+
     def _start_loop_guard(self) -> None:
         guard = LoopGuard(on_stall=self._loop_guard_stall)
         if not guard.start():
@@ -2643,7 +2652,9 @@ class Runtime:
         self._start_loop_guard()
         try:
             await self.authorize()
-            set_premium(await self.is_premium())
+            session_user = getattr(getattr(self.app, "session", None), "data", {}).get("user", {})
+            set_premium(bool(session_user.get("premium")))
+            self._premium_task = asyncio.create_task(self._init_premium(), name="hotaru:init-premium")
             if self.app.mt is not None:
                 self._connection = ConnectionRecovery(self.app.mt, self.observatory, "user")
                 self._connection_task = asyncio.create_task(self._connection.watch(), name="hotaru:user-health")
@@ -2674,21 +2685,26 @@ class Runtime:
 
             await asyncio.gather(*[_load_constellation(p) for p in hmod_paths], return_exceptions=True)
         await self.restore_enabled_modules()
-        if kernel_task is not None:
-            try:
-                await kernel_task
-            except BaseException:
-                await self.close()
-                raise
-        await self.restore_forms()
-        if self._form_gc_task is None or self._form_gc_task.done():
-            self._form_gc_task = asyncio.create_task(self._form_gc_loop(), name="hotaru:form-gc")
         if self.modules is not None and hasattr(self.modules, "end_boot"):
             await self.modules.end_boot()
         if self.supervisor is not None:
             self.supervisor.mark_ready(mt=self.app.mt is not None, bot=self.app.bot is not None)
         if self.sandbox is not None:
             self._prewarm_task = asyncio.create_task(self._prewarm_sandboxes(), name="hotaru:prewarm-sandboxes")
+        if kernel_task is not None:
+            async def _finish_kernel_setup() -> None:
+                try:
+                    await kernel_task
+                    await self.restore_forms()
+                    if self._form_gc_task is None or self._form_gc_task.done():
+                        self._form_gc_task = asyncio.create_task(self._form_gc_loop(), name="hotaru:form-gc")
+                except Exception as exc:
+                    self._inline_degraded(exc)
+            self._kernel_finish_task = asyncio.create_task(_finish_kernel_setup(), name="hotaru:finish-kernel-setup")
+        else:
+            await self.restore_forms()
+            if self._form_gc_task is None or self._form_gc_task.done():
+                self._form_gc_task = asyncio.create_task(self._form_gc_loop(), name="hotaru:form-gc")
         if self.account_manager is not None and self.app.session.self_id is not None:
             profile = self.account_manager.find_by_user(self.app.session.self_id)
             if profile is not None:
@@ -2733,6 +2749,12 @@ class Runtime:
             if self._prewarm_task is not None and not self._prewarm_task.done():
                 self._prewarm_task.cancel()
                 await asyncio.gather(self._prewarm_task, return_exceptions=True)
+            if self._premium_task is not None and not self._premium_task.done():
+                self._premium_task.cancel()
+                await asyncio.gather(self._premium_task, return_exceptions=True)
+            if self._kernel_finish_task is not None and not self._kernel_finish_task.done():
+                self._kernel_finish_task.cancel()
+                await asyncio.gather(self._kernel_finish_task, return_exceptions=True)
             if self._loop_guard_task is not None and not self._loop_guard_task.done():
                 self._loop_guard_task.cancel()
                 await asyncio.gather(self._loop_guard_task, return_exceptions=True)
