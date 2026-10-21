@@ -2708,9 +2708,14 @@ class Runtime:
         except BaseException:
             await self.close()
             raise
-        kernel_task: asyncio.Task[None] | None = None
         if self.inline is not None:
-            kernel_task = asyncio.create_task(self._kernel_setup(), name="hotaru:kernel-setup")
+            try:
+                await self._kernel_setup()
+            except Exception as exc:
+                self._inline_degraded(exc)
+        await self.restore_forms()
+        if self._form_gc_task is None or self._form_gc_task.done():
+            self._form_gc_task = asyncio.create_task(self._form_gc_loop(), name="hotaru:form-gc")
         if self.state is not None and self.kernel is not None:
             self.kernel.suspended = self.state.get_setting("suspended") == "1"
         if self.modules is not None and self.constellations_dir.is_dir():
@@ -2738,20 +2743,6 @@ class Runtime:
             self.supervisor.mark_ready(mt=self.app.mt is not None, bot=self.app.bot is not None)
         if self.sandbox is not None:
             self._prewarm_task = asyncio.create_task(self._prewarm_sandboxes(), name="hotaru:prewarm-sandboxes")
-        if kernel_task is not None:
-            async def _finish_kernel_setup() -> None:
-                try:
-                    await kernel_task
-                    await self.restore_forms()
-                    if self._form_gc_task is None or self._form_gc_task.done():
-                        self._form_gc_task = asyncio.create_task(self._form_gc_loop(), name="hotaru:form-gc")
-                except Exception as exc:
-                    self._inline_degraded(exc)
-            self._kernel_finish_task = asyncio.create_task(_finish_kernel_setup(), name="hotaru:finish-kernel-setup")
-        else:
-            await self.restore_forms()
-            if self._form_gc_task is None or self._form_gc_task.done():
-                self._form_gc_task = asyncio.create_task(self._form_gc_loop(), name="hotaru:form-gc")
         if self.account_manager is not None and self.app.session.self_id is not None:
             profile = self.account_manager.find_by_user(self.app.session.self_id)
             if profile is not None:

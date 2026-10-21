@@ -911,13 +911,22 @@ class ForumHelper:
             return None
 
     async def _apply_group(self, chat_id: int) -> None:
-        self._sync_ts = 0.0
-        self._invite_ts = 0.0
-        await self._invite_bot(chat_id)
-        await self._promote_bot(chat_id)
-        await self._hide_general(chat_id)
-        await self._sync_channel_to_bot(chat_id)
-        self._applied.add(chat_id)
+        try:
+            manager = getattr(self._runtime, "inline", None)
+            if manager is not None and hasattr(manager, "ready"):
+                try:
+                    await asyncio.wait_for(manager.ready.wait(), timeout=15.0)
+                except Exception:
+                    pass
+            self._sync_ts = 0.0
+            self._invite_ts = 0.0
+            await self._invite_bot(chat_id)
+            await self._promote_bot(chat_id)
+            await self._hide_general(chat_id)
+            await self._sync_channel_to_bot(chat_id)
+            self._applied.add(chat_id)
+        except Exception as exc:
+            self._emit("apply_failed", error=type(exc).__name__, detail=str(exc)[:160])
 
     async def _user_bot(self, bot_id: int, username: str) -> dict[str, Any] | None:
         entity = self._user_mt().entities.get(("user", bot_id))
