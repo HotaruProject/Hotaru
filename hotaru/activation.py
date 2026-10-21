@@ -195,13 +195,16 @@ class ModuleManager:
         if not loaded.manifest.fade:
             return
         try:
-            await sandbox.call(
-                loaded.manifest.module_id,
-                loaded.manifest.fade,
-                [],
-                {"source": "lifecycle"},
-                target=loaded.manifest.fade,
-                context=context,
+            await asyncio.wait_for(
+                sandbox.call(
+                    loaded.manifest.module_id,
+                    loaded.manifest.fade,
+                    [],
+                    {"source": "lifecycle"},
+                    target=loaded.manifest.fade,
+                    context=context,
+                ),
+                timeout=min(self.timeout, 2.0),
             )
         except Exception as exc:
             log.error("sandbox fade failed: %s", type(exc).__name__, exc_info=exc)
@@ -209,20 +212,26 @@ class ModuleManager:
     def begin_boot(self) -> None:
         self._booting = True
 
+    async def _safe_deferred_rise(self, active: ActiveModule, runner: Callable[[], Any]) -> None:
+        if self._active.get(active.loaded.manifest.module_id) is not active:
+            return
+        try:
+            await runner()
+        except Exception as exc:
+            log.error("deferred rise failed: %s", type(exc).__name__, exc_info=exc)
+            binding = self._bindings.get(active.loaded.manifest.module_id)
+            if binding is None or not binding[2]:
+                await self.deactivate(active.loaded.manifest.module_id)
+
     async def end_boot(self) -> None:
         self._booting = False
         pending = self._deferred_rise
         self._deferred_rise = []
-        for active, runner in pending:
-            if self._active.get(active.loaded.manifest.module_id) is not active:
-                continue
-            try:
-                await runner()
-            except Exception as exc:
-                log.error("deferred rise failed: %s", type(exc).__name__, exc_info=exc)
-                binding = self._bindings.get(active.loaded.manifest.module_id)
-                if binding is None or not binding[2]:
-                    await self.deactivate(active.loaded.manifest.module_id)
+        if pending:
+            await asyncio.gather(
+                *[self._safe_deferred_rise(active, runner) for active, runner in pending],
+                return_exceptions=True,
+            )
 
     def rehydrate_form(self, module_id: str, payload: dict[str, Any]) -> Any:
         callback = self._rehydrators.get(module_id)
@@ -453,7 +462,7 @@ class ModuleManager:
             if inspect.isawaitable(result):
                 task = asyncio.ensure_future(result)
                 task.add_done_callback(lambda done: done.cancelled() or done.exception())
-                done, _ = await asyncio.wait({task}, timeout=self.timeout)
+                done, _ = await asyncio.wait({task}, timeout=min(self.timeout, 2.5))
                 if not done:
                     task.cancel()
                     raise asyncio.TimeoutError("module cleanup timed out")

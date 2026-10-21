@@ -2020,7 +2020,7 @@ class Runtime:
 
     def _mark_caps_consent(self, module_id: str, capabilities: list[str], digest: str) -> None:
         if self.state is not None:
-            approved = self._approved_caps(module_id, digest) | set(capabilities)
+            approved = self._approved_caps(module_id) | set(capabilities)
             self.state.namespace(module_id).set("caps-consent", {"digest": digest, "capabilities": sorted(approved)})
 
     async def _render_caps_screen(self, module_id: str, manifest: Any, source: str, chat_id: int | str | None, message_id: int) -> tuple[str, list[list[dict[str, str]]]] | str:
@@ -2384,10 +2384,12 @@ class Runtime:
         loaded = self.modules.loader.load(source_path)
         if loaded.manifest.module_id != module_id:
             raise ValueError("module id mismatch")
-        if not self._caps_consented(module_id, loaded.manifest, loaded.digest):
+        if not set(loaded.manifest.capabilities).issubset(self._approved_caps(module_id)):
             raise ValueError("capabilities changed; !trust required")
         await self.activate_module(source_path, backup=False)
         self._mark_caps_consent(module_id, list(loaded.manifest.capabilities), loaded.digest)
+        if self.state is not None:
+            self.state.namespace(module_id).set("moduleversion", loaded.manifest.version)
 
     def _emit_restore_event(self, event: str, module_id: str, detail: str) -> None:
         if self.observatory is not None:
@@ -2596,11 +2598,9 @@ class Runtime:
         except BaseException:
             await self.close()
             raise
-        try:
-            await self._kernel_setup()
-        except BaseException:
-            await self.close()
-            raise
+        kernel_task: asyncio.Task[None] | None = None
+        if self.inline is not None:
+            kernel_task = asyncio.create_task(self._kernel_setup(), name="hotaru:kernel-setup")
         if self.state is not None and self.kernel is not None:
             self.kernel.suspended = self.state.get_setting("suspended") == "1"
         if self.modules is not None and self.constellations_dir.is_dir():
@@ -2620,6 +2620,12 @@ class Runtime:
                     if self.observatory is not None:
                         self.observatory.emit("modules", "kernel_load_error", path=hmod_path.name, error=type(exc).__name__, detail=str(exc)[:240])
         await self.restore_enabled_modules()
+        if kernel_task is not None:
+            try:
+                await kernel_task
+            except BaseException:
+                await self.close()
+                raise
         await self.restore_forms()
         if self._form_gc_task is None or self._form_gc_task.done():
             self._form_gc_task = asyncio.create_task(self._form_gc_loop(), name="hotaru:form-gc")
@@ -2684,8 +2690,10 @@ class Runtime:
             if self.kernel is not None:
                 await self.kernel.cancel_all()
             if self.modules is not None:
-                for active in tuple(self.modules.items()):
-                    await self.modules.deactivate(active.loaded.manifest.module_id)
+                await asyncio.gather(
+                    *[self.modules.deactivate(active.loaded.manifest.module_id) for active in tuple(self.modules.items())],
+                    return_exceptions=True,
+                )
             if self.tasks is not None:
                 await self.tasks.close()
             if self.sandbox is not None:
