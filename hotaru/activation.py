@@ -337,7 +337,20 @@ class ModuleManager:
                     await sandbox.ensure_module_deps(loaded.manifest.module_id, loaded.source, requires)
                 except Exception as exc:
                     import traceback; traceback.print_exc(); raise ActivationError(f"module dependencies failed: {loaded.manifest.module_id}") from exc
-            await sandbox.start_module(loaded.manifest.module_id, loaded.source, list(loaded.manifest.commands), requires=requires, lazy=is_lazy)
+            is_persistent = bool(
+                loaded.manifest.tasks
+                or loaded.manifest.watchers
+                or loaded.manifest.rise
+                or loaded.manifest.fade
+            )
+            await sandbox.start_module(
+                loaded.manifest.module_id,
+                loaded.source,
+                list(loaded.manifest.commands),
+                requires=requires,
+                lazy=is_lazy,
+                persistent=is_persistent,
+            )
             for name in loaded.manifest.commands:
                 if not name.isidentifier():
                     import traceback; traceback.print_exc(); raise ActivationError(f"module command is invalid: {name}")

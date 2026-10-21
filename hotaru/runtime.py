@@ -53,7 +53,8 @@ from .state import StateStore
 from .supervisor import ConnectionRecovery, ConnectionSupervisor, LoopGuard
 from .tasks import TaskSupervisor
 
-IDLE_WORKER_SECONDS = 1800.0
+IDLE_WORKER_SECONDS = float(os.environ.get("HOTARU_IDLE_WORKER_SECONDS", "120.0"))
+MAX_ACTIVE_WORKERS = int(os.environ.get("HOTARU_MAX_WORKERS", "12"))
 EMOJI_PAD = "\u200b"
 
 
@@ -717,9 +718,15 @@ class Runtime:
                 self.purge_forms()
                 sandbox = getattr(self, "sandbox", None)
                 if sandbox is not None:
-                    for module_id in sandbox.reap_idle(IDLE_WORKER_SECONDS):
+                    for module_id in sandbox.reap_idle(IDLE_WORKER_SECONDS, max_active=MAX_ACTIVE_WORKERS):
                         if self.observatory is not None:
                             self.observatory.emit("sandbox", "worker_reaped", module=module_id)
+                try:
+                    import ctypes as _ctypes, gc as _gc
+                    _gc.collect()
+                    _ctypes.CDLL(None).malloc_trim(0)
+                except Exception:
+                    pass
                 set_premium(await self.is_premium())
             except asyncio.CancelledError:
                 return
@@ -2613,10 +2620,13 @@ class Runtime:
         await asyncio.sleep(0.5)
         if self.sandbox is None:
             return
+        prewarm_all = bool(os.environ.get("HOTARU_PREWARM_ALL"))
         module_ids = tuple(self.sandbox._module_defs.keys())
         for module_id in module_ids:
             if self.closed or self._relaunch:
                 break
+            if not prewarm_all and not self.sandbox.is_worker_protected(module_id):
+                continue
             try:
                 worker = self.sandbox._workers.get(module_id)
                 if worker is None or worker.poll() is not None:
