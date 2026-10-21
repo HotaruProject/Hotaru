@@ -517,7 +517,7 @@ class MessageOperations:
 
 
     async def _rpc(self, method: str, *, _media_response: bool = False, **kwargs: Any) -> Any:
-        if self._g("src", "source", default="mt") not in {"mt", "mtproto"}:
+        if self._g("src", default="mt") not in {"mt", "mtproto"}:
             raise ValueError("message operations require an MTProto message")
         sender = self.ctx._ctx_media_rpc if _media_response else getattr(self.ctx, "_ctx_call", self.ctx.mt)
         result = await sender(method, **kwargs)
