@@ -71,6 +71,37 @@ class CallbackContext:
         alert = kwargs.pop("alert", False)
         return await self._callback.answer(text, alert=alert, **kwargs)
 
+    def get_memory(self) -> Any:
+        runtime = getattr(self, "_hotaru_runtime", None)
+        usage = 0
+        if runtime is not None and hasattr(runtime, "get_memory_usage"):
+            usage = runtime.get_memory_usage()
+        from .response import Memory
+        return Memory(usage)
+
+    def get_ram(self) -> Any:
+        return self.get_memory()
+
+    @property
+    def memory(self) -> Any:
+        return self.get_memory()
+
+    @property
+    def ram(self) -> Any:
+        return self.get_memory()
+
+    def get_prefix(self) -> Any:
+        runtime = getattr(self, "_hotaru_runtime", None)
+        prefix = "."
+        if runtime is not None and hasattr(runtime, "config"):
+            prefix = getattr(runtime.config, "prefix", ".")
+        from .response import Prefix
+        return Prefix(prefix)
+
+    @property
+    def prefix(self) -> Any:
+        return self.get_prefix()
+
     @staticmethod
     async def _edit_inline(app: Any, id_field: dict[str, Any], message: str, data: dict[str, Any]) -> Any:
         from relay.firewall import trusted_scope
@@ -326,7 +357,6 @@ class CallbackStore:
 
     @property
     def connection(self) -> Any:
-        """The live connection: relocate() swaps it on the store, so a captured one would go stale."""
         return self._store.connection if self._store is not None else self._connection
 
     def _init_db(self) -> None:
@@ -691,7 +721,7 @@ class CallbackRouter:
                                 context_factory = getattr(self.runtime, "context_factory", None)
                                 mod_ctx = context_factory.create(module_id, callback) if context_factory is not None else None
                                 def make_cell(val: Any) -> Any:
-                                    return (lambda: val).__closure__[0]  # type: ignore
+                                    return (lambda: val).__closure__[0]
                                 cells: list[Any] = []
                                 payload_val = value.get("payload")
                                 for var in getattr(found_code, "co_freevars", ()):

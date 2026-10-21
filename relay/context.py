@@ -763,7 +763,71 @@ CTX_OPERATIONS: dict[str, Callable[..., Awaitable[Any]]] = {
 }
 
 
+class Memory(int):
+    @property
+    def bytes(self) -> int:
+        return int(self)
+
+    @property
+    def kb(self) -> float:
+        return round(self / 1024, 2)
+
+    @property
+    def mb(self) -> float:
+        return round(self / (1024 * 1024), 2)
+
+    @property
+    def gb(self) -> float:
+        return round(self / (1024 * 1024 * 1024), 2)
+
+    def format(self) -> str:
+        if self >= 1024 * 1024 * 1024:
+            return f"{self.gb:.2f} GB"
+        if self >= 1024 * 1024:
+            return f"{self.mb:.1f} MB"
+        if self >= 1024:
+            return f"{self.kb:.1f} KB"
+        return f"{self} B"
+
+    def __call__(self) -> Memory:
+        return self
+
+
+class Prefix(str):
+    def __call__(self) -> str:
+        return str(self)
+
+
 class ContextOperations:
+    def get_memory(self) -> Memory:
+        runtime = getattr(self, "runtime", getattr(self, "_hotaru_runtime", None))
+        usage = 0
+        if runtime is not None and hasattr(runtime, "get_memory_usage"):
+            usage = runtime.get_memory_usage()
+        return Memory(usage)
+
+    def get_ram(self) -> Memory:
+        return self.get_memory()
+
+    @property
+    def memory(self) -> Memory:
+        return self.get_memory()
+
+    @property
+    def ram(self) -> Memory:
+        return self.get_memory()
+
+    def get_prefix(self) -> Prefix:
+        runtime = getattr(self, "runtime", getattr(self, "_hotaru_runtime", None))
+        prefix = "."
+        if runtime is not None and hasattr(runtime, "config"):
+            prefix = getattr(runtime.config, "prefix", ".")
+        return Prefix(prefix)
+
+    @property
+    def prefix(self) -> Prefix:
+        return self.get_prefix()
+
     @property
     def mt(self) -> MTContext:
         return MTContext(self)
@@ -818,17 +882,12 @@ class ContextOperations:
     async def net(self, url: str, *, method: str | None = None, headers: dict[str, str] | None = None,
                   params: Any = None, data: Any = None, json: Any = None, body: Any = None,
                   timeout: float = 10.0, max_bytes: int | None = None, binary: bool = False) -> dict[str, Any]:
-        """One outbound request to a public host. Any HTTP method, headers, query params, JSON or raw body.
-
-        Returns status, response headers, the final url, the body (base64 when binary=True) and a size/truncated flag.
-        """
         payload = {"url": url, "method": method, "headers": headers, "params": params, "timeout": timeout,
                    "data": data if data is not None else json, "body": body, "max_bytes": max_bytes, "binary": binary}
         return cast("dict[str, Any]", await self.cap("net", {key: value for key, value in payload.items() if value is not None}))
 
     async def stream(self, url: str, *, headers: dict[str, str] | None = None, timeout: float | None = None,
                      max_bytes: int | None = None) -> "NetStream":
-        """Open a live connection: ws, wss, tcp, tls or udp. Iterate the returned stream for messages."""
         payload: dict[str, Any] = {"op": "start", "url": url, "headers": headers}
         if timeout is not None:
             payload["timeout"] = timeout
@@ -843,10 +902,6 @@ class ContextOperations:
 
 
 class NetStream:
-    """Live connection opened through the net capability.
-
-    Events look like {"event": "open"|"message"|"close", "data": <str>, "binary": "1" when base64}.
-    """
 
     def __init__(self, context: Any, key: str) -> None:
         self._context = context
@@ -864,7 +919,6 @@ class NetStream:
         await self._op({"op": "send", "data": data, "binary": binary})
 
     async def recv(self, timeout: float = 20.0) -> dict[str, Any] | None:
-        """Next event, or None once the connection ended."""
         if self._pending:
             return await self._finish(self._pending.pop(0))
         while True:

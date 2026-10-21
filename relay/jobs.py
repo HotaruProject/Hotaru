@@ -64,7 +64,6 @@ class Job:
             self.error = type(exc).__name__
         finally:
             self.done = True
-            # wake a long-polling reader so a finished stream is noticed at once
             self.emit("close", "")
 
     def send(self, data: Any, binary: bool = False) -> None:

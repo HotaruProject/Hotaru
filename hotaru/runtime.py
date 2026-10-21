@@ -302,7 +302,6 @@ class Runtime:
         self.event_router.attach_aux(self.app)
         return self.app
     def request_restart(self) -> None:
-        """Ask for a relaunch: re-exec can only happen in the main process, once it has shut down."""
         self._relaunch = True
 
     async def _on_callback(self, callback: Any) -> object | None:
@@ -2635,6 +2634,44 @@ class Runtime:
             except Exception as exc:
                 if self.observatory is not None:
                     self.observatory.emit("sandbox", "prewarm_error", module=module_id, error=type(exc).__name__, detail=str(exc)[:120])
+
+    def get_memory_usage(self) -> int:
+        pid = os.getpid()
+        try:
+            with open(f"/proc/{pid}/cgroup") as f:
+                cg = f.read().strip().split(":")[-1]
+            cg_path = f"/sys/fs/cgroup{cg}/memory.current"
+            if os.path.exists(cg_path):
+                with open(cg_path) as f:
+                    val = int(f.read().strip())
+                    if val > 0:
+                        return val
+        except Exception:
+            pass
+        total = 0
+        try:
+            pids = [pid]
+            seen = set()
+            for p in pids:
+                if p in seen:
+                    continue
+                seen.add(p)
+                try:
+                    with open(f"/proc/{p}/status") as f:
+                        for line in f:
+                            if line.startswith("VmRSS:"):
+                                total += int(line.split()[1]) * 1024
+                                break
+                    child_file = f"/proc/{p}/task/{p}/children"
+                    if os.path.exists(child_file):
+                        with open(child_file) as f:
+                            for c in f.read().split():
+                                pids.append(int(c))
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        return total
 
     async def _init_premium(self) -> None:
         try:

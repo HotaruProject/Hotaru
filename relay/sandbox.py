@@ -126,14 +126,14 @@ def _fail(exc):
     }
 
 
-def _ask(payload):
+def _ask(payload, timeout=None):
     cid = next(_reply_ids)
     payload["cid"] = cid
     payload["rid"] = getattr(_LOCAL, "rid", 0)
     waiter = _reply_wait[cid] = queue.Queue(maxsize=1)
     try:
         _host_emit(payload)
-        return waiter.get()
+        return waiter.get(timeout=timeout)
     finally:
         _reply_wait.pop(cid, None)
 
@@ -157,7 +157,6 @@ _cpu_lock = threading.Lock()
 
 
 def _thread_cpu(tid):
-    """utime+stime of one worker thread, straight from /proc."""
     try:
         with open("/proc/self/task/%d/stat" % tid, "rb") as handle:
             data = handle.read()
@@ -168,14 +167,6 @@ def _thread_cpu(tid):
 
 
 def _cpu_watch_loop():
-    """Report a request that burns a lot of CPU without returning, without
-    touching it: a module may legitimately compute for minutes in one command,
-    and the heartbeat already proves the worker is alive. Nothing here kills the
-    worker or fails the request; the operator stays in control via `kill`/reload.
-
-    ponytail: this only sees CPU; a request parked in a blocking syscall forever
-    still holds its slot.
-    """
     while True:
         time.sleep(1.0)
         _cpu_scan_once()
@@ -375,8 +366,8 @@ def apply_policy(net_blocked):
         pass
 
 
-def _cap_call(name, payload):
-    resp = _ask({"cap": name, "payload": payload})
+def _cap_call(name, payload, timeout=None):
+    resp = _ask({"cap": name, "payload": payload}, timeout=timeout)
     if not resp.get("ok"):
         error = {"PermissionError": PermissionError, "OSError": OSError, "TimeoutError": TimeoutError, "ConnectionError": ConnectionError, "ValueError": ValueError, "TypeError": TypeError}.get(resp.get("error_type", "PermissionError"), RuntimeError)
         raise error(resp.get("error", "capability failed"))
@@ -473,7 +464,73 @@ def _cb_respond_call(data):
     return result.get("result")
 
 
-class SandboxCallbackProxy:
+class Memory(int):
+    @property
+    def bytes(self):
+        return int(self)
+
+    @property
+    def kb(self):
+        return round(self / 1024, 2)
+
+    @property
+    def mb(self):
+        return round(self / (1024 * 1024), 2)
+
+    @property
+    def gb(self):
+        return round(self / (1024 * 1024 * 1024), 2)
+
+    def format(self):
+        if self >= 1024 * 1024 * 1024:
+            return f"{self.gb:.2f} GB"
+        if self >= 1024 * 1024:
+            return f"{self.mb:.1f} MB"
+        if self >= 1024:
+            return f"{self.kb:.1f} KB"
+        return f"{self} B"
+
+    def __call__(self):
+        return self
+
+
+class Prefix(str):
+    def __call__(self):
+        return str(self)
+
+
+class ContextOperations:
+    def get_memory(self):
+        try:
+            val = _cap_call("$sys", {"op": "memory"}, timeout=0.5)
+            if isinstance(val, (int, float)):
+                return Memory(int(val))
+        except Exception:
+            pass
+        data = getattr(self, "_msg", getattr(self, "_data", {}))
+        return Memory(int(data.get("memory") or 0))
+
+    def get_ram(self):
+        return self.get_memory()
+
+    @property
+    def memory(self):
+        return self.get_memory()
+
+    @property
+    def ram(self):
+        return self.get_memory()
+
+    def get_prefix(self):
+        data = getattr(self, "_msg", getattr(self, "_data", {}))
+        return Prefix(str(data.get("prefix") or "."))
+
+    @property
+    def prefix(self):
+        return self.get_prefix()
+
+
+class SandboxCallbackProxy(ContextOperations):
     def form_allowed(self, key):
         return bool(_respond_call({"form": key, "op": "allowed"}))
     def __init__(self, cb_data):
@@ -525,10 +582,6 @@ class SandboxAttachment:
 
 _template_providers = {}
 _template_resolving = set()
-
-
-class ContextOperations:
-    pass
 
 
 class SandboxContext(ContextOperations):
@@ -1489,12 +1542,6 @@ class SandboxError(RuntimeError):
 
 
 def apply_tree_pids_cap(limit: int = 512) -> str:
-    """Cap the process count of the whole bot tree via cgroup v2.
-
-    Module code runs as root, where RLIMIT_NPROC is not enforced, so a fork bomb
-    in a snippet would otherwise take the machine down with the userbot on it.
-    Degrades to a status string when cgroups are not delegated.
-    """
     try:
         with open("/proc/self/cgroup", "r", encoding="utf-8") as handle:
             relative = handle.read().strip().splitlines()[-1].split("::", 1)[-1]
@@ -1866,6 +1913,7 @@ class ModuleSandbox:
         payload.setdefault("language", context.i18n.language)
         payload["from_id"] = getattr(source, "from_id", None)
         payload["prefix"] = self.runtime.config.prefix
+        payload["memory"] = getattr(self.runtime, "get_memory_usage", lambda: 0)()
         rid = self._next_rid()
         self._respond_contexts[(module_id, rid)] = context
         if source is not None:
@@ -2048,9 +2096,17 @@ class ModuleSandbox:
             payload = cast('dict[str, Any]', payload_value) if isinstance(payload_value, dict) else {}
             rid = message.get("rid")
             reply = {"kind": "cap_result", "cid": message.get("cid"), "ok": False, "error": "capability host is unavailable"}
-            if cap_host is not None or name == "$template":
+            if cap_host is not None or name in ("$template", "$sys"):
                 try:
-                    if name == "$template":
+                    if name == "$sys":
+                        op = payload.get("op")
+                        if op in ("memory", "ram"):
+                            result = getattr(self.runtime, "get_memory_usage", lambda: 0)()
+                        elif op == "prefix":
+                            result = getattr(self.runtime.config, "prefix", ".")
+                        else:
+                            result = None
+                    elif name == "$template":
                         context = self._respond_contexts.get((module_id, rid))
                         if context is None:
                             context = self.runtime.context_factory.create(module_id, None)
@@ -2290,6 +2346,8 @@ class ModuleSandbox:
                     "from_id": getattr(callback, "from_id", None),
                     "inline_message_id": getattr(callback, "inline_message_id", None),
                     "mt_layer": _mt_layer_payload(self.runtime),
+                    "prefix": getattr(self.runtime.config, "prefix", "."),
+                    "memory": getattr(self.runtime, "get_memory_usage", lambda: 0)(),
                 }
             }
             try:
@@ -2434,13 +2492,11 @@ class ModuleSandbox:
         now = time.monotonic()
         reaped: list[str] = []
 
-        # 1. Clean up any dead processes
         for module_id, process in list(self._workers.items()):
             if process.poll() is not None:
                 if self.hibernate_worker(module_id):
                     reaped.append(module_id)
 
-        # 2. Reap idle unprotected workers past idle_seconds
         for module_id, process in list(self._workers.items()):
             if self.is_worker_protected(module_id):
                 continue
@@ -2451,7 +2507,6 @@ class ModuleSandbox:
             if self.hibernate_worker(module_id):
                 reaped.append(module_id)
 
-        # 3. LRU reap down to max_active if needed
         unprotected: list[tuple[float, str]] = []
         for module_id in list(self._workers):
             if self.is_worker_protected(module_id):
