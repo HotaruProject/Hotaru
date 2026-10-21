@@ -1292,6 +1292,13 @@ def main():
             _busy(-1)
             with _cpu_lock:
                 _active_cpu.pop(_LOCAL.rid, None)
+            try:
+                import gc as _gc
+                _gc.collect()
+                import ctypes as _ctypes
+                _ctypes.CDLL(None).malloc_trim(0)
+            except Exception:
+                pass
         out["rid"] = _LOCAL.rid
         try:
             _host_emit(out)
@@ -1530,6 +1537,7 @@ class ModuleSandbox:
         self.spawn_timeout = spawn_timeout
         self.idle_timeout = idle_timeout
         self._workers: dict[str, subprocess.Popen[bytes]] = {}
+        self._persistent_modules: set[str] = set()
         self._booted: dict[str, bool] = {}
         self._last_use: dict[str, float] = {}
         self._activity: dict[str, float] = {}
@@ -1828,9 +1836,13 @@ class ModuleSandbox:
             self._module_deps.pop(module_id, None)
         return path
 
-    async def start_module(self, module_id: str, source: str, commands: list[str], *, requires: Sequence[str] = (), lazy: bool = False) -> bool:
+    async def start_module(self, module_id: str, source: str, commands: list[str], *, requires: Sequence[str] = (), lazy: bool = False, persistent: bool = False) -> bool:
         self._module_defs[module_id] = (source, commands)
         self._module_requires[module_id] = tuple(requires)
+        if persistent:
+            self._persistent_modules.add(module_id)
+        else:
+            self._persistent_modules.discard(module_id)
         if lazy:
             return True
         current = self._workers.get(module_id)
@@ -2319,28 +2331,145 @@ class ModuleSandbox:
         self._ensure_locks.pop(module_id, None)
         self._op_pending.pop(module_id, None)
         self._workers.pop(module_id, None)
+        self._persistent_modules.discard(module_id)
         self._booted.pop(module_id, None)
         self._last_use.pop(module_id, None)
         self._activity.pop(module_id, None)
         return process is not None
 
-    def reap_idle(self, idle_seconds: float) -> list[str]:
+    def is_worker_protected(self, module_id: str) -> bool:
+        if module_id in self._persistent_modules:
+            return True
+        if bool(self._waiters.get(module_id)):
+            return True
+        if bool(self._pending_caps.get(module_id)):
+            return True
+        if bool(self._op_pending.get(module_id)):
+            return True
+        if bool(self._respond_pending.get(module_id)):
+            return True
+        if bool(self._cb_respond_pending.get(module_id)):
+            return True
+        if any(m == module_id for (m, _) in self._active_callback):
+            return True
+        if any(m == module_id for (m, _) in self._cb_waiters):
+            return True
+
+        runtime = getattr(self, "runtime", None)
+        if runtime is not None:
+            modules_ctrl = getattr(runtime, "modules", None)
+            if modules_ctrl is not None:
+                tasks_supervisor = getattr(modules_ctrl, "tasks", None)
+                if tasks_supervisor is not None and tasks_supervisor.active(module_id) > 0:
+                    return True
+                active_map = getattr(modules_ctrl, "_active", {})
+                active = active_map.get(module_id)
+                if active is not None:
+                    manifest = getattr(active.loaded, "manifest", None)
+                    if manifest is not None:
+                        if getattr(manifest, "tasks", None):
+                            return True
+                        if getattr(manifest, "watchers", None):
+                            return True
+                        if getattr(manifest, "rise", None):
+                            return True
+                        if getattr(manifest, "fade", None):
+                            return True
+            kernel = getattr(runtime, "kernel", None)
+            if kernel is not None:
+                registry = getattr(kernel, "registry", None)
+                if registry is not None and hasattr(registry, "get_watchers"):
+                    for w in registry.get_watchers():
+                        if getattr(w, "module_id", None) == module_id:
+                            return True
+        return False
+
+    def hibernate_worker(self, module_id: str) -> bool:
+        if self.is_worker_protected(module_id):
+            return False
+
+        process = self._workers.pop(module_id, None)
+        if process is None:
+            return False
+
+        pump = self._pumps.pop(module_id, None)
+        if pump is not None:
+            pump.cancel()
+        self._readers.pop(module_id, None)
+        self._queues.pop(module_id, None)
+        self._booted.pop(module_id, None)
+        self._last_use.pop(module_id, None)
+        self._activity.pop(module_id, None)
+        self._pending_caps.pop(module_id, None)
+        self._op_pending.pop(module_id, None)
+        self._respond_pending.pop(module_id, None)
+        self._cb_respond_pending.pop(module_id, None)
+
+        def _reap_proc(p: subprocess.Popen[bytes]) -> None:
+            if p.poll() is None:
+                try:
+                    p.terminate()
+                    p.wait(timeout=1.0)
+                except Exception:
+                    try:
+                        p.kill()
+                        p.wait(timeout=1.0)
+                    except Exception:
+                        pass
+            else:
+                try:
+                    p.wait(timeout=0.1)
+                except Exception:
+                    pass
+
+        try:
+            loop = asyncio.get_running_loop()
+            loop.run_in_executor(None, _reap_proc, process)
+        except RuntimeError:
+            _reap_proc(process)
+
+        return True
+
+    def reap_idle(self, idle_seconds: float, *, max_active: int = 12) -> list[str]:
         now = time.monotonic()
         reaped: list[str] = []
+
+        # 1. Clean up any dead processes
         for module_id, process in list(self._workers.items()):
             if process.poll() is not None:
+                if self.hibernate_worker(module_id):
+                    reaped.append(module_id)
+
+        # 2. Reap idle unprotected workers past idle_seconds
+        for module_id, process in list(self._workers.items()):
+            if self.is_worker_protected(module_id):
                 continue
             if now - self._last_use.get(module_id, now) < idle_seconds:
                 continue
-            if self._waiters.get(module_id):
+            if now - self._activity.get(module_id, now) < idle_seconds:
                 continue
-            try:
-                process.kill()
-            except Exception:
+            if self.hibernate_worker(module_id):
+                reaped.append(module_id)
+
+        # 3. LRU reap down to max_active if needed
+        unprotected: list[tuple[float, str]] = []
+        for module_id in list(self._workers):
+            if self.is_worker_protected(module_id):
                 continue
-            reaped.append(module_id)
+            last = max(self._last_use.get(module_id, 0.0), self._activity.get(module_id, 0.0))
+            if now - last >= 15.0:
+                unprotected.append((last, module_id))
+
+        if len(self._workers) > max_active and unprotected:
+            unprotected.sort()
+            to_evict = len(self._workers) - max_active
+            for _, module_id in unprotected[:to_evict]:
+                if self.hibernate_worker(module_id):
+                    reaped.append(module_id)
+
         return reaped
 
     def stop_all(self) -> None:
-        for module_id in list(self._workers):
+        all_ids = set(self._workers) | set(self._module_defs)
+        for module_id in all_ids:
             self.stop_module(module_id)
