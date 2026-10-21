@@ -647,7 +647,6 @@ def _http_text(url: str, *, timeout: float, accept: str = "application/json") ->
         return None
     headers = {"User-Agent": _HTTP_AGENT, "Accept": accept, "Accept-Encoding": "gzip"}
     try:
-        # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
         with urlopen(Request(url, headers=headers), timeout=timeout) as response:
             raw = response.read()
             if response.headers.get("Content-Encoding") == "gzip":
@@ -689,7 +688,6 @@ def flat_name(value: str) -> str:
 
 
 def import_candidates(name: str) -> list[str]:
-    """Local guesses for a dotted import path: the path itself plus its parts with py/python affixes."""
     parts = [part for part in name.split(".") if part]
     candidates: list[str] = []
     if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_.]*", name):
@@ -701,7 +699,6 @@ def import_candidates(name: str) -> list[str]:
 
 
 def _pypi_index(root: Path, *, timeout: float = _INDEX_FETCH_TIMEOUT) -> Path | None:
-    """Cached newline-separated snapshot of every distribution name on PyPI."""
     path = root / _INDEX_NAME
     try:
         if path.stat().st_mtime > time.time() - _INDEX_MAX_AGE:
@@ -734,7 +731,6 @@ def _pypi_index(root: Path, *, timeout: float = _INDEX_FETCH_TIMEOUT) -> Path | 
 
 
 def namespace_candidates(root: Path, name: str, *, limit: int = _INDEX_CANDIDATES) -> list[str]:
-    """Distribution names from the whole PyPI namespace that contain the import name, best first."""
     key = flat_name(name)
     path = _pypi_index(root) if key else None
     if path is None:
@@ -804,11 +800,6 @@ def _probe_distribution(root: Path, candidate: str, verify: Sequence[str]) -> st
 
 
 def _resolve_distribution(root: Path, path: str) -> str | None:
-    """Import path -> distribution, confirmed by importing the module from the installed candidate.
-
-    ponytail: the namespace list is ranked and capped; each candidate costs one PyPI JSON check
-    (which skips squatter names with no releases) and installs only when it actually has files.
-    """
     for candidate in import_candidates(path):
         found = _probe_distribution(root, candidate, [path])
         if found:
@@ -821,7 +812,6 @@ def _resolve_distribution(root: Path, path: str) -> str | None:
 
 
 def _provided_modules(dist_info: Path) -> set[str]:
-    """Top-level modules a distribution provides, from top_level.txt and its RECORD."""
     modules: set[str] = set()
     top_level = dist_info / "top_level.txt"
     try:
@@ -844,7 +834,6 @@ def _provided_modules(dist_info: Path) -> set[str]:
 
 
 def _learn_distributions(target: Path, cache: dict[str, str]) -> None:
-    """Remember which modules every installed distribution provides, so the next lookup is free."""
     for dist_info in sorted(target.glob("*.dist-info")):
         project = ""
         try:
@@ -862,7 +851,6 @@ def _learn_distributions(target: Path, cache: dict[str, str]) -> None:
 
 
 def environment_distributions() -> dict[str, str]:
-    """Module -> distribution for everything already installed in this interpreter."""
     mapping: dict[str, str] = {}
     try:
         packages = importlib.metadata.packages_distributions()

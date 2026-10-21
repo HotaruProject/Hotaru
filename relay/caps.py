@@ -760,7 +760,6 @@ class CapabilityHost:
             try:
                 response = opener.open(request, timeout=timeout or None)
             except urllib.error.HTTPError as exc:
-                # 4xx/5xx are normal answers: the caller wants the status and the body
                 response = exc
             try:
                 raw = cast(bytes, response.read(limit + 1))

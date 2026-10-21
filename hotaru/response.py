@@ -446,6 +446,41 @@ class ModuleMessage:
         return await self._source.download(destination)
 
 
+class Memory(int):
+    @property
+    def bytes(self) -> int:
+        return int(self)
+
+    @property
+    def kb(self) -> float:
+        return round(self / 1024, 2)
+
+    @property
+    def mb(self) -> float:
+        return round(self / (1024 * 1024), 2)
+
+    @property
+    def gb(self) -> float:
+        return round(self / (1024 * 1024 * 1024), 2)
+
+    def format(self) -> str:
+        if self >= 1024 * 1024 * 1024:
+            return f"{self.gb:.2f} GB"
+        if self >= 1024 * 1024:
+            return f"{self.mb:.1f} MB"
+        if self >= 1024:
+            return f"{self.kb:.1f} KB"
+        return f"{self} B"
+
+    def __call__(self) -> Memory:
+        return self
+
+
+class Prefix(str):
+    def __call__(self) -> str:
+        return str(self)
+
+
 @dataclass
 class ModuleContext(ContextOperations):
     _ctx_translate_text = staticmethod(_translate_text)
@@ -463,6 +498,33 @@ class ModuleContext(ContextOperations):
     _response_source: Any = None
     _response_form: Any = None
     _response_lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False)
+
+    def get_memory(self) -> Memory:
+        usage = 0
+        if self.runtime is not None and hasattr(self.runtime, "get_memory_usage"):
+            usage = self.runtime.get_memory_usage()
+        return Memory(usage)
+
+    def get_ram(self) -> Memory:
+        return self.get_memory()
+
+    @property
+    def memory(self) -> Memory:
+        return self.get_memory()
+
+    @property
+    def ram(self) -> Memory:
+        return self.get_memory()
+
+    def get_prefix(self) -> Prefix:
+        prefix = "."
+        if self.runtime is not None and hasattr(self.runtime, "config"):
+            prefix = getattr(self.runtime.config, "prefix", ".")
+        return Prefix(prefix)
+
+    @property
+    def prefix(self) -> Prefix:
+        return self.get_prefix()
 
     def __repr__(self) -> str:
         return f"ModuleContext({self.module_id!r})"
@@ -897,8 +959,6 @@ class ModuleContext(ContextOperations):
             else:
                 kwargs.setdefault("media", content)
         buttons = kwargs.pop("buttons", None)
-        # a standing card is only reused when the module asked for an edit; a plain
-        # respond is a new answer, so a repeat command sends a new card
         if asked and mode == "edit" and self._response_form is not None:
             kwargs.pop("inline", None)
             kwargs.pop("bot", None)
