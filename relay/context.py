@@ -4,7 +4,10 @@ import secrets
 import mimetypes
 from typing import Any, Awaitable, Callable, cast
 
-from .denylist import is_blocked_peer, is_readonly_peer, payload_hits_blocked, payload_hits_readonly
+try:
+    from .denylist import is_blocked_peer, is_readonly_peer, payload_hits_blocked, payload_hits_readonly
+except (ImportError, KeyError):  # worker exec: denylist source is pre-exec'd into this namespace
+    pass
 
 _SENTINEL = object()
 

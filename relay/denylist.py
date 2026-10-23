@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from typing import Callable, cast
-from goygram.ext import loads
 
 BLOCKED_HOSTS = ("my.telegram.org",)
 BLOCKED_PEER_IDS = ()
@@ -99,8 +98,9 @@ def _payload_hits(payload: object, checker: Callable[[object], bool]) -> bool:
             stack.extend((value, peer) for value in values)
         elif isinstance(item, (bytes, bytearray)):
             try:
+                from goygram.ext import loads
                 decoded = loads(bytes(item))
-            except (ValueError, TypeError, RuntimeError):
+            except (ValueError, TypeError, RuntimeError, ImportError):
                 continue
             stack.append((decoded, peer))
         else:
