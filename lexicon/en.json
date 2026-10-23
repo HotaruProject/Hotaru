@@ -555,7 +555,7 @@
       "inline": "query and interact with inline bots",
       "modules": "load, unload, reload, list, and inspect installed modules; hashes and manifest info",
       "assets": "access to hidden assets storage",
-      "shell": "run shell commands in the module workspace; when the module does not also hold the files capability, the shell runs in a mount-namespace jail with no access to any host filesystem outside the workspace (network likewise requires net); files access outside the workspace requires the files capability; command timeout and returned output limits still apply",
+      "shell": "run shell commands in the module workspace; the shell always runs in an isolated sandbox that sees only the workspace, its own tools, and an isolated /tmp; network works only with the net capability and host filesystem access only with the files capability, both still inside the sandbox; command timeout and returned output limits still apply",
       "logs": "write structured entries to the observatory log; always granted",
       "fetch": "read-only access to messages, entities and reply resolution; always granted"
     },
