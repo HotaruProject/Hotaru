@@ -39,9 +39,6 @@ class Job:
 
     @staticmethod
     def _jail_preexec(workspace: str, net_blocked: bool, host_files: bool) -> None:
-        # Shell always runs in an isolated mount/IPC namespace; CLONE_NEWNET is
-        # added when the module lacks the net capability. Without the files
-        # capability the filesystem is additionally jailed to the workspace.
         if os.name == "nt":
             return
         import ctypes
@@ -97,9 +94,6 @@ class Job:
             raise OSError(ctypes.get_errno(), "jail namespace isolation is unavailable")
         mount(b"none", b"/", None, MS_REC | MS_PRIVATE)
         if host_files:
-            # files capability: host filesystem stays visible inside the isolated
-            # mount namespace (mount changes cannot leak to the host); uid is
-            # retained so host file access matches the files API behavior.
             return
         os.makedirs(SANDBOX_BASE, exist_ok=True)
         newroot = tempfile.mkdtemp(prefix="jail.", dir=SANDBOX_BASE)
