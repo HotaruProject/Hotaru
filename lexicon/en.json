@@ -555,7 +555,7 @@
       "inline": "query and interact with inline bots",
       "modules": "load, unload, reload, list, and inspect installed modules; hashes and manifest info",
       "assets": "access to hidden assets storage",
-      "shell": "run shell commands in the module workspace with the Hotaru process OS permissions; the filesystem is NOT confined to the workspace, and network access is only granted when the module also has the net capability (without it, commands run in an isolated network namespace with no DNS or sockets). Command timeout and returned output limits still apply",
+      "shell": "run shell commands in the module workspace; when the module does not also hold the files capability, the shell runs in a mount-namespace jail with no access to any host filesystem outside the workspace (network likewise requires net); files access outside the workspace requires the files capability; command timeout and returned output limits still apply",
       "logs": "write structured entries to the observatory log; always granted",
       "fetch": "read-only access to messages, entities and reply resolution; always granted"
     },
