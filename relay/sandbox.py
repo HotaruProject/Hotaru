@@ -1398,7 +1398,7 @@ SYSCALL_NUMBERS = {
     "nanosleep": 35, "getpid": 39, "socket": 41, "connect": 42, "accept": 43,
     "sendto": 44, "recvfrom": 45, "sendmsg": 46, "recvmsg": 47, "shutdown": 48,
     "bind": 49, "listen": 50, "getsockname": 51, "getpeername": 52,
-    "socketpair": 53, "setsockopt": 54, "getsockopt": 55, "fork": 57,
+    "socketpair": 53, "setsockopt": 54, "getsockopt": 55, "clone": 56, "fork": 57,
     "vfork": 58, "execve": 59, "exit": 60, "wait4": 61, "kill": 62, "uname": 63,
     "fcntl": 72, "flock": 73, "fsync": 74, "fdatasync": 75, "truncate": 76,
     "ftruncate": 77, "getcwd": 79, "chdir": 80, "fchdir": 81, "rename": 82,
@@ -1508,7 +1508,7 @@ _ERRNO_NAMES = {
 }
 
 _KILL_NAMES = {
-    "fork", "vfork", "execve", "execveat", "clone3", "kill", "ptrace",
+    "fork", "vfork", "clone", "execve", "execveat", "clone3", "kill", "ptrace",
     "mount", "umount2", "pivot_root", "chroot", "sethostname",
     "setdomainname", "setuid", "setgid", "setreuid", "setregid", "setresuid",
     "setresgid", "setgroups", "setrlimit", "reboot", "acct", "swapon",

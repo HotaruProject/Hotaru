@@ -221,8 +221,12 @@ class ResponseService:
         topic_id: int | None = None,
         parse_mode: str | None = "HTML",
     ) -> Response:
+        from .denylist import payload_hits_readonly
         if text is None and rich_message is None and media is None:
             raise ValueError("response requires text, rich_message, or media")
+        peer = getattr(message, "chat_id", None) if not isinstance(message, dict) else message.get("chat_id")
+        if payload_hits_readonly({"peer": peer}):
+            raise PermissionError("response targets a read-only peer")
         if text is not None and rich_message is not None:
             raise ValueError("text and rich_message are mutually exclusive")
         if output not in ("edit", "reply", "auto"):
@@ -813,8 +817,11 @@ class ModuleContext(ContextOperations):
         return handle
 
     async def _deliver(self, text: str | None = None, **kwargs: Any) -> Any:
+        from .denylist import payload_hits_readonly
         if text is not None:
             kwargs["text"] = text
+        if payload_hits_readonly({"peer": getattr(self._delivery_source, "chat_id", None)}):
+            raise PermissionError("delivery targets a read-only peer")
         output = kwargs.get("output", "auto")
         if output == "auto" or output == "edit" and self._response_source is None and not self._outgoing:
             kwargs["output"] = "edit" if self._response_source is not None or self._outgoing else "reply"
@@ -1336,6 +1343,9 @@ class ModuleContext(ContextOperations):
         return response
 
     async def _trusted_send_rich(self, html: Any, peer: Any, *, output: str = "reply", message_id: int | None = None, **kwargs: Any) -> Response:
+        from .denylist import payload_hits_readonly
+        if payload_hits_readonly({"peer": peer}):
+            raise PermissionError("rich delivery targets a read-only peer")
         import secrets as _secrets
         app = self.runtime.app
         rich_message = cast('dict[str, object]', html) if isinstance(html, dict) else {"_": "inputRichMessageHTML", **to_rich(html)}

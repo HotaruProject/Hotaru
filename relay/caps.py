@@ -19,7 +19,7 @@ from functools import partial
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any, Callable, cast
 
-from .denylist import is_blocked_host, is_blocked_peer, payload_hits_blocked
+from .denylist import is_blocked_host, is_blocked_peer, is_readonly_peer, payload_hits_blocked, payload_hits_readonly
 from .firewall import trusted_scope
 from hotaru.plainfmt import rich_to_plain
 from hotaru.capabilities import BehaviorEnvelope
@@ -87,10 +87,10 @@ def _entry_hits_blocked_peer(item: Any) -> bool:
         return False
     entry = cast('dict[str, Any]', item)
     for attr in ("from_id", "peer_id", "user_id", "sender_id"):
-        if is_blocked_peer(entry.get(attr)):
+        if is_blocked_peer(entry.get(attr)) or is_readonly_peer(entry.get(attr)):
             return True
     if entry.get("id") is not None and str(entry.get("_", "")).lower() in {"user", "userempty"}:
-        if is_blocked_peer(entry.get("id")):
+        if is_blocked_peer(entry.get("id")) or is_readonly_peer(entry.get("id")):
             return True
     return False
 
@@ -439,6 +439,8 @@ class CapabilityHost:
     async def _inline_op(self, module_id: str, payload: dict[str, Any], meta: Any) -> Any:
         if payload_hits_blocked(payload):
             raise PermissionError("inline payload targets a denied peer")
+        if payload.get("op") in ("send", "form") and payload_hits_readonly(payload):
+            raise PermissionError("inline payload targets a read-only peer")
         inline = getattr(self.runtime, "inline", None)
         if inline is None:
             raise PermissionError("inline is unavailable")
@@ -464,6 +466,8 @@ class CapabilityHost:
             peer = await app.mt.resolve_peer(peer_value)
             if payload_hits_blocked({"peer": peer}):
                 raise PermissionError("resolved fetch target is a denied peer")
+            if payload_hits_readonly({"peer": peer}):
+                return []
             result = await app.mt_messages_get_history(
                 peer=peer,
                 offset_id=offset_id,
@@ -503,10 +507,14 @@ class CapabilityHost:
             value = payload.get("value")
             if payload_hits_blocked({"peer": value}):
                 raise PermissionError("fetch entity targets a denied peer")
+            if payload_hits_readonly({"peer": value}):
+                return None
             if value is None:
                 raise PermissionError("fetch entity requires a value")
             if isinstance(value, str) and value.lstrip("-").isdigit():
                 value = int(value)
+            if isinstance(value, int) and is_readonly_peer(value):
+                return None
             if isinstance(value, str):
                 username = value.lstrip("@").casefold()
                 entity = app.mt.entity_usernames.get(username)
@@ -611,6 +619,10 @@ class CapabilityHost:
             raise PermissionError(f"mt method is blocked by policy: {method}")
         if payload_hits_blocked(payload):
             raise PermissionError("mt payload targets a denied peer")
+        if payload_hits_readonly(payload):
+            if lowered.startswith(("get", "search")) or lowered in MT_READ_ONLY or any(lowered.startswith("messages." + m) for m in MT_READ_ONLY):
+                return {"_": "messages.messages", "messages": [], "chats": [], "users": []}
+            raise PermissionError("mt payload targets a read-only peer")
         if not lowered.startswith(("get", "search")) and lowered not in MT_READ_ONLY:
             self._audit_mt(module_id, lowered, payload)
         raw_kwargs_value = payload.get("kwargs")
