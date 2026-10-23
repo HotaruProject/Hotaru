@@ -8,7 +8,7 @@ from typing import Any, Awaitable, Callable, cast
 
 from .caps import MT_BLOCKED, MT_BLOCKED_PREFIXES, normalize_method
 from .rpc import rpcname
-from .denylist import payload_hits_blocked
+from .denylist import payload_hits_blocked, payload_hits_readonly
 from .firewall import trusted_scope
 from goygram.sugar import extract_sent_message
 from . import emoji
@@ -411,6 +411,9 @@ class BotGateway:
         app = getattr(self._manager, "bot_app", None)
         if app is None or getattr(app, "mt", None) is None:
             raise RuntimeError("inline bot is not ready")
+        if method in {"sendMessage", "sendRichMessage", "sendPhoto", "sendDocument", "sendVideo", "deleteMessage"}:
+            if payload_hits_readonly(kwargs):
+                raise RuntimeError("inline bot payload targets a read-only peer")
         if method == "deleteMessage":
             from relay.rpc import delete_chat_msg
             with trusted_scope():
@@ -429,6 +432,8 @@ class BotGateway:
 
     async def _send_media_mt(self, app: Any, method: str, kwargs: dict[str, Any]) -> Any:
         from relay.files import document, put
+        if payload_hits_readonly(kwargs):
+            raise RuntimeError("inline bot payload targets a read-only peer")
         key = "photo" if method == "sendPhoto" else "video" if method == "sendVideo" else "document"
         source = kwargs.get(key)
         caption = str(kwargs.get("caption", ""))

@@ -4,6 +4,8 @@ import secrets
 import mimetypes
 from typing import Any, Awaitable, Callable, cast
 
+from .denylist import is_blocked_peer, is_readonly_peer, payload_hits_blocked, payload_hits_readonly
+
 _SENTINEL = object()
 
 
@@ -519,6 +521,10 @@ class MessageOperations:
     async def _rpc(self, method: str, *, _media_response: bool = False, **kwargs: Any) -> Any:
         if self._g("src", default="mt") not in {"mt", "mtproto"}:
             raise ValueError("message operations require an MTProto message")
+        if payload_hits_blocked({"peer": kwargs.get("peer")}):
+            raise PermissionError("message payload targets a denied peer")
+        if payload_hits_readonly({"peer": kwargs.get("peer")}) and not method.startswith(("messages.get", "messages.search", "channels.get", "stats.get")):
+            raise PermissionError("message payload targets a read-only peer")
         sender = self.ctx._ctx_media_rpc if _media_response else getattr(self.ctx, "_ctx_call", self.ctx.mt)
         result = await sender(method, **kwargs)
         if _msg_field(result, "ok") is False:
@@ -583,11 +589,13 @@ class MessageOperations:
 
     async def delete(self, revoke: bool = True) -> Any:
         chat, mid = self._target()
-        if chat < -1000000000000:
-            return await self._rpc("channels.deleteMessages", channel=await self.get_input_channel(), id=[mid])
-        return await self._rpc("messages.deleteMessages", id=[mid], revoke=revoke)
+        if is_blocked_peer(chat) or is_readonly_peer(chat):
+            raise PermissionError("delete targets a denied or read-only peer")
+        return await self._rpc("channels.deleteMessages" if chat < -1000000000000 else "messages.deleteMessages", id=[mid], revoke=revoke, **({"channel": await self.get_input_chat()} if chat < -1000000000000 else {}))
 
     async def forward(self, to_chat: Any, **kwargs: Any) -> Any:
+        if is_blocked_peer(to_chat) or is_readonly_peer(to_chat):
+            raise PermissionError("forward targets a denied or read-only peer")
         topic = kwargs.pop("topic_id", self.topic_id if to_chat == self.chat_id else None)
         if topic is not None:
             kwargs["top_msg_id"] = topic
