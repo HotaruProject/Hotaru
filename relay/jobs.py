@@ -37,11 +37,21 @@ class Job:
     inline_tail = 262144
     stream_schemes = frozenset({"ws", "wss", "tcp", "tls", "udp"})
 
-    def __init__(self, kind: str, data: dict[str, Any], check_url: Callable[[str], Any], workspace: Path) -> None:
+    @staticmethod
+    def _netless_preexec() -> None:
+        if os.name != "nt":
+            import ctypes
+
+            libc = ctypes.CDLL(None, use_errno=True)
+            if libc.unshare(0x40000000) != 0:
+                raise OSError(ctypes.get_errno(), "network isolation is unavailable")
+
+    def __init__(self, kind: str, data: dict[str, Any], check_url: Callable[[str], Any], workspace: Path, net_blocked: bool = False) -> None:
         self.kind = kind
         self.data = data
         self.check_url = check_url
         self.workspace = workspace
+        self.net_blocked = net_blocked
         self.token = uuid4().hex
         self.events: asyncio.Queue[dict[str, str]] = asyncio.Queue(64)
         self.out: asyncio.Queue[tuple[Any, bool]] = asyncio.Queue(64)
@@ -208,9 +218,10 @@ class Job:
         env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "HOME": str(self.workspace), "LANG": "C.UTF-8"}
         if os.name == "nt":
             env.update({key: os.environ[key] for key in ("SystemRoot", "COMSPEC", "PATHEXT") if key in os.environ})
+        preexec = self._netless_preexec if self.net_blocked else None
         spawn = asyncio.create_task(asyncio.create_subprocess_shell(str(data["command"]), cwd=cwd, env=env,
                     stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
-                    start_new_session=os.name != "nt"))
+                    preexec_fn=preexec, start_new_session=os.name != "nt"))
         try:
             proc = await asyncio.shield(spawn)
         except asyncio.CancelledError:

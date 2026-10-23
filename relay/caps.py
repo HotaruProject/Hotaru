@@ -168,7 +168,7 @@ PROVIDERS: dict[str, dict[str, Any]] = {
     },
     "shell": {
         "title": "Shell",
-        "detail": "full shell access with the Hotaru process OS permissions, including host files, credentials and network; NOT confined to the module workspace. Command timeout and returned output limits still apply",
+        "detail": "run shell commands in the module workspace with the Hotaru process OS permissions; the filesystem is NOT confined to the workspace, and network access is only granted when the module also has the net capability (without it, commands run in an isolated network namespace with no DNS or sockets). Command timeout and returned output limits still apply",
         "side_effect": "write",
     },
     "logs": {
@@ -404,7 +404,9 @@ class CapabilityHost:
                 raise PermissionError("shell requires a command up to 16000 characters")
             key = secrets.token_hex(16)
             workspace = self.runtime.config.state_path.parent / "workspaces" / module_id
-            self.jobs[module_id, kind, key] = Job(kind, dict(payload), self._check_net_target, workspace)
+            manifest = self.runtime.modules.get(module_id)
+            net_cap = "net" in manifest.loaded.manifest.capabilities if manifest is not None else False
+            self.jobs[module_id, kind, key] = Job(kind, dict(payload), self._check_net_target, workspace, net_cap)
             return {"id": key}
         key = (module_id, kind, str(payload.get("id", "")))
         job = self.jobs.get(key)
@@ -561,6 +563,8 @@ class CapabilityHost:
             timeout = None
         workspace = self.runtime.config.state_path.parent / "workspaces" / module_id
         workspace.mkdir(parents=True, exist_ok=True)
+        manifest = self.runtime.modules.get(module_id)
+        net_cap = "net" in manifest.loaded.manifest.capabilities if manifest is not None else False
         env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "HOME": str(workspace), "LANG": "C.UTF-8"}
         if os.name == "nt":
             env.update({key: os.environ[key] for key in ("SystemRoot", "COMSPEC", "PATHEXT") if key in os.environ})
@@ -578,6 +582,7 @@ class CapabilityHost:
                 text=True,
                 timeout=timeout,
                 check=False,
+                preexec_fn=Job._netless_preexec if net_cap is False and os.name != "nt" else None,
                 ),
             )
         except subprocess.TimeoutExpired:
