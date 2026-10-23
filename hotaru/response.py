@@ -221,7 +221,7 @@ class ResponseService:
         topic_id: int | None = None,
         parse_mode: str | None = "HTML",
     ) -> Response:
-        from .denylist import payload_hits_readonly
+        from relay.denylist import payload_hits_readonly
         if text is None and rich_message is None and media is None:
             raise ValueError("response requires text, rich_message, or media")
         peer = getattr(message, "chat_id", None) if not isinstance(message, dict) else message.get("chat_id")
@@ -817,7 +817,7 @@ class ModuleContext(ContextOperations):
         return handle
 
     async def _deliver(self, text: str | None = None, **kwargs: Any) -> Any:
-        from .denylist import payload_hits_readonly
+        from relay.denylist import payload_hits_readonly
         if text is not None:
             kwargs["text"] = text
         if payload_hits_readonly({"peer": getattr(self._delivery_source, "chat_id", None)}):
@@ -1343,7 +1343,7 @@ class ModuleContext(ContextOperations):
         return response
 
     async def _trusted_send_rich(self, html: Any, peer: Any, *, output: str = "reply", message_id: int | None = None, **kwargs: Any) -> Response:
-        from .denylist import payload_hits_readonly
+        from relay.denylist import payload_hits_readonly
         if payload_hits_readonly({"peer": peer}):
             raise PermissionError("rich delivery targets a read-only peer")
         import secrets as _secrets

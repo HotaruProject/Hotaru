@@ -974,7 +974,6 @@ class CapabilityHost:
             raise PermissionError("assets payload targets a denied peer")
         import os
         from .sandbox import SANDBOX_BASE_ROOT
-
         op = payload.get("op")
         sandbox_root = os.path.join(SANDBOX_BASE_ROOT, module_id)
         if os.path.realpath(sandbox_root) != sandbox_root:

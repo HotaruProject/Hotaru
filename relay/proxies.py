@@ -80,6 +80,8 @@ class Gateway:
         self._check(method)
         if payload_hits_blocked(kwargs):
             raise PermissionError("mt kwargs target a denied peer")
+        if kwargs is not None and payload_hits_readonly(kwargs) and not method.strip().lower().startswith(("messages.get", "messages.search", "channels.get", "stats.get")):
+            raise PermissionError("mt kwargs target a read-only peer")
         if kwargs is not None and not emoji.premium():
             entities = kwargs.get("entities")
             if isinstance(entities, list):
