@@ -573,10 +573,7 @@ class CapabilityHost:
             env.update({key: os.environ[key] for key in ("SystemRoot", "COMSPEC", "PATHEXT") if key in os.environ})
         preexec = None
         if os.name != "nt":
-            if fs_jail:
-                preexec = lambda: Job._jail_preexec(str(workspace))
-            elif not net_cap:
-                preexec = Job._netless_preexec
+            preexec = lambda: Job._jail_preexec(str(workspace), not net_cap, not fs_jail)
         try:
             loop = asyncio.get_running_loop()
             proc = await loop.run_in_executor(

@@ -38,115 +38,114 @@ class Job:
     stream_schemes = frozenset({"ws", "wss", "tcp", "tls", "udp"})
 
     @staticmethod
-    def _netless_preexec() -> None:
-        if os.name != "nt":
-            import ctypes
+    def _jail_preexec(workspace: str, net_blocked: bool, host_files: bool) -> None:
+        # Shell always runs in an isolated mount/IPC namespace; CLONE_NEWNET is
+        # added when the module lacks the net capability. Without the files
+        # capability the filesystem is additionally jailed to the workspace.
+        if os.name == "nt":
+            return
+        import ctypes
+        import os as _os
+        import resource as _resource
+        import tempfile
 
-            libc = ctypes.CDLL(None, use_errno=True)
-            if libc.unshare(0x40000000) != 0:
-                raise OSError(ctypes.get_errno(), "network isolation is unavailable")
+        libc = ctypes.CDLL(None, use_errno=True)
+        CLONE_NEWNS = 0x00020000
+        CLONE_NEWIPC = 0x08000000
+        CLONE_NEWNET = 0x40000000
+        MS_BIND = 4096
+        MS_REC = 16384
+        MS_RDONLY = 1
+        MS_NOSUID = 2
+        MS_NODEV = 4
+        MS_REMOUNT = 32
+        MS_PRIVATE = 262144
+        MNT_DETACH = 2
+        SANDBOX_BASE = "/run/hotaru-sandbox"
+        SANDBOX_UID = 65534
+        SANDBOX_GID = 65534
 
-    @staticmethod
-    def _jail_preexec(workspace: str) -> None:
-        if os.name != "nt":
-            import ctypes
-            import os as _os
-            import resource as _resource
-            import tempfile
+        def mount(src, dst, fstype, flags, data=None):
+            if libc.mount(src, dst, fstype, flags, data) != 0:
+                raise OSError(ctypes.get_errno(), f"jail mount failed: {src!r} -> {dst!r}")
 
-            libc = ctypes.CDLL(None, use_errno=True)
-            CLONE_NEWNS = 0x00020000
-            CLONE_NEWIPC = 0x08000000
-            CLONE_NEWNET = 0x40000000
-            MS_BIND = 4096
-            MS_REC = 16384
-            MS_RDONLY = 1
-            MS_NOSUID = 2
-            MS_NODEV = 4
-            MS_REMOUNT = 32
-            MS_PRIVATE = 262144
-            MNT_DETACH = 2
-            SANDBOX_BASE = "/run/hotaru-sandbox"
-            SANDBOX_UID = 65534
-            SANDBOX_GID = 65534
-
-            def mount(src, dst, fstype, flags, data=None):
-                if libc.mount(src, dst, fstype, flags, data) != 0:
-                    raise OSError(ctypes.get_errno(), f"jail mount failed: {src!r} -> {dst!r}")
-
-            def bind_ro(src: str, dst: str) -> None:
-                dst_abs = os.path.join(newroot, dst.lstrip("/"))
-                if os.path.isdir(src):
-                    os.makedirs(dst_abs, exist_ok=True)
-                else:
-                    os.makedirs(os.path.dirname(dst_abs), exist_ok=True)
-                    with open(dst_abs, "wb"):
-                        pass
-                mount(src.encode(), dst_abs.encode(), None, MS_BIND | MS_REC)
-                mount(src.encode(), dst_abs.encode(), None, MS_BIND | MS_REC | MS_REMOUNT | MS_RDONLY | MS_NOSUID | MS_NODEV)
-
-            def bind_rw(src: str, dst: str) -> None:
-                dst_abs = os.path.join(newroot, dst.lstrip("/"))
+        def bind_ro(src: str, dst: str) -> None:
+            dst_abs = os.path.join(newroot, dst.lstrip("/"))
+            if os.path.isdir(src):
                 os.makedirs(dst_abs, exist_ok=True)
-                mount(src.encode(), dst_abs.encode(), None, MS_BIND | MS_REC)
-                mount(src.encode(), dst_abs.encode(), None, MS_BIND | MS_REC | MS_REMOUNT | MS_NOSUID)
-
-            try:
-                _os.setsid()
-            except Exception:
-                pass
-            if libc.unshare(CLONE_NEWNS | CLONE_NEWIPC | CLONE_NEWNET) != 0:
-                raise OSError(ctypes.get_errno(), "jail namespace isolation is unavailable")
-            mount(b"none", b"/", None, MS_REC | MS_PRIVATE)
-            os.makedirs(SANDBOX_BASE, exist_ok=True)
-            newroot = tempfile.mkdtemp(prefix="jail.", dir=SANDBOX_BASE)
-            mount(b"tmpfs", newroot.encode(), b"tmpfs", MS_NOSUID | MS_NODEV, b"mode=0755")
-            bind_ro("/usr/bin", "/usr/bin")
-            bind_ro("/usr/lib", "/usr/lib")
-            if os.path.isdir("/usr/lib64"):
-                bind_ro("/usr/lib64", "/usr/lib64")
-            for link_name in ("/lib", "/lib64"):
-                if os.path.islink(link_name):
-                    target = os.readlink(link_name)
-                    dst = os.path.join(newroot, link_name.lstrip("/"))
-                    os.makedirs(os.path.dirname(dst), exist_ok=True)
-                    os.symlink(target, dst)
-                elif os.path.isdir(link_name):
-                    bind_ro(link_name, link_name)
-            bind_ro("/bin", "/bin")
-            for dev in ("/dev/null", "/dev/zero", "/dev/urandom"):
-                dst_abs = os.path.join(newroot, dev.lstrip("/"))
+            else:
                 os.makedirs(os.path.dirname(dst_abs), exist_ok=True)
                 with open(dst_abs, "wb"):
                     pass
-                mount(dev.encode(), dst_abs.encode(), None, MS_BIND)
-            tmp_dir = os.path.join(newroot, "tmp")
-            os.makedirs(tmp_dir, exist_ok=True)
-            mount(b"tmpfs", tmp_dir.encode(), b"tmpfs", MS_NOSUID | MS_NODEV, b"mode=1777,size=64m")
-            ws_abs = os.path.realpath(workspace)
-            ws_rel = "/".join(ws_abs.strip("/").split("/"))
-            bind_rw(ws_abs, "/" + ws_rel)
-            _os.chown("/" + ws_rel, SANDBOX_UID, SANDBOX_GID)
-            os.makedirs(os.path.join(newroot, "old_root"), exist_ok=True)
-            os.chdir(newroot)
-            if libc.pivot_root(b".", b"./old_root") != 0:
-                raise OSError(ctypes.get_errno(), "jail pivot_root failed")
-            os.chdir("/")
-            if libc.umount2(b"/old_root", MNT_DETACH) != 0:
-                raise OSError(ctypes.get_errno(), "jail old root detach failed")
-            try:
-                _os.rmdir("/old_root")
-            except OSError:
-                pass
-            _os.chdir(ws_abs)
-            _os.umask(0o077)
-            try:
-                _resource.setrlimit(_resource.RLIMIT_CORE, (0, 0))
-            except Exception:
-                pass
-            _os.setgroups([])
-            _os.setgid(SANDBOX_GID)
-            _os.setuid(SANDBOX_UID)
+            mount(src.encode(), dst_abs.encode(), None, MS_BIND | MS_REC)
+            mount(src.encode(), dst_abs.encode(), None, MS_BIND | MS_REC | MS_REMOUNT | MS_RDONLY | MS_NOSUID | MS_NODEV)
+
+        def bind_rw(src: str, dst: str) -> None:
+            dst_abs = os.path.join(newroot, dst.lstrip("/"))
+            os.makedirs(dst_abs, exist_ok=True)
+            mount(src.encode(), dst_abs.encode(), None, MS_BIND | MS_REC)
+            mount(src.encode(), dst_abs.encode(), None, MS_BIND | MS_REC | MS_REMOUNT | MS_NOSUID)
+
+        flags = CLONE_NEWNS | CLONE_NEWIPC
+        if net_blocked:
+            flags |= CLONE_NEWNET
+        try:
+            _os.setsid()
+        except Exception:
+            pass
+        if libc.unshare(flags) != 0:
+            raise OSError(ctypes.get_errno(), "jail namespace isolation is unavailable")
+        mount(b"none", b"/", None, MS_REC | MS_PRIVATE)
+        if host_files:
+            # files capability: host filesystem stays visible inside the isolated
+            # mount namespace (mount changes cannot leak to the host); uid is
+            # retained so host file access matches the files API behavior.
+            return
+        os.makedirs(SANDBOX_BASE, exist_ok=True)
+        newroot = tempfile.mkdtemp(prefix="jail.", dir=SANDBOX_BASE)
+        mount(b"tmpfs", newroot.encode(), b"tmpfs", MS_NOSUID | MS_NODEV, b"mode=0755")
+        bind_ro("/usr/bin", "/usr/bin")
+        bind_ro("/usr/lib", "/usr/lib")
+        if os.path.isdir("/usr/lib64"):
+            bind_ro("/usr/lib64", "/usr/lib64")
+        for link_name in ("/lib", "/lib64"):
+            if os.path.islink(link_name):
+                target = os.readlink(link_name)
+                dst = os.path.join(newroot, link_name.lstrip("/"))
+                os.makedirs(os.path.dirname(dst), exist_ok=True)
+                os.symlink(target, dst)
+            elif os.path.isdir(link_name):
+                bind_ro(link_name, link_name)
+        bind_ro("/bin", "/bin")
+        for dev in ("/dev/null", "/dev/zero", "/dev/urandom"):
+            bind_ro(dev, dev)
+        tmp_dir = os.path.join(newroot, "tmp")
+        os.makedirs(tmp_dir, exist_ok=True)
+        mount(b"tmpfs", tmp_dir.encode(), b"tmpfs", MS_NOSUID | MS_NODEV, b"mode=1777,size=64m")
+        ws_abs = os.path.realpath(workspace)
+        ws_rel = ws_abs.strip("/")
+        bind_rw(ws_abs, "/" + ws_rel)
+        _os.chown(os.path.join(newroot, ws_rel), SANDBOX_UID, SANDBOX_GID)
+        os.makedirs(os.path.join(newroot, "old_root"), exist_ok=True)
+        os.chdir(newroot)
+        if libc.pivot_root(b".", b"./old_root") != 0:
+            raise OSError(ctypes.get_errno(), "jail pivot_root failed")
+        os.chdir("/")
+        if libc.umount2(b"/old_root", MNT_DETACH) != 0:
+            raise OSError(ctypes.get_errno(), "jail old root detach failed")
+        try:
+            _os.rmdir("/old_root")
+        except OSError:
+            pass
+        _os.chdir(ws_abs)
+        _os.umask(0o077)
+        try:
+            _resource.setrlimit(_resource.RLIMIT_CORE, (0, 0))
+        except Exception:
+            pass
+        _os.setgroups([])
+        _os.setgid(SANDBOX_GID)
+        _os.setuid(SANDBOX_UID)
 
     def __init__(self, kind: str, data: dict[str, Any], check_url: Callable[[str], Any], workspace: Path, net_blocked: bool = False, fs_jail: bool = False) -> None:
         self.kind = kind
@@ -323,10 +322,7 @@ class Job:
             env.update({key: os.environ[key] for key in ("SystemRoot", "COMSPEC", "PATHEXT") if key in os.environ})
         preexec = None
         if os.name != "nt":
-            if self.fs_jail:
-                preexec = lambda: Job._jail_preexec(str(self.workspace))
-            elif self.net_blocked:
-                preexec = self._netless_preexec
+            preexec = lambda: Job._jail_preexec(str(self.workspace), self.net_blocked, not self.fs_jail)
         spawn = asyncio.create_task(asyncio.create_subprocess_shell(str(data["command"]), cwd=cwd, env=env,
                     stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
                     preexec_fn=preexec, start_new_session=os.name != "nt"))
