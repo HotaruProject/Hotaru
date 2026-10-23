@@ -38,7 +38,7 @@ class Job:
     stream_schemes = frozenset({"ws", "wss", "tcp", "tls", "udp"})
 
     @staticmethod
-    def _jail_preexec(workspace: str, net_blocked: bool, host_files: bool) -> None:
+    def _jail_preexec(workspace: str, net_blocked: bool) -> None:
         if os.name == "nt":
             return
         import ctypes
@@ -66,7 +66,7 @@ class Job:
             if libc.mount(src, dst, fstype, flags, data) != 0:
                 raise OSError(ctypes.get_errno(), f"jail mount failed: {src!r} -> {dst!r}")
 
-        def bind_ro(src: str, dst: str) -> None:
+        def bind_ro(src: str, dst: str, allow_dev: bool = False) -> None:
             dst_abs = os.path.join(newroot, dst.lstrip("/"))
             if os.path.isdir(src):
                 os.makedirs(dst_abs, exist_ok=True)
@@ -74,8 +74,9 @@ class Job:
                 os.makedirs(os.path.dirname(dst_abs), exist_ok=True)
                 with open(dst_abs, "wb"):
                     pass
+            harden = 0 if allow_dev else MS_NODEV
             mount(src.encode(), dst_abs.encode(), None, MS_BIND | MS_REC)
-            mount(src.encode(), dst_abs.encode(), None, MS_BIND | MS_REC | MS_REMOUNT | MS_RDONLY | MS_NOSUID | MS_NODEV)
+            mount(src.encode(), dst_abs.encode(), None, MS_BIND | MS_REC | MS_REMOUNT | MS_RDONLY | MS_NOSUID | harden)
 
         def bind_rw(src: str, dst: str) -> None:
             dst_abs = os.path.join(newroot, dst.lstrip("/"))
@@ -93,11 +94,9 @@ class Job:
         if libc.unshare(flags) != 0:
             raise OSError(ctypes.get_errno(), "jail namespace isolation is unavailable")
         mount(b"none", b"/", None, MS_REC | MS_PRIVATE)
-        if host_files:
-            return
         os.makedirs(SANDBOX_BASE, exist_ok=True)
         newroot = tempfile.mkdtemp(prefix="jail.", dir=SANDBOX_BASE)
-        mount(b"tmpfs", newroot.encode(), b"tmpfs", MS_NOSUID | MS_NODEV, b"mode=0755")
+        mount(b"tmpfs", newroot.encode(), b"tmpfs", MS_NOSUID, b"mode=0755")
         bind_ro("/usr/bin", "/usr/bin")
         bind_ro("/usr/lib", "/usr/lib")
         if os.path.isdir("/usr/lib64"):
@@ -111,8 +110,10 @@ class Job:
             elif os.path.isdir(link_name):
                 bind_ro(link_name, link_name)
         bind_ro("/bin", "/bin")
+        bind_ro("/etc/ssl", "/etc/ssl")
+        bind_ro("/etc/resolv.conf", "/etc/resolv.conf")
         for dev in ("/dev/null", "/dev/zero", "/dev/urandom"):
-            bind_ro(dev, dev)
+            bind_ro(dev, dev, allow_dev=True)
         tmp_dir = os.path.join(newroot, "tmp")
         os.makedirs(tmp_dir, exist_ok=True)
         mount(b"tmpfs", tmp_dir.encode(), b"tmpfs", MS_NOSUID | MS_NODEV, b"mode=1777,size=64m")
@@ -316,7 +317,7 @@ class Job:
             env.update({key: os.environ[key] for key in ("SystemRoot", "COMSPEC", "PATHEXT") if key in os.environ})
         preexec = None
         if os.name != "nt":
-            preexec = lambda: Job._jail_preexec(str(self.workspace), self.net_blocked, not self.fs_jail)
+            preexec = lambda: Job._jail_preexec(str(self.workspace), self.net_blocked)
         spawn = asyncio.create_task(asyncio.create_subprocess_shell(str(data["command"]), cwd=cwd, env=env,
                     stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
                     preexec_fn=preexec, start_new_session=os.name != "nt"))

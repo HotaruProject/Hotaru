@@ -567,13 +567,12 @@ class CapabilityHost:
         manifest = self.runtime.modules.get(module_id)
         caps = manifest.loaded.manifest.capabilities if manifest is not None else ()
         net_cap = "net" in caps
-        fs_jail = "files" not in caps
         env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "HOME": str(workspace), "LANG": "C.UTF-8"}
         if os.name == "nt":
             env.update({key: os.environ[key] for key in ("SystemRoot", "COMSPEC", "PATHEXT") if key in os.environ})
         preexec = None
         if os.name != "nt":
-            preexec = lambda: Job._jail_preexec(str(workspace), not net_cap, not fs_jail)
+            preexec = lambda: Job._jail_preexec(str(workspace), not net_cap)
         try:
             loop = asyncio.get_running_loop()
             proc = await loop.run_in_executor(
