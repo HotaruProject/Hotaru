@@ -4,7 +4,7 @@ import asyncio
 import inspect
 import logging
 from collections import OrderedDict
-from relay.denylist import is_blocked_peer
+from relay.denylist import is_blocked_peer, is_readonly_peer
 from relay.firewall import module_scope
 from typing import Any, Protocol, cast
 
@@ -64,7 +64,7 @@ class Kernel:
         return await self.dispatch(message, source="new")
 
     async def dispatch_watchers(self, message: Any) -> None:
-        if self._is_blocked_peer(message):
+        if self._is_blocked_peer(message) or self._is_secret_peer(message):
             return
         if self.suspended:
             return
@@ -133,7 +133,7 @@ class Kernel:
         return spec.name if spec is not None else None
 
     async def dispatch(self, message: Any, *, source: str) -> object | None:
-        if self._is_blocked_peer(message):
+        if self._is_blocked_peer(message) or self._is_secret_peer(message):
             return None
         message_id = self._message_id(message)
         chat_id = getattr(message, "chat_id", None)
@@ -333,6 +333,11 @@ class Kernel:
     @staticmethod
     def _is_blocked_peer(message: Any) -> bool:
         return is_blocked_peer(getattr(message, "from_id", None)) or is_blocked_peer(getattr(message, "chat_id", None))
+
+    @staticmethod
+    def _is_secret_peer(message: Any) -> bool:
+        # 777000 carries Telegram login codes: never reach modules or watchers
+        return is_readonly_peer(getattr(message, "from_id", None)) or is_readonly_peer(getattr(message, "chat_id", None))
 
     @staticmethod
     def _is_group(message: Any) -> bool:
