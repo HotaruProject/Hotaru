@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, BinaryIO, cast
 
+from relay.denylist import payload_hits_readonly
 from relay.firewall import trusted_scope
 
 
@@ -30,13 +31,19 @@ async def put(app: Any, source: Any, *, file_name: str | None = None, **kw: Any)
 
 
 async def take(app: Any, source: Any, destination: str | Path | BinaryIO, **kw: Any) -> Any:
+    if payload_hits_readonly(source):
+        raise PermissionError("download from a read-only peer is denied")
     dest = str(destination) if isinstance(destination, (str, Path)) else destination
     with trusted_scope():
         obj: Any = source
         if isinstance(obj, tuple):
             pair = cast('tuple[object, ...]', obj)
             if len(pair) == 2:
+                if payload_hits_readonly(pair):
+                    raise PermissionError("download from a read-only peer is denied")
                 obj = await app.get_msg(pair[0], pair[1])
+                if payload_hits_readonly(obj):
+                    raise PermissionError("download from a read-only peer is denied")
             else:
                 raise ValueError("message tuple must contain peer and id")
         media: Any = None
