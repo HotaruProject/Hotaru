@@ -168,7 +168,7 @@ PROVIDERS: dict[str, dict[str, Any]] = {
     },
     "shell": {
         "title": "Shell",
-        "detail": "run shell commands in the module workspace with the Hotaru process OS permissions; the filesystem is NOT confined to the workspace, and network access is only granted when the module also has the net capability (without it, commands run in an isolated network namespace with no DNS or sockets). Command timeout and returned output limits still apply",
+        "detail": "run shell commands in the module workspace; when the module does not also hold the files capability, the shell runs in a mount-namespace jail with no access to any host filesystem outside the workspace (network likewise requires net); files access outside the workspace requires the files capability; command timeout and returned output limits still apply",
         "side_effect": "write",
     },
     "logs": {
@@ -405,8 +405,9 @@ class CapabilityHost:
             key = secrets.token_hex(16)
             workspace = self.runtime.config.state_path.parent / "workspaces" / module_id
             manifest = self.runtime.modules.get(module_id)
-            net_cap = "net" in manifest.loaded.manifest.capabilities if manifest is not None else False
-            self.jobs[module_id, kind, key] = Job(kind, dict(payload), self._check_net_target, workspace, net_cap)
+            caps = manifest.loaded.manifest.capabilities if manifest is not None else ()
+            net_cap = "net" in caps
+            self.jobs[module_id, kind, key] = Job(kind, dict(payload), self._check_net_target, workspace, net_cap, "files" not in caps)
             return {"id": key}
         key = (module_id, kind, str(payload.get("id", "")))
         job = self.jobs.get(key)
@@ -564,10 +565,18 @@ class CapabilityHost:
         workspace = self.runtime.config.state_path.parent / "workspaces" / module_id
         workspace.mkdir(parents=True, exist_ok=True)
         manifest = self.runtime.modules.get(module_id)
-        net_cap = "net" in manifest.loaded.manifest.capabilities if manifest is not None else False
+        caps = manifest.loaded.manifest.capabilities if manifest is not None else ()
+        net_cap = "net" in caps
+        fs_jail = "files" not in caps
         env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "HOME": str(workspace), "LANG": "C.UTF-8"}
         if os.name == "nt":
             env.update({key: os.environ[key] for key in ("SystemRoot", "COMSPEC", "PATHEXT") if key in os.environ})
+        preexec = None
+        if os.name != "nt":
+            if fs_jail:
+                preexec = lambda: Job._jail_preexec(str(workspace))
+            elif not net_cap:
+                preexec = Job._netless_preexec
         try:
             loop = asyncio.get_running_loop()
             proc = await loop.run_in_executor(
@@ -582,7 +591,7 @@ class CapabilityHost:
                 text=True,
                 timeout=timeout,
                 check=False,
-                preexec_fn=Job._netless_preexec if net_cap is False and os.name != "nt" else None,
+                preexec_fn=preexec,
                 ),
             )
         except subprocess.TimeoutExpired:
