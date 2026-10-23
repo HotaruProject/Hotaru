@@ -18,11 +18,13 @@ from typing import Any, Sequence, cast
 from . import toolkit as _toolkit
 from . import context as _context
 from . import translation as _translation
+from . import denylist as _denylist
 from hotaru.callbacks import CallbackBinding
 from relay.firewall import trusted_scope
 
 _CONTEXT_SOURCE = Path(_context.__file__).read_text(encoding="utf-8")
 _TRANSLATION_SOURCE = Path(_translation.__file__).read_text(encoding="utf-8")
+_DENYLIST_SOURCE = Path(_denylist.__file__).read_text(encoding="utf-8")
 
 _TOOLKIT_SOURCE = Path(_toolkit.__file__).read_text(encoding="utf-8")
 
@@ -1154,6 +1156,7 @@ def main():
     apply_policy(cfg.get("net_blocked", True))
     install_output_capture()
     context_ns = {}
+    exec(compile(cfg.get("denylist_source", ""), "hotaru_denylist", "exec"), context_ns, context_ns)
     exec(compile(cfg["context_source"], "hotaru_context", "exec"), context_ns, context_ns)
     SandboxContext.__bases__ = (context_ns["ContextOperations"],)
     translation_ns = {}
@@ -1774,6 +1777,7 @@ class ModuleSandbox:
             "commands": commands,
             "toolkit_source": _TOOLKIT_SOURCE,
             "context_source": Path(_context.__file__).read_text(encoding="utf-8") if _context.__file__ else _CONTEXT_SOURCE,
+            "denylist_source": _DENYLIST_SOURCE,
             "translation_source": _TRANSLATION_SOURCE,
             "net_blocked": True,
             "seccomp": SECCOMP_POLICY,
