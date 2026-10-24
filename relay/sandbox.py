@@ -1155,7 +1155,7 @@ def main():
     install_firewall(cfg.get("protected", []), cfg.get("namespaces", False), cfg.get("deps_root", ""))
     apply_policy(cfg.get("net_blocked", True))
     install_output_capture()
-    context_ns = {}
+    context_ns = {"__name__": "hotaru_context"}
     exec(compile(cfg.get("denylist_source", ""), "hotaru_denylist", "exec"), context_ns, context_ns)
     exec(compile(cfg["context_source"], "hotaru_context", "exec"), context_ns, context_ns)
     SandboxContext.__bases__ = (context_ns["ContextOperations"],)
