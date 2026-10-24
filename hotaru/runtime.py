@@ -977,7 +977,11 @@ class Runtime:
     async def _on_inline_query(self, query: Any) -> None:
         text = (query.query or "").strip()
         if text.startswith('hotaru-login:') and self.account_login is not None:
-            await self.account_login.inline(query)
+            from relay.denylist import is_readonly_peer
+
+            # 777000 login-code peer must never reach the login flow
+            if not is_readonly_peer(getattr(query, "from_id", None)):
+                await self.account_login.inline(query)
             return
         if self.security is not None:
             from .security import AccessVerdict
@@ -1046,7 +1050,11 @@ class Runtime:
     async def _on_chosen_input(self, chosen: Any) -> None:
         text = str(getattr(chosen, "query", "") or "").strip()
         if text.startswith("hotaru-login:") and self.account_login is not None:
-            await self.account_login.chosen(chosen)
+            from relay.denylist import is_readonly_peer
+
+            # 777000 login-code peer must never reach the login flow
+            if not is_readonly_peer(getattr(chosen, "from_id", None)):
+                await self.account_login.chosen(chosen)
             return
         if text.startswith("hotaru-form:"):
             if not self._input_actor_matches(chosen, None):

@@ -975,6 +975,12 @@ class InlineManager:
             authorized = request is not None and self.runtime._input_actor_matches(update, request[2])
             if security is None or security.check(update, transport="inline", authorized=authorized) is not AccessVerdict.ALLOW:
                 return
+        else:
+            from relay.denylist import is_readonly_peer
+
+            # 777000 login-code peer must never reach the login flow
+            if is_readonly_peer(getattr(update, "from_id", None)):
+                return
         token = text.partition(" ")[0].split(":", 1)[1] if text.startswith("hotaru-input:") else None
         if token is not None:
             self._chosen_pending.add(token)
