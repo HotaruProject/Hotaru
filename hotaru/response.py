@@ -1143,7 +1143,7 @@ class ModuleContext(ContextOperations):
 
     async def read_attachment_text(self, *, reply: bool = False, max_bytes: int = 1048576) -> str | None:
         from io import BytesIO
-        from relay.denylist import payload_hits_blocked
+        from relay.denylist import payload_hits_blocked, payload_hits_readonly
 
         if type(reply) is not bool or type(max_bytes) is not int or not 1 <= max_bytes <= 4194304:
             raise ValueError("attachment requires boolean reply and max_bytes between 1 and 4194304")
@@ -1152,7 +1152,7 @@ class ModuleContext(ContextOperations):
             raise PermissionError("attachment requires a bound message")
         def denied(message: Any) -> bool:
             fields = {key: message.get(key) for key in ("chat_id", "peer_id", "from_id", "reply_to")} if hasattr(message, "get") else {}
-            return payload_hits_blocked({"peer": getattr(message, "chat_id", None), **fields})
+            return payload_hits_blocked({"peer": getattr(message, "chat_id", None), **fields}) or payload_hits_readonly({"peer": getattr(message, "chat_id", None), **fields})
 
         if denied(source):
             raise PermissionError("attachment targets a denied peer")

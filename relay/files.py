@@ -39,7 +39,8 @@ async def take(app: Any, source: Any, destination: str | Path | BinaryIO, **kw: 
         if isinstance(obj, tuple):
             pair = cast('tuple[object, ...]', obj)
             if len(pair) == 2:
-                if payload_hits_readonly(pair):
+                from relay.denylist import is_readonly_peer
+                if payload_hits_readonly(pair) or is_readonly_peer(pair[0]) or is_readonly_peer(pair[1]):
                     raise PermissionError("download from a read-only peer is denied")
                 obj = await app.get_msg(pair[0], pair[1])
                 if payload_hits_readonly(obj):
