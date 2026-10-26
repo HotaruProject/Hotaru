@@ -17,7 +17,7 @@ from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, cast
+from typing import Any, Iterable, cast
 from collections.abc import Awaitable
 
 from .capabilities import CapabilityBroker
@@ -2063,9 +2063,9 @@ class Runtime:
         if self.state is None or module_id not in self.state.module_ids():
             return set()
         namespace = self.state.namespace(module_id)
-        consent = namespace.get("caps-consent")
+        consent: object = namespace.get("caps-consent")
         if isinstance(consent, list):
-            return {value for value in consent if isinstance(value, str)}
+            return {value for value in cast("list[object]", consent) if isinstance(value, str)}
         if not isinstance(consent, dict):
             return set()
         consent_map = cast("dict[str, object]", consent)
@@ -2412,13 +2412,14 @@ class Runtime:
         module_ids = tuple(module_ids)
         edges: dict[str, tuple[str, ...]] = {}
         for module_id in module_ids:
-            after: Sequence[str] = ()
+            after: tuple[str, ...] = ()
             if self.modules is not None:
-                try:
-                    manifest = self.modules.manifest(module_id)
-                    after = manifest.after if manifest is not None else ()
-                except Exception:
-                    after = ()
+                source_path = self.state.namespace(module_id).get("sourcepath") if self.state is not None else None
+                if isinstance(source_path, str):
+                    try:
+                        after = getattr(self.modules.loader.load(source_path).manifest, "after", ()) or ()
+                    except Exception:
+                        after = ()
             edges[module_id] = tuple(dep for dep in after if dep in module_ids)
         tiers: list[list[str]] = []
         placed: set[str] = set()
@@ -2674,16 +2675,16 @@ class Runtime:
         if self.sandbox is None:
             return
         prewarm_all = bool(os.environ.get("HOTARU_PREWARM_ALL"))
-        module_ids = tuple(self.sandbox._module_defs.keys())
+        module_ids = self.sandbox.module_ids()
+        live = set(self.sandbox.live_worker_ids())
         for module_id in module_ids:
             if self.closed or self._relaunch:
                 break
             if not prewarm_all and not self.sandbox.is_worker_protected(module_id):
                 continue
             try:
-                worker = self.sandbox._workers.get(module_id)
-                if worker is None or worker.poll() is not None:
-                    await self.sandbox._ensure_worker(module_id)
+                if module_id not in live:
+                    await self.sandbox.ensure_worker(module_id)
                     await asyncio.sleep(0.05)
             except Exception as exc:
                 if self.observatory is not None:
@@ -2704,8 +2705,8 @@ class Runtime:
             pass
         total = 0
         try:
-            pids = [pid]
-            seen = set()
+            pids: list[int] = [pid]
+            seen: set[int] = set()
             for p in pids:
                 if p in seen:
                     continue
@@ -2796,15 +2797,16 @@ class Runtime:
         if self.state is not None and self.kernel is not None:
             self.kernel.suspended = self.state.get_setting("suspended") == "1"
         if self.modules is not None and self.constellations_dir.is_dir():
+            modules = self.modules
             hmod_paths = sorted(self.constellations_dir.glob("*.hmod"))
-            if hasattr(self.modules, "begin_boot"):
-                self.modules.begin_boot()
+            if hasattr(modules, "begin_boot"):
+                modules.begin_boot()
             async def _load_constellation(hmod_path: Path) -> None:
                 try:
-                    candidate = self.modules.loader.load(hmod_path)
+                    candidate = modules.loader.load(hmod_path)
                 except Exception:
                     return
-                if self.modules.get(candidate.manifest.module_id) is not None:
+                if modules.get(candidate.manifest.module_id) is not None:
                     return
                 try:
                     await self.activate_module(str(hmod_path))

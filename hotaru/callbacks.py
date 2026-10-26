@@ -721,7 +721,8 @@ class CallbackRouter:
                                 context_factory = getattr(self.runtime, "context_factory", None)
                                 mod_ctx = context_factory.create(module_id, callback) if context_factory is not None else None
                                 def make_cell(val: Any) -> Any:
-                                    return (lambda: val).__closure__[0]
+                                    closure = (lambda: val).__closure__
+                                    return closure[0] if closure is not None else None
                                 cells: list[Any] = []
                                 payload_val = value.get("payload")
                                 for var in getattr(found_code, "co_freevars", ()):

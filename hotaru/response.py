@@ -204,16 +204,24 @@ class FormHandle:
         return resolve().__await__()
 
 
+def msg_field(message: Any, name: str) -> Any:
+    return getattr(message, name, None) if type(message) is not dict else cast("dict[str, Any]", message).get(name)
+
+
+def reply_peer(message: Any) -> Any:
+    return cast("dict[str, Any]", message).get("chat_id") if type(message) is dict else getattr(message, "chat_id", None)
+
+
 class ResponseService:
     def __init__(self, rich_sender: Callable[..., Any] | None = None) -> None:
         self.rich_sender = rich_sender
 
     async def respond(
         self,
-        message: Any,
+        msg: Any,
         *,
         text: str | None = None,
-        rich_message: Any = None,
+        rich_msg: Any = None,
         media: Any = None,
         buttons: Any = None,
         output: OutputMode = "edit",
@@ -222,21 +230,21 @@ class ResponseService:
         parse_mode: str | None = "HTML",
     ) -> Response:
         from relay.denylist import payload_hits_readonly
-        if text is None and rich_message is None and media is None:
-            raise ValueError("response requires text, rich_message, or media")
-        peer = getattr(message, "chat_id", None) if not isinstance(message, dict) else message.get("chat_id")
+        if text is None and rich_msg is None and media is None:
+            raise ValueError("response requires text, rich_msg, or media")
+        peer = reply_peer(msg)
         if payload_hits_readonly({"peer": peer}):
             raise PermissionError("response targets a read-only peer")
-        if text is not None and rich_message is not None:
-            raise ValueError("text and rich_message are mutually exclusive")
+        if text is not None and rich_msg is not None:
+            raise ValueError("text and rich_msg are mutually exclusive")
         if output not in ("edit", "reply", "auto"):
             raise ValueError("output mode is invalid")
-        if rich_message is not None:
+        if rich_msg is not None:
             if self.rich_sender is None:
                 raise ResponseError("rich transport is not configured")
             result = self.rich_sender(
-                message,
-                rich_message=rich_message,
+                msg,
+                rich_msg=rich_msg,
                 buttons=buttons,
                 output=output,
                 reply_to=reply_to,
@@ -244,8 +252,8 @@ class ResponseService:
             )
             if hasattr(result, "__await__"):
                 result = await result
-            return Response(True, "edit" if output == "edit" else "reply", getattr(message, "src", None), result)
-        payload = {"kbd": buttons}
+            return Response(True, "edit" if output == "edit" else "reply", getattr(msg, "src", None), result)
+        payload: dict[str, Any] = {"kbd": buttons}
         if parse_mode is not None:
             payload["parse_mode"] = parse_mode
         if media is not None:
@@ -253,54 +261,54 @@ class ResponseService:
         if reply_to is not None:
             payload["reply_to"] = reply_to
         if topic_id is None:
-            for name in ("topic_id", "message_thread_id", "top_msg_id"):
-                candidate = getattr(message, name, None) if not isinstance(message, dict) else message.get(name)
+            for name in ("topic_id", "msg_thread_id", "top_msg_id"):
+                candidate = msg_field(msg, name)
                 if isinstance(candidate, int) and candidate > 0:
                     topic_id = candidate
                     break
         if topic_id is not None:
             payload["topic_id"] = topic_id
         if text is not None and str(payload.get("parse_mode", "")).lower() == "html":
-            if getattr(message, "src", "mt") == "bot":
+            if getattr(msg, "src", "mt") == "bot":
                 payload["parse_mode"] = "HTML"
             else:
                 payload.pop("parse_mode", None)
                 plain, entities = to_entities(text)
                 payload["entities"] = entities
                 text = plain
-        if output == "edit" and not hasattr(message, "edit"):
+        if output == "edit" and not hasattr(msg, "edit"):
             output = "reply"
-        if output in ("edit", "auto") and hasattr(message, "edit"):
+        if output in ("edit", "auto") and hasattr(msg, "edit"):
             try:
-                result = await message.edit(text or "", **payload)
+                result = await msg.edit(text or "", **payload)
             except MessageNotModifiedError:
-                return Response(True, "edit", getattr(message, "src", None), message)
+                return Response(True, "edit", getattr(msg, "src", None), msg)
             except (MessageIdInvalidError, MessageNotFoundError, RPCError, Exception):
                 pass
             else:
-                return Response(True, "edit", getattr(message, "src", None), result)
-        if hasattr(message, "reply"):
+                return Response(True, "edit", getattr(msg, "src", None), result)
+        if hasattr(msg, "reply"):
             try:
-                result = await message.reply(text or "", **payload)
-                return Response(True, "reply", getattr(message, "src", None), result)
+                result = await msg.reply(text or "", **payload)
+                return Response(True, "reply", getattr(msg, "src", None), result)
             except (MessageIdInvalidError, MessageNotFoundError, RPCError, Exception):
                 pass
-        chat_id = getattr(message, "chat_id", None) if not isinstance(message, dict) else message.get("chat_id")
-        app = getattr(message, "app", None) if not isinstance(message, dict) else message.get("app")
-        send_payload = {k: v for k, v in payload.items() if k not in ("reply_to", "id", "topic_id")}
+        chat_id = msg_field(msg, "chat_id")
+        app = msg_field(msg, "app")
+        send_payload: dict[str, Any] = {k: v for k, v in payload.items() if k not in ("reply_to", "id", "topic_id")}
         if topic_id is not None:
             send_payload["reply_to"] = {"_": "inputReplyToMessage", "reply_to_msg_id": int(topic_id), "top_msg_id": int(topic_id)}
-        if hasattr(message, "respond"):
+        if hasattr(msg, "respond"):
             try:
-                result = await message.respond(text or "", **send_payload)
-                return Response(True, "reply", getattr(message, "src", None), result)
+                result = await msg.respond(text or "", **send_payload)
+                return Response(True, "reply", getattr(msg, "src", None), result)
             except Exception:
                 pass
         if chat_id is not None and app is not None and hasattr(app, "send_msg"):
             try:
-                via = getattr(message, "src", None) if not isinstance(message, dict) else message.get("src")
+                via = msg_field(msg, "src")
                 result = await app.send_msg(chat_id, text or "", via=via, **send_payload)
-                return Response(True, "reply", getattr(message, "src", None), result)
+                return Response(True, "reply", getattr(msg, "src", None), result)
             except Exception:
                 pass
         return Response(False, "none", None)
@@ -349,7 +357,7 @@ class ResponseService:
         if bot:
             return await kwargs.pop("bot_gateway").send_message(getattr(message, "chat_id", None), kwargs.pop("text", ""), buttons=buttons, **kwargs)
         if rich_message is not None:
-            return await self.respond(message, rich_message=rich_message, output=output, **kwargs)
+            return await self.respond(message, rich_msg=rich_message, output=output, **kwargs)
         return await self.respond(message, text=kwargs.pop("text", None), media=media, output=output, buttons=buttons, **kwargs)
 
     async def split(self, message: Any, text: str, *, limit: int = 4096, **kwargs: Any) -> list[Any]:
@@ -502,33 +510,6 @@ class ModuleContext(ContextOperations):
     _response_source: Any = None
     _response_form: Any = None
     _response_lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False)
-
-    def get_memory(self) -> Memory:
-        usage = 0
-        if self.runtime is not None and hasattr(self.runtime, "get_memory_usage"):
-            usage = self.runtime.get_memory_usage()
-        return Memory(usage)
-
-    def get_ram(self) -> Memory:
-        return self.get_memory()
-
-    @property
-    def memory(self) -> Memory:
-        return self.get_memory()
-
-    @property
-    def ram(self) -> Memory:
-        return self.get_memory()
-
-    def get_prefix(self) -> Prefix:
-        prefix = "."
-        if self.runtime is not None and hasattr(self.runtime, "config"):
-            prefix = getattr(self.runtime.config, "prefix", ".")
-        return Prefix(prefix)
-
-    @property
-    def prefix(self) -> Prefix:
-        return self.get_prefix()
 
     def __repr__(self) -> str:
         return f"ModuleContext({self.module_id!r})"
