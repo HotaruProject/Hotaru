@@ -749,6 +749,11 @@ _ENV_MAPPINGS: dict[str, tuple[str, ...]] = {
     "log-level": ("HOTARU_LOG_LEVEL", "LOG_LEVEL"),
     "environment": ("HOTARU_ENV", "ENVIRONMENT", "NODE_ENV"),
     "sandbox": ("HOTARU_SANDBOX", "SANDBOX"),
+    "singularity-enabled": ("HOTARU_DASHBOARD_ENABLED", "DASHBOARD_ENABLED"),
+    "singularity-port": ("HOTARU_DASHBOARD_PORT", "DASHBOARD_PORT"),
+    "singularity-mode": ("HOTARU_DASHBOARD_MODE", "DASHBOARD_MODE"),
+    "singularity-tunnel": ("HOTARU_DASHBOARD_TUNNEL", "DASHBOARD_TUNNEL"),
+    "singularity-auto-botfather": ("HOTARU_DASHBOARD_AUTO_BOTFATHER", "DASHBOARD_AUTO_BOTFATHER"),
 }
 
 
@@ -777,6 +782,12 @@ class RuntimeConfig:
     log_level: str = "INFO"
     environment: str = "production"
     sandbox: str = "auto"
+    singularity_enabled: bool = True
+    singularity_port: int = 8787
+    singularity_mode: str = "live"
+    singularity_tunnel: bool = True
+    singularity_auto_botfather: bool = True
+    singularity_short_name: str = "dashboard"
 
     @classmethod
     def from_database(cls, path: str | Path | None = None, *, discover: bool = True) -> "RuntimeConfig":
@@ -787,7 +798,7 @@ class RuntimeConfig:
         state = StateStore(path)
         try:
             values: dict[str, Any] = {}
-            for setting_key in ("api-id", "api-hash", "bot-token", "owner-id", "prefix", "session-name", "session-dir", "backup-keep", "inline-enabled", "log-level", "environment", "sandbox"):
+            for setting_key in ("api-id", "api-hash", "bot-token", "owner-id", "prefix", "session-name", "session-dir", "backup-keep", "inline-enabled", "log-level", "environment", "sandbox", "singularity-enabled", "singularity-port", "singularity-mode", "singularity-tunnel", "singularity-auto-botfather"):
                 raw_env = _resolve_env(setting_key, dotenv) if discover else None
                 if raw_env is not None:
                     if setting_key == "api-id":
@@ -795,19 +806,19 @@ class RuntimeConfig:
                             val = int(raw_env)
                         except ValueError:
                             val = None
-                    elif setting_key in {"owner-id", "backup-keep"}:
+                    elif setting_key in {"owner-id", "backup-keep", "singularity-port"}:
                         try:
                             val = int(raw_env)
                         except ValueError:
                             val = None
-                    elif setting_key == "inline-enabled":
+                    elif setting_key in {"inline-enabled", "singularity-enabled", "singularity-tunnel", "singularity-auto-botfather"}:
                         try:
                             val = BooleanValidator().validate(raw_env)
                         except ConfigValidationError:
                             val = True
                     elif setting_key == "log-level":
                         val = raw_env.upper()
-                    elif setting_key == "environment":
+                    elif setting_key in {"environment", "singularity-mode"}:
                         val = raw_env.lower()
                     elif setting_key == "sandbox":
                         val = raw_env.strip().lower()
@@ -867,6 +878,11 @@ class RuntimeConfig:
                 log_level=str(values["log-level"]),
                 environment=str(values["environment"]),
                 sandbox=str(values.get("sandbox") or "auto"),
+                singularity_enabled=bool(True if values.get("singularity-enabled") is None else values["singularity-enabled"]),
+                singularity_port=int(values.get("singularity-port") or 8787),
+                singularity_mode=str(values.get("singularity-mode") or "live"),
+                singularity_tunnel=bool(True if values.get("singularity-tunnel") is None else values["singularity-tunnel"]),
+                singularity_auto_botfather=bool(True if values.get("singularity-auto-botfather") is None else values["singularity-auto-botfather"]),
             )
         finally:
             state.close()
@@ -906,6 +922,10 @@ class RuntimeConfig:
             "inline_enabled": self.inline_enabled,
             "log_level": self.log_level,
             "environment": self.environment,
+            "singularity_enabled": self.singularity_enabled,
+            "singularity_port": self.singularity_port,
+            "singularity_mode": self.singularity_mode,
+            "singularity_tunnel": self.singularity_tunnel,
         }
 
     def to_env(self, mask_secrets: bool = True) -> str:
@@ -955,6 +975,34 @@ CORE_SCHEMA = ConfigSchema({
         default=True,
         description="Enable inline query bot features and forms",
         category="General",
+    ),
+    "singularity-enabled": ConfigField(
+        key="singularity-enabled",
+        validator=BooleanValidator(default=True),
+        default=True,
+        description="Enable Singularity Black Hole web dashboard",
+        category="Singularity",
+    ),
+    "singularity-port": ConfigField(
+        key="singularity-port",
+        validator=IntegerValidator(default=8787, minimum=1024, maximum=65535),
+        default=8787,
+        description="Local TCP port for Singularity web dashboard",
+        category="Singularity",
+    ),
+    "singularity-tunnel": ConfigField(
+        key="singularity-tunnel",
+        validator=BooleanValidator(default=True),
+        default=True,
+        description="Expose Singularity via Cloudflare Quick Tunnel",
+        category="Singularity",
+    ),
+    "singularity-auto-botfather": ConfigField(
+        key="singularity-auto-botfather",
+        validator=BooleanValidator(default=True),
+        default=True,
+        description="Automatically register and update Mini App URL in @BotFather on startup",
+        category="Singularity",
     ),
 })
 

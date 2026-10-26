@@ -9,6 +9,7 @@ description = "A security-first Telegram userbot built on GoyGram"
 requires-python = ">=3.13"
 dependencies = [
     "goygram==0.8.26",
+    "psutil>=6.1.0",
 ]
 
 [project.scripts]
@@ -21,8 +22,9 @@ source = "vcs"
 allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
-packages = ["hotaru", "relay"]
+packages = ["hotaru", "relay", "singularity"]
 
 [tool.hatch.build.targets.wheel.force-include]
 "constellations" = "hotaru/constellations"
 "lexicon" = "hotaru/lexicon"
+"singularity/assets" = "singularity/assets"

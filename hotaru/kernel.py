@@ -336,7 +336,6 @@ class Kernel:
 
     @staticmethod
     def _is_secret_peer(message: Any) -> bool:
-        # 777000 carries Telegram login codes: never reach modules or watchers
         return is_readonly_peer(getattr(message, "from_id", None)) or is_readonly_peer(getattr(message, "chat_id", None))
 
     @staticmethod

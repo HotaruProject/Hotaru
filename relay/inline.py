@@ -978,7 +978,6 @@ class InlineManager:
         else:
             from relay.denylist import is_readonly_peer
 
-            # 777000 login-code peer must never reach the login flow
             if is_readonly_peer(getattr(update, "from_id", None)):
                 return
         token = text.partition(" ")[0].split(":", 1)[1] if text.startswith("hotaru-input:") else None

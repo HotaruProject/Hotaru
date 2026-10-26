@@ -166,6 +166,8 @@ class Runtime:
     _form_inline_ids: dict[str, Any] | None = None
     _form_chosen: dict[str, asyncio.Event] | None = None
     _form_module_ids: dict[str, str] | None = None
+    _form_media: dict[str, str] | None = None
+    singularity: Any = None
 
     @classmethod
     def from_database(cls, path: str | Path | None = None) -> "Runtime":
@@ -278,6 +280,7 @@ class Runtime:
         self.stager = ModuleStager(self.modules.loader)
         self.inline = InlineManager(self)
         self._inline_forms = {}
+        self._form_media = {}
         self._forms = {}
         self._input_requests = {}
         self._form_inline_ids = {}
@@ -327,7 +330,7 @@ class Runtime:
             raise RuntimeError("inline bot form transport is unavailable")
         if self.inline.info is None:
             with trusted_scope():
-                await self.inline.ensure_bot(allow_create=False)
+                await self.inline.ensure_bot(allow_create=True)
         with trusted_scope():
             await self.inline.start()
         try:
@@ -875,6 +878,11 @@ class Runtime:
                     current.append(btn_item)
             inline_buttons.append(current)
         self._inline_forms[nonce] = (text, inline_buttons, bool(options.get("rich", False)))
+        photo_opt = options.get("photo")
+        if isinstance(photo_opt, str) and photo_opt.startswith("https://"):
+            if self._form_media is None:
+                self._form_media = {}
+            self._form_media[nonce] = photo_opt
         options["module_id"] = options.get("module_id", "")
         options["form_id"] = nonce
         options["actions"] = action_records or self._form_actions(buttons)
@@ -979,7 +987,6 @@ class Runtime:
         if text.startswith('hotaru-login:') and self.account_login is not None:
             from relay.denylist import is_readonly_peer
 
-            # 777000 login-code peer must never reach the login flow
             if not is_readonly_peer(getattr(query, "from_id", None)):
                 await self.account_login.inline(query)
             return
@@ -1019,12 +1026,33 @@ class Runtime:
                 await answer_tl(query, results=[], cache_time=0, is_personal=True)
                 return
             form_text, buttons, rich = form
-            result = InlineObj.article("hotaru-form", self.t("inline.form"), form_text, parse_mode="HTML")
-            if rich:
-                result["input_message_content"] = {"rich_message": {"_": "inputRichMessageHTML", **to_rich(form_text)}}
-            if buttons:
-                result["reply_markup"] = {"inline_keyboard": buttons}
-            await answer_tl(query, results=[result], cache_time=0, is_personal=True)
+            photo_url = (self._form_media or {}).get(nonce)
+            answered = False
+            if isinstance(photo_url, str) and photo_url.startswith("https://"):
+                photo_result: dict[str, Any] = {
+                    "type": "photo",
+                    "id": "hotaru-form",
+                    "photo_url": photo_url,
+                    "thumbnail_url": photo_url,
+                    "caption": form_text,
+                    "parse_mode": "HTML",
+                }
+                if rich:
+                    photo_result["input_message_content"] = {"rich_message": {"_": "inputRichMessageHTML", **to_rich(form_text)}}
+                if buttons:
+                    photo_result["reply_markup"] = {"inline_keyboard": buttons}
+                try:
+                    await answer_tl(query, results=[photo_result], cache_time=0, is_personal=True)
+                    answered = True
+                except Exception:
+                    answered = False
+            if not answered:
+                result = InlineObj.article("hotaru-form", self.t("inline.form"), form_text, parse_mode="HTML")
+                if rich:
+                    result["input_message_content"] = {"rich_message": {"_": "inputRichMessageHTML", **to_rich(form_text)}}
+                if buttons:
+                    result["reply_markup"] = {"inline_keyboard": buttons}
+                await answer_tl(query, results=[result], cache_time=0, is_personal=True)
             if self.observatory is not None:
                 self.observatory.emit("inline", "form_answered", buttons=len(buttons))
             return
@@ -1052,7 +1080,6 @@ class Runtime:
         if text.startswith("hotaru-login:") and self.account_login is not None:
             from relay.denylist import is_readonly_peer
 
-            # 777000 login-code peer must never reach the login flow
             if not is_readonly_peer(getattr(chosen, "from_id", None)):
                 await self.account_login.chosen(chosen)
             return
@@ -1418,11 +1445,30 @@ class Runtime:
         text = str(query.query or "")
         if not text.startswith("hotaru-form:") or self._inline_forms is None:
             return
-        form = self._inline_forms.get(text.split(":", 1)[1])
+        nonce = text.split(":", 1)[1]
+        form = self._inline_forms.get(nonce)
         if form is None:
             await query.answer(results=[], cache_time=0, is_personal=True)
             return
         body, buttons, rich = form
+        photo_url = (self._form_media or {}).get(nonce)
+        if isinstance(photo_url, str) and photo_url.startswith("https://"):
+            photo_result: dict[str, Any] = {
+                "type": "photo",
+                "id": "hotaru-form",
+                "photo_url": photo_url,
+                "thumbnail_url": photo_url,
+                "caption": body,
+                "parse_mode": "HTML",
+                "reply_markup": {"inline_keyboard": [buttons]},
+            }
+            if rich:
+                photo_result["input_message_content"] = {"rich_message": {"_": "inputRichMessageHTML", **to_rich(body)}}
+            try:
+                await answer_tl(query, results=[photo_result], cache_time=0, is_personal=True)
+                return
+            except Exception:
+                pass
         result = InlineObj.article("hotaru-form", self.t("inline.form"), body, parse_mode="HTML", kbd={"inline_keyboard": [buttons]})
         if rich:
             result["input_message_content"] = {"rich_message": {"_": "inputRichMessageHTML", **to_rich(body)}}
@@ -2700,6 +2746,29 @@ class Runtime:
             self.observatory.emit("kernel", "loop_stall", "warn", stalls=stalls, blocked=round(stalled, 1),
                                   note="module code does not yield and cannot be interrupted mid-call")
 
+    async def _start_singularity(self) -> None:
+        if os.environ.get("HOTARU_ACCOUNT_SESSION"):
+            return
+        try:
+            with trusted_scope():
+                from singularity import SingularityKernel
+
+                if self.singularity is None:
+                    self.singularity = SingularityKernel(self)
+                await self.singularity.start()
+        except Exception as exc:
+            log.warning("Singularity startup skipped: %s", exc)
+
+    async def _stop_singularity(self) -> None:
+        svc = self.singularity
+        self.singularity = None
+        if svc is not None:
+            try:
+                with trusted_scope():
+                    await svc.stop()
+            except Exception as exc:
+                log.debug("Singularity stop error: %s", exc)
+
     async def run(self) -> None:
         if self.app is None:
             self.build()
@@ -2747,6 +2816,7 @@ class Runtime:
         await self.restore_enabled_modules()
         if self.modules is not None and hasattr(self.modules, "end_boot"):
             await self.modules.end_boot()
+        await self._start_singularity()
         if self.supervisor is not None:
             self.supervisor.mark_ready(mt=self.app.mt is not None, bot=self.app.bot is not None)
         if self.sandbox is not None:
@@ -2829,6 +2899,7 @@ class Runtime:
                 await self._connection.close()
             if self.app is not None:
                 await self.app.close()
+            await self._stop_singularity()
             if self.state is not None:
                 self.state.close()
             self.closed = True

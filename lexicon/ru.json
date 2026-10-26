@@ -590,6 +590,17 @@
       "config_fields": {
         "template": "Шаблон .info, плейсхолдеры {version} {uptime} {modules}"
       }
+    },
+    "singularity": {
+      "description": "3D-телеметрия ядра и поток Observatory (Singularity)",
+      "card_title": "🕳 <b>Hotaru // Singularity</b>",
+      "card_subtitle": "<i>3D Event Horizon · Node.Probe · Read-Only Observatory Stream</i>",
+      "open_button": "🕳 Открыть Singularity",
+      "commands": {
+        "dash": {
+          "description": "Открыть inline-панель Mini App телеметрии Singularity"
+        }
+      }
     }
   },
   "commands": {

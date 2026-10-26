@@ -596,6 +596,17 @@
       "config_fields": {
         "template": ".info үлгісі, толтырғыштар: {version} {uptime} {modules}"
       }
+    },
+    "singularity": {
+      "description": "Ядроның 3D-телеметриясы және Observatory ағыны (Singularity)",
+      "card_title": "🕳 <b>Hotaru // Singularity</b>",
+      "card_subtitle": "<i>3D Event Horizon · Node.Probe · Read-Only Observatory Stream</i>",
+      "open_button": "🕳 Singularity ашу",
+      "commands": {
+        "dash": {
+          "description": "Singularity Mini App inline-панелін ашу"
+        }
+      }
     }
   },
   "inline_commands_hint": "Команданы таңда — кез келген чатта @<бот> және оның атын тер",

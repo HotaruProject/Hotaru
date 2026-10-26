@@ -1,0 +1,118 @@
+HOTARU = {
+    "id": "singularity",
+    "version": "2.0.0",
+    "commands": ["dash"],
+    "capabilities": ["mt"],
+}
+
+import html
+from typing import Any
+
+from singularity.relay import get_sanctuary_app_state, resolve_inline_banner_url
+
+
+def _tr(ctx: Any, key: str, fallback: str, **kwargs: Any) -> str:
+    try:
+        val = ctx.t(key, **kwargs)
+        if isinstance(val, str) and val and val != key:
+            return val
+    except Exception:
+        pass
+    return fallback.format(**kwargs) if kwargs else fallback
+
+
+async def command_dash(ctx: Any, invocation: Any) -> None:
+    runtime = ctx.runtime
+    svc = getattr(runtime, "singularity", None)
+    if svc is None and hasattr(runtime, "_start_singularity"):
+        await runtime._start_singularity()
+        svc = getattr(runtime, "singularity", None)
+
+    ready_info: dict[str, Any] = {}
+    if svc is not None and hasattr(svc, "ensure_ready"):
+        ready_info = await svc.ensure_ready()
+
+    state = getattr(runtime, "state", None)
+    db_state = get_sanctuary_app_state(state)
+
+    bot_user = (
+        str(ready_info.get("bot_username") or "")
+        or db_state.bot_username
+        or (str(state.get_setting("inline-bot-username") or "") if state is not None and hasattr(state, "get_setting") else "")
+    ).lstrip("@").strip()
+
+    short_slug = (
+        str(ready_info.get("short_name") or "")
+        or db_state.short_name
+        or (svc.config.short_name if svc is not None else "dashboard")
+    ).strip()
+
+    app_link = (
+        str(ready_info.get("app_link") or "")
+        or db_state.app_link
+        or (svc.webapp_link if svc is not None and svc.webapp_link else "")
+        or (f"https://t.me/{bot_user}/{short_slug}" if bot_user else "")
+    ).strip()
+
+    tunnel_url = (
+        str(ready_info.get("tunnel_url") or "")
+        or (svc.tunnel_url if svc is not None and svc.tunnel_url else "")
+        or db_state.last_tunnel_url
+    ).strip()
+
+    probe_online = bool(ready_info.get("running") if ready_info else (svc is not None and svc.is_running))
+    registered = bool(ready_info.get("registered") if ready_info else (db_state.registered or (svc is not None and svc.webapp_registered)))
+
+    status_tag = "ONLINE" if probe_online else "STANDBY"
+    sync_tag = "SYNCED" if registered else "PENDING"
+    horizon_display = html.escape(tunnel_url) if tunnel_url else "initializing..."
+
+    header = _tr(ctx, "kernel.singularity.card_title", "🕳 <b>Hotaru // Singularity</b>")
+    sub = _tr(
+        ctx,
+        "kernel.singularity.card_subtitle",
+        "<i>3D Event Horizon · Node.Probe · Read-Only Observatory Stream</i>",
+    )
+    lines = [
+        header,
+        sub,
+        "",
+        f"▸ <b>Probe:</b> <code>{status_tag}</code> · <b>Relay:</b> <code>{sync_tag}</code>",
+        f"▸ <b>Horizon:</b> <code>{horizon_display}</code>",
+    ]
+    if bot_user:
+        lines.append(f"▸ <b>Inline Bot:</b> <code>@{html.escape(bot_user)}</code>")
+    text = "\n".join(lines)
+
+    open_label = _tr(ctx, "kernel.singularity.open_button", "🕳 Открыть Singularity")
+    close_label = _tr(ctx, "common.close", "✖ Закрыть")
+
+    launch_url = app_link or tunnel_url
+    buttons: list[list[dict[str, Any]]] = []
+    if launch_url:
+        buttons.append([{"text": open_label, "url": launch_url}])
+
+    if hasattr(ctx, "ui") and hasattr(ctx.ui, "close"):
+        buttons.append([ctx.ui.close(close_label)])
+
+    banner_url = ready_info.get("banner_url")
+    if not banner_url:
+        banner_url = await resolve_inline_banner_url(tunnel_url or None)
+
+    if buttons and hasattr(ctx, "form"):
+        if isinstance(banner_url, str) and banner_url.startswith("https://"):
+            try:
+                await ctx.form(text, buttons, module_id="singularity", photo=banner_url)
+                return
+            except Exception:
+                pass
+        try:
+            await ctx.form(text, buttons, module_id="singularity")
+            return
+        except Exception:
+            pass
+
+    if buttons and hasattr(ctx, "answer"):
+        await ctx.answer(text, rows=buttons, parse_mode="HTML")
+    else:
+        await ctx.respond(text, parse_mode="HTML")
