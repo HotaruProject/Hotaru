@@ -590,6 +590,17 @@
       "config_fields": {
         "template": "Info template; placeholders: {version} {uptime} {modules}"
       }
+    },
+    "singularity": {
+      "description": "3D kernel telemetry & Observatory debug stream (Singularity)",
+      "card_title": "🕳 <b>Hotaru // Singularity</b>",
+      "card_subtitle": "<i>3D Event Horizon · Node.Probe · Read-Only Observatory Stream</i>",
+      "open_button": "🕳 Open Singularity",
+      "commands": {
+        "dash": {
+          "description": "Open inline launcher for the Singularity Mini App"
+        }
+      }
     }
   },
   "commands": {

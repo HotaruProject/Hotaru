@@ -6,7 +6,7 @@ from typing import Any, Awaitable, Callable, cast
 
 try:
     from .denylist import is_blocked_peer, is_readonly_peer, payload_hits_blocked, payload_hits_readonly
-except (ImportError, KeyError):  # worker exec: denylist source is pre-exec'd into this namespace
+except (ImportError, KeyError):
     pass
 
 _SENTINEL = object()

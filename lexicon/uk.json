@@ -596,6 +596,17 @@
       "config_fields": {
         "template": "Шаблон .info, заповнювачі {version} {uptime} {modules}"
       }
+    },
+    "singularity": {
+      "description": "3D-телеметрія ядра та потік Observatory (Singularity)",
+      "card_title": "🕳 <b>Hotaru // Singularity</b>",
+      "card_subtitle": "<i>3D Event Horizon · Node.Probe · Read-Only Observatory Stream</i>",
+      "open_button": "🕳 Відкрити Singularity",
+      "commands": {
+        "dash": {
+          "description": "Відкрити inline-панель Mini App телеметрії Singularity"
+        }
+      }
     }
   },
   "inline_commands_hint": "Обери команду — введи @<бот> і її назву в будь-якому чаті",
