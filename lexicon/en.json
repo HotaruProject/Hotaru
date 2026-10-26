@@ -555,7 +555,7 @@
       "inline": "query and interact with inline bots",
       "modules": "load, unload, reload, list, and inspect installed modules; hashes and manifest info",
       "assets": "access to hidden assets storage",
-      "shell": "full shell access with the Hotaru process OS permissions, including host files, credentials and network; NOT confined to the module workspace. Command timeout and returned output limits still apply",
+      "shell": "run shell commands in the module workspace; the shell always runs in an isolated sandbox that sees only the workspace, its own tools, and an isolated /tmp; network works only with the net capability and host filesystem access only with the files capability, both still inside the sandbox; command timeout and returned output limits still apply",
       "logs": "write structured entries to the observatory log; always granted",
       "fetch": "read-only access to messages, entities and reply resolution; always granted"
     },
@@ -589,6 +589,17 @@
       },
       "config_fields": {
         "template": "Info template; placeholders: {version} {uptime} {modules}"
+      }
+    },
+    "singularity": {
+      "description": "3D kernel telemetry & Observatory debug stream (Singularity)",
+      "card_title": "🕳 <b>Hotaru // Singularity</b>",
+      "card_subtitle": "<i>3D Event Horizon · Node.Probe · Read-Only Observatory Stream</i>",
+      "open_button": "🕳 Open Singularity",
+      "commands": {
+        "dash": {
+          "description": "Open inline launcher for the Singularity Mini App"
+        }
       }
     }
   },

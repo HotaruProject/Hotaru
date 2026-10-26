@@ -8,7 +8,7 @@ from typing import Any, Awaitable, Callable, cast
 
 from .caps import MT_BLOCKED, MT_BLOCKED_PREFIXES, normalize_method
 from .rpc import rpcname
-from .denylist import payload_hits_blocked
+from .denylist import payload_hits_blocked, payload_hits_readonly
 from .firewall import trusted_scope
 from goygram.sugar import extract_sent_message
 from . import emoji
@@ -80,6 +80,8 @@ class Gateway:
         self._check(method)
         if payload_hits_blocked(kwargs):
             raise PermissionError("mt kwargs target a denied peer")
+        if kwargs is not None and payload_hits_readonly(kwargs) and not method.strip().lower().startswith(("messages.get", "messages.search", "channels.get", "stats.get")):
+            raise PermissionError("mt kwargs target a read-only peer")
         if kwargs is not None and not emoji.premium():
             entities = kwargs.get("entities")
             if isinstance(entities, list):
@@ -411,6 +413,9 @@ class BotGateway:
         app = getattr(self._manager, "bot_app", None)
         if app is None or getattr(app, "mt", None) is None:
             raise RuntimeError("inline bot is not ready")
+        if method in {"sendMessage", "sendRichMessage", "sendPhoto", "sendDocument", "sendVideo", "deleteMessage"}:
+            if payload_hits_readonly(kwargs):
+                raise RuntimeError("inline bot payload targets a read-only peer")
         if method == "deleteMessage":
             from relay.rpc import delete_chat_msg
             with trusted_scope():
@@ -429,6 +434,8 @@ class BotGateway:
 
     async def _send_media_mt(self, app: Any, method: str, kwargs: dict[str, Any]) -> Any:
         from relay.files import document, put
+        if payload_hits_readonly(kwargs):
+            raise RuntimeError("inline bot payload targets a read-only peer")
         key = "photo" if method == "sendPhoto" else "video" if method == "sendVideo" else "document"
         source = kwargs.get(key)
         caption = str(kwargs.get("caption", ""))
@@ -911,13 +918,22 @@ class ForumHelper:
             return None
 
     async def _apply_group(self, chat_id: int) -> None:
-        self._sync_ts = 0.0
-        self._invite_ts = 0.0
-        await self._invite_bot(chat_id)
-        await self._promote_bot(chat_id)
-        await self._hide_general(chat_id)
-        await self._sync_channel_to_bot(chat_id)
-        self._applied.add(chat_id)
+        try:
+            manager = getattr(self._runtime, "inline", None)
+            if manager is not None and hasattr(manager, "ready"):
+                try:
+                    await asyncio.wait_for(manager.ready.wait(), timeout=15.0)
+                except Exception:
+                    pass
+            self._sync_ts = 0.0
+            self._invite_ts = 0.0
+            await self._invite_bot(chat_id)
+            await self._promote_bot(chat_id)
+            await self._hide_general(chat_id)
+            await self._sync_channel_to_bot(chat_id)
+            self._applied.add(chat_id)
+        except Exception as exc:
+            self._emit("apply_failed", error=type(exc).__name__, detail=str(exc)[:160])
 
     async def _user_bot(self, bot_id: int, username: str) -> dict[str, Any] | None:
         entity = self._user_mt().entities.get(("user", bot_id))

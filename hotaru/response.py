@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Literal, cast
 from collections.abc import Awaitable
 
-from goygram.errors import MessageNotModifiedError
+from goygram.errors import MessageNotModifiedError, MessageIdInvalidError, MessageNotFoundError, RPCError
 
 from .state import StateNamespace
 from .plainfmt import rich_to_plain
@@ -204,16 +204,24 @@ class FormHandle:
         return resolve().__await__()
 
 
+def msg_field(message: Any, name: str) -> Any:
+    return getattr(message, name, None) if type(message) is not dict else cast("dict[str, Any]", message).get(name)
+
+
+def reply_peer(message: Any) -> Any:
+    return cast("dict[str, Any]", message).get("chat_id") if type(message) is dict else getattr(message, "chat_id", None)
+
+
 class ResponseService:
     def __init__(self, rich_sender: Callable[..., Any] | None = None) -> None:
         self.rich_sender = rich_sender
 
     async def respond(
         self,
-        message: Any,
+        msg: Any,
         *,
         text: str | None = None,
-        rich_message: Any = None,
+        rich_msg: Any = None,
         media: Any = None,
         buttons: Any = None,
         output: OutputMode = "edit",
@@ -221,18 +229,22 @@ class ResponseService:
         topic_id: int | None = None,
         parse_mode: str | None = "HTML",
     ) -> Response:
-        if text is None and rich_message is None and media is None:
-            raise ValueError("response requires text, rich_message, or media")
-        if text is not None and rich_message is not None:
-            raise ValueError("text and rich_message are mutually exclusive")
+        from relay.denylist import payload_hits_readonly
+        if text is None and rich_msg is None and media is None:
+            raise ValueError("response requires text, rich_msg, or media")
+        peer = reply_peer(msg)
+        if payload_hits_readonly({"peer": peer}):
+            raise PermissionError("response targets a read-only peer")
+        if text is not None and rich_msg is not None:
+            raise ValueError("text and rich_msg are mutually exclusive")
         if output not in ("edit", "reply", "auto"):
             raise ValueError("output mode is invalid")
-        if rich_message is not None:
+        if rich_msg is not None:
             if self.rich_sender is None:
                 raise ResponseError("rich transport is not configured")
             result = self.rich_sender(
-                message,
-                rich_message=rich_message,
+                msg,
+                rich_msg=rich_msg,
                 buttons=buttons,
                 output=output,
                 reply_to=reply_to,
@@ -240,39 +252,66 @@ class ResponseService:
             )
             if hasattr(result, "__await__"):
                 result = await result
-            return Response(True, "edit" if output == "edit" else "reply", getattr(message, "src", None), result)
-        payload = {"kbd": buttons}
+            return Response(True, "edit" if output == "edit" else "reply", getattr(msg, "src", None), result)
+        payload: dict[str, Any] = {"kbd": buttons}
         if parse_mode is not None:
             payload["parse_mode"] = parse_mode
         if media is not None:
             payload["media"] = media
         if reply_to is not None:
             payload["reply_to"] = reply_to
+        if topic_id is None:
+            for name in ("topic_id", "msg_thread_id", "top_msg_id"):
+                candidate = msg_field(msg, name)
+                if isinstance(candidate, int) and candidate > 0:
+                    topic_id = candidate
+                    break
         if topic_id is not None:
             payload["topic_id"] = topic_id
         if text is not None and str(payload.get("parse_mode", "")).lower() == "html":
-            if getattr(message, "src", "mt") == "bot":
+            if getattr(msg, "src", "mt") == "bot":
                 payload["parse_mode"] = "HTML"
             else:
                 payload.pop("parse_mode", None)
                 plain, entities = to_entities(text)
                 payload["entities"] = entities
                 text = plain
-        if output == "edit" and not hasattr(message, "edit"):
+        if output == "edit" and not hasattr(msg, "edit"):
             output = "reply"
-        if output in ("edit", "auto") and hasattr(message, "edit"):
+        if output in ("edit", "auto") and hasattr(msg, "edit"):
             try:
-                result = await message.edit(text or "", **payload)
+                result = await msg.edit(text or "", **payload)
             except MessageNotModifiedError:
-                return Response(True, "edit", getattr(message, "src", None), message)
+                return Response(True, "edit", getattr(msg, "src", None), msg)
+            except (MessageIdInvalidError, MessageNotFoundError, RPCError, Exception):
+                pass
             else:
-                return Response(True, "edit", getattr(message, "src", None), result)
-        if output == "edit":
-            return Response(False, "none", None)
-        if not hasattr(message, "reply"):
-            return Response(False, "none", None)
-        result = await message.reply(text or "", **payload)
-        return Response(True, "reply", getattr(message, "src", None), result)
+                return Response(True, "edit", getattr(msg, "src", None), result)
+        if hasattr(msg, "reply"):
+            try:
+                result = await msg.reply(text or "", **payload)
+                return Response(True, "reply", getattr(msg, "src", None), result)
+            except (MessageIdInvalidError, MessageNotFoundError, RPCError, Exception):
+                pass
+        chat_id = msg_field(msg, "chat_id")
+        app = msg_field(msg, "app")
+        send_payload: dict[str, Any] = {k: v for k, v in payload.items() if k not in ("reply_to", "id", "topic_id")}
+        if topic_id is not None:
+            send_payload["reply_to"] = {"_": "inputReplyToMessage", "reply_to_msg_id": int(topic_id), "top_msg_id": int(topic_id)}
+        if hasattr(msg, "respond"):
+            try:
+                result = await msg.respond(text or "", **send_payload)
+                return Response(True, "reply", getattr(msg, "src", None), result)
+            except Exception:
+                pass
+        if chat_id is not None and app is not None and hasattr(app, "send_msg"):
+            try:
+                via = msg_field(msg, "src")
+                result = await app.send_msg(chat_id, text or "", via=via, **send_payload)
+                return Response(True, "reply", getattr(msg, "src", None), result)
+            except Exception:
+                pass
+        return Response(False, "none", None)
 
     async def smart(
         self,
@@ -318,7 +357,7 @@ class ResponseService:
         if bot:
             return await kwargs.pop("bot_gateway").send_message(getattr(message, "chat_id", None), kwargs.pop("text", ""), buttons=buttons, **kwargs)
         if rich_message is not None:
-            return await self.respond(message, rich_message=rich_message, output=output, **kwargs)
+            return await self.respond(message, rich_msg=rich_message, output=output, **kwargs)
         return await self.respond(message, text=kwargs.pop("text", None), media=media, output=output, buttons=buttons, **kwargs)
 
     async def split(self, message: Any, text: str, *, limit: int = 4096, **kwargs: Any) -> list[Any]:
@@ -417,6 +456,41 @@ class ModuleMessage:
         if not hasattr(self._source, "download"):
             raise ResponseError("media download is unavailable")
         return await self._source.download(destination)
+
+
+class Memory(int):
+    @property
+    def bytes(self) -> int:
+        return int(self)
+
+    @property
+    def kb(self) -> float:
+        return round(self / 1024, 2)
+
+    @property
+    def mb(self) -> float:
+        return round(self / (1024 * 1024), 2)
+
+    @property
+    def gb(self) -> float:
+        return round(self / (1024 * 1024 * 1024), 2)
+
+    def format(self) -> str:
+        if self >= 1024 * 1024 * 1024:
+            return f"{self.gb:.2f} GB"
+        if self >= 1024 * 1024:
+            return f"{self.mb:.1f} MB"
+        if self >= 1024:
+            return f"{self.kb:.1f} KB"
+        return f"{self} B"
+
+    def __call__(self) -> Memory:
+        return self
+
+
+class Prefix(str):
+    def __call__(self) -> str:
+        return str(self)
 
 
 @dataclass
@@ -617,8 +691,14 @@ class ModuleContext(ContextOperations):
             raise ResponseError("capabilities are not available")
         return await self.cap_host.call(self.module_id, capability, payload or {})
 
-    async def mt(self, method: str, **kwargs: Any) -> Any:
+    async def _mt_call(self, method: str, **kwargs: Any) -> Any:
         return await self.cap("mt", {"method": method, "kwargs": kwargs})
+
+    async def _ctx_call(self, method: str, **kwargs: Any) -> Any:
+        if self.cap_host is None:
+            raise ResponseError("capabilities are not available")
+        with trusted_scope():
+            return await self.cap_host._mt_call(self.module_id, {"method": method, "kwargs": kwargs}, {})
 
     async def premium(self) -> bool:
         if self.runtime is not None and hasattr(self.runtime, "is_premium"):
@@ -718,8 +798,11 @@ class ModuleContext(ContextOperations):
         return handle
 
     async def _deliver(self, text: str | None = None, **kwargs: Any) -> Any:
+        from relay.denylist import payload_hits_readonly
         if text is not None:
             kwargs["text"] = text
+        if payload_hits_readonly({"peer": getattr(self._delivery_source, "chat_id", None)}):
+            raise PermissionError("delivery targets a read-only peer")
         output = kwargs.get("output", "auto")
         if output == "auto" or output == "edit" and self._response_source is None and not self._outgoing:
             kwargs["output"] = "edit" if self._response_source is not None or self._outgoing else "reply"
@@ -864,8 +947,6 @@ class ModuleContext(ContextOperations):
             else:
                 kwargs.setdefault("media", content)
         buttons = kwargs.pop("buttons", None)
-        # a standing card is only reused when the module asked for an edit; a plain
-        # respond is a new answer, so a repeat command sends a new card
         if asked and mode == "edit" and self._response_form is not None:
             kwargs.pop("inline", None)
             kwargs.pop("bot", None)
@@ -1020,7 +1101,7 @@ class ModuleContext(ContextOperations):
                 break
             with trusted_scope():
                 return await self.cap_host._mt_call(self.module_id, {"method": method, "kwargs": kwargs}, {})
-        return await self.mt(method, **kwargs)
+        return await self._ctx_call(method, **kwargs)
 
     async def send_file(self, file: Any, caption: str | None = None, **kwargs: Any) -> Response:
         output = kwargs.pop("output", "send")
@@ -1043,7 +1124,7 @@ class ModuleContext(ContextOperations):
 
     async def read_attachment_text(self, *, reply: bool = False, max_bytes: int = 1048576) -> str | None:
         from io import BytesIO
-        from relay.denylist import payload_hits_blocked
+        from relay.denylist import payload_hits_blocked, payload_hits_readonly
 
         if type(reply) is not bool or type(max_bytes) is not int or not 1 <= max_bytes <= 4194304:
             raise ValueError("attachment requires boolean reply and max_bytes between 1 and 4194304")
@@ -1052,7 +1133,7 @@ class ModuleContext(ContextOperations):
             raise PermissionError("attachment requires a bound message")
         def denied(message: Any) -> bool:
             fields = {key: message.get(key) for key in ("chat_id", "peer_id", "from_id", "reply_to")} if hasattr(message, "get") else {}
-            return payload_hits_blocked({"peer": getattr(message, "chat_id", None), **fields})
+            return payload_hits_blocked({"peer": getattr(message, "chat_id", None), **fields}) or payload_hits_readonly({"peer": getattr(message, "chat_id", None), **fields})
 
         if denied(source):
             raise PermissionError("attachment targets a denied peer")
@@ -1220,26 +1301,42 @@ class ModuleContext(ContextOperations):
         if output == "edit" and message_id is not None:
             data["id"] = int(message_id)
             data.pop("peer", None)
-            result = await self._context_tg_call("messages.editMessage", {"peer": peer, **data})
-            return Response(True, "edit", getattr(self._source, "src", None), result)
+            try:
+                result = await self._context_tg_call("messages.editMessage", {"peer": peer, **data})
+                return Response(True, "edit", getattr(self._source, "src", None), result)
+            except (MessageIdInvalidError, MessageNotFoundError, RPCError, Exception):
+                pass
         reply_to = kwargs.pop("reply_to", None) or reply_message_id(self._source) or getattr(self._source, "id", None)
         topic_id = kwargs.pop("topic_id", None) or self.topic_id
         if reply_to is not None:
             data["reply_to"] = {"_": "inputReplyToMessage", "reply_to_msg_id": int(reply_to), **( {"top_msg_id": int(topic_id)} if topic_id is not None else {})}
         data.update(kwargs)
-        result = await self._context_tg_call("messages.sendMessage", data)
+        try:
+            result = await self._context_tg_call("messages.sendMessage", data)
+        except MessageIdInvalidError:
+            if topic_id is not None:
+                data["reply_to"] = {"_": "inputReplyToMessage", "reply_to_msg_id": int(topic_id), "top_msg_id": int(topic_id)}
+            else:
+                data.pop("reply_to", None)
+            result = await self._context_tg_call("messages.sendMessage", data)
         response = Response(True, "reply", getattr(self._source, "src", None), result)
         self._remember_response(response)
         return response
 
     async def _trusted_send_rich(self, html: Any, peer: Any, *, output: str = "reply", message_id: int | None = None, **kwargs: Any) -> Response:
+        from relay.denylist import payload_hits_readonly
+        if payload_hits_readonly({"peer": peer}):
+            raise PermissionError("rich delivery targets a read-only peer")
         import secrets as _secrets
         app = self.runtime.app
         rich_message = cast('dict[str, object]', html) if isinstance(html, dict) else {"_": "inputRichMessageHTML", **to_rich(html)}
         if output == "edit" and message_id is not None:
-            with trusted_scope():
-                result = await app.mt_messages_edit_message( peer=peer, id=int(message_id), message="", rich_message=rich_message)
-            return Response(True, "edit", getattr(self._source, "src", None), result)
+            try:
+                with trusted_scope():
+                    result = await app.mt_messages_edit_message( peer=peer, id=int(message_id), message="", rich_message=rich_message)
+                return Response(True, "edit", getattr(self._source, "src", None), result)
+            except (MessageIdInvalidError, MessageNotFoundError, RPCError, Exception):
+                pass
         reply_to = kwargs.pop("reply_to", None) or reply_message_id(self._source) or getattr(self._source, "id", None)
         topic_id = kwargs.pop("topic_id", None) or self.topic_id
         data = {"peer": peer, "message": "", "random_id": _secrets.randbits(63), "rich_message": rich_message}
@@ -1250,15 +1347,20 @@ class ModuleContext(ContextOperations):
             data["reply_to"] = reply_to_data
         kwargs.pop("parse_mode", None)
         data.update(kwargs)
-        with trusted_scope():
-            result = await app.mt_messages_send_message( **data)
+        try:
+            with trusted_scope():
+                result = await app.mt_messages_send_message( **data)
+        except MessageIdInvalidError:
+            if topic_id is not None:
+                data["reply_to"] = {"_": "inputReplyToMessage", "reply_to_msg_id": int(topic_id), "top_msg_id": int(topic_id)}
+            else:
+                data.pop("reply_to", None)
+            with trusted_scope():
+                result = await app.mt_messages_send_message( **data)
         return Response(True, "reply", getattr(self._source, "src", None), result)
 
     async def _context_tg_call(self, method: str, data: dict[str, Any]) -> Any:
-        host = getattr(self, "cap_host", None)
-        if host is None:
-            raise ResponseError("capabilities are not available")
-        return await host.call(self.module_id, "mt", {"method": method, "kwargs": data})
+        return await self._ctx_call(method, **data)
 
     async def send(self, text: str, **kwargs: Any) -> Response:
         kwargs.setdefault("output", "reply")

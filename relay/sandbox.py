@@ -18,11 +18,13 @@ from typing import Any, Sequence, cast
 from . import toolkit as _toolkit
 from . import context as _context
 from . import translation as _translation
+from . import denylist as _denylist
 from hotaru.callbacks import CallbackBinding
 from relay.firewall import trusted_scope
 
 _CONTEXT_SOURCE = Path(_context.__file__).read_text(encoding="utf-8")
 _TRANSLATION_SOURCE = Path(_translation.__file__).read_text(encoding="utf-8")
+_DENYLIST_SOURCE = Path(_denylist.__file__).read_text(encoding="utf-8")
 
 _TOOLKIT_SOURCE = Path(_toolkit.__file__).read_text(encoding="utf-8")
 
@@ -126,14 +128,14 @@ def _fail(exc):
     }
 
 
-def _ask(payload):
+def _ask(payload, timeout=None):
     cid = next(_reply_ids)
     payload["cid"] = cid
     payload["rid"] = getattr(_LOCAL, "rid", 0)
     waiter = _reply_wait[cid] = queue.Queue(maxsize=1)
     try:
         _host_emit(payload)
-        return waiter.get()
+        return waiter.get(timeout=timeout)
     finally:
         _reply_wait.pop(cid, None)
 
@@ -157,7 +159,6 @@ _cpu_lock = threading.Lock()
 
 
 def _thread_cpu(tid):
-    """utime+stime of one worker thread, straight from /proc."""
     try:
         with open("/proc/self/task/%d/stat" % tid, "rb") as handle:
             data = handle.read()
@@ -168,14 +169,6 @@ def _thread_cpu(tid):
 
 
 def _cpu_watch_loop():
-    """Report a request that burns a lot of CPU without returning, without
-    touching it: a module may legitimately compute for minutes in one command,
-    and the heartbeat already proves the worker is alive. Nothing here kills the
-    worker or fails the request; the operator stays in control via `kill`/reload.
-
-    ponytail: this only sees CPU; a request parked in a blocking syscall forever
-    still holds its slot.
-    """
     while True:
         time.sleep(1.0)
         _cpu_scan_once()
@@ -375,8 +368,8 @@ def apply_policy(net_blocked):
         pass
 
 
-def _cap_call(name, payload):
-    resp = _ask({"cap": name, "payload": payload})
+def _cap_call(name, payload, timeout=None):
+    resp = _ask({"cap": name, "payload": payload}, timeout=timeout)
     if not resp.get("ok"):
         error = {"PermissionError": PermissionError, "OSError": OSError, "TimeoutError": TimeoutError, "ConnectionError": ConnectionError, "ValueError": ValueError, "TypeError": TypeError}.get(resp.get("error_type", "PermissionError"), RuntimeError)
         raise error(resp.get("error", "capability failed"))
@@ -401,6 +394,14 @@ class _WorkerLogs:
 
 def _mt_call(method, **kwargs):
     return _cap_call("mt", {"method": method, "kwargs": kwargs})
+
+
+def _op_call(method, **kwargs):
+    resp = _ask({"op_call": {"method": method, "kwargs": kwargs}})
+    if not resp.get("ok"):
+        error = {"PermissionError": PermissionError, "OSError": OSError, "TimeoutError": TimeoutError, "ConnectionError": ConnectionError, "ValueError": ValueError, "TypeError": TypeError}.get(resp.get("error_type", "PermissionError"), RuntimeError)
+        raise error(resp.get("error", "operation failed"))
+    return resp.get("result")
 
 
 def _net_call(url, data=None, timeout=10.0, **options):
@@ -465,7 +466,73 @@ def _cb_respond_call(data):
     return result.get("result")
 
 
-class SandboxCallbackProxy:
+class Memory(int):
+    @property
+    def bytes(self):
+        return int(self)
+
+    @property
+    def kb(self):
+        return round(self / 1024, 2)
+
+    @property
+    def mb(self):
+        return round(self / (1024 * 1024), 2)
+
+    @property
+    def gb(self):
+        return round(self / (1024 * 1024 * 1024), 2)
+
+    def format(self):
+        if self >= 1024 * 1024 * 1024:
+            return f"{self.gb:.2f} GB"
+        if self >= 1024 * 1024:
+            return f"{self.mb:.1f} MB"
+        if self >= 1024:
+            return f"{self.kb:.1f} KB"
+        return f"{self} B"
+
+    def __call__(self):
+        return self
+
+
+class Prefix(str):
+    def __call__(self):
+        return str(self)
+
+
+class ContextOperations:
+    def get_memory(self):
+        try:
+            val = _cap_call("$sys", {"op": "memory"}, timeout=0.5)
+            if isinstance(val, (int, float)):
+                return Memory(int(val))
+        except Exception:
+            pass
+        data = getattr(self, "_msg", getattr(self, "_data", {}))
+        return Memory(int(data.get("memory") or 0))
+
+    def get_ram(self):
+        return self.get_memory()
+
+    @property
+    def memory(self):
+        return self.get_memory()
+
+    @property
+    def ram(self):
+        return self.get_memory()
+
+    def get_prefix(self):
+        data = getattr(self, "_msg", getattr(self, "_data", {}))
+        return Prefix(str(data.get("prefix") or "."))
+
+    @property
+    def prefix(self):
+        return self.get_prefix()
+
+
+class SandboxCallbackProxy(ContextOperations):
     def form_allowed(self, key):
         return bool(_respond_call({"form": key, "op": "allowed"}))
     def __init__(self, cb_data):
@@ -517,10 +584,6 @@ class SandboxAttachment:
 
 _template_providers = {}
 _template_resolving = set()
-
-
-class ContextOperations:
-    pass
 
 
 class SandboxContext(ContextOperations):
@@ -742,8 +805,11 @@ class SandboxContext(ContextOperations):
     async def cap(self, capability, payload=None):
         return _cap_call(capability, payload or {})
 
-    async def mt(self, method, **kwargs):
+    async def _mt_call(self, method, **kwargs):
         return _mt_call(method, **kwargs)
+
+    async def _ctx_call(self, method, **kwargs):
+        return _op_call(method, **kwargs)
 
     @property
     def tg(self):
@@ -1089,7 +1155,8 @@ def main():
     install_firewall(cfg.get("protected", []), cfg.get("namespaces", False), cfg.get("deps_root", ""))
     apply_policy(cfg.get("net_blocked", True))
     install_output_capture()
-    context_ns = {}
+    context_ns = {"__name__": "hotaru_context"}
+    exec(compile(cfg.get("denylist_source", ""), "hotaru_denylist", "exec"), context_ns, context_ns)
     exec(compile(cfg["context_source"], "hotaru_context", "exec"), context_ns, context_ns)
     SandboxContext.__bases__ = (context_ns["ContextOperations"],)
     translation_ns = {}
@@ -1281,6 +1348,13 @@ def main():
             _busy(-1)
             with _cpu_lock:
                 _active_cpu.pop(_LOCAL.rid, None)
+            try:
+                import gc as _gc
+                _gc.collect()
+                import ctypes as _ctypes
+                _ctypes.CDLL(None).malloc_trim(0)
+            except Exception:
+                pass
         out["rid"] = _LOCAL.rid
         try:
             _host_emit(out)
@@ -1308,6 +1382,15 @@ def main():
 main()
 '''
 
+
+def _mt_layer_payload(runtime: Any) -> dict[str, int]:
+    mt = getattr(getattr(runtime, "app", None), "mt", None)
+    layer = getattr(mt, "layer", None)
+    if layer is not None and hasattr(layer, "to_dict"):
+        return cast(dict[str, int], layer.to_dict())
+    return _context.MTLayerInfo.from_value(layer).to_dict()
+
+
 SYSCALL_NUMBERS = {
     "read": 0, "write": 1, "open": 2, "close": 3, "stat": 4, "fstat": 5,
     "lstat": 6, "poll": 7, "lseek": 8, "mmap": 9, "mprotect": 10, "munmap": 11,
@@ -1318,7 +1401,7 @@ SYSCALL_NUMBERS = {
     "nanosleep": 35, "getpid": 39, "socket": 41, "connect": 42, "accept": 43,
     "sendto": 44, "recvfrom": 45, "sendmsg": 46, "recvmsg": 47, "shutdown": 48,
     "bind": 49, "listen": 50, "getsockname": 51, "getpeername": 52,
-    "socketpair": 53, "setsockopt": 54, "getsockopt": 55, "fork": 57,
+    "socketpair": 53, "setsockopt": 54, "getsockopt": 55, "clone": 56, "fork": 57,
     "vfork": 58, "execve": 59, "exit": 60, "wait4": 61, "kill": 62, "uname": 63,
     "fcntl": 72, "flock": 73, "fsync": 74, "fdatasync": 75, "truncate": 76,
     "ftruncate": 77, "getcwd": 79, "chdir": 80, "fchdir": 81, "rename": 82,
@@ -1428,7 +1511,7 @@ _ERRNO_NAMES = {
 }
 
 _KILL_NAMES = {
-    "fork", "vfork", "execve", "execveat", "clone3", "kill", "ptrace",
+    "fork", "vfork", "clone", "execve", "execveat", "clone3", "kill", "ptrace",
     "mount", "umount2", "pivot_root", "chroot", "sethostname",
     "setdomainname", "setuid", "setgid", "setreuid", "setregid", "setresuid",
     "setresgid", "setgroups", "setrlimit", "reboot", "acct", "swapon",
@@ -1462,12 +1545,6 @@ class SandboxError(RuntimeError):
 
 
 def apply_tree_pids_cap(limit: int = 512) -> str:
-    """Cap the process count of the whole bot tree via cgroup v2.
-
-    Module code runs as root, where RLIMIT_NPROC is not enforced, so a fork bomb
-    in a snippet would otherwise take the machine down with the userbot on it.
-    Degrades to a status string when cgroups are not delegated.
-    """
     try:
         with open("/proc/self/cgroup", "r", encoding="utf-8") as handle:
             relative = handle.read().strip().splitlines()[-1].split("::", 1)[-1]
@@ -1510,17 +1587,21 @@ class ModuleSandbox:
         self.spawn_timeout = spawn_timeout
         self.idle_timeout = idle_timeout
         self._workers: dict[str, subprocess.Popen[bytes]] = {}
+        self._persistent_modules: set[str] = set()
         self._booted: dict[str, bool] = {}
         self._last_use: dict[str, float] = {}
         self._activity: dict[str, float] = {}
         self._module_defs: dict[str, tuple[str, list[str]]] = {}
         self._module_deps: dict[str, str] = {}
+        self._module_requires: dict[str, Sequence[str]] = {}
+        self._ensure_locks: dict[str, asyncio.Lock] = {}
         self._respond_sources: dict[Any, Any] = {}
         self._respond_contexts: dict[Any, Any] = {}
         self._cb_waiters: dict[tuple[str, str], asyncio.Future[Any]] = {}
         self._active_callback: dict[Any, Any] = {}
         self._cb_respond_pending: dict[str, list[dict[str, Any]]] = {}
         self._pending_caps: dict[str, list[dict[str, Any]]] = {}
+        self._op_pending: dict[str, list[dict[str, Any]]] = {}
         self._respond_pending: dict[str, list[dict[str, Any]]] = {}
         self._roundtrip_locks: dict[str, asyncio.Lock] = {}
         self._waiters: dict[str, dict[int, asyncio.Future[Any]]] = {}
@@ -1695,7 +1776,8 @@ class ModuleSandbox:
             "source": source,
             "commands": commands,
             "toolkit_source": _TOOLKIT_SOURCE,
-            "context_source": _CONTEXT_SOURCE,
+            "context_source": Path(_context.__file__).read_text(encoding="utf-8") if _context.__file__ else _CONTEXT_SOURCE,
+            "denylist_source": _DENYLIST_SOURCE,
             "translation_source": _TRANSLATION_SOURCE,
             "net_blocked": True,
             "seccomp": SECCOMP_POLICY,
@@ -1805,11 +1887,20 @@ class ModuleSandbox:
             self._module_deps.pop(module_id, None)
         return path
 
-    async def start_module(self, module_id: str, source: str, commands: list[str]) -> bool:
+    async def start_module(self, module_id: str, source: str, commands: list[str], *, requires: Sequence[str] = (), lazy: bool = False, persistent: bool = False) -> bool:
         self._module_defs[module_id] = (source, commands)
+        self._module_requires[module_id] = tuple(requires)
+        if persistent:
+            self._persistent_modules.add(module_id)
+        else:
+            self._persistent_modules.discard(module_id)
+        if lazy:
+            return True
         current = self._workers.get(module_id)
         if current is not None and current.poll() is None:
             return True
+        if module_id not in self._module_deps:
+            await self.ensure_module_deps(module_id, source, requires)
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(None, lambda: self._spawn_worker(module_id, source, commands))
         return True
@@ -1817,7 +1908,7 @@ class ModuleSandbox:
     async def call(self, module_id: str, command: str, args: list[str], payload: dict[str, Any], source: Any = None, target: str | None = None, context: Any = None) -> Any:
         context = context or self.runtime.context_factory.create(module_id, source)
         config = context.config
-        payload = dict(payload, version=context.version, started_at=self.runtime.started_at, config={
+        payload = dict(payload, version=context.version, started_at=self.runtime.started_at, mt_layer=_mt_layer_payload(self.runtime), config={
             key: config.get(key) for key in config.schema
         }, templates={
             key: {"value": config.get(key), "fields": field.template_fields, "legacy_braces": field.legacy_braces}
@@ -1826,6 +1917,7 @@ class ModuleSandbox:
         payload.setdefault("language", context.i18n.language)
         payload["from_id"] = getattr(source, "from_id", None)
         payload["prefix"] = self.runtime.config.prefix
+        payload["memory"] = getattr(self.runtime, "get_memory_usage", lambda: 0)()
         rid = self._next_rid()
         self._respond_contexts[(module_id, rid)] = context
         if source is not None:
@@ -1866,18 +1958,22 @@ class ModuleSandbox:
         return self._stdin_lock
 
     async def _ensure_worker(self, module_id: str) -> subprocess.Popen[bytes]:
-        process = self._workers.get(module_id)
-        if process is None or process.poll() is not None:
-            if module_id not in self._module_defs:
-                raise SandboxError(f"sandbox worker is not running: {module_id}")
-            source, commands = self._module_defs[module_id]
-            loop = asyncio.get_running_loop()
-            await loop.run_in_executor(None, lambda: self._spawn_worker(module_id, source, commands))
+        async with self._ensure_locks.setdefault(module_id, asyncio.Lock()):
             process = self._workers.get(module_id)
-        if process is None or process.poll() is not None:
-            raise SandboxError(f"sandbox worker is not running: {module_id}")
-        self._start_reader(module_id, process)
-        return process
+            if process is None or process.poll() is not None:
+                if module_id not in self._module_defs:
+                    raise SandboxError(f"sandbox worker is not running: {module_id}")
+                source, commands = self._module_defs[module_id]
+                if module_id not in self._module_deps:
+                    requires = self._module_requires.get(module_id, ())
+                    await self.ensure_module_deps(module_id, source, requires)
+                loop = asyncio.get_running_loop()
+                await loop.run_in_executor(None, lambda: self._spawn_worker(module_id, source, commands))
+                process = self._workers.get(module_id)
+            if process is None or process.poll() is not None:
+                raise SandboxError(f"sandbox worker is not running: {module_id}")
+            self._start_reader(module_id, process)
+            return process
 
     def _start_reader(self, module_id: str, process: subprocess.Popen[bytes]) -> None:
         reader = self._readers.get(module_id)
@@ -1910,6 +2006,10 @@ class ModuleSandbox:
                 if "cap" in message:
                     self._pending_caps.setdefault(module_id, []).append(message)
                     self._spawn_pump_task(self._serve_caps(module_id))
+                    continue
+                if "op_call" in message:
+                    self._op_pending.setdefault(module_id, []).append(message)
+                    self._spawn_pump_task(self._serve_op(module_id))
                     continue
                 if "respond" in message:
                     self._respond_pending.setdefault(module_id, []).append(message)
@@ -2000,9 +2100,17 @@ class ModuleSandbox:
             payload = cast('dict[str, Any]', payload_value) if isinstance(payload_value, dict) else {}
             rid = message.get("rid")
             reply = {"kind": "cap_result", "cid": message.get("cid"), "ok": False, "error": "capability host is unavailable"}
-            if cap_host is not None or name == "$template":
+            if cap_host is not None or name in ("$template", "$sys"):
                 try:
-                    if name == "$template":
+                    if name == "$sys":
+                        op = payload.get("op")
+                        if op in ("memory", "ram"):
+                            result = getattr(self.runtime, "get_memory_usage", lambda: 0)()
+                        elif op == "prefix":
+                            result = getattr(self.runtime.config, "prefix", ".")
+                        else:
+                            result = None
+                    elif name == "$template":
                         context = self._respond_contexts.get((module_id, rid))
                         if context is None:
                             context = self.runtime.context_factory.create(module_id, None)
@@ -2024,6 +2132,27 @@ class ModuleSandbox:
                     reply = {"kind": "cap_result", "cid": message.get("cid"), "ok": True, "result": result}
                 except Exception as exc:
                     reply = {"kind": "cap_result", "cid": message.get("cid"), "ok": False, "error_type": type(exc).__name__, "error": f"{type(exc).__name__}: {exc}"[:200]}
+            if process is self._workers.get(module_id) and process is not None and process.poll() is None and process.stdin is not None:
+                await self._write_reply(process, reply)
+
+    async def _serve_op(self, module_id: str) -> None:
+        pending = self._op_pending.pop(module_id, [])
+        process = self._workers.get(module_id)
+        cap_host = getattr(self.runtime, "cap_host", None)
+        for message in pending:
+            payload = message.get("op_call")
+            payload_dict = cast('dict[str, Any]', payload) if isinstance(payload, dict) else {}
+            method = payload_dict.get("method")
+            raw_kwargs = payload_dict.get("kwargs")
+            kwargs = cast('dict[str, Any]', raw_kwargs) if isinstance(raw_kwargs, dict) else {}
+            reply = {"kind": "op_result", "cid": message.get("cid"), "ok": False, "error": "capability host is unavailable"}
+            if cap_host is not None:
+                try:
+                    with trusted_scope():
+                        result = await cap_host._mt_call(module_id, {"method": method, "kwargs": kwargs}, {})
+                    reply = {"kind": "op_result", "cid": message.get("cid"), "ok": True, "result": result}
+                except Exception as exc:
+                    reply = {"kind": "op_result", "cid": message.get("cid"), "ok": False, "error_type": type(exc).__name__, "error": f"{type(exc).__name__}: {exc}"[:200]}
             if process is self._workers.get(module_id) and process is not None and process.poll() is None and process.stdin is not None:
                 await self._write_reply(process, reply)
 
@@ -2220,6 +2349,9 @@ class ModuleSandbox:
                     "message_id": getattr(callback, "msg_id", None),
                     "from_id": getattr(callback, "from_id", None),
                     "inline_message_id": getattr(callback, "inline_message_id", None),
+                    "mt_layer": _mt_layer_payload(self.runtime),
+                    "prefix": getattr(self.runtime.config, "prefix", "."),
+                    "memory": getattr(self.runtime, "get_memory_usage", lambda: 0)(),
                 }
             }
             try:
@@ -2257,29 +2389,155 @@ class ModuleSandbox:
                     return False
         self._module_defs.pop(module_id, None)
         self._module_deps.pop(module_id, None)
+        self._module_requires.pop(module_id, None)
+        self._ensure_locks.pop(module_id, None)
+        self._op_pending.pop(module_id, None)
         self._workers.pop(module_id, None)
+        self._persistent_modules.discard(module_id)
         self._booted.pop(module_id, None)
         self._last_use.pop(module_id, None)
         self._activity.pop(module_id, None)
         return process is not None
 
-    def reap_idle(self, idle_seconds: float) -> list[str]:
+    def module_ids(self) -> tuple[str, ...]:
+        return tuple(self._module_defs.keys())
+
+    def live_worker_ids(self) -> tuple[str, ...]:
+        return tuple(mid for mid, w in self._workers.items() if w.poll() is None)
+
+    async def ensure_worker(self, module_id: str) -> None:
+        await self._ensure_worker(module_id)
+
+    def is_worker_protected(self, module_id: str) -> bool:
+        if module_id in self._persistent_modules:
+            return True
+        if bool(self._waiters.get(module_id)):
+            return True
+        if bool(self._pending_caps.get(module_id)):
+            return True
+        if bool(self._op_pending.get(module_id)):
+            return True
+        if bool(self._respond_pending.get(module_id)):
+            return True
+        if bool(self._cb_respond_pending.get(module_id)):
+            return True
+        if any(m == module_id for (m, _) in self._active_callback):
+            return True
+        if any(m == module_id for (m, _) in self._cb_waiters):
+            return True
+
+        runtime = getattr(self, "runtime", None)
+        if runtime is not None:
+            modules_ctrl = getattr(runtime, "modules", None)
+            if modules_ctrl is not None:
+                tasks_supervisor = getattr(modules_ctrl, "tasks", None)
+                if tasks_supervisor is not None and tasks_supervisor.active(module_id) > 0:
+                    return True
+                active_map = getattr(modules_ctrl, "_active", {})
+                active = active_map.get(module_id)
+                if active is not None:
+                    manifest = getattr(active.loaded, "manifest", None)
+                    if manifest is not None:
+                        if getattr(manifest, "tasks", None):
+                            return True
+                        if getattr(manifest, "watchers", None):
+                            return True
+                        if getattr(manifest, "rise", None):
+                            return True
+                        if getattr(manifest, "fade", None):
+                            return True
+            kernel = getattr(runtime, "kernel", None)
+            if kernel is not None:
+                registry = getattr(kernel, "registry", None)
+                if registry is not None and hasattr(registry, "get_watchers"):
+                    for w in registry.get_watchers():
+                        if getattr(w, "module_id", None) == module_id:
+                            return True
+        return False
+
+    def hibernate_worker(self, module_id: str) -> bool:
+        if self.is_worker_protected(module_id):
+            return False
+
+        process = self._workers.pop(module_id, None)
+        if process is None:
+            return False
+
+        pump = self._pumps.pop(module_id, None)
+        if pump is not None:
+            pump.cancel()
+        self._readers.pop(module_id, None)
+        self._queues.pop(module_id, None)
+        self._booted.pop(module_id, None)
+        self._last_use.pop(module_id, None)
+        self._activity.pop(module_id, None)
+        self._pending_caps.pop(module_id, None)
+        self._op_pending.pop(module_id, None)
+        self._respond_pending.pop(module_id, None)
+        self._cb_respond_pending.pop(module_id, None)
+
+        def _reap_proc(p: subprocess.Popen[bytes]) -> None:
+            if p.poll() is None:
+                try:
+                    p.terminate()
+                    p.wait(timeout=1.0)
+                except Exception:
+                    try:
+                        p.kill()
+                        p.wait(timeout=1.0)
+                    except Exception:
+                        pass
+            else:
+                try:
+                    p.wait(timeout=0.1)
+                except Exception:
+                    pass
+
+        try:
+            loop = asyncio.get_running_loop()
+            loop.run_in_executor(None, _reap_proc, process)
+        except RuntimeError:
+            _reap_proc(process)
+
+        return True
+
+    def reap_idle(self, idle_seconds: float, *, max_active: int = 12) -> list[str]:
         now = time.monotonic()
         reaped: list[str] = []
+
         for module_id, process in list(self._workers.items()):
             if process.poll() is not None:
+                if self.hibernate_worker(module_id):
+                    reaped.append(module_id)
+
+        for module_id, process in list(self._workers.items()):
+            if self.is_worker_protected(module_id):
                 continue
             if now - self._last_use.get(module_id, now) < idle_seconds:
                 continue
-            if self._waiters.get(module_id):
+            if now - self._activity.get(module_id, now) < idle_seconds:
                 continue
-            try:
-                process.kill()
-            except Exception:
+            if self.hibernate_worker(module_id):
+                reaped.append(module_id)
+
+        unprotected: list[tuple[float, str]] = []
+        for module_id in list(self._workers):
+            if self.is_worker_protected(module_id):
                 continue
-            reaped.append(module_id)
+            last = max(self._last_use.get(module_id, 0.0), self._activity.get(module_id, 0.0))
+            if now - last >= 15.0:
+                unprotected.append((last, module_id))
+
+        if len(self._workers) > max_active and unprotected:
+            unprotected.sort()
+            to_evict = len(self._workers) - max_active
+            for _, module_id in unprotected[:to_evict]:
+                if self.hibernate_worker(module_id):
+                    reaped.append(module_id)
+
         return reaped
 
     def stop_all(self) -> None:
-        for module_id in list(self._workers):
+        all_ids = set(self._workers) | set(self._module_defs)
+        for module_id in all_ids:
             self.stop_module(module_id)

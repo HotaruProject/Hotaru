@@ -17,7 +17,7 @@ from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, cast
+from typing import Any, Iterable, cast
 from collections.abc import Awaitable
 
 from .capabilities import CapabilityBroker
@@ -33,6 +33,7 @@ from relay.sandbox import ModuleSandbox
 from relay.caps import CapabilityHost, describe as describe_caps
 from relay.rpc import delete_chat_msg
 from relay.firewall import install as install_firewall, trusted_scope
+from relay.context import install_mt_layer
 from relay.emoji import has_emoji, set_premium, to_entities, to_rich
 from goygram.sugar import extract_sent_message
 from goygram import GoyGram, Session
@@ -52,7 +53,8 @@ from .state import StateStore
 from .supervisor import ConnectionRecovery, ConnectionSupervisor, LoopGuard
 from .tasks import TaskSupervisor
 
-IDLE_WORKER_SECONDS = 1800.0
+IDLE_WORKER_SECONDS = float(os.environ.get("HOTARU_IDLE_WORKER_SECONDS", "120.0"))
+MAX_ACTIVE_WORKERS = int(os.environ.get("HOTARU_MAX_WORKERS", "12"))
 EMOJI_PAD = "\u200b"
 
 
@@ -152,6 +154,9 @@ class Runtime:
     _premium_checked_at: float = 0.0
     _connection: ConnectionRecovery | None = None
     _connection_task: asyncio.Task[None] | None = None
+    _prewarm_task: asyncio.Task[None] | None = None
+    _premium_task: asyncio.Task[None] | None = None
+    _kernel_finish_task: asyncio.Task[None] | None = None
     _unload_tasks: dict[str, asyncio.Task[str | None]] = field(default_factory=dict, repr=False)
     _module_locks: dict[str, asyncio.Lock] = field(default_factory=dict, repr=False)
     _premium_lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False)
@@ -161,6 +166,8 @@ class Runtime:
     _form_inline_ids: dict[str, Any] | None = None
     _form_chosen: dict[str, asyncio.Event] | None = None
     _form_module_ids: dict[str, str] | None = None
+    _form_media: dict[str, str] | None = None
+    singularity: Any = None
 
     @classmethod
     def from_database(cls, path: str | Path | None = None) -> "Runtime":
@@ -217,6 +224,7 @@ class Runtime:
                 session=Session(name=session_name, path=vault, data=session_data),
                 default_transport="mtproto" if self.config.api_id is not None else "api",
             )
+            install_mt_layer(self.app)
         finally:
             logging.disable(previous_disable)
         logging.getLogger("goygram").setLevel(logging.ERROR)
@@ -272,6 +280,7 @@ class Runtime:
         self.stager = ModuleStager(self.modules.loader)
         self.inline = InlineManager(self)
         self._inline_forms = {}
+        self._form_media = {}
         self._forms = {}
         self._input_requests = {}
         self._form_inline_ids = {}
@@ -296,7 +305,6 @@ class Runtime:
         self.event_router.attach_aux(self.app)
         return self.app
     def request_restart(self) -> None:
-        """Ask for a relaunch: re-exec can only happen in the main process, once it has shut down."""
         self._relaunch = True
 
     async def _on_callback(self, callback: Any) -> object | None:
@@ -322,7 +330,7 @@ class Runtime:
             raise RuntimeError("inline bot form transport is unavailable")
         if self.inline.info is None:
             with trusted_scope():
-                await self.inline.ensure_bot(allow_create=False)
+                await self.inline.ensure_bot(allow_create=True)
         with trusted_scope():
             await self.inline.start()
         try:
@@ -712,9 +720,15 @@ class Runtime:
                 self.purge_forms()
                 sandbox = getattr(self, "sandbox", None)
                 if sandbox is not None:
-                    for module_id in sandbox.reap_idle(IDLE_WORKER_SECONDS):
+                    for module_id in sandbox.reap_idle(IDLE_WORKER_SECONDS, max_active=MAX_ACTIVE_WORKERS):
                         if self.observatory is not None:
                             self.observatory.emit("sandbox", "worker_reaped", module=module_id)
+                try:
+                    import ctypes as _ctypes, gc as _gc
+                    _gc.collect()
+                    _ctypes.CDLL(None).malloc_trim(0)
+                except Exception:
+                    pass
                 set_premium(await self.is_premium())
             except asyncio.CancelledError:
                 return
@@ -864,6 +878,11 @@ class Runtime:
                     current.append(btn_item)
             inline_buttons.append(current)
         self._inline_forms[nonce] = (text, inline_buttons, bool(options.get("rich", False)))
+        photo_opt = options.get("photo")
+        if isinstance(photo_opt, str) and photo_opt.startswith("https://"):
+            if self._form_media is None:
+                self._form_media = {}
+            self._form_media[nonce] = photo_opt
         options["module_id"] = options.get("module_id", "")
         options["form_id"] = nonce
         options["actions"] = action_records or self._form_actions(buttons)
@@ -966,7 +985,10 @@ class Runtime:
     async def _on_inline_query(self, query: Any) -> None:
         text = (query.query or "").strip()
         if text.startswith('hotaru-login:') and self.account_login is not None:
-            await self.account_login.inline(query)
+            from relay.denylist import is_readonly_peer
+
+            if not is_readonly_peer(getattr(query, "from_id", None)):
+                await self.account_login.inline(query)
             return
         if self.security is not None:
             from .security import AccessVerdict
@@ -1004,12 +1026,33 @@ class Runtime:
                 await answer_tl(query, results=[], cache_time=0, is_personal=True)
                 return
             form_text, buttons, rich = form
-            result = InlineObj.article("hotaru-form", self.t("inline.form"), form_text, parse_mode="HTML")
-            if rich:
-                result["input_message_content"] = {"rich_message": {"_": "inputRichMessageHTML", **to_rich(form_text)}}
-            if buttons:
-                result["reply_markup"] = {"inline_keyboard": buttons}
-            await answer_tl(query, results=[result], cache_time=0, is_personal=True)
+            photo_url = (self._form_media or {}).get(nonce)
+            answered = False
+            if isinstance(photo_url, str) and photo_url.startswith("https://"):
+                photo_result: dict[str, Any] = {
+                    "type": "photo",
+                    "id": "hotaru-form",
+                    "photo_url": photo_url,
+                    "thumbnail_url": photo_url,
+                    "caption": form_text,
+                    "parse_mode": "HTML",
+                }
+                if rich:
+                    photo_result["input_message_content"] = {"rich_message": {"_": "inputRichMessageHTML", **to_rich(form_text)}}
+                if buttons:
+                    photo_result["reply_markup"] = {"inline_keyboard": buttons}
+                try:
+                    await answer_tl(query, results=[photo_result], cache_time=0, is_personal=True)
+                    answered = True
+                except Exception:
+                    answered = False
+            if not answered:
+                result = InlineObj.article("hotaru-form", self.t("inline.form"), form_text, parse_mode="HTML")
+                if rich:
+                    result["input_message_content"] = {"rich_message": {"_": "inputRichMessageHTML", **to_rich(form_text)}}
+                if buttons:
+                    result["reply_markup"] = {"inline_keyboard": buttons}
+                await answer_tl(query, results=[result], cache_time=0, is_personal=True)
             if self.observatory is not None:
                 self.observatory.emit("inline", "form_answered", buttons=len(buttons))
             return
@@ -1035,7 +1078,10 @@ class Runtime:
     async def _on_chosen_input(self, chosen: Any) -> None:
         text = str(getattr(chosen, "query", "") or "").strip()
         if text.startswith("hotaru-login:") and self.account_login is not None:
-            await self.account_login.chosen(chosen)
+            from relay.denylist import is_readonly_peer
+
+            if not is_readonly_peer(getattr(chosen, "from_id", None)):
+                await self.account_login.chosen(chosen)
             return
         if text.startswith("hotaru-form:"):
             if not self._input_actor_matches(chosen, None):
@@ -1399,11 +1445,30 @@ class Runtime:
         text = str(query.query or "")
         if not text.startswith("hotaru-form:") or self._inline_forms is None:
             return
-        form = self._inline_forms.get(text.split(":", 1)[1])
+        nonce = text.split(":", 1)[1]
+        form = self._inline_forms.get(nonce)
         if form is None:
             await query.answer(results=[], cache_time=0, is_personal=True)
             return
         body, buttons, rich = form
+        photo_url = (self._form_media or {}).get(nonce)
+        if isinstance(photo_url, str) and photo_url.startswith("https://"):
+            photo_result: dict[str, Any] = {
+                "type": "photo",
+                "id": "hotaru-form",
+                "photo_url": photo_url,
+                "thumbnail_url": photo_url,
+                "caption": body,
+                "parse_mode": "HTML",
+                "reply_markup": {"inline_keyboard": [buttons]},
+            }
+            if rich:
+                photo_result["input_message_content"] = {"rich_message": {"_": "inputRichMessageHTML", **to_rich(body)}}
+            try:
+                await answer_tl(query, results=[photo_result], cache_time=0, is_personal=True)
+                return
+            except Exception:
+                pass
         result = InlineObj.article("hotaru-form", self.t("inline.form"), body, parse_mode="HTML", kbd={"inline_keyboard": [buttons]})
         if rich:
             result["input_message_content"] = {"rich_message": {"_": "inputRichMessageHTML", **to_rich(body)}}
@@ -1998,7 +2063,9 @@ class Runtime:
         if self.state is None or module_id not in self.state.module_ids():
             return set()
         namespace = self.state.namespace(module_id)
-        consent = namespace.get("caps-consent")
+        consent: object = namespace.get("caps-consent")
+        if isinstance(consent, list):
+            return {value for value in cast("list[object]", consent) if isinstance(value, str)}
         if not isinstance(consent, dict):
             return set()
         consent_map = cast("dict[str, object]", consent)
@@ -2016,7 +2083,7 @@ class Runtime:
 
     def _mark_caps_consent(self, module_id: str, capabilities: list[str], digest: str) -> None:
         if self.state is not None:
-            approved = self._approved_caps(module_id, digest) | set(capabilities)
+            approved = self._approved_caps(module_id) | set(capabilities)
             self.state.namespace(module_id).set("caps-consent", {"digest": digest, "capabilities": sorted(approved)})
 
     async def _render_caps_screen(self, module_id: str, manifest: Any, source: str, chat_id: int | str | None, message_id: int) -> tuple[str, list[list[dict[str, str]]]] | str:
@@ -2341,6 +2408,34 @@ class Runtime:
                 pending.pop(mid, None)
         return tuple(ordered)
 
+    def _load_tiers(self, module_ids: Iterable[str]) -> list[list[str]]:
+        module_ids = tuple(module_ids)
+        edges: dict[str, tuple[str, ...]] = {}
+        for module_id in module_ids:
+            after: tuple[str, ...] = ()
+            if self.modules is not None:
+                source_path = self.state.namespace(module_id).get("sourcepath") if self.state is not None else None
+                if isinstance(source_path, str):
+                    try:
+                        after = getattr(self.modules.loader.load(source_path).manifest, "after", ()) or ()
+                    except Exception:
+                        after = ()
+            edges[module_id] = tuple(dep for dep in after if dep in module_ids)
+        tiers: list[list[str]] = []
+        placed: set[str] = set()
+        pending = dict(edges)
+        while pending:
+            ready = [mid for mid, deps in pending.items() if all(dep in placed for dep in deps)]
+            if not ready:
+                ready = list(pending)
+                if self.observatory is not None:
+                    self.observatory.emit("modules", "load_cycle", modules=",".join(sorted(pending)))
+            tiers.append(sorted(ready))
+            for mid in ready:
+                placed.add(mid)
+                pending.pop(mid, None)
+        return tiers
+
     async def restore_enabled_modules(self, *, timeout: float = 60.0) -> tuple[str, ...]:
         if timeout <= 0:
             raise ValueError("timeout must be positive")
@@ -2349,28 +2444,37 @@ class Runtime:
         state = self.state
         modules = self.modules
         restored: list[str] = []
-        for module_id in self._load_order(state.module_ids()):
+
+        async def _restore_one(module_id: str) -> str | None:
             namespace = state.namespace(module_id)
             if modules.get(module_id) is not None:
-                continue
-            consent = namespace.get("caps-consent")
+                return None
             source_path = namespace.get("sourcepath")
+            if self._is_kernel_module(module_id) or (isinstance(source_path, str) and self._is_kernel_path(source_path)):
+                return None
+            consent = namespace.get("caps-consent")
             expected = self.relay_dir / f"{module_id}.hmod"
             if not isinstance(source_path, str) or Path(source_path).absolute() != expected.absolute() or expected.is_symlink():
                 state.delete_module(module_id)
-                continue
-            if not isinstance(consent, (str, list)):
+                return None
+            if not isinstance(consent, (str, list, dict)):
                 self._emit_restore_event("restore_skipped", module_id, "consent missing")
-                continue
+                return None
             try:
                 await asyncio.wait_for(self._restore_module(module_id, source_path), timeout)
+                return module_id
             except asyncio.TimeoutError:
                 self._emit_restore_event("restore_timeout", module_id, "activation deadline exceeded")
-                continue
+                return None
             except Exception as exc:
                 self._emit_restore_event("restore_error", module_id, f"{type(exc).__name__}: {exc}"[:240])
-                continue
-            restored.append(module_id)
+                return None
+
+        for tier in self._load_tiers(state.module_ids()):
+            results = await asyncio.gather(*[_restore_one(mid) for mid in tier], return_exceptions=True)
+            for r in results:
+                if isinstance(r, str):
+                    restored.append(r)
         return tuple(restored)
 
     async def _restore_module(self, module_id: str, source_path: str) -> None:
@@ -2378,9 +2482,12 @@ class Runtime:
         loaded = self.modules.loader.load(source_path)
         if loaded.manifest.module_id != module_id:
             raise ValueError("module id mismatch")
-        if not self._caps_consented(module_id, loaded.manifest, loaded.digest):
+        if not set(loaded.manifest.capabilities).issubset(self._approved_caps(module_id)):
             raise ValueError("capabilities changed; !trust required")
         await self.activate_module(source_path, backup=False)
+        self._mark_caps_consent(module_id, list(loaded.manifest.capabilities), loaded.digest)
+        if self.state is not None:
+            self.state.namespace(module_id).set("moduleversion", loaded.manifest.version)
 
     def _emit_restore_event(self, event: str, module_id: str, detail: str) -> None:
         if self.observatory is not None:
@@ -2563,6 +2670,71 @@ class Runtime:
             self.observatory.emit("forum", "transport_ready")
         await self._ensure_forum()
 
+    async def _prewarm_sandboxes(self) -> None:
+        await asyncio.sleep(0.5)
+        if self.sandbox is None:
+            return
+        prewarm_all = bool(os.environ.get("HOTARU_PREWARM_ALL"))
+        module_ids = self.sandbox.module_ids()
+        live = set(self.sandbox.live_worker_ids())
+        for module_id in module_ids:
+            if self.closed or self._relaunch:
+                break
+            if not prewarm_all and not self.sandbox.is_worker_protected(module_id):
+                continue
+            try:
+                if module_id not in live:
+                    await self.sandbox.ensure_worker(module_id)
+                    await asyncio.sleep(0.05)
+            except Exception as exc:
+                if self.observatory is not None:
+                    self.observatory.emit("sandbox", "prewarm_error", module=module_id, error=type(exc).__name__, detail=str(exc)[:120])
+
+    def get_memory_usage(self) -> int:
+        pid = os.getpid()
+        try:
+            with open(f"/proc/{pid}/cgroup") as f:
+                cg = f.read().strip().split(":")[-1]
+            cg_path = f"/sys/fs/cgroup{cg}/memory.current"
+            if os.path.exists(cg_path):
+                with open(cg_path) as f:
+                    val = int(f.read().strip())
+                    if val > 0:
+                        return val
+        except Exception:
+            pass
+        total = 0
+        try:
+            pids: list[int] = [pid]
+            seen: set[int] = set()
+            for p in pids:
+                if p in seen:
+                    continue
+                seen.add(p)
+                try:
+                    with open(f"/proc/{p}/status") as f:
+                        for line in f:
+                            if line.startswith("VmRSS:"):
+                                total += int(line.split()[1]) * 1024
+                                break
+                    child_file = f"/proc/{p}/task/{p}/children"
+                    if os.path.exists(child_file):
+                        with open(child_file) as f:
+                            for c in f.read().split():
+                                pids.append(int(c))
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        return total
+
+    async def _init_premium(self) -> None:
+        try:
+            prem = await self.is_premium(refresh=True)
+            set_premium(prem)
+        except Exception:
+            pass
+
     def _start_loop_guard(self) -> None:
         guard = LoopGuard(on_stall=self._loop_guard_stall)
         if not guard.start():
@@ -2575,6 +2747,29 @@ class Runtime:
             self.observatory.emit("kernel", "loop_stall", "warn", stalls=stalls, blocked=round(stalled, 1),
                                   note="module code does not yield and cannot be interrupted mid-call")
 
+    async def _start_singularity(self) -> None:
+        if os.environ.get("HOTARU_ACCOUNT_SESSION"):
+            return
+        try:
+            with trusted_scope():
+                from singularity import SingularityKernel
+
+                if self.singularity is None:
+                    self.singularity = SingularityKernel(self)
+                await self.singularity.start()
+        except Exception as exc:
+            log.warning("Singularity startup skipped: %s", exc)
+
+    async def _stop_singularity(self) -> None:
+        svc = self.singularity
+        self.singularity = None
+        if svc is not None:
+            try:
+                with trusted_scope():
+                    await svc.stop()
+            except Exception as exc:
+                log.debug("Singularity stop error: %s", exc)
+
     async def run(self) -> None:
         if self.app is None:
             self.build()
@@ -2582,44 +2777,52 @@ class Runtime:
         self._start_loop_guard()
         try:
             await self.authorize()
-            set_premium(await self.is_premium())
+            session_user = getattr(getattr(self.app, "session", None), "data", {}).get("user", {})
+            set_premium(bool(session_user.get("premium")))
+            self._premium_task = asyncio.create_task(self._init_premium(), name="hotaru:init-premium")
             if self.app.mt is not None:
                 self._connection = ConnectionRecovery(self.app.mt, self.observatory, "user")
                 self._connection_task = asyncio.create_task(self._connection.watch(), name="hotaru:user-health")
         except BaseException:
             await self.close()
             raise
-        try:
-            await self._kernel_setup()
-        except BaseException:
-            await self.close()
-            raise
+        if self.inline is not None:
+            try:
+                await self._kernel_setup()
+            except Exception as exc:
+                self._inline_degraded(exc)
+        await self.restore_forms()
+        if self._form_gc_task is None or self._form_gc_task.done():
+            self._form_gc_task = asyncio.create_task(self._form_gc_loop(), name="hotaru:form-gc")
         if self.state is not None and self.kernel is not None:
             self.kernel.suspended = self.state.get_setting("suspended") == "1"
         if self.modules is not None and self.constellations_dir.is_dir():
+            modules = self.modules
             hmod_paths = sorted(self.constellations_dir.glob("*.hmod"))
-            if hasattr(self.modules, "begin_boot"):
-                self.modules.begin_boot()
-            for hmod_path in hmod_paths:
+            if hasattr(modules, "begin_boot"):
+                modules.begin_boot()
+            async def _load_constellation(hmod_path: Path) -> None:
                 try:
-                    candidate = self.modules.loader.load(hmod_path)
+                    candidate = modules.loader.load(hmod_path)
                 except Exception:
-                    continue
-                if self.modules.get(candidate.manifest.module_id) is not None:
-                    continue
+                    return
+                if modules.get(candidate.manifest.module_id) is not None:
+                    return
                 try:
                     await self.activate_module(str(hmod_path))
                 except Exception as exc:
                     if self.observatory is not None:
                         self.observatory.emit("modules", "kernel_load_error", path=hmod_path.name, error=type(exc).__name__, detail=str(exc)[:240])
+
+            await asyncio.gather(*[_load_constellation(p) for p in hmod_paths], return_exceptions=True)
         await self.restore_enabled_modules()
-        await self.restore_forms()
-        if self._form_gc_task is None or self._form_gc_task.done():
-            self._form_gc_task = asyncio.create_task(self._form_gc_loop(), name="hotaru:form-gc")
         if self.modules is not None and hasattr(self.modules, "end_boot"):
             await self.modules.end_boot()
+        await self._start_singularity()
         if self.supervisor is not None:
             self.supervisor.mark_ready(mt=self.app.mt is not None, bot=self.app.bot is not None)
+        if self.sandbox is not None:
+            self._prewarm_task = asyncio.create_task(self._prewarm_sandboxes(), name="hotaru:prewarm-sandboxes")
         if self.account_manager is not None and self.app.session.self_id is not None:
             profile = self.account_manager.find_by_user(self.app.session.self_id)
             if profile is not None:
@@ -2661,6 +2864,15 @@ class Runtime:
             if self._forum_setup_task is not None and not self._forum_setup_task.done():
                 self._forum_setup_task.cancel()
                 await asyncio.gather(self._forum_setup_task, return_exceptions=True)
+            if self._prewarm_task is not None and not self._prewarm_task.done():
+                self._prewarm_task.cancel()
+                await asyncio.gather(self._prewarm_task, return_exceptions=True)
+            if self._premium_task is not None and not self._premium_task.done():
+                self._premium_task.cancel()
+                await asyncio.gather(self._premium_task, return_exceptions=True)
+            if self._kernel_finish_task is not None and not self._kernel_finish_task.done():
+                self._kernel_finish_task.cancel()
+                await asyncio.gather(self._kernel_finish_task, return_exceptions=True)
             if self._loop_guard_task is not None and not self._loop_guard_task.done():
                 self._loop_guard_task.cancel()
                 await asyncio.gather(self._loop_guard_task, return_exceptions=True)
@@ -2677,8 +2889,10 @@ class Runtime:
             if self.kernel is not None:
                 await self.kernel.cancel_all()
             if self.modules is not None:
-                for active in tuple(self.modules.items()):
-                    await self.modules.deactivate(active.loaded.manifest.module_id)
+                await asyncio.gather(
+                    *[self.modules.deactivate(active.loaded.manifest.module_id) for active in tuple(self.modules.items())],
+                    return_exceptions=True,
+                )
             if self.tasks is not None:
                 await self.tasks.close()
             if self.sandbox is not None:
@@ -2687,6 +2901,7 @@ class Runtime:
                 await self._connection.close()
             if self.app is not None:
                 await self.app.close()
+            await self._stop_singularity()
             if self.state is not None:
                 self.state.close()
             self.closed = True
