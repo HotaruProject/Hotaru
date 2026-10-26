@@ -19,7 +19,7 @@ from functools import partial
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any, Callable, cast
 
-from .denylist import is_blocked_host, is_blocked_peer, payload_hits_blocked
+from .denylist import is_blocked_host, is_blocked_peer, is_readonly_peer, payload_hits_blocked, payload_hits_readonly
 from .firewall import trusted_scope
 from hotaru.plainfmt import rich_to_plain
 from hotaru.capabilities import BehaviorEnvelope
@@ -75,9 +75,11 @@ MT_BLOCKED = frozenset({
     "account.reportpeer",
     "messages.searchglobal",
     "users.setsecurevalueerrors",
+    "contacts.exportnopaidmessagestoken",
+    "contacts.importnopaidmessagestoken",
 })
 
-MT_BLOCKED_PREFIXES = ("payments.",)
+MT_BLOCKED_PREFIXES = ("payments.", "wallet.")
 
 
 def _entry_hits_blocked_peer(item: Any) -> bool:
@@ -85,10 +87,10 @@ def _entry_hits_blocked_peer(item: Any) -> bool:
         return False
     entry = cast('dict[str, Any]', item)
     for attr in ("from_id", "peer_id", "user_id", "sender_id"):
-        if is_blocked_peer(entry.get(attr)):
+        if is_blocked_peer(entry.get(attr)) or is_readonly_peer(entry.get(attr)):
             return True
     if entry.get("id") is not None and str(entry.get("_", "")).lower() in {"user", "userempty"}:
-        if is_blocked_peer(entry.get("id")):
+        if is_blocked_peer(entry.get("id")) or is_readonly_peer(entry.get("id")):
             return True
     return False
 
@@ -166,7 +168,7 @@ PROVIDERS: dict[str, dict[str, Any]] = {
     },
     "shell": {
         "title": "Shell",
-        "detail": "full shell access with the Hotaru process OS permissions, including host files, credentials and network; NOT confined to the module workspace. Command timeout and returned output limits still apply",
+        "detail": "run shell commands in the module workspace; when the module does not also hold the files capability, the shell runs in a mount-namespace jail with no access to any host filesystem outside the workspace (network likewise requires net); files access outside the workspace requires the files capability; command timeout and returned output limits still apply",
         "side_effect": "write",
     },
     "logs": {
@@ -402,7 +404,10 @@ class CapabilityHost:
                 raise PermissionError("shell requires a command up to 16000 characters")
             key = secrets.token_hex(16)
             workspace = self.runtime.config.state_path.parent / "workspaces" / module_id
-            self.jobs[module_id, kind, key] = Job(kind, dict(payload), self._check_net_target, workspace)
+            manifest = self.runtime.modules.get(module_id)
+            caps = manifest.loaded.manifest.capabilities if manifest is not None else ()
+            net_cap = "net" in caps
+            self.jobs[module_id, kind, key] = Job(kind, dict(payload), self._check_net_target, workspace, net_cap, "files" not in caps)
             return {"id": key}
         key = (module_id, kind, str(payload.get("id", "")))
         job = self.jobs.get(key)
@@ -434,6 +439,8 @@ class CapabilityHost:
     async def _inline_op(self, module_id: str, payload: dict[str, Any], meta: Any) -> Any:
         if payload_hits_blocked(payload):
             raise PermissionError("inline payload targets a denied peer")
+        if payload.get("op") in ("send", "form") and payload_hits_readonly(payload):
+            raise PermissionError("inline payload targets a read-only peer")
         inline = getattr(self.runtime, "inline", None)
         if inline is None:
             raise PermissionError("inline is unavailable")
@@ -459,6 +466,8 @@ class CapabilityHost:
             peer = await app.mt.resolve_peer(peer_value)
             if payload_hits_blocked({"peer": peer}):
                 raise PermissionError("resolved fetch target is a denied peer")
+            if payload_hits_readonly({"peer": peer}):
+                return []
             result = await app.mt_messages_get_history(
                 peer=peer,
                 offset_id=offset_id,
@@ -498,10 +507,14 @@ class CapabilityHost:
             value = payload.get("value")
             if payload_hits_blocked({"peer": value}):
                 raise PermissionError("fetch entity targets a denied peer")
+            if payload_hits_readonly({"peer": value}):
+                return None
             if value is None:
                 raise PermissionError("fetch entity requires a value")
             if isinstance(value, str) and value.lstrip("-").isdigit():
                 value = int(value)
+            if isinstance(value, int) and is_readonly_peer(value):
+                return None
             if isinstance(value, str):
                 username = value.lstrip("@").casefold()
                 entity = app.mt.entity_usernames.get(username)
@@ -559,9 +572,15 @@ class CapabilityHost:
             timeout = None
         workspace = self.runtime.config.state_path.parent / "workspaces" / module_id
         workspace.mkdir(parents=True, exist_ok=True)
+        manifest = self.runtime.modules.get(module_id)
+        caps = manifest.loaded.manifest.capabilities if manifest is not None else ()
+        net_cap = "net" in caps
         env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "HOME": str(workspace), "LANG": "C.UTF-8"}
         if os.name == "nt":
             env.update({key: os.environ[key] for key in ("SystemRoot", "COMSPEC", "PATHEXT") if key in os.environ})
+        preexec = None
+        if os.name != "nt":
+            preexec = lambda: Job.jail_preexec(str(workspace), not net_cap)
         try:
             loop = asyncio.get_running_loop()
             proc = await loop.run_in_executor(
@@ -576,6 +595,7 @@ class CapabilityHost:
                 text=True,
                 timeout=timeout,
                 check=False,
+                preexec_fn=preexec,
                 ),
             )
         except subprocess.TimeoutExpired:
@@ -599,6 +619,10 @@ class CapabilityHost:
             raise PermissionError(f"mt method is blocked by policy: {method}")
         if payload_hits_blocked(payload):
             raise PermissionError("mt payload targets a denied peer")
+        if payload_hits_readonly(payload):
+            if lowered.startswith(("get", "search")) or lowered in MT_READ_ONLY or any(lowered.startswith("messages." + m) for m in MT_READ_ONLY):
+                return {"_": "messages.messages", "messages": [], "chats": [], "users": []}
+            raise PermissionError("mt payload targets a read-only peer")
         if not lowered.startswith(("get", "search")) and lowered not in MT_READ_ONLY:
             self._audit_mt(module_id, lowered, payload)
         raw_kwargs_value = payload.get("kwargs")
@@ -758,7 +782,6 @@ class CapabilityHost:
             try:
                 response = opener.open(request, timeout=timeout or None)
             except urllib.error.HTTPError as exc:
-                # 4xx/5xx are normal answers: the caller wants the status and the body
                 response = exc
             try:
                 raw = cast(bytes, response.read(limit + 1))
@@ -951,7 +974,6 @@ class CapabilityHost:
             raise PermissionError("assets payload targets a denied peer")
         import os
         from .sandbox import SANDBOX_BASE_ROOT
-
         op = payload.get("op")
         sandbox_root = os.path.join(SANDBOX_BASE_ROOT, module_id)
         if os.path.realpath(sandbox_root) != sandbox_root:

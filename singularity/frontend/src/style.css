@@ -1,0 +1,225 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+:root {
+  --bg-deep: #030407;
+  --hud-line: rgba(215, 224, 234, 0.22);
+  --hud-line-strong: rgba(235, 242, 250, 0.56);
+  --hud-cyan: rgba(154, 240, 255, 0.85);
+  --text-main: #ebeff5;
+  --text-dim: rgba(196, 206, 220, 0.68);
+  --text-muted: rgba(154, 166, 182, 0.48);
+  --font-sans: "Space Grotesk", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg-deep);
+  color: var(--text-main);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+  touch-action: none;
+}
+
+.singularity-root {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+.scene-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  cursor: pointer;
+}
+
+.singularity-root[data-transitioning="true"] .scene-canvas {
+  cursor: progress;
+}
+
+.vignette-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 2;
+  background: radial-gradient(
+    ellipse at center,
+    transparent 56%,
+    rgba(2, 3, 6, 0.58) 100%
+  );
+}
+
+.crt-header {
+  position: absolute;
+  top: 16px;
+  left: 20px;
+  right: 20px;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  pointer-events: none;
+}
+
+.crt-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.crt-dot {
+  width: 6px;
+  height: 6px;
+  flex-shrink: 0;
+  background: rgba(175, 238, 255, 0.9);
+  box-shadow: 0 0 8px rgba(154, 240, 255, 0.65);
+}
+
+.crt-title {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.2em;
+  color: rgba(214, 224, 236, 0.68);
+  white-space: nowrap;
+}
+
+.crt-shot-tag {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  padding: 2px 7px;
+  border: 1px solid rgba(154, 240, 255, 0.25);
+  color: rgba(182, 235, 250, 0.85);
+  background: rgba(6, 12, 20, 0.55);
+  white-space: nowrap;
+}
+
+.crt-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  pointer-events: auto;
+}
+
+.crt-mode-pill {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  padding: 4px 8px;
+  border: 1px solid rgba(205, 218, 235, 0.18);
+  color: var(--text-dim);
+  background: rgba(8, 10, 15, 0.52);
+}
+
+.crt-btn {
+  pointer-events: auto;
+  background: rgba(8, 13, 20, 0.72);
+  border: 1px solid rgba(165, 228, 248, 0.38);
+  color: rgba(226, 244, 255, 0.92);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 6px 12px;
+  cursor: pointer;
+  transition: border-color 0.2s ease, color 0.2s ease, background 0.2s ease, opacity 0.2s ease;
+}
+
+.crt-btn:hover:not(:disabled) {
+  border-color: var(--hud-cyan);
+  background: rgba(18, 34, 48, 0.84);
+  color: #ffffff;
+}
+
+.crt-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.orbit-hint {
+  position: absolute;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 8;
+  pointer-events: none;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  color: rgba(196, 212, 228, 0.46);
+  text-align: center;
+  white-space: nowrap;
+}
+
+.projection-hit-layer {
+  position: absolute;
+  z-index: 9;
+  cursor: default;
+}
+
+.sr-telemetry-mirror {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: pre;
+  border: 0;
+}
+
+@media (max-width: 600px) {
+  .crt-header {
+    top: 10px;
+    left: 12px;
+    right: 12px;
+    gap: 8px;
+  }
+
+  .crt-title {
+    font-size: 9.5px;
+    letter-spacing: 0.08em;
+  }
+
+  .crt-shot-tag {
+    font-size: 8.5px;
+    letter-spacing: 0.08em;
+    padding: 2px 5px;
+  }
+
+  .crt-mode-pill {
+    display: none;
+  }
+
+  .crt-btn {
+    white-space: nowrap;
+    font-size: 10px;
+    padding: 5px 10px;
+  }
+
+  .orbit-hint {
+    font-size: 9px;
+    letter-spacing: 0.12em;
+    bottom: 14px;
+    max-width: 92vw;
+    white-space: normal;
+  }
+}

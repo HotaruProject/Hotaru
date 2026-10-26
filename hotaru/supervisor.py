@@ -8,7 +8,7 @@ import threading
 import time
 from dataclasses import dataclass, field
 from types import FrameType
-from typing import Any, Awaitable, Callable
+from typing import Any, Awaitable, Callable, cast
 
 from goygram.errors import ConnectionClosedError
 
@@ -19,7 +19,6 @@ TRANSPORT_ERRORS = (ConnectionError, ConnectionClosedError, TimeoutError, asynci
 
 
 class ConnectionRecovery:
-    """Gate new RPCs while GoyGram's existing reader reconnects; never reconnect here."""
 
     def __init__(self, mt: Any, observatory: Observatory | None, name: str, *, ready: asyncio.Event | None = None) -> None:
         self.mt = mt
@@ -132,23 +131,6 @@ class ConnectionRecovery:
 
 
 class LoopGuard:
-    """Abort module code that blocks the kernel's event loop.
-
-    Kernel (constellation) modules run inside this process, so one `while True`
-    in a command freezes the whole userbot: no updates, no commands, no health
-    checks — the process is alive but mute. A watchdog thread watches the loop's
-    tick and, when it stalls, raises TimeoutError inside the main thread, which
-    unwinds the offending frame and lets the command fail with a normal error.
-
-    This is the same mechanism as pytest-timeout's signal method; stdlib only, no
-    new dependency. A signal only lands when the interpreter executes Python
-    bytecode again, so a stall inside a C call (`67**67**67` grinding through
-    CPython's big-int pow) would keep the very signal meant to abort it pending
-    until that call returns — and then throw the result away with a traceback
-    from this file. So the guard fires only on positive evidence that Python
-    bytecode is running now: the main thread's frame moved since the last sample.
-    A frozen frame is reported (on_stall) and left alone until it returns.
-    """
 
     def __init__(
         self,
@@ -197,7 +179,8 @@ class LoopGuard:
         ident = threading.main_thread().ident
         if ident is None:
             return None
-        frame = sys._current_frames().get(ident)  # type: ignore
+        current_frames = cast("Callable[[], dict[int, FrameType | None]]", getattr(sys, "_current_frames"))
+        frame = current_frames().get(ident)
         return None if frame is None else (frame.f_code.co_filename, frame.f_lasti)
 
     def _watch(self) -> None:
@@ -230,8 +213,6 @@ class LoopGuard:
             self._await_resume()
 
     def _await_resume(self, timeout: float = 5.0) -> None:
-        """Let the loop breathe before firing again: a second signal landing while
-        the first error is being handled would kill the error path itself."""
         deadline = time.monotonic() + timeout
         seen = self._tick
         while time.monotonic() < deadline:

@@ -4,11 +4,113 @@ import secrets
 import mimetypes
 from typing import Any, Awaitable, Callable, cast
 
+def _deny_all(_value: object) -> bool:
+    return True
+
+
+try:
+    from .denylist import is_blocked_peer, is_readonly_peer, payload_hits_blocked, payload_hits_readonly
+except (ImportError, KeyError):  # denylist unavailable -> deny everything
+    is_blocked_peer = _deny_all
+    is_readonly_peer = _deny_all
+    payload_hits_blocked = _deny_all
+    payload_hits_readonly = _deny_all
+
 _SENTINEL = object()
 
 
 def _msg_field(value: Any, key: str, default: Any = None) -> Any:
     return value.get(key, default) if hasattr(value, "get") else getattr(value, key, default)
+
+
+class MTLayerInfo(int):
+    _methods: int
+    _constructors: int
+
+    def __new__(cls, number: int, methods: int = 0, constructors: int = 0) -> MTLayerInfo:
+        value = cast(MTLayerInfo, int.__new__(cls, number))
+        value._methods = methods
+        value._constructors = constructors
+        return value
+
+    @property
+    def number(self) -> int:
+        return int(self)
+
+    @property
+    def methods(self) -> int:
+        return self._methods
+
+    @property
+    def constructors(self) -> int:
+        return self._constructors
+
+    def to_dict(self) -> dict[str, int]:
+        return {"number": self.number, "methods": self.methods, "constructors": self.constructors}
+
+    @classmethod
+    def from_value(cls, value: Any, info: Any = None) -> MTLayerInfo:
+        if isinstance(value, dict):
+            data = cast(dict[str, Any], value)
+            value = data.get("number", 0)
+        else:
+            data = cast(dict[str, Any], info) if isinstance(info, dict) else {}
+        try:
+            number = int(value)
+        except (TypeError, ValueError):
+            number = 0
+        try:
+            methods = int(data.get("methods", 0))
+        except (TypeError, ValueError):
+            methods = 0
+        try:
+            constructors = int(data.get("constructors", 0))
+        except (TypeError, ValueError):
+            constructors = 0
+        return cls(number, methods, constructors)
+
+
+def _mt_schema_info() -> dict[str, int]:
+    try:
+        from goygram import ext
+        info = cast(dict[str, Any], ext.schema_info()) if ext is not None else {}
+    except Exception:
+        info = {}
+    return {key: int(value) for key, value in info.items() if isinstance(value, int)}
+
+
+def install_mt_layer(app: Any) -> None:
+    mt = getattr(app, "mt", None)
+    if mt is None:
+        return
+    update_layer = getattr(mt, "update_layer", None)
+    if callable(update_layer):
+        def update(number: int) -> None:
+            update_layer(number)
+            mt.layer = MTLayerInfo.from_value(mt.layer, _mt_schema_info())
+        mt.update_layer = update
+    mt.layer = MTLayerInfo.from_value(getattr(mt, "layer", 0), _mt_schema_info())
+
+
+class MTContext:
+    def __init__(self, ctx: Any) -> None:
+        self._ctx = ctx
+
+    async def __call__(self, method: str, **kwargs: Any) -> Any:
+        return await self._ctx._mt_call(method, **kwargs)
+
+    @property
+    def layer(self) -> MTLayerInfo:
+        runtime = getattr(self._ctx, "runtime", None)
+        app = getattr(runtime, "app", None)
+        mt = getattr(app, "mt", None)
+        layer = getattr(mt, "layer", None)
+        if layer is not None:
+            if isinstance(layer, MTLayerInfo):
+                return layer
+            return MTLayerInfo.from_value(layer)
+        payload = getattr(self._ctx, "_msg", {})
+        return MTLayerInfo.from_value(payload.get("mt_layer", {}))
 
 
 class MessageOperations:
@@ -427,9 +529,13 @@ class MessageOperations:
 
 
     async def _rpc(self, method: str, *, _media_response: bool = False, **kwargs: Any) -> Any:
-        if self._g("src", "source", default="mt") not in {"mt", "mtproto"}:
+        if self._g("src", default="mt") not in {"mt", "mtproto"}:
             raise ValueError("message operations require an MTProto message")
-        sender = self.ctx._ctx_media_rpc if _media_response else self.ctx.mt
+        if payload_hits_blocked({"peer": kwargs.get("peer")}):
+            raise PermissionError("message payload targets a denied peer")
+        if payload_hits_readonly({"peer": kwargs.get("peer")}) and not method.startswith(("messages.get", "messages.search", "channels.get", "stats.get")):
+            raise PermissionError("message payload targets a read-only peer")
+        sender = self.ctx._ctx_media_rpc if _media_response else getattr(self.ctx, "_ctx_call", self.ctx.mt)
         result = await sender(method, **kwargs)
         if _msg_field(result, "ok") is False:
             raise RuntimeError(f"{method}: {_msg_field(result, 'error', 'RPC failed')}")
@@ -493,11 +599,13 @@ class MessageOperations:
 
     async def delete(self, revoke: bool = True) -> Any:
         chat, mid = self._target()
-        if chat < -1000000000000:
-            return await self._rpc("channels.deleteMessages", channel=await self.get_input_channel(), id=[mid])
-        return await self._rpc("messages.deleteMessages", id=[mid], revoke=revoke)
+        if is_blocked_peer(chat) or is_readonly_peer(chat):
+            raise PermissionError("delete targets a denied or read-only peer")
+        return await self._rpc("channels.deleteMessages" if chat < -1000000000000 else "messages.deleteMessages", id=[mid], revoke=revoke, **({"channel": await self.get_input_chat()} if chat < -1000000000000 else {}))
 
     async def forward(self, to_chat: Any, **kwargs: Any) -> Any:
+        if is_blocked_peer(to_chat) or is_readonly_peer(to_chat):
+            raise PermissionError("forward targets a denied or read-only peer")
         topic = kwargs.pop("topic_id", self.topic_id if to_chat == self.chat_id else None)
         if topic is not None:
             kwargs["top_msg_id"] = topic
@@ -673,7 +781,78 @@ CTX_OPERATIONS: dict[str, Callable[..., Awaitable[Any]]] = {
 }
 
 
+class Memory(int):
+    @property
+    def bytes(self) -> int:
+        return int(self)
+
+    @property
+    def kb(self) -> float:
+        return round(self / 1024, 2)
+
+    @property
+    def mb(self) -> float:
+        return round(self / (1024 * 1024), 2)
+
+    @property
+    def gb(self) -> float:
+        return round(self / (1024 * 1024 * 1024), 2)
+
+    def format(self) -> str:
+        if self >= 1024 * 1024 * 1024:
+            return f"{self.gb:.2f} GB"
+        if self >= 1024 * 1024:
+            return f"{self.mb:.1f} MB"
+        if self >= 1024:
+            return f"{self.kb:.1f} KB"
+        return f"{self} B"
+
+    def __call__(self) -> Memory:
+        return self
+
+
+class Prefix(str):
+    def __call__(self) -> str:
+        return str(self)
+
+
 class ContextOperations:
+    def get_memory(self) -> Memory:
+        runtime = getattr(self, "runtime", getattr(self, "_hotaru_runtime", None))
+        usage = 0
+        if runtime is not None and hasattr(runtime, "get_memory_usage"):
+            usage = runtime.get_memory_usage()
+        return Memory(usage)
+
+    def get_ram(self) -> Memory:
+        return self.get_memory()
+
+    @property
+    def memory(self) -> Memory:
+        return self.get_memory()
+
+    @property
+    def ram(self) -> Memory:
+        return self.get_memory()
+
+    def get_prefix(self) -> Prefix:
+        runtime = getattr(self, "runtime", getattr(self, "_hotaru_runtime", None))
+        prefix = "."
+        if runtime is not None and hasattr(runtime, "config"):
+            prefix = getattr(runtime.config, "prefix", ".")
+        return Prefix(prefix)
+
+    @property
+    def prefix(self) -> Prefix:
+        return self.get_prefix()
+
+    @property
+    def mt(self) -> MTContext:
+        return MTContext(self)
+
+    async def _ctx_call(self, method: str, **kwargs: Any) -> Any:
+        return await self._mt_call(method, **kwargs)
+
     async def _ctx_operation(self, name: str, *args: Any, target: Any = None, **kwargs: Any) -> Any:
         operation = CTX_OPERATIONS.get(name)
         if operation is None:
@@ -721,17 +900,12 @@ class ContextOperations:
     async def net(self, url: str, *, method: str | None = None, headers: dict[str, str] | None = None,
                   params: Any = None, data: Any = None, json: Any = None, body: Any = None,
                   timeout: float = 10.0, max_bytes: int | None = None, binary: bool = False) -> dict[str, Any]:
-        """One outbound request to a public host. Any HTTP method, headers, query params, JSON or raw body.
-
-        Returns status, response headers, the final url, the body (base64 when binary=True) and a size/truncated flag.
-        """
         payload = {"url": url, "method": method, "headers": headers, "params": params, "timeout": timeout,
                    "data": data if data is not None else json, "body": body, "max_bytes": max_bytes, "binary": binary}
         return cast("dict[str, Any]", await self.cap("net", {key: value for key, value in payload.items() if value is not None}))
 
     async def stream(self, url: str, *, headers: dict[str, str] | None = None, timeout: float | None = None,
                      max_bytes: int | None = None) -> "NetStream":
-        """Open a live connection: ws, wss, tcp, tls or udp. Iterate the returned stream for messages."""
         payload: dict[str, Any] = {"op": "start", "url": url, "headers": headers}
         if timeout is not None:
             payload["timeout"] = timeout
@@ -746,10 +920,6 @@ class ContextOperations:
 
 
 class NetStream:
-    """Live connection opened through the net capability.
-
-    Events look like {"event": "open"|"message"|"close", "data": <str>, "binary": "1" when base64}.
-    """
 
     def __init__(self, context: Any, key: str) -> None:
         self._context = context
@@ -767,7 +937,6 @@ class NetStream:
         await self._op({"op": "send", "data": data, "binary": binary})
 
     async def recv(self, timeout: float = 20.0) -> dict[str, Any] | None:
-        """Next event, or None once the connection ended."""
         if self._pending:
             return await self._finish(self._pending.pop(0))
         while True:
@@ -904,7 +1073,8 @@ async def _ctx_append_todo(target: MessageOperations, items: Any) -> Any:
         prepared.append(item)
     if target.id is None:
         raise ValueError("message id is unavailable")
-    return await target.ctx.mt("messages.appendTodoList", peer=await target.get_input_chat(), msg_id=target.id, list=_ctx_todo_items(prepared))
+    sender = getattr(target.ctx, "_ctx_call", target.ctx.mt)
+    return await sender("messages.appendTodoList", peer=await target.get_input_chat(), msg_id=target.id, list=_ctx_todo_items(prepared))
 
 
 async def _ctx_close_poll(target: MessageOperations) -> Any:
@@ -1352,7 +1522,8 @@ def _catalog_operation(name: str, spec: tuple[Any, ...]) -> Callable[..., Awaita
             raise TypeError(name + ": missing " + ", ".join(missing))
         _catalog_guard(data)
         converted = {field: await _catalog_convert(target, field_types[field], value) for field, value in data.items() if value is not None}
-        return await target.ctx.mt(method, **converted)
+        sender = getattr(target.ctx, "_ctx_call", target.ctx.mt)
+        return await sender(method, **converted)
     operation.__name__ = name
     return operation
 
@@ -1375,7 +1546,11 @@ async def _ctx_translate(target: MessageOperations, text: Any, to_lang: str | No
         raise ValueError("translation requires text or a text message")
     async def telegram(value: str, language: str, source_language: str) -> str:
         try:
-            result = await target.ctx.cap("mt", {"method": "messages.translateText", "kwargs": {"text": [_ctx_text(value)], "to_lang": language}, "timeout": min(kwargs.get("timeout", 15.0), kwargs.get("attempt_timeout", 7.0))})
+            sender = getattr(target.ctx, "_ctx_call", None)
+            if sender is not None:
+                result = await sender("messages.translateText", text=[_ctx_text(value)], to_lang=language, timeout=min(kwargs.get("timeout", 15.0), kwargs.get("attempt_timeout", 7.0)))
+            else:
+                result = await target.ctx.cap("mt", {"method": "messages.translateText", "kwargs": {"text": [_ctx_text(value)], "to_lang": language}, "timeout": min(kwargs.get("timeout", 15.0), kwargs.get("attempt_timeout", 7.0))})
         except PermissionError:
             raise
         except Exception as exc:

@@ -37,11 +37,122 @@ class Job:
     inline_tail = 262144
     stream_schemes = frozenset({"ws", "wss", "tcp", "tls", "udp"})
 
-    def __init__(self, kind: str, data: dict[str, Any], check_url: Callable[[str], Any], workspace: Path) -> None:
+    @staticmethod
+    def _jail_preexec(workspace: str, net_blocked: bool) -> None:
+        return Job.jail_preexec(workspace, net_blocked)
+
+    @staticmethod
+    def jail_preexec(workspace: str, net_blocked: bool) -> None:
+        if os.name == "nt":
+            return
+        import ctypes
+        import os as _os
+        import resource as _resource
+        import tempfile
+
+        libc = ctypes.CDLL(None, use_errno=True)
+        CLONE_NEWNS = 0x00020000
+        CLONE_NEWIPC = 0x08000000
+        CLONE_NEWNET = 0x40000000
+        MS_BIND = 4096
+        MS_REC = 16384
+        MS_RDONLY = 1
+        MS_NOSUID = 2
+        MS_NODEV = 4
+        MS_REMOUNT = 32
+        MS_PRIVATE = 262144
+        MNT_DETACH = 2
+        SANDBOX_BASE = "/run/hotaru-sandbox"
+        SANDBOX_UID = 65534
+        SANDBOX_GID = 65534
+
+        def mount(src: bytes | str | None, dst: bytes | str, fstype: bytes | str | None, flags: int, data: bytes | str | None = None) -> None:
+            if libc.mount(src, dst, fstype, flags, data) != 0:
+                raise OSError(ctypes.get_errno(), f"jail mount failed: {src!r} -> {dst!r}")
+
+        def bind_ro(src: str, dst: str, allow_dev: bool = False) -> None:
+            dst_abs = os.path.join(newroot, dst.lstrip("/"))
+            if os.path.isdir(src):
+                os.makedirs(dst_abs, exist_ok=True)
+            else:
+                os.makedirs(os.path.dirname(dst_abs), exist_ok=True)
+                with open(dst_abs, "wb"):
+                    pass
+            harden = 0 if allow_dev else MS_NODEV
+            mount(src.encode(), dst_abs.encode(), None, MS_BIND | MS_REC)
+            mount(src.encode(), dst_abs.encode(), None, MS_BIND | MS_REC | MS_REMOUNT | MS_RDONLY | MS_NOSUID | harden)
+
+        def bind_rw(src: str, dst: str) -> None:
+            dst_abs = os.path.join(newroot, dst.lstrip("/"))
+            os.makedirs(dst_abs, exist_ok=True)
+            mount(src.encode(), dst_abs.encode(), None, MS_BIND | MS_REC)
+            mount(src.encode(), dst_abs.encode(), None, MS_BIND | MS_REC | MS_REMOUNT | MS_NOSUID)
+
+        flags = CLONE_NEWNS | CLONE_NEWIPC
+        if net_blocked:
+            flags |= CLONE_NEWNET
+        try:
+            _os.setsid()
+        except Exception:
+            pass
+        if libc.unshare(flags) != 0:
+            raise OSError(ctypes.get_errno(), "jail namespace isolation is unavailable")
+        mount(b"none", b"/", None, MS_REC | MS_PRIVATE)
+        os.makedirs(SANDBOX_BASE, exist_ok=True)
+        newroot = tempfile.mkdtemp(prefix="jail.", dir=SANDBOX_BASE)
+        mount(b"tmpfs", newroot.encode(), b"tmpfs", MS_NOSUID, b"mode=0755")
+        bind_ro("/usr/bin", "/usr/bin")
+        bind_ro("/usr/lib", "/usr/lib")
+        if os.path.isdir("/usr/lib64"):
+            bind_ro("/usr/lib64", "/usr/lib64")
+        for link_name in ("/lib", "/lib64"):
+            if os.path.islink(link_name):
+                target = os.readlink(link_name)
+                dst = os.path.join(newroot, link_name.lstrip("/"))
+                os.makedirs(os.path.dirname(dst), exist_ok=True)
+                os.symlink(target, dst)
+            elif os.path.isdir(link_name):
+                bind_ro(link_name, link_name)
+        bind_ro("/bin", "/bin")
+        bind_ro("/etc/ssl", "/etc/ssl")
+        bind_ro("/etc/resolv.conf", "/etc/resolv.conf")
+        for dev in ("/dev/null", "/dev/zero", "/dev/urandom"):
+            bind_ro(dev, dev, allow_dev=True)
+        tmp_dir = os.path.join(newroot, "tmp")
+        os.makedirs(tmp_dir, exist_ok=True)
+        mount(b"tmpfs", tmp_dir.encode(), b"tmpfs", MS_NOSUID | MS_NODEV, b"mode=1777,size=64m")
+        ws_abs = os.path.realpath(workspace)
+        ws_rel = ws_abs.strip("/")
+        bind_rw(ws_abs, "/" + ws_rel)
+        _os.chown(os.path.join(newroot, ws_rel), SANDBOX_UID, SANDBOX_GID)
+        os.makedirs(os.path.join(newroot, "old_root"), exist_ok=True)
+        os.chdir(newroot)
+        if libc.pivot_root(b".", b"./old_root") != 0:
+            raise OSError(ctypes.get_errno(), "jail pivot_root failed")
+        os.chdir("/")
+        if libc.umount2(b"/old_root", MNT_DETACH) != 0:
+            raise OSError(ctypes.get_errno(), "jail old root detach failed")
+        try:
+            _os.rmdir("/old_root")
+        except OSError:
+            pass
+        _os.chdir(ws_abs)
+        _os.umask(0o077)
+        try:
+            _resource.setrlimit(_resource.RLIMIT_CORE, (0, 0))
+        except Exception:
+            pass
+        _os.setgroups([])
+        _os.setgid(SANDBOX_GID)
+        _os.setuid(SANDBOX_UID)
+
+    def __init__(self, kind: str, data: dict[str, Any], check_url: Callable[[str], Any], workspace: Path, net_blocked: bool = False, fs_jail: bool = False) -> None:
         self.kind = kind
         self.data = data
         self.check_url = check_url
         self.workspace = workspace
+        self.net_blocked = net_blocked
+        self.fs_jail = fs_jail
         self.token = uuid4().hex
         self.events: asyncio.Queue[dict[str, str]] = asyncio.Queue(64)
         self.out: asyncio.Queue[tuple[Any, bool]] = asyncio.Queue(64)
@@ -64,7 +175,6 @@ class Job:
             self.error = type(exc).__name__
         finally:
             self.done = True
-            # wake a long-polling reader so a finished stream is noticed at once
             self.emit("close", "")
 
     def send(self, data: Any, binary: bool = False) -> None:
@@ -209,9 +319,12 @@ class Job:
         env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "HOME": str(self.workspace), "LANG": "C.UTF-8"}
         if os.name == "nt":
             env.update({key: os.environ[key] for key in ("SystemRoot", "COMSPEC", "PATHEXT") if key in os.environ})
+        preexec = None
+        if os.name != "nt":
+            preexec = lambda: Job._jail_preexec(str(self.workspace), self.net_blocked)
         spawn = asyncio.create_task(asyncio.create_subprocess_shell(str(data["command"]), cwd=cwd, env=env,
                     stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
-                    start_new_session=os.name != "nt"))
+                    preexec_fn=preexec, start_new_session=os.name != "nt"))
         try:
             proc = await asyncio.shield(spawn)
         except asyncio.CancelledError:
