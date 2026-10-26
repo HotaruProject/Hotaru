@@ -2399,6 +2399,15 @@ class ModuleSandbox:
         self._activity.pop(module_id, None)
         return process is not None
 
+    def module_ids(self) -> tuple[str, ...]:
+        return tuple(self._module_defs.keys())
+
+    def live_worker_ids(self) -> tuple[str, ...]:
+        return tuple(mid for mid, w in self._workers.items() if w.poll() is None)
+
+    async def ensure_worker(self, module_id: str) -> None:
+        await self._ensure_worker(module_id)
+
     def is_worker_protected(self, module_id: str) -> bool:
         if module_id in self._persistent_modules:
             return True

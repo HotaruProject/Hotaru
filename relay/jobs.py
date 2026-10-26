@@ -39,6 +39,10 @@ class Job:
 
     @staticmethod
     def _jail_preexec(workspace: str, net_blocked: bool) -> None:
+        return Job.jail_preexec(workspace, net_blocked)
+
+    @staticmethod
+    def jail_preexec(workspace: str, net_blocked: bool) -> None:
         if os.name == "nt":
             return
         import ctypes
@@ -62,7 +66,7 @@ class Job:
         SANDBOX_UID = 65534
         SANDBOX_GID = 65534
 
-        def mount(src, dst, fstype, flags, data=None):
+        def mount(src: bytes | str | None, dst: bytes | str, fstype: bytes | str | None, flags: int, data: bytes | str | None = None) -> None:
             if libc.mount(src, dst, fstype, flags, data) != 0:
                 raise OSError(ctypes.get_errno(), f"jail mount failed: {src!r} -> {dst!r}")
 

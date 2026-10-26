@@ -122,6 +122,7 @@ def _https_request_sync(url: str, method: str, timeout: float) -> tuple[int, byt
     ).encode("ascii")
     with trusted_scope():
         tls_ctx = ssl.create_default_context()
+        tls_ctx.minimum_version = ssl.TLSVersion.TLSv1_2
         with socket.create_connection((host, port), timeout=timeout) as raw_sock:
             with tls_ctx.wrap_socket(raw_sock, server_hostname=host) as tls_sock:
                 tls_sock.sendall(req_bytes)

@@ -8,7 +8,7 @@ import threading
 import time
 from dataclasses import dataclass, field
 from types import FrameType
-from typing import Any, Awaitable, Callable
+from typing import Any, Awaitable, Callable, cast
 
 from goygram.errors import ConnectionClosedError
 
@@ -179,7 +179,8 @@ class LoopGuard:
         ident = threading.main_thread().ident
         if ident is None:
             return None
-        frame = sys._current_frames().get(ident)
+        current_frames = cast("Callable[[], dict[int, FrameType | None]]", getattr(sys, "_current_frames"))
+        frame = current_frames().get(ident)
         return None if frame is None else (frame.f_code.co_filename, frame.f_lasti)
 
     def _watch(self) -> None:
