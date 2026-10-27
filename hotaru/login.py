@@ -1454,6 +1454,7 @@ async def _phone_login_via_bot(app: Any, api_id: int, api_hash: str, bot: Any) -
     raw_phone = await bot.ask("Sign-in started.\nSend your phone number with the country code, e.g. +1 555 000 1234")
     phone = _phone(raw_phone)
     settings = rx.serialize_constructor("codeSettings", {"flags": 0})
+    total_code_attempts = 0
     for attempt in range(3):
         sent, send_err = await _rpc(
             "auth_send_code", phone_number=phone, api_id=api_id, api_hash=api_hash, settings=settings,
@@ -1467,15 +1468,16 @@ async def _phone_login_via_bot(app: Any, api_id: int, api_hash: str, bot: Any) -
             return None
         if attempt > 0:
             await bot.send("A new code was sent to your Telegram.")
-        for code_attempt in range(3):
-            expiry_note = "A new code was sent." if code_attempt > 0 else "Code sent to your Telegram."
-            code = (await bot.ask(f"{expiry_note}\nSend the login code (try {code_attempt + 1}/3)")).strip()
+        while total_code_attempts < 5:
+            total_code_attempts += 1
+            expiry_note = "A fresh code was just sent." if attempt > 0 else "Code sent to your Telegram."
+            code = (await bot.ask(f"{expiry_note}\nSend the login code (attempt {total_code_attempts}/5)")).strip()
             sign, sign_err = await _rpc(
                 "auth_sign_in", phone_number=phone, phone_code=code, phone_code_hash=code_hash,
                 api_id=api_id, api_hash=api_hash,
             )
             if "PHONE_CODE_EXPIRED" in sign_err or "PHONE_CODE_EMPTY" in sign_err:
-                await bot.send("The code expired, requesting a fresh one.")
+                await bot.send("The code was already used or expired, requesting a fresh one.")
                 break
             if "PHONE_CODE_INVALID" in sign_err or "CODE_INVALID" in sign_err:
                 await bot.send("That code is wrong. Try again.")
