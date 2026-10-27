@@ -70,7 +70,6 @@ async def command_dash(ctx: Any, invocation: Any) -> None:
     relay_label = _tr(ctx, "kernel.singularity.relay", "Relay")
     lines = [
         header,
-        "",
         "<blockquote>"
         f"<b>{probe_label}:</b> <code>{status_tag}</code><br>"
         f"<b>{relay_label}:</b> <code>{sync_tag}</code>"
