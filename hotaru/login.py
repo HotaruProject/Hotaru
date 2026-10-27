@@ -1445,9 +1445,6 @@ async def _phone_login_via_bot(app: Any, api_id: int, api_hash: str, bot: Any) -
     _mt_req_with_migrate = cast(Callable[..., Awaitable[dict[str, Any]]], getattr(security, "_mt_req_with_migrate"))
 
     async def _rpc(act: str, **kw: Any) -> tuple[dict[str, Any] | None, str]:
-        # reference flow (goygram.security phone login): RPC 4xx arrives as a
-        # raised RPCError — catch it and turn it into an error string so the
-        # retry branches below can see PHONE_CODE_EXPIRED etc.
         try:
             res = await _mt_req_with_migrate(app, act, **kw)
         except Exception as exc:

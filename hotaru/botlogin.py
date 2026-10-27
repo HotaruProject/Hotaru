@@ -81,8 +81,6 @@ class EchoBot:
         pending = self._pending
         if pending is not None:
             await pending.put(text)
-            # safety: wipe the secret (phone / code / 2FA) from the bot chat
-            # right after it is read
             try:
                 mid = getattr(message, "id", None)
                 if isinstance(mid, int) and mid > 0:
