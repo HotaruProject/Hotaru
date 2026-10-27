@@ -285,6 +285,7 @@ function createSingularityServer(options = {}) {
   );
 
   const metricsBridge = options.metricsBridge || new NodeTelemetryProbe();
+  const startedAt = Date.now();
 
   function issueSessionToken(user) {
     return jwt.sign(
@@ -607,6 +608,13 @@ function createSingularityServer(options = {}) {
         user: result.user,
         sessionToken,
         config: { dataMode, shotDurationMs },
+      });
+    }
+
+    if (method === "GET" && pathname === "/api/health") {
+      return sendJson(res, 200, {
+        ok: true,
+        uptime_seconds: Math.floor((Date.now() - startedAt) / 1000),
       });
     }
 
