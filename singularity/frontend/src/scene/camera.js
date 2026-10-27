@@ -19,22 +19,22 @@ export const BASE_FOV = 0.85;
 export const SHOTS = {
   overview: {
     name: "overview",
-    distance: 16.6,
-    pitch: 0.3,
+    distance: 26.0,
+    pitch: 0.18,
     yaw: 0.0,
     target: [0, 0, 0],
   },
   satellite: {
     name: "satellite",
-    offsetLocal: [4.2, 1.45, 2.25],
-    lookOffset: [0, -1.25, 0],
+    offsetLocal: [5.6, 1.9, 3.0],
+    lookOffset: [0, -0.3, 0],
     target: SATELLITE_WORLD.position,
   },
 };
 
 function overviewPose(yaw, pitch, distance) {
   const safePitch = clamp(pitch, -1.05, 1.05);
-  const safeDistance = clamp(distance, 11.5, 34);
+  const safeDistance = clamp(distance, 12.0, 48);
   const position = [
     safeDistance * Math.cos(safePitch) * Math.sin(yaw),
     safeDistance * Math.sin(safePitch),

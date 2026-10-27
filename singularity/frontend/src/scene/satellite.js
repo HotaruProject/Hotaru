@@ -10,7 +10,7 @@ import {
 } from "./math.js";
 
 export const SATELLITE_WORLD = {
-  position: [2.5, 4.9, -5.0],
+  position: [6.9, 7.2, 7.2],
   yaw: -2.034,
   driftRadius: 0.34,
   driftHeight: 0.14,

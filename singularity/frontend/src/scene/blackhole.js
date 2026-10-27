@@ -1,11 +1,12 @@
-const VERTEX_SOURCE = `
+export const BLACK_HOLE_VERTEX_SOURCE = `
 attribute vec2 aPos;
 void main() {
   gl_Position = vec4(aPos, 0.0, 1.0);
 }
 `;
 
-const FRAGMENT_BODY = `
+export function blackHoleFragmentSource() {
+  return `
 #ifdef GL_FRAGMENT_PRECISION_HIGH
 precision highp float;
 #else
@@ -14,11 +15,11 @@ precision mediump float;
 
 uniform vec2 uRes;
 uniform float uTime;
-uniform int uMaxSteps;
 uniform vec3 uCamPos;
 uniform vec3 uCamFwd;
 uniform vec3 uCamRight;
 uniform vec3 uCamUp;
+uniform int uMaxSteps;
 
 float hash13(vec3 p3) {
   p3 = fract(p3 * 0.1031);
@@ -52,7 +53,7 @@ float noise2(vec2 p) {
 float fbm2(vec2 p) {
   float v = 0.0;
   float amp = 0.52;
-  for (int i = 0; i < FBM_OCTAVES; i++) {
+  for (int i = 0; i < 4; i++) {
     v += amp * noise2(p);
     p = p * 2.15 + 7.1;
     amp *= 0.48;
@@ -124,9 +125,9 @@ vec4 sampleDisk(vec3 hit, vec3 rayDir) {
 
 vec3 traceScene(vec2 uv) {
   vec3 camPos = uCamPos;
-  vec3 fwd = uCamFwd;
-  vec3 right = uCamRight;
-  vec3 up = uCamUp;
+  vec3 fwd = normalize(uCamFwd);
+  vec3 right = normalize(uCamRight);
+  vec3 up = normalize(uCamUp);
   float fov = 0.85;
   vec3 dir = normalize(fwd + uv.x * fov * right + uv.y * fov * up);
 
@@ -141,7 +142,7 @@ vec3 traceScene(vec2 uv) {
   float minR = 1000.0;
   int diskCrossings = 0;
 
-  for (int i = 0; i < RAY_STEPS; i++) {
+  for (int i = 0; i < 360; i++) {
     if (i >= uMaxSteps) break;
     vec3 prevPos = pos;
     float r = length(pos);
@@ -199,11 +200,4 @@ void main() {
   gl_FragColor = vec4(col, 1.0);
 }
 `;
-
-export function blackHoleFragmentSource(options = {}) {
-  const steps = Math.max(60, Math.min(360, Number(options.steps ?? 300)));
-  const octaves = Math.max(1, Math.min(5, Number(options.octaves ?? 4)));
-  return `#define RAY_STEPS ${steps}\n#define FBM_OCTAVES ${octaves}\n${FRAGMENT_BODY}`;
 }
-
-export const BLACK_HOLE_VERTEX_SOURCE = VERTEX_SOURCE;
