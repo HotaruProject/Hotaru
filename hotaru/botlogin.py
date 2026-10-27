@@ -44,6 +44,8 @@ class EchoBot:
         self._tasks: list[asyncio.Task[Any]] = []
         self._ready = asyncio.Event()
         self._pending: asyncio.Queue[str] | None = None
+        self._runner: asyncio.Task[Any] | None = None
+        self._keypad: tuple[int, str, list[str], asyncio.Future[str]] | None = None
 
     def _vault(self) -> Path:
         return self.session_dir / PENDING_VAULT_NAME
@@ -68,6 +70,7 @@ class EchoBot:
             default_transport="mtproto",
         )
         app.on_msg(self._on_message)
+        app.on_cb(self._on_callback)
         return app
 
     async def _on_message(self, message: Any) -> None:
@@ -116,6 +119,64 @@ class EchoBot:
             raise BotLoginError(f"no answer in the bot chat: {prompt}") from exc
         finally:
             self._pending = None
+
+    @staticmethod
+    def _keys() -> dict[str, Any]:
+        rows = [["1", "2", "3"], ["4", "5", "6"], ["7", "8", "9"], ["<", "0", "ok"]]
+        labels = {"<": "⌫", "ok": "✅"}
+        return {"inline_keyboard": [[{"text": labels.get(key, key), "callback_data": "kp:" + key} for key in row] for row in rows]}
+
+    @staticmethod
+    def _masked(prompt: str, digits: list[str]) -> str:
+        return f"{prompt}\n\n{' '.join('•' * len(digits)) or '…'}"
+
+    async def ask_code(self, prompt: str, *, timeout: float = 300.0) -> str:
+        if self.owner is None or self.app is None:
+            raise BotLoginError("the bot has no owner chat yet")
+        sent = await self.app.send_msg(self.owner, self._masked(prompt, []), kbd=self._keys())
+        result = (sent or {}).get("result") if isinstance(sent, dict) else None
+        mid = result.get("id") if isinstance(result, dict) else None
+        if not isinstance(mid, int):
+            raise BotLoginError("the keypad message has no ID")
+        done: asyncio.Future[str] = asyncio.get_running_loop().create_future()
+        self._keypad = (mid, prompt, [], done)
+        try:
+            return await asyncio.wait_for(done, timeout=timeout)
+        except asyncio.TimeoutError as exc:
+            raise BotLoginError(f"no answer in the bot chat: {prompt}") from exc
+        finally:
+            self._keypad = None
+            try:
+                await self.app.mt_messages_delete_messages(id=[mid], revoke=True)
+            except Exception:
+                pass
+
+    async def _on_callback(self, callback: Any) -> None:
+        keypad = self._keypad
+        data = str(getattr(callback, "data", "") or "")
+        if keypad is None or getattr(callback, "from_id", None) != self.owner or callback.msg_id != keypad[0] or not data.startswith("kp:"):
+            try:
+                await callback.answer()
+            except Exception:
+                pass
+            return
+        mid, prompt, digits, done = keypad
+        key = data[3:]
+        if key == "ok":
+            if digits and not done.done():
+                done.set_result("".join(digits))
+            await callback.answer()
+            return
+        if key == "<":
+            if digits:
+                digits.pop()
+        elif key.isdigit() and len(digits) < 8:
+            digits.append(key)
+        await callback.answer()
+        try:
+            await self.app.edit_msg(self.owner, mid, self._masked(prompt, digits), kbd=self._keys())
+        except Exception:
+            pass
 
     async def _authenticate(self) -> None:
         from goygram.security import bootstrap_session
