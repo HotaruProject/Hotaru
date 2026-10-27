@@ -1572,7 +1572,7 @@ async def _authorize_via_bot(app: Any, api_id: int, api_hash: str, bot: Any) -> 
 
 
 def install_daemon_prompt(runtime: Any = None) -> None:
-    from .daemon import DaemonError, install_daemon, is_root, unit_path
+    from .daemon import DaemonError, install_daemon, is_root
 
     state = getattr(runtime, "state", None) if runtime is not None else None
     if state is not None and state.get_setting("daemon-install-offered"):
