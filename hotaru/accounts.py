@@ -186,7 +186,7 @@ class AccountManager:
         registry = StateStore(root.resolve() / 'sanctuary/state.sqlite3')
         manager = cls(registry, root)
         manager.owned = True
-        for key in ('api-id', 'api-hash', 'prefix', 'backup-keep', 'sandbox'):
+        for key in ('api-id', 'api-hash', 'prefix', 'backup-keep', 'sandbox', 'inline-bot-username-wanted'):
             if registry.get_setting(key) is None:
                 value = state.get_setting(key)
                 if value is not None:
