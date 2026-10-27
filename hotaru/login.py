@@ -1471,7 +1471,11 @@ async def _phone_login_via_bot(app: Any, api_id: int, api_hash: str, bot: Any) -
         while total_code_attempts < 5:
             total_code_attempts += 1
             expiry_note = "A fresh code was just sent." if attempt > 0 else "Code sent to your Telegram."
-            code = (await bot.ask(f"{expiry_note}\nSend the login code (attempt {total_code_attempts}/5)")).strip()
+            raw_code = await bot.ask(
+                f"{expiry_note}\nSend the login code with spaces between digits, e.g. 1 2 3 4 5. "
+                f"Telegram expires a code sent as one number. (attempt {total_code_attempts}/5)"
+            )
+            code = "".join(ch for ch in raw_code if ch.isdigit())
             sign, sign_err = await _rpc(
                 "auth_sign_in", phone_number=phone, phone_code=code, phone_code_hash=code_hash,
                 api_id=api_id, api_hash=api_hash,
