@@ -163,16 +163,6 @@ class EchoBot:
             raise BotLoginError("the bot did not report a Telegram ID")
         return self.owner
 
-    def move_vault(self, user_id: int) -> Path:
-        from hotaru.accounts import bot_vault_path
-
-        source = self._vault()
-        target = bot_vault_path(self.session_dir, user_id)
-        target.parent.mkdir(parents=True, exist_ok=True)
-        if source.exists() and not target.exists():
-            source.replace(target)
-        return target
-
     async def close(self) -> None:
         runner = getattr(self, "_runner", None)
         if runner is not None:
@@ -188,6 +178,7 @@ class EchoBot:
             except Exception:
                 pass
             self.app = None
+        self._vault().unlink(missing_ok=True)
 
 
 async def bot_owner_id(
