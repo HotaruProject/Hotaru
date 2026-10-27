@@ -7,6 +7,8 @@ import logging
 import os
 import secrets
 import shutil
+import signal
+import subprocess
 import time
 import urllib.parse
 from contextlib import nullcontext
@@ -379,12 +381,110 @@ class SingularityKernel:
                 log.info("Installing Singularity probe dependencies...")
                 await self._run_npm_step(BACKEND_DIR, "install", "--no-audit", "--no-fund")
 
-            if not (FRONTEND_DIR / "dist" / "index.html").is_file():
-                if not (FRONTEND_DIR / "node_modules" / "vite").exists():
-                    log.info("Installing Singularity frontend dependencies...")
-                    await self._run_npm_step(FRONTEND_DIR, "install", "--no-audit", "--no-fund")
-                log.info("Building Singularity frontend bundle...")
+            if self._frontend_deps_changed():
+                log.info("Installing Singularity frontend dependencies...")
+                try:
+                    await self._run_npm_step(
+                        FRONTEND_DIR, "install", "--no-audit", "--no-fund", "--prefer-offline"
+                    )
+                except Exception as exc:
+                    if not (FRONTEND_DIR / "node_modules" / "vite").exists():
+                        raise
+                    log.warning(
+                        "Singularity frontend dependency refresh skipped: %s",
+                        exc,
+                    )
+
+            log.info("Building Singularity frontend bundle...")
+            try:
                 await self._run_npm_step(FRONTEND_DIR, "run", "build")
+            except Exception as exc:
+                if (FRONTEND_DIR / "dist" / "index.html").is_file():
+                    log.warning(
+                        "Singularity frontend build failed, keeping the previous bundle: %s",
+                        exc,
+                    )
+                    return
+                raise
+
+    def _frontend_deps_changed(self) -> bool:
+        vite = FRONTEND_DIR / "node_modules" / "vite"
+        if not vite.exists():
+            return True
+        lock = FRONTEND_DIR / "package-lock.json"
+        stamp = FRONTEND_DIR / "node_modules" / ".package-lock.json"
+        if not lock.is_file() or not stamp.is_file():
+            return True
+        try:
+            return lock.stat().st_mtime > stamp.stat().st_mtime
+        except OSError:
+            return False
+
+    def _stale_backend_pids(self, port: int) -> list[int]:
+        ss_bin = shutil.which("ss")
+        if not ss_bin:
+            return []
+        try:
+            proc = subprocess.run(
+                [ss_bin, "-ltnpH"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+                check=False,
+            )
+        except Exception:
+            return []
+        pids: list[int] = []
+        for line in (proc.stdout or "").splitlines():
+            fields = line.split()
+            if len(fields) < 4:
+                continue
+            local = fields[3]
+            if not local.rsplit(":", 1)[-1].isdigit():
+                continue
+            if int(local.rsplit(":", 1)[-1]) != port:
+                continue
+            for chunk in line.split("pid=")[1:]:
+                digits = ""
+                for ch in chunk:
+                    if ch.isdigit():
+                        digits += ch
+                    else:
+                        break
+                if digits:
+                    value = int(digits)
+                    if value not in pids:
+                        pids.append(value)
+        return pids
+
+    def _release_stale_backend(self, port: int) -> None:
+        for pid in self._stale_backend_pids(port):
+            try:
+                cmdline = Path(f"/proc/{pid}/cmdline").read_bytes().decode(
+                    "utf-8", errors="replace"
+                )
+            except OSError:
+                continue
+            if "server.js" not in cmdline:
+                continue
+            log.warning(
+                "Stopping a stale Singularity backend (pid %s) that still holds port %s",
+                pid,
+                port,
+            )
+            try:
+                os.kill(pid, signal.SIGTERM)
+            except OSError:
+                continue
+            for _ in range(30):
+                if not Path(f"/proc/{pid}").exists():
+                    break
+                time.sleep(0.1)
+            else:
+                try:
+                    os.kill(pid, signal.SIGKILL)
+                except OSError:
+                    pass
 
     async def _spawn_backend(self) -> bool:
         with trusted_scope():
@@ -392,6 +492,8 @@ class SingularityKernel:
             if not node_bin:
                 log.warning("Singularity skipped: `node` binary not found in PATH")
                 return False
+
+            self._release_stale_backend(self.config.port)
 
             if self.runtime is not None:
                 fresh = KernelConfig.from_runtime(self.runtime)
