@@ -50,7 +50,6 @@ def _https_get_stream_to_file(url: str, tmp_path: Path, timeout: float = 60.0) -
     current_url = url
     with trusted_scope():
         tls_ctx = ssl.create_default_context()
-        tls_ctx.minimum_version = ssl.TLSVersion.TLSv1_2
         for _ in range(6):
             parsed = urllib.parse.urlsplit(current_url)
             if parsed.scheme != "https" or not parsed.hostname:
