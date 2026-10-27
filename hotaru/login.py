@@ -1443,50 +1443,81 @@ async def _phone_login_via_bot(app: Any, api_id: int, api_hash: str, bot: Any) -
     _extract_phone_code_hash = cast(Callable[[dict[str, Any]], str | None], getattr(security, "_extract_phone_code_hash"))
     _extract_user = cast(Callable[[Any], dict[str, Any] | None], getattr(security, "_extract_user"))
     _mt_req_with_migrate = cast(Callable[..., Awaitable[dict[str, Any]]], getattr(security, "_mt_req_with_migrate"))
-    raw_phone = await bot.ask("Sign-in started.\nSend your phone number with the country code, e.g. +1 555 000 1234", button="Enter phone number")
+    raw_phone = await bot.ask("Sign-in started.\nSend your phone number with the country code, e.g. +1 555 000 1234")
     phone = _phone(raw_phone)
     settings = rx.serialize_constructor("codeSettings", {"flags": 0})
-    sent = await _spin(
-        "Sending the code",
-        _mt_req_with_migrate(app, "auth_send_code", phone_number=phone, api_id=api_id, api_hash=api_hash, settings=settings),
-    )
-    err = _extract_error(sent)
-    if err and "SESSION_PASSWORD_NEEDED" not in err:
-        log_error(err)
+    code_hash: str | None = None
+    for _attempt in range(3):
+        sent = await _spin(
+            "Sending the code",
+            _mt_req_with_migrate(app, "auth_send_code", phone_number=phone, api_id=api_id, api_hash=api_hash, settings=settings),
+        )
+        err = _extract_error(sent)
+        if err and "SESSION_PASSWORD_NEEDED" not in err:
+            log_error(err)
+            return None
+        code_hash = _extract_phone_code_hash(sent)
+        if code_hash:
+            break
+        log_error("no code hash")
         return None
-    code_hash = _extract_phone_code_hash(sent)
     if not code_hash:
         log_error("no code hash")
         return None
-    code = (await bot.ask("Code sent to your Telegram.\nSend the login code", button="Enter login code")).strip()
-    sign = await _spin(
-        "Signing in",
-        _mt_req_with_migrate(app, "auth_sign_in", phone_number=phone, phone_code=code, phone_code_hash=code_hash, api_id=api_id, api_hash=api_hash),
-    )
-    sign_err = _extract_error(sign) or ""
-    if "PHONE_CODE_INVALID" in sign_err or "CODE_INVALID" in sign_err:
-        log_error("wrong code")
-        return None
-    if sign_err and "SESSION_PASSWORD_NEEDED" not in sign_err:
-        log_error(sign_err)
-        return None
-    final = sign
-    if "SESSION_PASSWORD_NEEDED" in sign_err:
-        pwd = await bot.ask("Your account has 2FA.\nSend the cloud password", button="Enter 2FA password")
-        check = await _spin(
-            "Checking the password",
-            _mt_req_with_migrate(app, "auth_check_password", password=pwd, api_id=api_id, api_hash=api_hash),
+    for attempt in range(3):
+        expiry_note = "A new code was sent to your Telegram." if attempt > 0 else "Code sent to your Telegram."
+        code = (await bot.ask(f"{expiry_note}\nSend the login code (try {attempt + 1}/3)")).strip()
+        sign = await _spin(
+            "Signing in",
+            _mt_req_with_migrate(app, "auth_sign_in", phone_number=phone, phone_code=code, phone_code_hash=code_hash, api_id=api_id, api_hash=api_hash),
         )
-        err2 = _extract_error(check)
-        if err2:
-            log_error(err2)
+        sign_err = _extract_error(sign) or ""
+        if "PHONE_CODE_EXPIRED" in sign_err or "PHONE_CODE_EMPTY" in sign_err:
+            await bot.send("The code expired. A new one is on the way.")
+            sent = await _spin(
+                "Re-sending the code",
+                _mt_req_with_migrate(app, "auth_send_code", phone_number=phone, api_id=api_id, api_hash=api_hash, settings=settings),
+            )
+            resent_err = _extract_error(sent)
+            new_hash = _extract_phone_code_hash(sent)
+            if resent_err or not new_hash:
+                log_error(resent_err or "no code hash")
+                return None
+            code_hash = new_hash
+            continue
+        if "PHONE_CODE_INVALID" in sign_err or "CODE_INVALID" in sign_err:
+            await bot.send("That code is wrong. Try again.")
+            continue
+        if sign_err and "SESSION_PASSWORD_NEEDED" not in sign_err:
+            log_error(sign_err)
             return None
-        final = check
-    user = _extract_user(final)
-    if not user:
-        log_error("no user in session")
-        return None
-    return {"user": user, "raw": final}
+        final = sign
+        if "SESSION_PASSWORD_NEEDED" in sign_err:
+            for pwd_attempt in range(3):
+                pwd = await bot.ask(f"Your account has 2FA.\nSend the cloud password (try {pwd_attempt + 1}/3)")
+                check = await _spin(
+                    "Checking the password",
+                    _mt_req_with_migrate(app, "auth_check_password", password=pwd, api_id=api_id, api_hash=api_hash),
+                )
+                err2 = _extract_error(check)
+                if err2 and "PASSWORD_HASH_INVALID" in err2:
+                    await bot.send("That password is wrong. Try again.")
+                    continue
+                if err2:
+                    log_error(err2)
+                    return None
+                final = check
+                break
+            else:
+                log_error("2FA password attempts exhausted")
+                return None
+        user = _extract_user(final)
+        if not user:
+            log_error("no user in session")
+            return None
+        return {"user": user, "raw": final}
+    log_error("code attempts exhausted")
+    return None
 
 
 async def _authorize_via_bot(app: Any, api_id: int, api_hash: str, bot: Any) -> dict[str, Any] | None:
