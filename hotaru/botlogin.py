@@ -144,7 +144,7 @@ class EchoBot:
 
     async def _ask_with_button(self, prompt: str, button: str) -> None:
         token = secrets.token_urlsafe(8)
-        kbd = [[{"text": button, "switch_inline_query_current_chat": "hotaru-input:" + token + " "}]]
+        kbd = {"inline_keyboard": [[{"text": button, "switch_inline_query_current_chat": "hotaru-input:" + token + " "}]]}
         try:
             await self.app.send_msg(self.owner, prompt, kbd=kbd)
         except Exception:
