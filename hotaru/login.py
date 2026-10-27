@@ -1399,7 +1399,7 @@ async def _bot_login(runtime: Any) -> tuple[int, Any] | None:
         log_error(f"Bot connection failed: {exc}")
         await bot.close()
         return None
-    username, bot_id = await _bot_identity(token)
+    username, _ = await _bot_identity(token)
     try:
         handle = f"@{username}" if username else "the bot"
         note(
@@ -1420,18 +1420,9 @@ async def _bot_login(runtime: Any) -> tuple[int, Any] | None:
         log_error("The entered ID does not match the bot report.")
         await bot.close()
         return None
-    try:
-        bot.move_vault(owner)
-    except Exception:
-        pass
     state = getattr(runtime, "state", None)
     if state is not None:
         state.set_setting("owner-id", owner)
-        state.set_setting("inline-bot-token", token)
-        if username:
-            state.set_setting("inline-bot-username", username.lstrip("@"))
-        if bot_id:
-            state.set_setting("inline-bot-id", bot_id)
     log_info(f"Bot verified, Telegram ID {owner} confirmed over SSH.")
     return owner, bot
 
