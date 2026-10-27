@@ -1,11 +1,10 @@
 HOTARU = {
     "id": "singularity",
-    "version": "2.0.0",
+    "version": "2.0.1",
     "commands": ["dash"],
     "capabilities": ["mt"],
 }
 
-import html
 from typing import Any
 
 from singularity.relay import get_sanctuary_app_state, resolve_inline_banner_url
@@ -67,22 +66,16 @@ async def command_dash(ctx: Any, invocation: Any) -> None:
     sync_tag = "SYNCED" if registered else "PENDING"
 
     header = _tr(ctx, "kernel.singularity.card_title", "<b>Hotaru // Singularity</b>")
-    sub = _tr(
-        ctx,
-        "kernel.singularity.card_subtitle",
-        "<i>3D Event Horizon · Node.Probe · Read-Only Observatory Stream</i>",
-    )
     probe_label = _tr(ctx, "kernel.singularity.probe", "Probe")
     relay_label = _tr(ctx, "kernel.singularity.relay", "Relay")
-    bot_label = _tr(ctx, "kernel.singularity.inline_bot", "Inline Bot")
     lines = [
         header,
-        sub,
         "",
-        f"- <b>{probe_label}:</b> <code>{status_tag}</code> · <b>{relay_label}:</b> <code>{sync_tag}</code>",
+        "<blockquote>",
+        f"<b>{probe_label}:</b> <code>{status_tag}</code>",
+        f"<b>{relay_label}:</b> <code>{sync_tag}</code>",
+        "</blockquote>",
     ]
-    if bot_user:
-        lines.append(f"- <b>{bot_label}:</b> <code>@{html.escape(bot_user)}</code>")
     text = "\n".join(lines)
 
     open_label = _tr(ctx, "kernel.singularity.open_button", "Open Singularity")
@@ -91,7 +84,7 @@ async def command_dash(ctx: Any, invocation: Any) -> None:
     launch_url = app_link or tunnel_url
     buttons: list[list[dict[str, Any]]] = []
     if launch_url:
-        buttons.append([{"text": open_label, "url": launch_url}])
+        buttons.append([{"text": open_label, "url": launch_url, "style": "primary"}])
 
     if hasattr(ctx, "ui") and hasattr(ctx.ui, "close"):
         buttons.append([ctx.ui.close(close_label)])
