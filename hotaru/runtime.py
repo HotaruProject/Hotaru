@@ -1014,7 +1014,7 @@ class Runtime:
                 return
             placeholder = str(request[4] or "")
             shown = value.strip() or placeholder or "OK"
-            result = InlineObj.article(secrets.token_urlsafe(8), shown, "🔄", description=shown, parse_mode="HTML")
+            result = InlineObj.article(secrets.token_urlsafe(8), shown, "[~]", description=shown, parse_mode="HTML")
             await answer_tl(query, results=[result], cache_time=0, is_personal=True)
             return
         if text.startswith("hotaru-form:"):
@@ -1293,7 +1293,7 @@ class Runtime:
                         via = via_data.get("user_id") or via_data.get("id")
                     if int(via or 0) != bot_id:
                         continue
-                    if str(message_data.get("message") or "") not in {"🔄", "\u200b"}:
+                    if str(message_data.get("message") or "") not in {"[~]", "\u200b"}:
                         continue
                     mid = message_data.get("id")
                     if isinstance(mid, int):
@@ -2030,7 +2030,7 @@ class Runtime:
             if target_path is None and source_bytes is None:
                 return self.t('runtime.module_missing', module_id=module_id)
             file_name = f"{module_id}.hmod"
-            caption = f"📦 <b>{module_id}</b> (v{version})"
+            caption = f"[m] <b>{module_id}</b> (v{version})"
             import tempfile
             temp_path: str | None = None
             if target_path is not None:
@@ -2562,9 +2562,10 @@ class Runtime:
                         uid = parse_user_id(self.config.session_name)
                         raise SystemExit(f"Login required; run {self.config.prefix}acca {uid} in Saved Messages.")
                     raise SystemExit("Login required; run `uv run hotaru` in a terminal.")
-                from .login import sign_in
+                from .login import install_daemon_prompt, sign_in
                 fresh = True
                 result = await sign_in(self)
+                install_daemon_prompt(self)
             else:
                 fresh = vault is not None and not vault.exists()
                 result = await bootstrap_session(

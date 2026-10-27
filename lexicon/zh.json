@@ -1,0 +1,841 @@
+{
+  "meta": {
+    "language": "zh",
+    "name": "中文"
+  },
+  "common": {
+    "ok": "确定",
+    "cancel": "取消",
+    "close": "关闭",
+    "back": "返回",
+    "unknown_error": "未知错误",
+    "confirm": "确认",
+    "none": "无",
+    "unknown": "未知",
+    "yes": "是",
+    "no": "否",
+    "seconds": "{n} 秒",
+    "invalid_value": "无效值"
+  },
+  "kernel": {
+    "config": {
+      "description": "Hotaru 配置模块",
+      "commands": {
+        "conf": {
+          "description": "打开设置",
+          "usage": "[module] [parameter|reset] [value]"
+        },
+        "config": {
+          "description": "打开设置",
+          "usage": "[module] [parameter|reset] [value]"
+        }
+      },
+      "template_fields": "可用模板字段",
+      "shared_prefix": "当前命令前缀",
+      "shared_uptime": "运行时长（秒）",
+      "template_syntax": "使用 {{name}}、数字 {{name:.2f}}，以及 {{{{ / }}}} 表示字面花括号。值会被 HTML 转义。",
+      "template_preview": "预览（HTML，示例值）",
+      "directory_empty": "<b>配置</b>\n\n没有可配置的模块。",
+      "directory": "<b>配置</b>\n\n选择一个模块：",
+      "module_missing_error": "<b>错误：</b>未找到模块 <code>{module}</code>。",
+      "no_settings": "<b>错误：</b>模块 <code>{module}</code> 没有设置项。",
+      "parameter_missing_error": "<b>错误：</b>未找到参数 <code>{parameter}</code>。",
+      "empty": "（空）",
+      "parameter_details": "• 值：<code>{value}</code>\n• 类型：<code>{type}</code>\n• 默认值：<code>{default}</code>\n",
+      "parameter_description": "• 说明：<i>{description}</i>\n",
+      "template_unavailable": "模板字段不可用或未导出：{name}",
+      "error": "错误：{error}",
+      "boolean_true": "[ ] 是",
+      "boolean_false": "[ ] 否",
+      "minimum": "最小值：{value}",
+      "maximum": "最大值：{value}",
+      "enter": "[e] 输入",
+      "new_value": "{parameter} 的新值",
+      "reset": "[~] 重置",
+      "module_missing": "未找到模块 <code>{module}</code>。",
+      "parameter_missing": "未找到参数 <code>{parameter}</code>。",
+      "error_html": "错误：<code>{error}</code>"
+    },
+    "power": {
+      "already_stopped": "用户机器人已停止。",
+      "stopped": "用户机器人已停止。",
+      "stopped_details": "普通模块已停用，但 {prefix}start 等内核命令仍然可用。",
+      "already_started": "用户机器人已在运行。",
+      "started": "用户机器人已启动，所有命令处理已恢复。",
+      "restarting": "正在重启用户机器人...",
+      "description": "电源管理",
+      "commands": {
+        "restart": {
+          "description": "重启用户机器人"
+        },
+        "stop": {
+          "description": "暂停用户机器人"
+        },
+        "start": {
+          "description": "恢复用户机器人"
+        }
+      },
+      "restarted": "用户机器人已成功重启，用时 {took}",
+      "running": "用户机器人正在运行。",
+      "already_running": "用户机器人已在运行。"
+    },
+    "updater": {
+      "unavailable": "运行时不可用",
+      "up_to_date": "Hotaru 已是最新版本",
+      "update_available": "有可用的 Hotaru 更新",
+      "downloading": "正在下载更新...",
+      "syncing": "正在同步依赖...",
+      "restarting": "已更新到 {commit}，正在重启...",
+      "updated": "Hotaru 已更新，用时 {seconds} 秒",
+      "description": "Hotaru 自更新",
+      "commands": {
+        "upd": {
+          "description": "检查并应用更新",
+          "usage": "[force]"
+        },
+        "updlog": {
+          "description": "显示更新日志"
+        },
+        "updoff": {
+          "description": "关闭更新通知"
+        },
+        "updon": {
+          "description": "开启更新通知"
+        }
+      },
+      "restarted": "Hotaru 已更新并成功重启，用时 {took}",
+      "ignored": "已忽略更新。",
+      "ignored_toast": "已忽略",
+      "updating": "正在更新...",
+      "notify_on": "已开启更新通知",
+      "notify_off": "已关闭更新通知",
+      "check_failed": "<b>检查更新失败：</b><i>{error}</i>",
+      "failed": "<b>更新失败：</b><i>{error}</i>",
+      "conflicts": "<b>已保留本地冲突：</b><code>{path}</code>",
+      "button_update": "更新",
+      "button_ignore": "忽略",
+      "confirm": "<br><br>现在更新吗？"
+    },
+    "kernel": {
+      "runtime_unavailable": "运行时不可用",
+      "modules_unavailable": "模块不可用",
+      "modules_none": "模块：无",
+      "usage": "用法：{usage}",
+      "alias_set": "别名已设置：{alias} → {command}",
+      "alias_removed": "别名已删除：{alias}",
+      "alias_not_found": "未找到别名：{alias}"
+    },
+    "capabilities": {
+      "mt": "MTProto 访问",
+      "state": "持久化存储",
+      "files": "文件访问",
+      "net": "网络访问",
+      "bot": "机器人访问",
+      "modules": "模块管理",
+      "loader": "模块加载",
+      "fetch": "文件下载",
+      "inline": "内联机器人",
+      "assets": "资源存储",
+      "shell": "Shell 命令",
+      "logs": "日志"
+    },
+    "hotaru-kernel": {
+      "description": "Hotaru 内核 - 系统命令",
+      "commands": {
+        "ver": {
+          "description": "显示当前提交"
+        },
+        "st": {
+          "description": "运行时状态"
+        },
+        "ls": {
+          "description": "列出活动模块"
+        },
+        "mi": {
+          "description": "模块信息"
+        },
+        "ld": {
+          "description": "加载模块"
+        },
+        "ul": {
+          "description": "卸载模块"
+        },
+        "rl": {
+          "description": "重新加载模块"
+        },
+        "bk": {
+          "description": "备份"
+        },
+        "bot": {
+          "description": "内联机器人状态"
+        },
+        "trust": {
+          "description": "信任模块"
+        },
+        "untrust": {
+          "description": "取消信任模块"
+        }
+      }
+    },
+    "help": {
+      "description": "Hotaru 帮助模块",
+      "commands": {
+        "hlp": {
+          "description": "显示帮助目录",
+          "usage": "[module]"
+        },
+        "help": {
+          "description": "显示帮助目录",
+          "usage": "[module]"
+        }
+      }
+    },
+    "translations": {
+      "description": "翻译管理",
+      "commands": {
+        "lang": {
+          "description": "显示或切换语言",
+          "usage": "[language]"
+        },
+        "language": {
+          "description": "显示或切换语言",
+          "usage": "[language]"
+        }
+      },
+      "native": {
+        "ru": "俄语",
+        "en": "英语",
+        "kz": "哈萨克语",
+        "uk": "乌克兰语",
+        "ja": "日语"
+      }
+    },
+    "test-features": {
+      "description": "Hotaru 代理与能力测试模块",
+      "commands": {
+        "tfstatus": {
+          "description": "检查 MTProto 连接"
+        },
+        "tfhistory": {
+          "description": "历史记录获取测试"
+        },
+        "tfstate": {
+          "description": "状态持久化测试"
+        },
+        "tffile": {
+          "description": "文件能力测试"
+        },
+        "tfnet": {
+          "description": "网络能力测试"
+        },
+        "tfbutton": {
+          "description": "回调按钮测试"
+        },
+        "tfmedia": {
+          "description": "媒体检测测试"
+        },
+        "tfinlinerich": {
+          "description": "内联富文本测试"
+        },
+        "tfrichboth": {
+          "description": "双富文本通道测试"
+        }
+      }
+    },
+    "help_ui": {
+      "module_count": "Hotaru 帮助 · {count} 个模块",
+      "kernel_modules": "内核模块",
+      "user_modules": "用户模块",
+      "commands": "命令",
+      "capabilities": "能力",
+      "unavailable": "<b>运行时不可用</b>",
+      "manager_unavailable": "<b>模块管理器不可用</b>",
+      "usage": "<b>用法：</b><code>{prefix}hlp</code> 或 <code>{prefix}hlp &lt;module&gt;</code>",
+      "disabled": "<b>模块已停用：</b><code>{module}</code><br><i>错误：{error}</i>",
+      "missing": "<b>未找到模块：</b><code>{module}</code>"
+    },
+    "accounts": {
+      "description": "账号管理",
+      "commands": {
+        "acc": {
+          "description": "管理账号",
+          "usage": "[number] [start|stop|restart|on|off|del]"
+        },
+        "acca": {
+          "description": "添加或登录账号",
+          "usage": "[ID|cancel|password] [password]"
+        },
+        "accs": {
+          "description": "打开账号面板",
+          "usage": "[number]"
+        }
+      },
+      "usage": "<b>账号</b>\n<code>{prefix}acca [user_id]</code> · 通过二维码或手机号添加\n<code>{prefix}acca cancel</code> · 取消登录\n<code>{prefix}accs [#]</code> · 账号面板\n<code>{prefix}acc [#]</code> · 账号面板\n<code>{prefix}acc 2 start|stop|restart|on|off|del</code>",
+      "empty": "没有已注册的账号。",
+      "no_self": "无法确定会话用户 ID。",
+      "not_registered": "账号 #{n} 未注册。",
+      "heading": "<b>账号</b> · {count}",
+      "item": "#{n} · {status}",
+      "account": "账号 #{n}",
+      "detail": "<b>账号 #{n}</b>\n<code>{uid}</code> · {status}\n自动启动：{enabled}",
+      "owner": "<b>这是所有者账号。</b>",
+      "on": "开",
+      "off": "关",
+      "changed": "账号列表已变更。",
+      "reopen": "再次打开 {prefix}accs。",
+      "remove_confirm": "<b>移除账号 #{n}？</b>\n它会停止运行，会话文件会保留。",
+      "permissions": "<b>权限</b> · {account}\n<code>{uid}</code>\n仅限账号管理。",
+      "access_off": "访问已关闭。",
+      "cancelled": "已取消。",
+      "cancel_denied": "只有账号所有者可以取消登录。",
+      "no_login": "没有进行中的登录。",
+      "already_added": "账号 #{n} 已存在。",
+      "result": "账号 #{n} {status}。",
+      "button": {
+        "add": "添加账号",
+        "refresh": "刷新",
+        "close": "关闭",
+        "permissions": "权限",
+        "start": "启动",
+        "stop": "停止",
+        "restart": "重启",
+        "login": "登录",
+        "enable_start": "启用并启动",
+        "autostart_on": "开启自动启动",
+        "autostart_off": "关闭自动启动",
+        "remove": "移除",
+        "back": "返回",
+        "accounts": "‹ 账号",
+        "grant_all": "全部授予",
+        "revoke": "全部撤销",
+        "cancel": "取消",
+        "qr": "二维码",
+        "phone": "手机号",
+        "submit": "提交",
+        "enter_phone": "输入手机号",
+        "enter_code": "输入验证码",
+        "enter_password": "输入密码"
+      },
+      "right": {
+        "view": "查看账号",
+        "add": "添加账号",
+        "start": "启动",
+        "stop": "停止",
+        "restart": "重启",
+        "autostart": "自动启动",
+        "remove": "移除"
+      },
+      "status": {
+        "current": "当前",
+        "running": "运行中",
+        "starting": "启动中",
+        "login": "需要登录",
+        "stopped": "已停止",
+        "disabled": "已停用",
+        "enabled": "已启用",
+        "removed": "已移除"
+      },
+      "login": {
+        "saved": "<i>请到收藏夹消息中查看以完成登录。</i>",
+        "private": "<i>请到与机器人的私聊中查看以完成登录。</i>",
+        "choose": "<b>添加账号</b>\n选择登录方式。",
+        "timeout": "登录超时。",
+        "retry_timeout": "登录超时，请再次运行 {prefix}acca。",
+        "open_failed": "无法打开登录流程，请重试。",
+        "added": "账号 #{n} 已添加。正在启动...\n",
+        "running": "账号 #{n} 已添加并运行中。",
+        "starting": "账号 #{n} 已添加，仍在启动，请查看 {prefix}accs。",
+        "start_failed": "账号 #{n} 已添加，但无法启动，请打开 {prefix}accs。",
+        "expired": "此登录已过期。",
+        "busy": "已有登录正在进行。",
+        "submitted": "已提交。",
+        "input_expired": "此输入已过期。",
+        "phone_format": "请使用国际号码，例如 +12345678901。",
+        "code_format": "请输入 Telegram 收到的验证码。",
+        "password_format": "请输入两步验证密码。",
+        "check_form": "请查看登录表单。",
+        "edit_input": "请修改输入后重试。",
+        "use_phone": "使用 {phone}",
+        "submit_code": "提交验证码",
+        "submit_password": "提交密码",
+        "continue": "点击继续。",
+        "checking": "检查中...",
+        "private_only": "请在你的私聊中进行登录。",
+        "no_password": "未要求密码。",
+        "scan": "用你想添加的账号扫描。\n设置 → 设备 → 连接桌面设备。",
+        "password_prompt": "<b>两步验证密码</b>\n输入密码以完成登录。",
+        "password_command": "需要两步验证密码。发送 {prefix}acca password <password>。",
+        "wrong_password": "密码错误，请重试。",
+        "phone_prompt": "<b>手机号</b>\n请使用国际格式，例如 +12345678901。",
+        "phone_invalid": "手机号无效。",
+        "phone_banned": "该手机号已被封禁。",
+        "code_prompt": "<b>登录验证码</b>\n请输入 Telegram 发来的验证码。",
+        "wrong_code": "验证码错误，请重试。",
+        "code_expired": "验证码已过期，请输入手机号获取新验证码。",
+        "qr_prompt": "<b>二维码登录</b>\n用你想添加的账号扫描下方二维码。",
+        "flood": "请在 {seconds} 秒后重试。",
+        "failed": "登录失败，请重试。"
+      },
+      "error": {
+        "no_permission": "没有权限。",
+        "owner_protected": "所有者受保护。",
+        "invalid_permission": "权限无效。",
+        "invalid_user": "用户无效。",
+        "not_found": "未找到账号 #{n}。",
+        "current": "此账号正在此处运行。",
+        "invalid_lock": "账号锁无效。",
+        "running": "账号已在运行。",
+        "invalid_owner": "所有者无效。",
+        "invalid_id": "账号 ID 和编号必须为正数。",
+        "wrong_session": "会话与账号不匹配。",
+        "number_taken": "账号 #{n} 已被占用。",
+        "stop_first": "请先停止该账号。",
+        "disabled": "账号 #{n} 已停用。",
+        "login_first": "请先登录此账号。",
+        "stopping": "账号 #{n} 仍在停止中。",
+        "login_busy": "已有登录正在进行。",
+        "qr_failed": "无法发送二维码。",
+        "phone_unavailable": "该号码无法使用手机号登录，请改用二维码。",
+        "login_response": "意外的登录响应。",
+        "no_user": "登录未返回用户。",
+        "wrong_account": "账号错误，期望用户 {uid}。",
+        "unknown": "无法完成此操作。"
+      }
+    },
+    "acl": {
+      "description": "访问控制",
+      "commands": {
+        "perms": {
+          "description": "列出权限",
+          "usage": "[ID|@username]"
+        },
+        "perm": {
+          "description": "授予或撤销权限",
+          "usage": "[ID|@username|command/name] [role] [remove]"
+        },
+        "whois": {
+          "description": "显示用户权限",
+          "usage": "[ID|@username] [command]"
+        }
+      },
+      "bad_group": "组名：仅限字母和数字，最多 32 个字符。",
+      "bad_duration": "有效期：数字加 s/m/h/d/w，或 forever。",
+      "bad_rule": "规则：command/name 或 module/name。",
+      "self_owner": "该用户已是账号所有者。",
+      "empty": "未授予任何权限。使用 !perm <user_id> <role>。",
+      "bad_label": "未知权限：{label}。"
+    },
+    "lg": "日志尾部：\n{lines}",
+    "commands": {
+      "lg": "显示最近的日志条目"
+    },
+    "settings": {
+      "description": "别名与前缀管理",
+      "commands": {
+        "alias": {
+          "description": "创建命令别名",
+          "usage": "[alias] [command]"
+        },
+        "rmalias": {
+          "description": "删除命令别名",
+          "usage": "[alias]"
+        },
+        "lsalias": {
+          "description": "列出命令别名"
+        },
+        "prefix": {
+          "description": "更改命令前缀",
+          "usage": "[prefix]"
+        }
+      }
+    },
+    "logger": {
+      "metric": "指标",
+      "count": "数量",
+      "events": "事件",
+      "sources": "来源",
+      "log": "日志",
+      "description": "将日志镜像到话题",
+      "mirror_on": "已开启日志镜像",
+      "mirror_off": "已关闭日志镜像",
+      "level_set": "镜像级别：{level}",
+      "status": "话题：{topic} • 错误：{failed}",
+      "status_error": "• 最近：{error}",
+      "no_observatory": "观测站不可用",
+      "no_entries": "该级别没有条目",
+      "topic_unavailable": "话题不可用：{error}",
+      "logs_caption": "Hotaru 日志：{count} 条（级别 {level}）",
+      "logs_sent": "已发送日志：{count} 条",
+      "commands": {
+        "logs": {
+          "description": "带文件的用户机器人日志",
+          "usage": "[on|off|status|level] [count] [component]"
+        }
+      },
+      "pending": "待处理",
+      "config": {
+        "level": "记录日志的最低级别",
+        "batch_size": "每条消息批量记录的事件数",
+        "auto_topic": "自动管理论坛中的日志话题"
+      },
+      "config_fields": {
+        "level": "记录日志的最低级别",
+        "batch_size": "每条消息批量记录的事件数",
+        "auto_topic": "自动管理论坛中的日志话题"
+      }
+    },
+    "executor": {
+      "heading": "<b>执行器</b> | <code>{elapsed:.1f}ms</code>",
+      "exit_code": "退出码：{returncode}",
+      "running": "运行中...",
+      "usage_sh": "<b>用法：</b><code>{prefix}sh &lt;command&gt;</code>",
+      "usage_py": "<b>用法：</b><code>{prefix}py &lt;code&gt;</code> 或回复代码；-so 隐藏输出",
+      "cancelled": "执行已取消",
+      "done": "完成 [x]",
+      "kill_reply": "<b>回复正在运行的 py/sh 输出消息即可终止它。</b>",
+      "killed": "<b>进程已终止！</b>",
+      "no_process": "<b>此消息没有对应的活动进程。</b>",
+      "section": {
+        "code": "代码",
+        "command": "命令",
+        "output": "输出",
+        "result": "结果",
+        "return": "返回值",
+        "traceback": "异常堆栈"
+      },
+      "description": "运行 Python 与 Shell 命令",
+      "commands": {
+        "py": {
+          "description": "运行 Python 代码",
+          "usage": "[-so] [code]"
+        },
+        "sh": {
+          "description": "运行 Shell 命令",
+          "usage": "[-so] [command]"
+        },
+        "kill": {
+          "description": "停止正在运行的命令"
+        }
+      }
+    },
+    "catalyst": {
+      "description": "模块管理",
+      "commands": {
+        "ld": {
+          "description": "加载模块",
+          "usage": "[url|path]"
+        },
+        "ul": {
+          "description": "卸载模块",
+          "usage": "[module] [-p]"
+        },
+        "rl": {
+          "description": "重新加载模块",
+          "usage": "[module] [force]"
+        },
+        "ex": {
+          "description": "导出模块",
+          "usage": "[module]"
+        },
+        "rs": {
+          "description": "重置模块数据",
+          "usage": "[module]"
+        },
+        "resetdb": {
+          "description": "重置模块数据",
+          "usage": "[module]"
+        }
+      }
+    },
+    "capability_details": {
+      "mt": "完整的用户机器人 MTProto 访问（消息、媒体、对话、聊天、频道、联系人），已屏蔽账号安全与支付操作",
+      "files": "在模块工作区内读写文件",
+      "net": "向互联网发起 HTTP(S) 请求，私有和内部目标以及被拒绝的主机均被屏蔽",
+      "state": "模块命名空间中的持久化键值状态",
+      "inline": "查询并操作内联机器人",
+      "modules": "加载、卸载、重载、列出并检查已安装模块，包含哈希与清单信息",
+      "assets": "访问隐藏资源存储",
+      "shell": "在模块工作区内运行 Shell 命令，Shell 始终运行在隔离沙箱中，只能看到工作区、自带工具和独立的 /tmp；网络仅在拥有 net 能力时可用，宿主机文件系统仅在拥有 files 能力时可用，且都在沙箱内；命令超时与输出上限依然生效",
+      "logs": "向观测站日志写入结构化条目，始终授予",
+      "fetch": "只读访问消息、实体与回复解析，始终授予"
+    },
+    "ping": {
+      "description": "用户机器人响应检查",
+      "template": "<b>Ping</b> <code>{latency} ms</code>\n<b>运行时间</b> <code>{uptime}</code>",
+      "commands": {
+        "ping": {
+          "description": "测量用户机器人延迟"
+        }
+      },
+      "fields": {
+        "latency": "响应时间（毫秒）",
+        "uptime": "用户机器人运行时长，仅显示非零单位",
+        "uptime_seconds": "用户机器人运行时长（秒）"
+      },
+      "example_uptime": "2 小时 3 分钟"
+    },
+    "info": {
+      "description": "用户机器人信息卡片",
+      "template": "<b>Hotaru</b> <code>{version}</code>\n\n<b>运行时间</b> · <code>{uptime}</code>\n<b>模块</b> · <code>{modules}</code>",
+      "commands": {
+        "info": {
+          "description": "显示用户机器人信息"
+        }
+      },
+      "empty_template": "信息模板为空",
+      "bad_placeholder": "无效占位符：{error}",
+      "config": {
+        "template": "信息模板，占位符：{version} {uptime} {modules}"
+      },
+      "config_fields": {
+        "template": "信息模板，占位符：{version} {uptime} {modules}"
+      }
+    },
+    "singularity": {
+      "card_title": "<b>Hotaru // Singularity</b>",
+      "card_subtitle": "<i>3D 事件视界 · Node.Probe · 只读观测站数据流</i>",
+      "probe": "探测器",
+      "relay": "中继",
+      "inline_bot": "内联机器人",
+      "open_button": "打开 Singularity"
+    }
+  },
+  "commands": {
+    "hlp": {
+      "description": "显示帮助",
+      "usage": "{prefix}hlp [module-id]"
+    },
+    "help": {
+      "description": "显示帮助",
+      "usage": "{prefix}help [module-id]"
+    },
+    "lang": {
+      "description": "显示或切换语言",
+      "usage": "{prefix}lang [language]",
+      "invalid": "不支持的语言：{language}",
+      "changed": "语言已切换为 {language}",
+      "unavailable": "运行时不可用",
+      "lexicon_unavailable": "翻译词库不可用",
+      "languages_unavailable": "翻译语言列表不可用",
+      "current": "当前：{language}"
+    }
+  },
+  "languages": {
+    "ru": "俄语",
+    "en": "英语",
+    "kz": "哈萨克语",
+    "uk": "乌克兰语",
+    "ja": "日语",
+    "zh": "中文"
+  },
+  "inline_commands_hint": "选择命令 - 在任意聊天中输入 @<bot> 和它的名称",
+  "settings": {
+    "runtime_unavailable": "运行时不可用",
+    "usage_alias": "用法：{prefix}alias <alias> <带参数的命令>",
+    "alias_exists": "命令已存在：{alias}",
+    "command_not_found": "未找到命令：{command}\n可用：{known}",
+    "alias_taken": "别名已被占用：{alias} → {command}。使用 {prefix}rmalias {alias} 删除。",
+    "alias_set": "别名已设置：{alias} → {command}",
+    "usage_rmalias": "用法：{prefix}rmalias <alias>",
+    "alias_removed": "别名已删除：{alias}",
+    "alias_not_found": "未找到别名：{alias}",
+    "alias_list_empty": "还没有别名",
+    "alias_list_title": "<b>别名</b>",
+    "prefix_current": "当前前缀：{prefix}。更改：{prefix}prefix <字符>",
+    "prefix_invalid": "前缀必须包含 1 到 8 个可见字符且不含空白。",
+    "prefix_set": "前缀已更改为 {prefix}",
+    "description": "别名与前缀管理",
+    "commands": {
+      "alias": "创建命令别名",
+      "rmalias": "删除命令别名",
+      "lsalias": "列出命令别名",
+      "prefix": "更改命令前缀"
+    }
+  },
+  "runtime": {
+    "modules_unavailable": "模块：不可用",
+    "modules_empty": "模块：无",
+    "modules": "模块：\n",
+    "module_unavailable": "模块不可用",
+    "module_missing": "未找到模块：{module_id}",
+    "module_info": "模块：{module}\n版本：{version}\n命令：{commands}\n能力：{capabilities}\n说明：{description}",
+    "help_unavailable": "帮助不可用",
+    "page_unavailable": "帮助页面不可用",
+    "catalog": "目录：",
+    "next": "下一页",
+    "bot_unavailable": "内联机器人：不可用",
+    "bot_failed": "内联机器人配置失败：{error}",
+    "protected": "内核模块受保护：{module_id}",
+    "unload_failed": "卸载失败：{error}",
+    "not_ready": "运行时服务尚未就绪",
+    "purged": "已永久卸载：{module}（数据库已清除）",
+    "unloaded": "已卸载：{module}（数据库保留）",
+    "reset_failed": "数据库已重置，但重新加载失败：{error}",
+    "reset": "数据库已重置：{module_id}",
+    "id_mismatch": "模块 ID 不匹配：{module_id}",
+    "downgrade": "重新加载被阻止：版本降级 {old} 到 {new}",
+    "rollback_failed": "重新加载失败：{error}；回滚失败",
+    "rolled_back": "重新加载失败：{error}；已恢复上一版本",
+    "reloaded": "已重新加载：{module_id}",
+    "exported": "已导出：{file_name}",
+    "invalid_request": "无效请求",
+    "cancelled": "已取消",
+    "module_cancelled": "已取消：{module_id}",
+    "source_missing": "缺少源文件",
+    "activation_failed": "激活失败",
+    "module_loaded": "模块已加载",
+    "loaded": "已加载：{module_id} {version}",
+    "backup_failed": "备份失败：{error}",
+    "backup_created": "备份已创建：{name}",
+    "backups_empty": "备份：无",
+    "backups": "备份：\n",
+    "backup_unavailable": "备份不可用",
+    "backup_invalid": "备份无效：{error}",
+    "backup_valid": "备份有效：{count} 个文件",
+    "restore_confirm": "确认恢复",
+    "invalid_module": "无效模块",
+    "invalid_page": "无效帮助页",
+    "invalid_restore": "无效恢复请求",
+    "restore_failed": "恢复失败",
+    "restore_error": "恢复失败：{error}",
+    "restore_done": "恢复完成",
+    "callback_failed": "回调失败",
+    "callback_denied": "按钮已过期或不可用。",
+    "load_error": "加载失败：{error}：{detail}",
+    "load_failed": "加载失败：{error}",
+    "load_screen": "加载失败：{module_id} {version}\n{screen}",
+    "updated": "已更新：{module_id} {version}",
+    "caps_request": "模块 {module_id} v{version} 请求以下能力：",
+    "caps_retry": "再次运行加载命令以确认",
+    "usage_mi": "用法：{prefix}mi <module>",
+    "usage_help": "用法：{prefix}hlp [page] | {prefix}hlp <module>",
+    "usage_reload": "用法：{prefix}rl <module> [force]",
+    "usage_unload": "用法：{prefix}ul [-c] <module>",
+    "usage_reset": "用法：{prefix}rs <module>",
+    "usage_export": "用法：{prefix}ex <module>",
+    "usage_backup": "用法：{prefix}bk | {prefix}bk list | {prefix}bk test <archive> | {prefix}bk restore <archive>",
+    "usage_load": "用法：{prefix}ld <raw-url> 或回复 .hmod 文件",
+    "bot_status": "内联机器人：@{name}（{status}）",
+    "health": "状态：{status}",
+    "last_error": "最近错误：{error}",
+    "running_commands": "运行中命令：{count}",
+    "connection": "连接：{status} 重连={count} mt={mt} bot={bot}",
+    "health_ready": "就绪",
+    "health_degraded": "降级",
+    "health_stopped": "已停止",
+    "health_closed": "已关闭",
+    "health_new": "启动中",
+    "service": {
+      "runtime": "运行时",
+      "kernel": "内核",
+      "state": "存储",
+      "capabilities": "能力",
+      "modules": "模块",
+      "responses": "响应",
+      "callbacks": "按钮",
+      "observatory": "日志",
+      "backups": "备份",
+      "tasks": "任务",
+      "event_router": "事件"
+    },
+    "file_missing": "缺少模块文件",
+    "file_document": "模块文件必须是文档",
+    "unknown_capability": "未知能力（已拒绝）"
+  },
+  "acl": {
+    "owners": "<b>所有者</b><br>",
+    "group_missing": "未找到组 <code>{name}</code>",
+    "group_item": "<b>{name}</b> - {users} 位用户，{rules} 条规则",
+    "groups": "<b>安全组</b><br>",
+    "group_rule": "<b>已添加规则：</b>sgroup <code>{target}</code> → {kind}/{rule}{until}",
+    "permissions": "<b>权限</b><br>",
+    "user_groups": "<br>组：<code>{groups}</code>",
+    "user_detail": "<code>{user_id}</code> · <b>{permissions}</b>",
+    "no_permission": "没有权限。",
+    "revoked": "<b>已撤销</b> <code>{label}</code>，来自 <code>{user_id}</code>",
+    "nothing_revoke": "没有可撤销的内容",
+    "grant_failed": "<b>授予失败：</b><i>{error}</i>",
+    "granted": "<b>已授予</b> <code>{label}</code> 给 <code>{user_id}</code>",
+    "bad_group": "组名：仅限字母和数字，最多 32 个字符。",
+    "bad_duration": "使用 1m、1h、1d、1w 或 forever，最长 100 年。",
+    "bad_rule": "规则：command/name 或 module/name。",
+    "empty": "未授予任何权限。使用 {prefix}perm <user_id> <role>。",
+    "bad_label": "未知权限：{label}",
+    "no_owner_grant": "使用 {prefix}perms 授予所有者权限。",
+    "owner_confirm": "授予 <code>{user_id}</code> 完全访问权限吗？",
+    "confirm": "确认",
+    "clear_confirm": "清除 <code>{scope}</code> 的规则吗？",
+    "kernel_rule": "内置命令仅限所有者使用。",
+    "invalid_target": "无效的用户、聊天或组。",
+    "model": "所有者拥有完全访问权限，其他访问权限在下方设置。",
+    "forever": "永不过期",
+    "allowed": "<code>{command}</code> · 允许",
+    "denied": "<code>{command}</code> · 拒绝",
+    "full_owner": "所有者 · 完全访问",
+    "roles": {
+      "owner": "所有者",
+      "admin": "管理员",
+      "trusted": "受信任",
+      "everyone": "所有人",
+      "none": "无角色"
+    },
+    "scopes": {
+      "user": "用户",
+      "chat": "聊天",
+      "sgroup": "组"
+    },
+    "periods": {
+      "hour": "1 小时",
+      "day": "1 天",
+      "week": "1 周",
+      "forever": "永不过期"
+    },
+    "panel": "<b>访问</b>",
+    "users": "用户",
+    "commands": "命令",
+    "modules": "模块",
+    "groups_title": "组",
+    "rules_title": "规则",
+    "rules": "<b>规则</b><br>",
+    "manage": "管理",
+    "more": "还有 {count} 项",
+    "counts": "规则：{rules} · 组：{groups}",
+    "find_user": "查找用户",
+    "user_hint": "ID 或 @用户名",
+    "group_hint": "组名",
+    "scope_hint": "用户 ID · 聊天 ID · sgroup 名称",
+    "group_exists": "组 <code>{name}</code> 已存在。",
+    "group_title": "<b>{name}</b>",
+    "add_owner": "授予所有者",
+    "remove_owner": "撤销所有者",
+    "add": "添加",
+    "delete": "删除",
+    "clear": "清除",
+    "custom": "自定义时长",
+    "retry": "重试",
+    "choose_rule": "<b>选择访问权限</b>",
+    "choose_duration": "<b>时长</b>",
+    "command_role": "<code>{command}</code> · <b>{role}</b>",
+    "unknown_command": "未知命令：<code>{command}</code>",
+    "owner_remove_confirm": "撤销 <code>{user_id}</code> 的所有者权限吗？",
+    "group_delete_confirm": "删除组 <code>{name}</code> 及其规则吗？",
+    "syntax": {
+      "perms": "<code>{prefix}perms [ID|@username]</code>",
+      "whois": "<code>{prefix}whois [ID|@username] [command]</code>",
+      "perm": "<code>{prefix}perm [ID|@username|command/name] &lt;role&gt; [remove]</code>"
+    },
+    "all_chats": "对所有聊天中的所有人开放。"
+  },
+  "inline": {
+    "command_open": "打开 {command}",
+    "command_hint": "按下按钮并添加你的查询，然后在内联列表中选择结果。",
+    "form": "Hotaru 表单",
+    "error": {
+      "title": "错误 {code}",
+      "400": "请求无效",
+      "403": "禁止访问",
+      "404": "未找到",
+      "500": "内部错误"
+    }
+  }
+}

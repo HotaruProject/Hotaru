@@ -39,16 +39,16 @@ _EMOJI_RE = re.compile(
     flags=re.UNICODE,
 )
 _FACES = [
-    "ヽ(๑◠ܫ◠๑)ﾉ", "(◕ᴥ◕ʋ)", "ᕙ(`▽´)ᕗ", "(✿◠‿◠)", "(▰˘◡˘▰)",
+    "ヽ(๑◠ܫ◠๑)ﾉ", "(◕ᴥ◕ʋ)", "ᕙ(`▽´)ᕗ", "(*◠‿◠)", "(▰˘◡˘▰)",
     "(˵ ͡° ͜ʖ ͡°˵)", "ʕっ•ᴥ•ʔっ", "( ͡° ᴥ ͡°)", "(๑•́ ヮ •̀๑)", "٩(^‿^)۶",
     "(っˆڡˆς)", "ψ(｀∇´)ψ", "⊙ω⊙", "٩(^ᴗ^)۶", "(´・ω・)っ由",
-    "( ͡~ ͜ʖ ͡°)", "✧♡(◕‿◕✿)", "∩｡• ᵕ •｡∩ ♡", "(♡´౪`♡)", "(◍＞◡＜◍)⋈。✧♡",
-    "╰(✿´⌣`✿)╯♡", "ʕ•ᴥ•ʔ", "ᶘ ◕ᴥ◕ᶅ", "▼・ᴥ・▼", "ฅ^•ﻌ•^ฅ",
+    "( ͡~ ͜ʖ ͡°)", "**(◕‿◕*)", "∩｡• ᵕ •｡∩ *", "(*´౪`*)", "(◍＞◡＜◍)⋈。**",
+    "╰(*´⌣`*)╯*", "ʕ•ᴥ•ʔ", "ᶘ ◕ᴥ◕ᶅ", "▼・ᴥ・▼", "ฅ^•ﻌ•^ฅ",
     "(΄◞ิ౪◟ิ‵)", "ᕴｰᴥｰᕵ", "ʕ￫ᴥ￩ʔ", "ʕᵕᴥᵕʔ", "ʕᵒᴥᵒʔ",
-    "ᵔᴥᵔ", "(✿╹◡╹)", "(๑￫ܫ￩)", "ʕ·ᴥ· ʔ", "(ﾉ≧ڡ≦)",
-    "(≖ᴗ≖✿)", "（〜^∇^ )〜", "( ﾉ･ｪ･ )ﾉ", "~( ˘▾˘~)", "(〜^∇^)〜",
+    "ᵔᴥᵔ", "(*╹◡╹)", "(๑￫ܫ￩)", "ʕ·ᴥ· ʔ", "(ﾉ≧ڡ≦)",
+    "(≖ᴗ≖*)", "（〜^∇^ )〜", "( ﾉ･ｪ･ )ﾉ", "~( ˘▾˘~)", "(〜^∇^)〜",
     "ヽ(^ᴗ^ヽ)", "(´･ω･`)", "₍ᐢ•ﻌ•ᐢ₎*･ﾟ｡", "(。・・)_且", "(=｀ω´=)",
-    "(*•‿•*)", "(*ﾟ∀ﾟ*)", "(☉⋆‿⋆☉)", "ɷ◡ɷ", "ʘ‿ʘ",
+    "(*•‿•*)", "(*ﾟ∀ﾟ*)", "(*⋆‿⋆*)", "ɷ◡ɷ", "ʘ‿ʘ",
     "(。-ω-)ﾉ", "( ･ω･)ﾉ", "(=ﾟωﾟ)ﾉ", "(・ε・`*)", "(*˘︶˘*)",
     "ಥ_ಥ", "･ﾟ･(｡>д<｡)･ﾟ･", "(┬┬＿┬┬)", "(◞‸◟ㆀ)",
 ]
@@ -474,7 +474,7 @@ def template_fields(raw: object) -> dict[str, dict[str, Any]]:
         description = meta.get("description", "")
         if isinstance(description, dict):
             descriptions = cast('dict[object, object]', description)
-            if not descriptions or any(lang not in ("en", "ru", "kz", "uk", "ja") or not isinstance(text, str) or len(text) > 1000 for lang, text in descriptions.items()):
+            if not descriptions or any(lang not in ("en", "ru", "kz", "uk", "ja", "zh") or not isinstance(text, str) or len(text) > 1000 for lang, text in descriptions.items()):
                 raise ValueError(f"{name}: invalid localized description")
         elif not isinstance(description, str) or len(description) > 1000:
             raise ValueError(f"{name}: description must be text or a locale mapping")
@@ -594,8 +594,8 @@ def time_range(start: int | float, end: int | float | None = None, language: str
     if first == last:
         return first
     if last.split(" · ")[0] == first.split(" · ")[0]:
-        return first[:-4] + "–" + last.split(" · ")[1]
-    return first + " — " + last
+        return first[:-4] + "-" + last.split(" · ")[1]
+    return first + " - " + last
 
 
 def truncate(text: str, limit: int, suffix: str = "…") -> str:
@@ -731,7 +731,7 @@ def hash_short(text: str, length: int = 8) -> str:
 
 
 def badge(text: str, style: str = "info") -> str:
-    icons = {"info": "ℹ️", "ok": "✅", "warn": "⚠️", "error": "❌", "new": "🆕"}
+    icons = {"info": "ℹ", "ok": "[ok]", "warn": "!", "error": "[x]", "new": "🆕"}
     icon = icons.get(style, "•")
     return f"{icon} {escape(text)}"
 

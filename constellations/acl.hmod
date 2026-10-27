@@ -313,11 +313,11 @@ def _screen(ctx: Any, data: dict[str, Any]) -> dict[str, Any]:
         back = {"view": "users"}
         if view == "memberships":
             back = {"view": "user", "uid": uid}
-            listing([button(("✓ " if uid in group.users else "") + name, "memberships", op="member", uid=uid, name=name, enabled=uid not in group.users) for name, group in sorted(access.sgroups().items())])
+            listing([button(("[x] " if uid in group.users else "") + name, "memberships", op="member", uid=uid, name=name, enabled=uid not in group.users) for name, group in sorted(access.sgroups().items())])
         else:
             if not access.is_owner(uid):
                 bits = access.permissions_of(uid)
-                buttons.append([button(("✓ " if bits & ROLES[name] else "") + ctx.t("acl.roles." + name), "user", op="role", uid=uid, role=name, enabled=not bool(bits & ROLES[name])) for name in ("admin", "trusted")])
+                buttons.append([button(("[x] " if bits & ROLES[name] else "") + ctx.t("acl.roles." + name), "user", op="role", uid=uid, role=name, enabled=not bool(bits & ROLES[name])) for name in ("admin", "trusted")])
             if uid != access.owner_id and uid not in access.protected:
                 buttons.append([button(ctx.t("acl.remove_owner" if access.is_owner(uid) else "acl.add_owner"), "confirm", op="owner", uid=uid, enabled=not access.is_owner(uid))])
             buttons.append([button(ctx.t("acl.groups_title"), "memberships", uid=uid), button(ctx.t("acl.rules_title"), "rules", kind="user", target=uid)])
@@ -382,7 +382,7 @@ def _screen(ctx: Any, data: dict[str, Any]) -> dict[str, Any]:
         text = ctx.t("acl.command_role", command=_escape(spec.name), role=_roles(ctx, bits))
         if bits == Permission.EVERYONE:
             text += "<br>" + ctx.t("acl.all_chats")
-        keys = [button(("✓ " if bits == value else "") + ctx.t("acl.roles." + name), "command", op="default", name=spec.name, role=name) for name, value in ROLES.items()]
+        keys = [button(("[x] " if bits == value else "") + ctx.t("acl.roles." + name), "command", op="default", name=spec.name, role=name) for name, value in ROLES.items()]
         buttons = [keys[:2], keys[2:]]
         back = {"view": "commands"}
     elif view == "duration":

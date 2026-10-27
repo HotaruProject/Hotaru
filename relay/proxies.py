@@ -125,7 +125,7 @@ class Gateway:
         payload: dict[str, Any] = {"message": text, "peer": chat, "reply_to": {"_": "inputReplyToMessage", "reply_to_msg_id": int(message_id)}, **kwargs}
         return await self.call("messages.sendMessage", payload)
 
-    async def react(self, chat: int | str, message_id: int, emoji: str = "👍", **kwargs: Any) -> Any:
+    async def react(self, chat: int | str, message_id: int, emoji: str = "\U0001F44D", **kwargs: Any) -> Any:
         reaction: list[dict[str, Any]] = [{"_": "reactionEmoji", "emoticon": emoji}]
         if kwargs.get("big"):
             reaction[0] = {"_": "reactionEmoji", "emoticon": emoji, "flags": 1}

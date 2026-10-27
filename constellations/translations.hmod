@@ -8,7 +8,7 @@ HOTARU = {
 from typing import Any, Callable, List, Mapping, Optional, cast
 
 
-LANGUAGES = ("ru", "en", "kz", "uk", "ja")
+LANGUAGES = ("ru", "en", "kz", "uk", "ja", "zh")
 
 
 def _escape(value: Any) -> Any:
@@ -32,8 +32,8 @@ def _screen(ctx: Any) -> Any:
         )
 
     buttons: List[Any] = []
-    for language in ("ru", "en", "kz", "uk", "ja"):
-        marker = "✓ " if language == current else ""
+    for language in ("ru", "en", "kz", "uk", "ja", "zh"):
+        marker = "[x] " if language == current else ""
         buttons.append(
             ctx.ui.button(
                 f"{marker}{ctx.t('kernel.translations.native.' + language)}",

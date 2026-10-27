@@ -166,7 +166,8 @@
         "en": "English",
         "kz": "Қазақша",
         "uk": "Українська",
-        "ja": "日本語"
+        "ja": "日本語",
+        "zh": "中国語"
       }
     },
     "test-features": {
@@ -415,13 +416,13 @@
       "parameter_description": "• 説明：<i>{description}</i>\n",
       "template_unavailable": "テンプレート変数が利用できないか、公開されていません：{name}",
       "error": "エラー：{error}",
-      "boolean_true": "🔘 はい",
-      "boolean_false": "⚪️ いいえ",
+      "boolean_true": "[ ] はい",
+      "boolean_false": "[ ] いいえ",
       "minimum": "最小値：{value}",
       "maximum": "最大値：{value}",
-      "enter": "✏️ 入力",
+      "enter": "[e] 入力",
       "new_value": "{parameter} の新しい値",
-      "reset": "🔄 リセット",
+      "reset": "[~] リセット",
       "module_missing": "モジュール <code>{module}</code> が見つかりません。",
       "parameter_missing": "パラメーター <code>{parameter}</code> が見つかりません。",
       "error_html": "エラー：<code>{error}</code>"
@@ -466,7 +467,7 @@
       "mirror_off": "ログ転送を無効にしました",
       "level_set": "転送レベル: {level}",
       "status": "トピック: {topic} • エラー: {failed}",
-      "status_error": " • 最新: {error}",
+      "status_error": "• 最新: {error}",
       "no_observatory": "Observatory を利用できません",
       "no_entries": "このレベルのログはありません",
       "topic_unavailable": "トピックを利用できません: {error}",
@@ -497,7 +498,7 @@
       "usage_sh": "<b>使い方:</b> <code>{prefix}sh &lt;コマンド&gt;</code>",
       "usage_py": "<b>使い方:</b> <code>{prefix}py &lt;コード&gt;</code> またはコードに返信。-so で出力を非表示",
       "cancelled": "実行をキャンセルしました",
-      "done": "完了 ✓",
+      "done": "完了 [x]",
       "kill_reply": "<b>実行中の py/sh の出力メッセージに返信して停止してください。</b>",
       "killed": "<b>プロセスを停止しました。</b>",
       "no_process": "<b>このメッセージに対応する実行中のプロセスはありません。</b>",
@@ -604,12 +605,12 @@
       "open_button": "🕳 Singularityを開く",
       "commands": {
         "dash": {
-          "description": "Singularity Mini Appのインラインパネルを開く"
+          "description": "Singularity Mini App のインラインランチャーを開く"
         }
       }
     }
   },
-  "inline_commands_hint": "コマンドを選択 — 任意のチャットで @<bot> とコマンド名を入力",
+  "inline_commands_hint": "コマンドを選択 - 任意のチャットで @<bot> とコマンド名を入力",
   "settings": {
     "runtime_unavailable": "サービスを利用できません",
     "usage_alias": "使い方: {prefix}alias <別名> <コマンドと引数>",
@@ -652,7 +653,8 @@
     "en": "英語",
     "kz": "カザフ語",
     "uk": "ウクライナ語",
-    "ja": "日本語"
+    "ja": "日本語",
+    "zh": "中国語"
   },
   "runtime": {
     "modules_unavailable": "モジュールを利用できません",
@@ -663,7 +665,7 @@
     "module_info": "モジュール: {module}\nバージョン: {version}\nコマンド: {commands}\n機能: {capabilities}\n説明: {description}",
     "help_unavailable": "ヘルプを利用できません",
     "page_unavailable": "ヘルプページを利用できません",
-    "catalog": "一覧: ",
+    "catalog": "一覧:",
     "next": "次へ",
     "bot_unavailable": "インラインボットを利用できません",
     "bot_failed": "インラインボットの作成に失敗しました: {error}",
@@ -747,7 +749,7 @@
   "acl": {
     "owners": "<b>オーナー</b><br>",
     "group_missing": "グループ <code>{name}</code> が見つかりません",
-    "group_item": "<b>{name}</b> — ユーザー: {users}、ルール: {rules}",
+    "group_item": "<b>{name}</b> - ユーザー: {users}、ルール: {rules}",
     "groups": "<b>権限グループ</b><br>",
     "group_rule": "<b>ルールを追加しました:</b> sgroup <code>{target}</code> → {kind}/{rule}{until}",
     "permissions": "<b>権限</b><br>",

@@ -166,7 +166,8 @@
         "en": "English",
         "kz": "Қазақша",
         "uk": "Українська",
-        "ja": "日本語"
+        "ja": "日本語",
+        "zh": "Қытай тілі"
       }
     },
     "test-features": {
@@ -415,13 +416,13 @@
       "parameter_description": "• Сипаттамасы: <i>{description}</i>\n",
       "template_unavailable": "Үлгі өрісі қолжетімсіз немесе экспортталмаған: {name}",
       "error": "Қате: {error}",
-      "boolean_true": "🔘 Иә",
-      "boolean_false": "⚪️ Жоқ",
+      "boolean_true": "[ ] Иә",
+      "boolean_false": "[ ] Жоқ",
       "minimum": "Ең аз мән: {value}",
       "maximum": "Ең көп мән: {value}",
-      "enter": "✏️ Енгізу",
+      "enter": "[e] Енгізу",
       "new_value": "{parameter} параметрінің жаңа мәні",
-      "reset": "🔄 Қалпына келтіру",
+      "reset": "[~] Қалпына келтіру",
       "module_missing": "<code>{module}</code> модулі табылмады.",
       "parameter_missing": "<code>{parameter}</code> параметрі табылмады.",
       "error_html": "Қате: <code>{error}</code>"
@@ -466,7 +467,7 @@
       "mirror_off": "Логтарды көшіру өшірілді",
       "level_set": "Көшіру деңгейі: {level}",
       "status": "Тақырып: {topic} • қателер: {failed}",
-      "status_error": " • соңғысы: {error}",
+      "status_error": "• соңғысы: {error}",
       "no_observatory": "Обсерватория қолжетімсіз",
       "no_entries": "Бұл деңгейде жазбалар жоқ",
       "topic_unavailable": "Тақырып қолжетімсіз: {error}",
@@ -495,9 +496,9 @@
       "exit_code": "Аяқталу коды: {returncode}",
       "running": "Орындалуда…",
       "usage_sh": "<b>Қолдану:</b> <code>{prefix}sh &lt;команда&gt;</code>",
-      "usage_py": "<b>Қолдану:</b> <code>{prefix}py &lt;код&gt;</code> немесе кодқа жауап; -so — нәтижені көрсетпеу",
+      "usage_py": "<b>Қолдану:</b> <code>{prefix}py &lt;код&gt;</code> немесе кодқа жауап; -so - нәтижені көрсетпеу",
       "cancelled": "Орындау тоқтатылды",
-      "done": "Дайын ✓",
+      "done": "Дайын [x]",
       "kill_reply": "<b>Процесті тоқтату үшін орындалып жатқан py/sh хабарламасына жауап бер.</b>",
       "killed": "<b>Процесс тоқтатылды.</b>",
       "no_process": "<b>Бұл хабарламаның белсенді процесі жоқ.</b>",
@@ -604,12 +605,12 @@
       "open_button": "🕳 Singularity ашу",
       "commands": {
         "dash": {
-          "description": "Singularity Mini App inline-панелін ашу"
+          "description": "Singularity Mini App инлайн іске қосқышты ашу"
         }
       }
     }
   },
-  "inline_commands_hint": "Команданы таңда — кез келген чатта @<бот> және оның атын тер",
+  "inline_commands_hint": "Команданы таңда - кез келген чатта @<бот> және оның атын тер",
   "settings": {
     "runtime_unavailable": "Қызмет қолжетімсіз",
     "usage_alias": "Қолдану: {prefix}alias <бүркеншік_ат> <команда мен аргументтері>",
@@ -623,7 +624,7 @@
     "alias_list_empty": "Бүркеншік аттар жоқ",
     "alias_list_title": "<b>Бүркеншік аттар</b>",
     "prefix_current": "Қазіргі префикс: {prefix}. Өзгерту: {prefix}prefix <таңба>",
-    "prefix_invalid": "Префикс бос орынсыз 1–8 көрінетін таңбадан тұруы керек.",
+    "prefix_invalid": "Префикс бос орынсыз 1-8 көрінетін таңбадан тұруы керек.",
     "prefix_set": "Префикс {prefix} болып өзгертілді",
     "description": "Бүркеншік аттар мен префиксті басқару",
     "commands": {
@@ -652,7 +653,8 @@
     "en": "Ағылшынша",
     "kz": "Қазақша",
     "uk": "Украинша",
-    "ja": "Жапонша"
+    "ja": "Жапонша",
+    "zh": "Қытай тілі"
   },
   "runtime": {
     "modules_unavailable": "Модульдер қолжетімсіз",
@@ -663,7 +665,7 @@
     "module_info": "Модуль: {module}\nНұсқа: {version}\nКомандалар: {commands}\nМүмкіндіктер: {capabilities}\nСипаттама: {description}",
     "help_unavailable": "Анықтама қолжетімсіз",
     "page_unavailable": "Анықтама беті қолжетімсіз",
-    "catalog": "Каталог: ",
+    "catalog": "Каталог:",
     "next": "Келесі",
     "bot_unavailable": "Инлайн-бот қолжетімсіз",
     "bot_failed": "Инлайн-бот жасау мүмкін болмады: {error}",
@@ -747,7 +749,7 @@
   "acl": {
     "owners": "<b>Иелер</b><br>",
     "group_missing": "<code>{name}</code> тобы табылмады",
-    "group_item": "<b>{name}</b> — қатысушылар: {users}, ережелер: {rules}",
+    "group_item": "<b>{name}</b> - қатысушылар: {users}, ережелер: {rules}",
     "groups": "<b>Құқық топтары</b><br>",
     "group_rule": "<b>Ереже қосылды:</b> sgroup <code>{target}</code> → {kind}/{rule}{until}",
     "permissions": "<b>Құқықтар</b><br>",
@@ -759,7 +761,7 @@
     "grant_failed": "<b>Құқық беру орындалмады:</b> <i>{error}</i>",
     "granted": "<code>{user_id}</code> үшін <code>{label}</code> <b>құқығы берілді</b>",
     "bad_group": "Топ атауы: әріптер мен сандар, 32 таңбаға дейін.",
-    "bad_duration": "1m, 1h, 1d, 1w немесе forever енгіз. Ең көбі — 100 жыл.",
+    "bad_duration": "1m, 1h, 1d, 1w немесе forever енгіз. Ең көбі - 100 жыл.",
     "bad_rule": "Ереже: command/атау немесе module/атау.",
     "empty": "Берілген құқықтар жоқ. {prefix}perm <user_id> <рөл> командасын қолдан.",
     "bad_label": "Белгісіз құқық: {label}",

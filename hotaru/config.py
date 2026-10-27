@@ -898,7 +898,7 @@ class RuntimeConfig:
             raise ValueError("configure MTProto credentials or bot token in the database")
         from .commands import valid_prefix
         if not valid_prefix(self.prefix):
-            raise ValueError("prefix must contain 1–8 visible non-whitespace characters")
+            raise ValueError("prefix must contain 1-8 visible non-whitespace characters")
         if self.owner_id is not None and self.owner_id == 0:
             raise ValueError("owner ID must be nonzero")
         if self.backup_keep < 1:

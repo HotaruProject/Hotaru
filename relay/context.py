@@ -10,7 +10,7 @@ def _deny_all(_value: object) -> bool:
 
 try:
     from .denylist import is_blocked_peer, is_readonly_peer, payload_hits_blocked, payload_hits_readonly
-except (ImportError, KeyError):  # denylist unavailable -> deny everything
+except (ImportError, KeyError):  # denylist unavailable -> deny everything)
     is_blocked_peer = _deny_all
     is_readonly_peer = _deny_all
     payload_hits_blocked = _deny_all

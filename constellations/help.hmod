@@ -31,7 +31,7 @@ def _command_line(prefix: Any, commands: Any) -> Any:
 def _module_line(runtime: Any, module_id: Any, manifest: Any, kernel: Any) -> Any:
     prefix = runtime.config.prefix
     marker = "4974681956907221809" if kernel else "4974508259839836856"
-    name = f'<tg-emoji emoji-id="{marker}">▪️</tg-emoji> <code>{_escape(module_id)}</code>'
+    name = f'<tg-emoji emoji-id="{marker}">▪</tg-emoji> <code>{_escape(module_id)}</code>'
     commands = _command_line(prefix, manifest.commands)
     description = manifest.localized(runtime.language(), manifest.description).get("description", "")
     suffix = f"<br><i>{_escape(description)}</i>" if description else ""
@@ -113,7 +113,7 @@ async def _show_help(ctx: Any, invocation: Any) -> Any:
             usage = details.get("usage", "")
             line = f"<code>{_escape(runtime.config.prefix)}{_escape(command)}{' ' + _escape(usage) if usage else ''}</code>"
             if command_description:
-                line += f" — {_escape(command_description)}"
+                line += f" - {_escape(command_description)}"
             command_lines.append(line)
         cmd_title = _escape(ctx.t('kernel.help_ui.commands'))
         cap_title = _escape(ctx.t('kernel.help_ui.capabilities'))
@@ -143,7 +143,7 @@ async def _show_help(ctx: Any, invocation: Any) -> Any:
     else:
         for name in sorted(runtime.kernel.registry.names(), key=str.casefold):
             user_modules.append(
-                f'<p><tg-emoji emoji-id="4974508259839836856">▪️</tg-emoji> '
+                f'<p><tg-emoji emoji-id="4974508259839836856">▪</tg-emoji> '
                 f'<code>{_escape(runtime.config.prefix)}{_escape(name)}</code></p>'
             )
 

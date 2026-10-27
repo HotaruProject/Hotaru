@@ -45,13 +45,13 @@
       "parameter_description": "• Описание: <i>{description}</i>\n",
       "template_unavailable": "Поле шаблона недоступно или не экспортировано: {name}",
       "error": "Ошибка: {error}",
-      "boolean_true": "🔘 Да",
-      "boolean_false": "⚪️ Нет",
+      "boolean_true": "[ ] Да",
+      "boolean_false": "[ ] Нет",
       "minimum": "Минимум: {value}",
       "maximum": "Максимум: {value}",
-      "enter": "✏️ Ввести",
+      "enter": "[e] Ввести",
       "new_value": "Новое значение {parameter}",
-      "reset": "🔄 Сброс",
+      "reset": "[~] Сброс",
       "module_missing": "Модуль <code>{module}</code> не найден.",
       "parameter_missing": "Параметр <code>{parameter}</code> не найден.",
       "error_html": "Ошибка: <code>{error}</code>"
@@ -207,7 +207,8 @@
         "en": "English",
         "kz": "Қазақша",
         "uk": "Українська",
-        "ja": "日本語"
+        "ja": "日本語",
+        "zh": "Китайский"
       }
     },
     "test-features": {
@@ -437,7 +438,7 @@
       "mirror_off": "Зеркало логов выключено",
       "level_set": "Уровень зеркала: {level}",
       "status": "Топик: {topic} • ошибок: {failed}",
-      "status_error": " • последняя: {error}",
+      "status_error": "• последняя: {error}",
       "no_observatory": "Обсерватория недоступна",
       "no_entries": "Нет записей этого уровня",
       "topic_unavailable": "Топик недоступен: {error}",
@@ -489,9 +490,9 @@
       "exit_code": "Код завершения: {returncode}",
       "running": "Выполняется…",
       "usage_sh": "<b>Использование:</b> <code>{prefix}sh &lt;команда&gt;</code>",
-      "usage_py": "<b>Использование:</b> <code>{prefix}py &lt;код&gt;</code> или ответ на код; -so — без вывода",
+      "usage_py": "<b>Использование:</b> <code>{prefix}py &lt;код&gt;</code> или ответ на код; -so - без вывода",
       "cancelled": "Выполнение отменено",
-      "done": "Готово ✓",
+      "done": "Готово [x]",
       "kill_reply": "<b>Ответь на сообщение выполняющейся py/sh, чтобы остановить процесс.</b>",
       "killed": "<b>Процесс остановлен.</b>",
       "no_process": "<b>У этого сообщения нет активного процесса.</b>",
@@ -555,7 +556,7 @@
       "inline": "запросы к инлайн-ботам и взаимодействие с ними",
       "modules": "загрузка, выгрузка, перезагрузка и просмотр модулей, их хешей и описаний",
       "assets": "доступ к скрытому хранилищу вложений",
-      "shell": "запускает команды shell в workspace модуля; shell всегда работает в изолированной песочнице, где виден только workspace, его инструменты и отдельный /tmp; сеть появляется только с capability net, доступ к файлам хоста — только с files, и то и другое остаётся внутри песочницы; таймаут и лимиты на вывод команд сохраняются",
+      "shell": "запускает команды shell в workspace модуля; shell всегда работает в изолированной песочнице, где виден только workspace, его инструменты и отдельный /tmp; сеть появляется только с capability net, доступ к файлам хоста - только с files, и то и другое остаётся внутри песочницы; таймаут и лимиты на вывод команд сохраняются",
       "logs": "запись структурированных событий в журнал; разрешено всегда",
       "fetch": "чтение сообщений, данных пользователей и чатов, получение ответов; разрешено всегда"
     },
@@ -592,13 +593,16 @@
       }
     },
     "singularity": {
-      "description": "3D-телеметрия ядра и поток Observatory (Singularity)",
-      "card_title": "🕳 <b>Hotaru // Singularity</b>",
-      "card_subtitle": "<i>3D Event Horizon · Node.Probe · Read-Only Observatory Stream</i>",
-      "open_button": "🕳 Открыть Singularity",
+      "description": "3D телеметрия ядра и поток отладки Обсерватории (Singularity)",
+      "card_title": "<b>Hotaru // Singularity</b>",
+      "card_subtitle": "<i>3D Горизонт событий · Node.Probe · Поток наблюдателя только для чтения</i>",
+      "probe": "Зонд",
+      "relay": "Релей",
+      "inline_bot": "Инлайн-бот",
+      "open_button": "Открыть Singularity",
       "commands": {
         "dash": {
-          "description": "Открыть inline-панель Mini App телеметрии Singularity"
+          "description": "Открыть инлайн-запускатель Mini App Singularity"
         }
       }
     }
@@ -628,9 +632,10 @@
     "en": "Английский",
     "kz": "Казахский",
     "uk": "Украинский",
-    "ja": "Японский"
+    "ja": "Японский",
+    "zh": "Китайский"
   },
-  "inline_commands_hint": "Выбери команду — введи @<бот> и её имя в любом чате",
+  "inline_commands_hint": "Выбери команду - введи @<бот> и её имя в любом чате",
   "settings": {
     "runtime_unavailable": "Сервис недоступен",
     "usage_alias": "Использование: {prefix}alias <алиас> <команда с аргументами>",
@@ -663,7 +668,7 @@
     "module_info": "Модуль: {module}\nВерсия: {version}\nКоманды: {commands}\nВозможности: {capabilities}\nОписание: {description}",
     "help_unavailable": "Справка недоступна",
     "page_unavailable": "Страница справки недоступна",
-    "catalog": "Каталог: ",
+    "catalog": "Каталог:",
     "next": "Далее",
     "bot_unavailable": "Инлайн-бот недоступен",
     "bot_failed": "Не удалось создать инлайн-бота: {error}",
@@ -747,7 +752,7 @@
   "acl": {
     "owners": "<b>Владельцы</b><br>",
     "group_missing": "Группа <code>{name}</code> не найдена",
-    "group_item": "<b>{name}</b> — участников: {users}, правил: {rules}",
+    "group_item": "<b>{name}</b> - участников: {users}, правил: {rules}",
     "groups": "<b>Группы прав</b><br>",
     "group_rule": "<b>Правило добавлено:</b> sgroup <code>{target}</code> → {kind}/{rule}{until}",
     "permissions": "<b>Права</b><br>",
@@ -759,7 +764,7 @@
     "grant_failed": "<b>Не удалось выдать права:</b> <i>{error}</i>",
     "granted": "<code>{user_id}</code> <b>выдано</b> <code>{label}</code>",
     "bad_group": "Имя группы: буквы и цифры, до 32 символов.",
-    "bad_duration": "Укажи 1m, 1h, 1d, 1w или forever. Максимум — 100 лет.",
+    "bad_duration": "Укажи 1m, 1h, 1d, 1w или forever. Максимум - 100 лет.",
     "bad_rule": "Правило: command/имя или module/имя.",
     "empty": "Выданных прав нет. Используй {prefix}perm <user_id> <роль>.",
     "bad_label": "Неизвестное право: {label}",
@@ -767,7 +772,7 @@
     "owner_confirm": "Выдать <code>{user_id}</code> полный доступ?",
     "confirm": "Подтвердить",
     "clear_confirm": "Очистить правила для <code>{scope}</code>?",
-    "kernel_rule": "Системные команды — только для владельцев.",
+    "kernel_rule": "Системные команды - только для владельцев.",
     "invalid_target": "Неверный пользователь, чат или группа.",
     "model": "У владельцев полный доступ. Остальные права настраиваются отдельно.",
     "forever": "Бессрочно",

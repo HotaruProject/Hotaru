@@ -1716,7 +1716,7 @@ async def _py_run(ctx: Any, invocation: Any) -> Any:
         exec(bytecode, exec_scope)
         runner = exec_scope.get("__executor_runner__")
         if runner is None:
-            raise NameError("__executor_runner__ missing — code wrapping failed") from None
+            raise NameError("__executor_runner__ missing - code wrapping failed") from None
         result_val = await runner()
 
     eval_task = asyncio.create_task(_task())
