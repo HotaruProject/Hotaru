@@ -71,9 +71,9 @@ async def command_dash(ctx: Any, invocation: Any) -> None:
     lines = [
         header,
         "",
-        "<blockquote>",
-        f"<b>{probe_label}:</b> <code>{status_tag}</code>",
-        f"<b>{relay_label}:</b> <code>{sync_tag}</code>",
+        "<blockquote>"
+        f"<b>{probe_label}:</b> <code>{status_tag}</code><br>"
+        f"<b>{relay_label}:</b> <code>{sync_tag}</code>"
         "</blockquote>",
     ]
     text = "\n".join(lines)
