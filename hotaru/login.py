@@ -1436,81 +1436,6 @@ async def _bot_login(runtime: Any) -> tuple[int, Any] | None:
     return owner, bot
 
 
-async def _qr_login_via_bot(app: Any, api_id: int, api_hash: str, bot: Any) -> dict[str, Any] | None:
-    from goygram.errors import GoyGramError
-    security = importlib.import_module("goygram.security")
-    _extract_error = cast(Callable[[dict[str, Any]], str | None], getattr(security, "_extract_error"))
-    _extract_user = cast(Callable[[Any], dict[str, Any] | None], getattr(security, "_extract_user"))
-    _mt_req_with_migrate = cast(Callable[..., Awaitable[dict[str, Any]]], getattr(security, "_mt_req_with_migrate"))
-    while True:
-        try:
-            res = await _spin(
-                "Requesting a login token",
-                _mt_req_with_migrate(app, "auth_export_login_token", api_id=api_id, api_hash=api_hash, except_ids=[]),
-            )
-        except Exception as exc:
-            log_error(str(exc))
-            return None
-        if not res.get("ok"):
-            log_error(str(res))
-            return None
-        if res.get("type") == "loginToken":
-            token = res["token"]
-            b64 = base64.urlsafe_b64encode(token).decode().rstrip("=")
-            url = f"tg://login?token={b64}"
-            await bot.send(f"Sign in to Hotaru, open this link in Telegram:\n{url}")
-            expires = float(res.get("expires") or (time.time() + 30))
-            app.mt.qr_update_ev.clear()
-            spin = spinner()
-            spin.start("Waiting for the scan")
-            with Raw() as keys:
-                try:
-                    while time.time() < expires:
-                        try:
-                            await asyncio.wait_for(app.mt.qr_update_ev.wait(), timeout=0.1)
-                        except asyncio.TimeoutError:
-                            spin.tick()
-                            if cancel_pressed(keys):
-                                spin.cancel("Cancelled.")
-                                raise Cancelled
-                            continue
-                        spin.tick()
-                        app.mt.qr_update_ev.clear()
-                        try:
-                            poll = await _mt_req_with_migrate(app, "auth_export_login_token", api_id=api_id, api_hash=api_hash, except_ids=[])
-                        except GoyGramError as exc:
-                            if "SESSION_PASSWORD_NEEDED" not in str(exc):
-                                continue
-                            spin.stop("Scanned")
-                            pwd = await bot.ask("Send the 2FA password")
-                            check = await _spin(
-                                "Checking the password",
-                                _mt_req_with_migrate(app, "auth_check_password", password=pwd, api_id=api_id, api_hash=api_hash),
-                            )
-                            err = _extract_error(check)
-                            if err:
-                                log_error(err)
-                                return None
-                            user = _extract_user(check)
-                            if not user:
-                                return None
-                            return {"user": user, "raw": check}
-                        if poll.get("type") == "loginTokenSuccess":
-                            user = _extract_user(poll)
-                            if user:
-                                spin.stop("Scanned")
-                                return {"user": user, "raw": poll}
-                    spin.stop("Code expired, new one")
-                finally:
-                    spin.clear()
-            continue
-        if res.get("type") == "loginTokenSuccess":
-            user = _extract_user(res)
-            if user:
-                return {"user": user, "raw": res}
-        return None
-
-
 async def _phone_login_via_bot(app: Any, api_id: int, api_hash: str, bot: Any) -> dict[str, Any] | None:
     from goygram import ext as rx
     security = importlib.import_module("goygram.security")
@@ -1518,7 +1443,7 @@ async def _phone_login_via_bot(app: Any, api_id: int, api_hash: str, bot: Any) -
     _extract_phone_code_hash = cast(Callable[[dict[str, Any]], str | None], getattr(security, "_extract_phone_code_hash"))
     _extract_user = cast(Callable[[Any], dict[str, Any] | None], getattr(security, "_extract_user"))
     _mt_req_with_migrate = cast(Callable[..., Awaitable[dict[str, Any]]], getattr(security, "_mt_req_with_migrate"))
-    raw_phone = await bot.ask("Send the phone number with the country code")
+    raw_phone = await bot.ask("Sign-in started.\nSend your phone number with the country code, e.g. +1 555 000 1234", button="Enter phone number")
     phone = _phone(raw_phone)
     settings = rx.serialize_constructor("codeSettings", {"flags": 0})
     sent = await _spin(
@@ -1533,7 +1458,7 @@ async def _phone_login_via_bot(app: Any, api_id: int, api_hash: str, bot: Any) -
     if not code_hash:
         log_error("no code hash")
         return None
-    code = (await bot.ask("Send the login code")).strip()
+    code = (await bot.ask("Code sent to your Telegram.\nSend the login code", button="Enter login code")).strip()
     sign = await _spin(
         "Signing in",
         _mt_req_with_migrate(app, "auth_sign_in", phone_number=phone, phone_code=code, phone_code_hash=code_hash, api_id=api_id, api_hash=api_hash),
@@ -1547,7 +1472,7 @@ async def _phone_login_via_bot(app: Any, api_id: int, api_hash: str, bot: Any) -
         return None
     final = sign
     if "SESSION_PASSWORD_NEEDED" in sign_err:
-        pwd = await bot.ask("Send the 2FA password")
+        pwd = await bot.ask("Your account has 2FA.\nSend the cloud password", button="Enter 2FA password")
         check = await _spin(
             "Checking the password",
             _mt_req_with_migrate(app, "auth_check_password", password=pwd, api_id=api_id, api_hash=api_hash),
@@ -1565,9 +1490,7 @@ async def _phone_login_via_bot(app: Any, api_id: int, api_hash: str, bot: Any) -
 
 
 async def _authorize_via_bot(app: Any, api_id: int, api_hash: str, bot: Any) -> dict[str, Any] | None:
-    answer = (await bot.ask("Log in with the QR code or the phone number? Reply qr or phone")).strip().lower()
-    if "qr" in answer:
-        return await _qr_login_via_bot(app, api_id, api_hash, bot)
+    await bot.send("Answer the next questions here in the bot chat to sign in.")
     return await _phone_login_via_bot(app, api_id, api_hash, bot)
 
 

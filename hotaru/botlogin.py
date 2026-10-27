@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import platform
 import re
+import secrets
 from pathlib import Path
 from typing import Any
 
@@ -68,12 +69,16 @@ class EchoBot:
             default_transport="mtproto",
         )
         app.on_msg(self._on_message)
+        app.on_inline(self._on_inline)
+        app.on_update(self._on_update)
         return app
 
     async def _on_message(self, message: Any) -> None:
         sender = getattr(message, "from_id", None)
         chat = getattr(message, "chat_id", None)
         if not isinstance(sender, int) or sender <= 0:
+            return
+        if self.bot_id is not None and sender == self.bot_id:
             return
         text = str(getattr(message, "text", "") or "")
         pending = self._pending
@@ -96,18 +101,54 @@ class EchoBot:
             raise BotLoginError("the bot has no owner chat yet")
         await self.app.send_msg(self.owner, text)
 
-    async def ask(self, prompt: str, *, timeout: float = 300.0) -> str:
+    async def _on_inline(self, query: Any) -> None:
+        text = str(getattr(query, "query", "") or "")
+        prefix = "hotaru-input:"
+        if not text.startswith(prefix):
+            return
+        shown = text.split(" ", 1)[1].strip() if " " in text else ""
+        if not shown:
+            return
+        from goygram.types import InlineObj
+
+        result = InlineObj.article("hotaru-input", shown, shown)
+        try:
+            await query.answer(results=[result], cache_time=0, is_personal=True)
+        except Exception:
+            pass
+
+    async def _on_update(self, update: Any) -> None:
+        if getattr(update, "update_type", None) != "updateBotInlineSend":
+            return
+        text = str(getattr(update, "query", "") or "")
+        prefix = "hotaru-input:"
+        if not text.startswith(prefix):
+            return
+        value = text.split(" ", 1)[1].strip() if " " in text else ""
+        pending = self._pending
+        if pending is not None and value:
+            await pending.put(value)
+
+    async def ask(self, prompt: str, *, timeout: float = 300.0, button: str = "Answer here") -> str:
         if self.owner is None:
             raise BotLoginError("the bot has no owner chat yet")
         queue: asyncio.Queue[str] = asyncio.Queue()
         self._pending = queue
         try:
-            await self.send(prompt)
+            await self._ask_with_button(prompt, button)
             return await asyncio.wait_for(queue.get(), timeout=timeout)
         except asyncio.TimeoutError as exc:
             raise BotLoginError(f"no answer in the bot chat: {prompt}") from exc
         finally:
             self._pending = None
+
+    async def _ask_with_button(self, prompt: str, button: str) -> None:
+        token = secrets.token_urlsafe(8)
+        kbd = [[{"text": button, "switch_inline_query_current_chat": "hotaru-input:" + token + " "}]]
+        try:
+            await self.app.send_msg(self.owner, prompt, kbd=kbd)
+        except Exception:
+            await self.send(prompt)
 
     async def _authenticate(self) -> None:
         from goygram.security import bootstrap_session
