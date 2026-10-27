@@ -172,7 +172,7 @@ function renderAuthGateHtml() {
 <body>
   <div class="gate" data-testid="auth-gate">
     <div class="code">HTTP 403 // SANCTUARY_GUARD</div>
-    <div class="title" id="gate-title">KERNEL TELEMETRY LOCKED — OWNER ONLY</div>
+    <div class="title" id="gate-title">KERNEL TELEMETRY LOCKED - OWNER ONLY</div>
     <div class="desc" id="gate-desc">Launch via your Hotaru inline Mini App button inside Telegram.</div>
   </div>
   <script>

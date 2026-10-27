@@ -1,48 +1,54 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
-import Scene from "./Scene";
-import { SceneDirector } from "./SceneDirector";
-import { MetricsStore } from "./metricsStore";
-import { TelemetryProjector } from "./TelemetryProjector";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { CameraDirector } from "./scene/camera.js";
+import { SceneRenderer } from "./scene/renderer.js";
+import { MetricsStore } from "./telemetry/store.js";
+import Header from "./ui/Header.jsx";
+import TelemetryPanel from "./ui/TelemetryPanel.jsx";
 
-function readMetaConfig() {
+function readServerConfig() {
   if (typeof window === "undefined") return {};
   if (window.__SINGULARITY_CONFIG__) return window.__SINGULARITY_CONFIG__;
   try {
     const meta = document.querySelector('meta[name="singularity-cfg"]');
-    const b64 = meta?.getAttribute("content") || "";
-    if (!b64) return {};
-    return JSON.parse(atob(b64));
+    const encoded = meta?.getAttribute("content") || "";
+    if (!encoded) return {};
+    return JSON.parse(atob(encoded));
   } catch {
     return {};
   }
 }
 
 function resolveRuntimeOptions() {
-  const serverCfg = readMetaConfig();
-  let mode = serverCfg.dataMode || "live";
-  let durationMs = Number(serverCfg.shotDurationMs ?? 2400);
-  let sessionToken = serverCfg.sessionToken || "";
+  const serverConfig = readServerConfig();
+  let mode = serverConfig.dataMode || "live";
+  let durationMs = Number(serverConfig.shotDurationMs ?? 2200);
+  let sessionToken = serverConfig.sessionToken || "";
 
   if (typeof window !== "undefined") {
-    const qp = new URLSearchParams(window.location.search);
-    if (qp.get("mode") === "mock" || qp.get("mode") === "live") {
-      mode = qp.get("mode");
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("mode") === "mock" || params.get("mode") === "live") {
+      mode = params.get("mode");
     }
-    if (qp.get("duration") !== null && Number.isFinite(Number(qp.get("duration")))) {
-      durationMs = Math.max(0, Number(qp.get("duration")));
+    if (params.get("duration") !== null) {
+      const parsed = Number(params.get("duration"));
+      if (Number.isFinite(parsed)) {
+        durationMs = Math.max(0, parsed);
+      }
     }
-    if (qp.get("session")) {
-      sessionToken = qp.get("session");
+    if (params.get("session")) {
+      sessionToken = params.get("session");
       try {
         window.sessionStorage?.setItem("singularity_session_token", sessionToken);
       } catch {}
-      qp.delete("session");
-      const cleanQuery = qp.toString();
-      const cleanUrl =
-        window.location.pathname +
-        (cleanQuery ? `?${cleanQuery}` : "") +
-        (window.location.hash || "");
-      window.history.replaceState(null, "", cleanUrl);
+      params.delete("session");
+      const query = params.toString();
+      window.history.replaceState(
+        null,
+        "",
+        `${window.location.pathname}${query ? `?${query}` : ""}${
+          window.location.hash || ""
+        }`
+      );
     }
   }
 
@@ -50,33 +56,37 @@ function resolveRuntimeOptions() {
 }
 
 export default function App() {
-  const initialOpts = useMemo(() => resolveRuntimeOptions(), []);
+  const options = useMemo(() => resolveRuntimeOptions(), []);
+  const canvasRef = useRef(null);
+  const rendererRef = useRef(null);
 
   const director = useMemo(
-    () => new SceneDirector({ durationMs: initialOpts.durationMs }),
-    [initialOpts.durationMs]
+    () => new CameraDirector({ durationMs: options.durationMs }),
+    [options.durationMs]
   );
-
-  const projector = useMemo(() => new TelemetryProjector(), []);
 
   const metricsStore = useMemo(
     () =>
       new MetricsStore({
-        mode: initialOpts.mode,
-        sessionToken: initialOpts.sessionToken,
+        mode: options.mode,
+        sessionToken: options.sessionToken,
       }),
-    [initialOpts.mode, initialOpts.sessionToken]
+    [options.mode, options.sessionToken]
   );
 
   const [shotState, setShotState] = useState(() => director.getState());
-  const [summaryState, setSummaryState] = useState(() => projector.getState());
-  const [projectionBounds, setProjectionBounds] = useState({
-    visible: false,
-    left: 0,
-    top: 0,
-    width: 0,
-    height: 0,
-  });
+  const [snapshot, setSnapshot] = useState(() => metricsStore.getSnapshot());
+  const [panelExpanded, setPanelExpanded] = useState(false);
+
+  const goToSatellite = useCallback(() => {
+    if (director.isInputLocked) return;
+    director.goTo("satellite");
+  }, [director]);
+
+  const goToOverview = useCallback(() => {
+    if (director.isInputLocked) return;
+    director.goTo("overview");
+  }, [director]);
 
   useEffect(() => {
     try {
@@ -86,65 +96,50 @@ export default function App() {
 
     window.__director = director;
     window.__metrics = metricsStore;
-    window.__summary = projector;
+    window.__summary = metricsStore.getSnapshot();
 
-    projector.updateSnapshot(metricsStore.getSnapshot());
-    setSummaryState(projector.getState());
-
-    const unsubDirector = director.onShotChange(() => {
+    const unsubscribeDirector = director.onShotChange(() => {
       setShotState(director.getState());
     });
-
-    const unsubMetrics = metricsStore.subscribe((snap) => {
-      projector.updateSnapshot(snap);
+    const unsubscribeMetrics = metricsStore.subscribe((next) => {
+      window.__summary = next;
+      setSnapshot(next);
     });
 
-    const unsubProjector = projector.onChange((st) => {
-      setSummaryState(st);
-    });
-
-    const onKeyDown = (e) => {
-      if (
-        e.key === "Escape" &&
-        director.currentShot === "satellite" &&
-        !director.isInputLocked
-      ) {
-        director.goTo("overview");
+    const onKeyDown = (event) => {
+      if (event.key === "Escape" && director.currentShot === "satellite") {
+        goToOverview();
       }
     };
     window.addEventListener("keydown", onKeyDown);
 
     return () => {
       window.removeEventListener("keydown", onKeyDown);
-      unsubDirector();
-      unsubMetrics();
-      unsubProjector();
+      unsubscribeDirector();
+      unsubscribeMetrics();
       metricsStore.destroy();
     };
-  }, [director, metricsStore, projector]);
+  }, [director, metricsStore, goToOverview]);
 
-  const handleBlackHoleClick = useCallback(() => {
-    if (director.isInputLocked) return;
-    if (director.currentShot === "overview") {
-      director.goTo("satellite");
-    }
-  }, [director]);
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return undefined;
+    const renderer = new SceneRenderer(canvas, director, {
+      onSatelliteTap: goToSatellite,
+      onBackgroundTap: goToOverview,
+    });
+    rendererRef.current = renderer;
+    window.__scene = renderer;
+    renderer.start();
+    return () => {
+      renderer.dispose();
+      rendererRef.current = null;
+    };
+  }, [director, goToSatellite, goToOverview]);
 
-  const handleBackgroundClickInSatellite = useCallback(() => {
-    if (director.isInputLocked) return;
-    if (director.currentShot === "satellite") {
-      director.goTo("overview");
-    }
-  }, [director]);
-
-  const handleBackClick = useCallback(() => {
-    if (director.isInputLocked) return;
-    director.goTo("overview");
-  }, [director]);
-
-  const showBackButton =
-    shotState.currentShot === "satellite" ||
-    (shotState.isTransitioning && shotState.targetShot === "satellite");
+  const showBack = shotState.currentShot === "satellite";
+  const showPanel =
+    shotState.currentShot === "satellite" && !shotState.isTransitioning;
 
   return (
     <div
@@ -152,72 +147,36 @@ export default function App() {
       data-shot={shotState.currentShot}
       data-transitioning={String(shotState.isTransitioning)}
     >
-      <Scene
-        director={director}
-        projector={projector}
-        onBlackHoleClick={handleBlackHoleClick}
-        onBackgroundClickInSatellite={handleBackgroundClickInSatellite}
-        onProjectionBoundsChange={setProjectionBounds}
+      <canvas
+        ref={canvasRef}
+        className="scene-canvas"
+        data-testid="singularity-canvas"
       />
 
       <div className="vignette-overlay" />
 
-      <header className="crt-header">
-        <div className="crt-brand">
-          <span className="crt-dot" />
-          <span className="crt-title">{"HOTARU // SINGULARITY"}</span>
-          <span className="crt-shot-tag" data-testid="shot-indicator">
-            {shotState.isTransitioning
-              ? `FLIGHT -> ${shotState.targetShot.toUpperCase()}`
-              : shotState.currentShot.toUpperCase()}
-          </span>
-        </div>
+      <Header
+        shot={shotState.currentShot}
+        transitioning={shotState.isTransitioning}
+        targetShot={shotState.targetShot}
+        status={snapshot.connectionStatus || "connecting"}
+        showBack={showBack}
+        onBack={goToOverview}
+      />
 
-        <div className="crt-actions">
-          <span className="crt-mode-pill" data-testid="data-mode-indicator">
-            {String(summaryState.collector || summaryState.source || "live").toUpperCase()}
-          </span>
-          {showBackButton && (
-            <button
-              type="button"
-              className="crt-btn crt-back-btn"
-              data-testid="back-button"
-              disabled={shotState.isTransitioning}
-              onClick={handleBackClick}
-            >
-              ← HORIZON
-            </button>
-          )}
-        </div>
-      </header>
-
-      {shotState.currentShot === "overview" && !shotState.isTransitioning && (
+      {shotState.currentShot === "overview" && !shotState.isTransitioning ? (
         <div className="orbit-hint" data-testid="overview-hint">
-          {"SINGULARITY // НАЖМИТЕ НА ГОРИЗОНТ СОБЫТИЙ ДЛЯ ОТКРЫТИЯ PROBE-ТЕЛЕМЕТРИИ"}
+          TAP THE PROBE TO INSPECT TELEMETRY
         </div>
-      )}
+      ) : null}
 
-      {projectionBounds.visible &&
-        shotState.currentShot === "satellite" &&
-        !shotState.isTransitioning && (
-          <div
-            className="projection-hit-layer"
-            data-testid="system-projection"
-            style={{
-              left: `${projectionBounds.left}px`,
-              top: `${projectionBounds.top}px`,
-              width: `${projectionBounds.width}px`,
-              height: `${projectionBounds.height}px`,
-            }}
-            onClick={(e) => {
-              e.stopPropagation();
-            }}
-          >
-            <pre className="sr-telemetry-mirror" data-testid="system-summary">
-              {summaryState.text}
-            </pre>
-          </div>
-        )}
+      {showPanel ? (
+        <TelemetryPanel
+          snapshot={snapshot}
+          expanded={panelExpanded}
+          onToggle={() => setPanelExpanded((value) => !value)}
+        />
+      ) : null}
     </div>
   );
 }

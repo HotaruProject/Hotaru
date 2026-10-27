@@ -221,7 +221,7 @@ def describe(capabilities: tuple[str, ...], t: Callable[..., str] | None = None)
             continue
         title = t("kernel.capabilities." + cap, meta['title']) if t is not None else meta['title']
         detail = t("kernel.capability_details." + cap, meta['detail']) if t is not None else meta['detail']
-        lines.append(f"{cap}: {title} — {detail}")
+        lines.append(f"{cap}: {title} - {detail}")
     return "\n".join(lines)
 
 

@@ -65,27 +65,28 @@ async def command_dash(ctx: Any, invocation: Any) -> None:
 
     status_tag = "ONLINE" if probe_online else "STANDBY"
     sync_tag = "SYNCED" if registered else "PENDING"
-    horizon_display = html.escape(tunnel_url) if tunnel_url else "initializing..."
 
-    header = _tr(ctx, "kernel.singularity.card_title", "🕳 <b>Hotaru // Singularity</b>")
+    header = _tr(ctx, "kernel.singularity.card_title", "<b>Hotaru // Singularity</b>")
     sub = _tr(
         ctx,
         "kernel.singularity.card_subtitle",
         "<i>3D Event Horizon · Node.Probe · Read-Only Observatory Stream</i>",
     )
+    probe_label = _tr(ctx, "kernel.singularity.probe", "Probe")
+    relay_label = _tr(ctx, "kernel.singularity.relay", "Relay")
+    bot_label = _tr(ctx, "kernel.singularity.inline_bot", "Inline Bot")
     lines = [
         header,
         sub,
         "",
-        f"▸ <b>Probe:</b> <code>{status_tag}</code> · <b>Relay:</b> <code>{sync_tag}</code>",
-        f"▸ <b>Horizon:</b> <code>{horizon_display}</code>",
+        f"- <b>{probe_label}:</b> <code>{status_tag}</code> · <b>{relay_label}:</b> <code>{sync_tag}</code>",
     ]
     if bot_user:
-        lines.append(f"▸ <b>Inline Bot:</b> <code>@{html.escape(bot_user)}</code>")
+        lines.append(f"- <b>{bot_label}:</b> <code>@{html.escape(bot_user)}</code>")
     text = "\n".join(lines)
 
-    open_label = _tr(ctx, "kernel.singularity.open_button", "🕳 Открыть Singularity")
-    close_label = _tr(ctx, "common.close", "✖ Закрыть")
+    open_label = _tr(ctx, "kernel.singularity.open_button", "Open Singularity")
+    close_label = _tr(ctx, "common.close", "Close")
 
     launch_url = app_link or tunnel_url
     buttons: list[list[dict[str, Any]]] = []

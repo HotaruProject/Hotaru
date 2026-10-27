@@ -266,7 +266,7 @@ class AccountUI:
             return self.page(page, actor=actor)
         data = {'number': profile.account_number, 'uid': uid, 'page': page}
         button = partial(self.button, actor=actor, user=uid, **data)
-        buttons = [button(('✓ ' if action in rights else '· ') + self.t('right.' + action), 'grant', right=action, enabled=action not in rights) for action in RIGHTS]
+        buttons = [button(('[x] ' if action in rights else '· ') + self.t('right.' + action), 'grant', right=action, enabled=action not in rights) for action in RIGHTS]
         rows = columns(buttons)
         rows.append([button(self.t('button.grant_all'), 'grant_all'), button(self.t('button.revoke'), 'revoke')])
         back = self.button(self.t('button.back'), 'view', actor=actor, **data)
@@ -710,7 +710,7 @@ class AccountLogin:
             while len(self.entries) > 32:
                 self.entries.pop(next(iter(self.entries)))
             title = self.t('login.use_phone', phone=value) if self.step == 'phone' else self.t('login.submit_' + self.step)
-            result = InlineObj.article(entry, title, '🔄', description=self.t('login.continue'))
+            result = InlineObj.article(entry, title, '[~]', description=self.t('login.continue'))
             result['reply_markup'] = {'inline_keyboard': [[self.button(self.t('button.submit'), 'submit', entry=entry)]]}
         await answer_tl(query, results=[result], cache_time=0, is_personal=True)
 

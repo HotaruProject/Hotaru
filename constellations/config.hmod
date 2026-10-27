@@ -75,7 +75,7 @@ def _directory_form(ctx: Any) -> Dict[str, Any]:
                 await c.edit(**_module_form(ctx, m))
             return handler
 
-        row.append(ctx.ui.button(f"📦 {mod_id}", make_handler(mod_id)))
+        row.append(ctx.ui.button(f"[m] {mod_id}", make_handler(mod_id)))
         if len(row) == 2:
             buttons.append(row)
             row = []
@@ -128,7 +128,7 @@ def _module_form(ctx: Any, module_id: str) -> Dict[str, Any]:
                 await c.edit(**_parameter_form(ctx, module_id, k))
             return handler
 
-        param_buttons.append(ctx.ui.button(f"⚙️ {key}", make_param_handler(key)))
+        param_buttons.append(ctx.ui.button(f"[c] {key}", make_param_handler(key)))
 
     buttons: List[List[Any]] = []
     for i in range(0, len(param_buttons), 2):
@@ -185,7 +185,7 @@ def _parameter_form(ctx: Any, module_id: str, key: str, page: int = 0) -> Dict[s
 
 
     text = (
-        f"<b>{_escape(module_id)}</b> ➜ <b>{_escape(key)}</b>\n\n"
+        f"<b>{_escape(module_id)}</b> > <b>{_escape(key)}</b>\n\n"
         + ctx.t("kernel.config.parameter_details", value=_escape(disp_str), type=_escape(field.validator.name), default=_escape(def_str))
     )
 
@@ -215,7 +215,7 @@ def _parameter_form(ctx: Any, module_id: str, key: str, page: int = 0) -> Dict[s
                 description = ctx.t(meta["description_key"], str(description) or name)
             description = ctx.tools.truncate(str(description), 120)
             example = ctx.tools.truncate(ctx.tools.template_render("{" + name + "}", {name: meta}), 80)
-            text += f"• <code>{{{_escape(name)}}}</code> ({_escape(meta['type'])}) — {_escape(description)}\n  <code>{_escape(example)}</code>\n"
+            text += f"• <code>{{{_escape(name)}}}</code> ({_escape(meta['type'])}) - {_escape(description)}\n  <code>{_escape(example)}</code>\n"
         text += "\n" + _escape(ctx.t("kernel.config.template_syntax")) + "\n"
         preview_label = ctx.t("kernel.config.template_preview")
         try:
@@ -282,7 +282,7 @@ def _parameter_form(ctx: Any, module_id: str, key: str, page: int = 0) -> Dict[s
                 return handler
 
             is_sel = (opt == val or str(opt).casefold() == str(val).casefold())
-            lbl = f"🔘 {opt}" if is_sel else f"⚪️ {opt}"
+            lbl = f"[ ] {opt}" if is_sel else f"[ ] {opt}"
             choice_row.append(ctx.ui.button(lbl, make_choice(opt)))
         for i in range(0, len(choice_row), 3):
             buttons.append(choice_row[i:i + 3])

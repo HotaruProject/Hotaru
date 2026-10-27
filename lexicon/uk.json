@@ -166,7 +166,8 @@
         "en": "English",
         "kz": "Қазақша",
         "uk": "Українська",
-        "ja": "日本語"
+        "ja": "日本語",
+        "zh": "Китайська"
       }
     },
     "test-features": {
@@ -415,13 +416,13 @@
       "parameter_description": "• Опис: <i>{description}</i>\n",
       "template_unavailable": "Поле шаблону недоступне або не експортоване: {name}",
       "error": "Помилка: {error}",
-      "boolean_true": "🔘 Так",
-      "boolean_false": "⚪️ Ні",
+      "boolean_true": "[ ] Так",
+      "boolean_false": "[ ] Ні",
       "minimum": "Мінімум: {value}",
       "maximum": "Максимум: {value}",
-      "enter": "✏️ Ввести",
+      "enter": "[e] Ввести",
       "new_value": "Нове значення {parameter}",
-      "reset": "🔄 Скинути",
+      "reset": "[~] Скинути",
       "module_missing": "Модуль <code>{module}</code> не знайдено.",
       "parameter_missing": "Параметр <code>{parameter}</code> не знайдено.",
       "error_html": "Помилка: <code>{error}</code>"
@@ -466,7 +467,7 @@
       "mirror_off": "Дублювання логів вимкнено",
       "level_set": "Рівень дублювання: {level}",
       "status": "Тема: {topic} • помилок: {failed}",
-      "status_error": " • остання: {error}",
+      "status_error": "• остання: {error}",
       "no_observatory": "Обсерваторія недоступна",
       "no_entries": "Немає записів цього рівня",
       "topic_unavailable": "Тема недоступна: {error}",
@@ -495,9 +496,9 @@
       "exit_code": "Код завершення: {returncode}",
       "running": "Виконується…",
       "usage_sh": "<b>Використання:</b> <code>{prefix}sh &lt;команда&gt;</code>",
-      "usage_py": "<b>Використання:</b> <code>{prefix}py &lt;код&gt;</code> або відповідь на код; -so — без виводу",
+      "usage_py": "<b>Використання:</b> <code>{prefix}py &lt;код&gt;</code> або відповідь на код; -so - без виводу",
       "cancelled": "Виконання скасовано",
-      "done": "Готово ✓",
+      "done": "Готово [x]",
       "kill_reply": "<b>Дай відповідь на повідомлення активної py/sh, щоб зупинити процес.</b>",
       "killed": "<b>Процес зупинено.</b>",
       "no_process": "<b>Це повідомлення не має активного процесу.</b>",
@@ -561,7 +562,7 @@
       "inline": "запити до інлайн-ботів і взаємодія з ними",
       "modules": "завантаження, вивантаження, перезавантаження та перегляд модулів, їхніх хешів і описів",
       "assets": "доступ до прихованого сховища вкладень",
-      "shell": "запускає команди shell у workspace модуля; shell завжди працює в ізольованій пісочниці, де видно лише workspace, його інструменти та окремий /tmp; мережа з'являється лише з capability net, доступ до файлів хоста — лише з files, і те й інше залишається всередині пісочниці; таймаут і ліміти виводу команд зберігаються",
+      "shell": "запускає команди shell у workspace модуля; shell завжди працює в ізольованій пісочниці, де видно лише workspace, його інструменти та окремий /tmp; мережа з'являється лише з capability net, доступ до файлів хоста - лише з files, і те й інше залишається всередині пісочниці; таймаут і ліміти виводу команд зберігаються",
       "logs": "запис структурованих подій до журналу; дозволено завжди",
       "fetch": "читання повідомлень, даних користувачів і чатів, отримання відповідей; дозволено завжди"
     },
@@ -604,12 +605,12 @@
       "open_button": "🕳 Відкрити Singularity",
       "commands": {
         "dash": {
-          "description": "Відкрити inline-панель Mini App телеметрії Singularity"
+          "description": "Відкрити інлайн-запускач Mini App Singularity"
         }
       }
     }
   },
-  "inline_commands_hint": "Обери команду — введи @<бот> і її назву в будь-якому чаті",
+  "inline_commands_hint": "Обери команду - введи @<бот> і її назву в будь-якому чаті",
   "settings": {
     "runtime_unavailable": "Сервіс недоступний",
     "usage_alias": "Використання: {prefix}alias <аліас> <команда з аргументами>",
@@ -652,7 +653,8 @@
     "en": "Англійська",
     "kz": "Казахська",
     "uk": "Українська",
-    "ja": "Японська"
+    "ja": "Японська",
+    "zh": "Китайська"
   },
   "runtime": {
     "modules_unavailable": "Модулі недоступні",
@@ -663,7 +665,7 @@
     "module_info": "Модуль: {module}\nВерсія: {version}\nКоманди: {commands}\nМожливості: {capabilities}\nОпис: {description}",
     "help_unavailable": "Довідка недоступна",
     "page_unavailable": "Сторінка довідки недоступна",
-    "catalog": "Каталог: ",
+    "catalog": "Каталог:",
     "next": "Далі",
     "bot_unavailable": "Інлайн-бот недоступний",
     "bot_failed": "Не вдалося створити інлайн-бота: {error}",
@@ -747,7 +749,7 @@
   "acl": {
     "owners": "<b>Власники</b><br>",
     "group_missing": "Групу <code>{name}</code> не знайдено",
-    "group_item": "<b>{name}</b> — учасників: {users}, правил: {rules}",
+    "group_item": "<b>{name}</b> - учасників: {users}, правил: {rules}",
     "groups": "<b>Групи прав</b><br>",
     "group_rule": "<b>Правило додано:</b> sgroup <code>{target}</code> → {kind}/{rule}{until}",
     "permissions": "<b>Права</b><br>",
@@ -759,7 +761,7 @@
     "grant_failed": "<b>Не вдалося надати права:</b> <i>{error}</i>",
     "granted": "<code>{user_id}</code> <b>надано</b> <code>{label}</code>",
     "bad_group": "Назва групи: літери й цифри, до 32 символів.",
-    "bad_duration": "Вкажи 1m, 1h, 1d, 1w або forever. Максимум — 100 років.",
+    "bad_duration": "Вкажи 1m, 1h, 1d, 1w або forever. Максимум - 100 років.",
     "bad_rule": "Правило: command/назва або module/назва.",
     "empty": "Наданих прав немає. Використай {prefix}perm <user_id> <роль>.",
     "bad_label": "Невідоме право: {label}",
@@ -767,7 +769,7 @@
     "owner_confirm": "Надати <code>{user_id}</code> повний доступ?",
     "confirm": "Підтвердити",
     "clear_confirm": "Очистити правила для <code>{scope}</code>?",
-    "kernel_rule": "Системні команди — лише для власників.",
+    "kernel_rule": "Системні команди - лише для власників.",
     "invalid_target": "Неправильний користувач, чат або група.",
     "model": "Власники мають повний доступ. Інші права налаштовуються окремо.",
     "forever": "Безстроково",

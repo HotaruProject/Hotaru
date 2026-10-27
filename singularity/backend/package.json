@@ -2,13 +2,16 @@
   "name": "hotaru-singularity-backend",
   "version": "1.0.0",
   "private": true,
-  "description": "Hotaru Singularity Probe Backend",
+  "description": "Hotaru Singularity Black Hole Dashboard Backend (Owner-only Telegram Mini App auth + live metrics)",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "test": "node --test ../tests/node/*.test.js"
   },
   "dependencies": {
+    "cookie-parser": "^1.4.7",
     "dotenv": "^16.4.7",
+    "express": "^4.21.2",
     "jsonwebtoken": "^9.0.2",
     "ws": "^8.18.0"
   }

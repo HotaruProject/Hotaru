@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import html
 import logging
 import re
 import secrets
@@ -344,57 +343,6 @@ def save_sanctuary_app_state(
     return record
 
 
-def build_owner_tunnel_message(
-    tunnel_url: str,
-    *,
-    bot_username: str | None = None,
-    short_name: str = "dashboard",
-    app_link: str | None = None,
-    registered: bool = False,
-    sync_detail: str = "",
-    command_prefix: str = ".",
-) -> str:
-    clean_bot = (bot_username or "").lstrip("@").strip()
-    resolved_app_link = app_link or (
-        f"https://t.me/{clean_bot}/{short_name}" if clean_bot else None
-    )
-    esc_url = html.escape(tunnel_url)
-    esc_prefix = html.escape(command_prefix or ".")
-
-    lines = [
-        "🕳 <b>Hotaru // Singularity</b>",
-        "",
-        f"▸ <b>Horizon Relay:</b>\n<code>{esc_url}</code>",
-    ]
-    if resolved_app_link:
-        lines.append(
-            f"▸ <b>Mini App Endpoint:</b>\n{html.escape(resolved_app_link)}"
-        )
-
-    if registered:
-        mode_tag = (
-            "provisioned (/newapp)"
-            if sync_detail == "created_new"
-            else "verified (unchanged)"
-            if sync_detail in ("already_up_to_date", "adopted_unchanged")
-            else "synced (Edit Web App URL)"
-        )
-        lines.extend(
-            [
-                f"▸ <b>BotFather Sync:</b> <code>{html.escape(mode_tag)}</code>",
-                f"▸ <b>Inline Panel:</b> <code>{esc_prefix}dash</code>",
-            ]
-        )
-
-    lines.extend(
-        [
-            "",
-            "<i>Sanctuary Guard: доступ открыт строго владельцу по подписи Telegram initData (остальным — 403).</i>",
-        ]
-    )
-    return "\n".join(lines)
-
-
 def _unwrap_tl(value: Any) -> dict[str, Any]:
     if not isinstance(value, dict):
         return {}
@@ -504,7 +452,7 @@ def _find_button_by_text(msg: Any, *needles: str) -> tuple[int, str, bytes] | No
 def _find_next_page_button(msg: Any) -> tuple[int, str, bytes] | None:
     for entry in _flatten_buttons(msg):
         label = entry[1].strip()
-        if label in ("»", ">", "➡️", "Next", "Next »"):
+        if label in ("»", ">", ">", "Next", "Next »"):
             return entry
     return None
 
@@ -1027,7 +975,7 @@ def _rank_myapps_candidates(
         if (
             "back" in low
             or "cancel" in low
-            or low in ("»", "«", ">", "<", "➡️", "⬅️", "next", "prev", "next »", "« prev")
+            or low in ("»", "«", ">", "<", ">", "<", "next", "prev", "next »", "« prev")
         ):
             return (-10, -idx)
         score = 0
@@ -1527,65 +1475,10 @@ async def update_bot_menu_button(runtime: Any, owner_id: int | None, tunnel_url:
     return False
 
 
-async def notify_owner_saved_messages(
-    runtime: Any,
-    tunnel_url: str,
-    *,
-    bot_username: str | None = None,
-    short_name: str = "dashboard",
-    app_link: str | None = None,
-    registered: bool = False,
-    sync_detail: str = "",
-) -> bool:
-    with trusted_scope():
-        app_obj = getattr(runtime, "app", None)
-        mt = getattr(app_obj, "mt", None) if app_obj is not None else getattr(runtime, "mt", None)
-        if app_obj is None and mt is None:
-            return False
-
-        cfg = getattr(runtime, "config", None)
-        prefix = str(
-            getattr(cfg, "prefix", None)
-            or getattr(cfg, "command_prefix", None)
-            or "."
-        )
-        text = build_owner_tunnel_message(
-            tunnel_url,
-            bot_username=bot_username,
-            short_name=short_name,
-            app_link=app_link,
-            registered=registered,
-            sync_detail=sync_detail,
-            command_prefix=prefix,
-        )
-
-        sent_ok = False
-        if app_obj is not None and hasattr(app_obj, "send_msg"):
-            try:
-                await app_obj.send_msg("me", text, parse_mode="HTML", no_webpage=True)
-                sent_ok = True
-            except Exception as exc:
-                log.warning("Failed to send tunnel URL via app.send_msg: %s", exc)
-
-        if not sent_ok and mt is not None and hasattr(mt, "send_message"):
-            try:
-                await mt.send_message("me", text, parse_mode="HTML", link_preview=False)
-                sent_ok = True
-            except TypeError:
-                try:
-                    await mt.send_message("me", text, parse_mode="HTML")
-                    sent_ok = True
-                except Exception as exc:
-                    log.warning("Failed to send tunnel URL to Saved Messages: %s", exc)
-            except Exception as exc:
-                log.warning("Failed to send tunnel URL to Saved Messages: %s", exc)
-
-        if not sent_ok:
-            return False
-
-        owner_id = getattr(runtime, "owner_id", None) or getattr(cfg, "owner_id", None)
-        await update_bot_menu_button(runtime, owner_id, tunnel_url)
-        return True
+async def sync_owner_menu_button(runtime: Any, tunnel_url: str) -> bool:
+    cfg = getattr(runtime, "config", None)
+    owner_id = getattr(runtime, "owner_id", None) or getattr(cfg, "owner_id", None)
+    return await update_bot_menu_button(runtime, owner_id, tunnel_url)
 
 
 WebAppDbState = SanctuaryAppState

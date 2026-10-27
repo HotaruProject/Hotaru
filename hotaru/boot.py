@@ -37,7 +37,7 @@ def is_cli() -> bool:
     if sys.argv[0] == "-m":
         return True
     name = Path(sys.argv[0]).name
-    if name in {"__main__.py", "hotaru"}:
+    if name == "hotaru":
         return True
     try:
         return Path(sys.argv[0]).resolve() == Path(__file__).resolve().parent / "__main__.py"

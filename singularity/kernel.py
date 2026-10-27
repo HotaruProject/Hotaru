@@ -31,7 +31,7 @@ from .relay import (
     configure_botfather_webapp,
     ensure_inline_bot_ready,
     get_sanctuary_app_state,
-    notify_owner_saved_messages,
+    sync_owner_menu_button,
     resolve_inline_banner_url,
 )
 
@@ -675,15 +675,7 @@ class SingularityKernel:
                 await asyncio.sleep(1.5)
 
         if self._running and self.runtime is not None:
-            await notify_owner_saved_messages(
-                self.runtime,
-                url,
-                bot_username=sync_res.bot_username or self._resolve_bot_username() or None,
-                short_name=sync_res.short_name or self.config.short_name,
-                app_link=self.webapp_link,
-                registered=self.webapp_registered,
-                sync_detail=sync_res.detail,
-            )
+            await sync_owner_menu_button(self.runtime, url)
         return sync_res
 
     async def _start_tunnel_and_provision(self) -> None:

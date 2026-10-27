@@ -5,7 +5,7 @@ import re
 from pathlib import Path
 from typing import Any, cast
 
-SUPPORTED_LANGUAGES = ("ru", "en", "kz", "uk", "ja")
+SUPPORTED_LANGUAGES = ("ru", "en", "kz", "uk", "ja", "zh")
 DEFAULT_LANGUAGE = "en"
 _PLACEHOLDER_RE = re.compile(r"\{([a-zA-Z_][a-zA-Z0-9_]*)\}")
 

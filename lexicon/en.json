@@ -45,13 +45,13 @@
       "parameter_description": "• Description: <i>{description}</i>\n",
       "template_unavailable": "Template field unavailable or not exported: {name}",
       "error": "Error: {error}",
-      "boolean_true": "🔘 True",
-      "boolean_false": "⚪️ False",
+      "boolean_true": "[ ] True",
+      "boolean_false": "[ ] False",
       "minimum": "Minimum: {value}",
       "maximum": "Maximum: {value}",
-      "enter": "✏️ Enter",
+      "enter": "[e] Enter",
       "new_value": "New value for {parameter}",
-      "reset": "🔄 Reset",
+      "reset": "[~] Reset",
       "module_missing": "Module <code>{module}</code> not found.",
       "parameter_missing": "Parameter <code>{parameter}</code> not found.",
       "error_html": "Error: <code>{error}</code>"
@@ -140,7 +140,7 @@
       "logs": "Logs"
     },
     "hotaru-kernel": {
-      "description": "Hotaru kernel — system commands",
+      "description": "Hotaru kernel - system commands",
       "commands": {
         "ver": {
           "description": "Show the running commit"
@@ -207,7 +207,8 @@
         "en": "English",
         "kz": "Қазақша",
         "uk": "Українська",
-        "ja": "日本語"
+        "ja": "日本語",
+        "zh": "Chinese"
       }
     },
     "test-features": {
@@ -460,7 +461,7 @@
       "mirror_off": "Log mirroring disabled",
       "level_set": "Mirror level: {level}",
       "status": "Topic: {topic} • errors: {failed}",
-      "status_error": " • last: {error}",
+      "status_error": "• last: {error}",
       "no_observatory": "Observatory unavailable",
       "no_entries": "No entries at this level",
       "topic_unavailable": "Topic unavailable: {error}",
@@ -491,7 +492,7 @@
       "usage_sh": "<b>Usage:</b> <code>{prefix}sh &lt;command&gt;</code>",
       "usage_py": "<b>Usage:</b> <code>{prefix}py &lt;code&gt;</code> or reply to code; -so hides output",
       "cancelled": "Execution cancelled",
-      "done": "Done ✓",
+      "done": "Done [x]",
       "kill_reply": "<b>Reply to a running py/sh output message to kill it.</b>",
       "killed": "<b>Process killed!</b>",
       "no_process": "<b>No active process found for this message.</b>",
@@ -593,9 +594,12 @@
     },
     "singularity": {
       "description": "3D kernel telemetry & Observatory debug stream (Singularity)",
-      "card_title": "🕳 <b>Hotaru // Singularity</b>",
+      "card_title": "<b>Hotaru // Singularity</b>",
       "card_subtitle": "<i>3D Event Horizon · Node.Probe · Read-Only Observatory Stream</i>",
-      "open_button": "🕳 Open Singularity",
+      "probe": "Probe",
+      "relay": "Relay",
+      "inline_bot": "Inline Bot",
+      "open_button": "Open Singularity",
       "commands": {
         "dash": {
           "description": "Open inline launcher for the Singularity Mini App"
@@ -628,9 +632,10 @@
     "en": "English",
     "kz": "Kazakh",
     "uk": "Ukrainian",
-    "ja": "Japanese"
+    "ja": "Japanese",
+    "zh": "Chinese"
   },
-  "inline_commands_hint": "Pick a command — type @<bot> and its name in any chat",
+  "inline_commands_hint": "Pick a command - type @<bot> and its name in any chat",
   "settings": {
     "runtime_unavailable": "Runtime unavailable",
     "usage_alias": "Usage: {prefix}alias <alias> <command with arguments>",
@@ -663,7 +668,7 @@
     "module_info": "module: {module}\nversion: {version}\ncommands: {commands}\ncapabilities: {capabilities}\ndescription: {description}",
     "help_unavailable": "help unavailable",
     "page_unavailable": "help page unavailable",
-    "catalog": "catalog: ",
+    "catalog": "catalog:",
     "next": "Next",
     "bot_unavailable": "inline bot: unavailable",
     "bot_failed": "inline bot provisioning failed: {error}",
@@ -747,7 +752,7 @@
   "acl": {
     "owners": "<b>Owners</b><br>",
     "group_missing": "Group <code>{name}</code> not found",
-    "group_item": "<b>{name}</b> — {users} users, {rules} rules",
+    "group_item": "<b>{name}</b> - {users} users, {rules} rules",
     "groups": "<b>Security groups</b><br>",
     "group_rule": "<b>Rule added:</b> sgroup <code>{target}</code> → {kind}/{rule}{until}",
     "permissions": "<b>Permissions</b><br>",
