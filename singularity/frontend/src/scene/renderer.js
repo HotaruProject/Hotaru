@@ -111,13 +111,13 @@ void main() {
 `;
 
 const QUALITY_TIERS = [
-  { scale: 1.0, steps: 320 },
-  { scale: 0.78, steps: 280 },
-  { scale: 0.58, steps: 240 },
-  { scale: 0.44, steps: 195 },
-  { scale: 0.32, steps: 150 },
-  { scale: 0.24, steps: 110 },
-  { scale: 0.16, steps: 80 },
+  { scale: 1.0, steps: 360 },
+  { scale: 0.78, steps: 300 },
+  { scale: 0.58, steps: 250 },
+  { scale: 0.44, steps: 200 },
+  { scale: 0.32, steps: 160 },
+  { scale: 0.24, steps: 120 },
+  { scale: 0.16, steps: 90 },
 ];
 
 function compileShader(gl, type, source) {
@@ -242,7 +242,7 @@ export class SceneRenderer {
         blackHole: linkProgram(
           gl,
           BLACK_HOLE_VERTEX_SOURCE,
-          blackHoleFragmentSource({ steps: 320, octaves: 4 })
+          blackHoleFragmentSource()
         ),
         blit: linkProgram(
           gl,
