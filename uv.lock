@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = ">=3.13"
 
 [[package]]
@@ -239,25 +239,25 @@ wheels = [
 
 [[package]]
 name = "goygram"
-version = "0.8.27"
+version = "0.8.28"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiohttp" },
     { name = "qrcode" },
     { name = "rich" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/55/62/7783a7f9f023fe3afca77ba33742d5efddc6f3c0b7fe88c904b685e88148/goygram-0.8.27.tar.gz", hash = "sha256:e53b311e55cd96326a1242fc9f16f774117f6c3e8b1c072980fdae28d107401e", size = 278577, upload-time = "2026-10-26T19:18:10.986Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/47/4a/79e36bd583e8258f7cf1affb5d0293becbe1473c6c463fc50369d0c28d8b/goygram-0.8.28.tar.gz", hash = "sha256:d0ab1c4492ee8c957aef99aa075424a8052e5c29a57298d69702dc4019590d07", size = 294594, upload-time = "2026-10-30T19:03:15.922Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/6b/e4/ca5e0087901bc65596fc98e390594f8409189cc8800ad1019b997083844d/goygram-0.8.27-cp38-abi3-android_24_arm64_v8a.whl", hash = "sha256:d9e321dcf1dce97b2525bd7111a47d7c2b927d33122a1f93fce98b7a364316f0", size = 576119, upload-time = "2026-10-26T19:17:57.102Z" },
-    { url = "https://files.pythonhosted.org/packages/2c/1a/448e12d1280bbec7a25ca7f5f886170a0d38f48137a2879e69c90571df81/goygram-0.8.27-cp38-abi3-android_24_x86_64.whl", hash = "sha256:b4d7623063b2b00063b97837062b285b84b653f77f1d117e1174073af39b4311", size = 592322, upload-time = "2026-10-26T19:17:58.609Z" },
-    { url = "https://files.pythonhosted.org/packages/17/bf/c40c88c30a3ce7dac155676cfacae45d133ab3cfe473638b0d673f6f12b2/goygram-0.8.27-cp38-abi3-macosx_10_12_x86_64.macosx_11_0_arm64.macosx_10_12_universal2.whl", hash = "sha256:953253e201777b709f709e2536f94705b004a523166183ec9f2b0a6ca27b9adc", size = 834358, upload-time = "2026-10-26T19:17:59.956Z" },
-    { url = "https://files.pythonhosted.org/packages/bc/26/d5e050f1e6a13075d9bf1eb7a76478c462cec62d06337c71d2eb5e3367e0/goygram-0.8.27-cp38-abi3-macosx_11_0_arm64.whl", hash = "sha256:1ecdd5f4f31c71734078826a1e62438e7ccfc32a2a1e58910d9ff8da9022e829", size = 552744, upload-time = "2026-10-26T19:18:01.62Z" },
-    { url = "https://files.pythonhosted.org/packages/b2/7c/757549c57212345de4555b62f97dc256db153da80610f14def8ffb9eeb6c/goygram-0.8.27-cp38-abi3-manylinux_2_28_aarch64.whl", hash = "sha256:9d36ac69ff4f1c2e4b530a53ac556628aa9f4fa9af7f9432c0e8534c96cb2f9a", size = 566532, upload-time = "2026-10-26T19:18:03.126Z" },
-    { url = "https://files.pythonhosted.org/packages/a0/b0/302e579af06399a206f8080983631f1f656016cb515aa45f3bc28e1534c6/goygram-0.8.27-cp38-abi3-manylinux_2_34_x86_64.whl", hash = "sha256:f90060b9a5feaae1f51146a3261f0b6d77979d0b7704ebed446b2de6cfd46294", size = 581269, upload-time = "2026-10-26T19:18:04.516Z" },
-    { url = "https://files.pythonhosted.org/packages/40/f1/c653b0d898d628bc812003f7527a265cee3a8e215230f47ee9e97fc59b31/goygram-0.8.27-cp38-abi3-musllinux_1_2_aarch64.whl", hash = "sha256:d49786f87bd6b999a7090a9074f21e744db4640a32967661bbc0bcb1612adf24", size = 745435, upload-time = "2026-10-26T19:18:05.814Z" },
-    { url = "https://files.pythonhosted.org/packages/38/e6/089a22af63904ded5455bb09d5323c5ffab4c91a2fb5c09ba2fe01c39e31/goygram-0.8.27-cp38-abi3-musllinux_1_2_x86_64.whl", hash = "sha256:bdf2cfcb2f089757b1c1e21c7debaf46f687daed4c1bbd112ed361c0503a198e", size = 793267, upload-time = "2026-10-26T19:18:07.286Z" },
-    { url = "https://files.pythonhosted.org/packages/2b/44/e1ade9f5f245ea1eef17dabef1cd4cfea05790ad1c09b2158421ec6443b9/goygram-0.8.27-cp38-abi3-win_amd64.whl", hash = "sha256:c70afe28119730bf1e5a94f4966fc7611ee74f70f8b9e1e70e8cdff46d245ed4", size = 497895, upload-time = "2026-10-26T19:18:08.596Z" },
-    { url = "https://files.pythonhosted.org/packages/7b/8f/714036afd719a67b726ab544d9a2791a49ab6a60d3036f872745ebe36c81/goygram-0.8.27-cp38-abi3-win_arm64.whl", hash = "sha256:7451cd8bc43a2a1e1e4ab33c6c6d1db17cd6a53eb85dd1aee49b497bd7724b14", size = 484349, upload-time = "2026-10-26T19:18:09.78Z" },
+    { url = "https://files.pythonhosted.org/packages/09/3c/7210b73b4642c417f23b77750d894af119e5df2d8b3e2a2191127d9c2bf8/goygram-0.8.28-cp38-abi3-android_24_arm64_v8a.whl", hash = "sha256:68354290c00b08365495321a8af2d118692557f687c0346626faaf5205b21b08", size = 576325, upload-time = "2026-10-30T19:03:01.549Z" },
+    { url = "https://files.pythonhosted.org/packages/e7/b4/5d67778289898085f69fb82637772f47f90db5955dba96e36e1656295350/goygram-0.8.28-cp38-abi3-android_24_x86_64.whl", hash = "sha256:8585c709aaa1b82672855c594e9b4470fb823b0c3eb30132967058c6f5099f21", size = 592522, upload-time = "2026-10-30T19:03:03.517Z" },
+    { url = "https://files.pythonhosted.org/packages/10/af/6403be18c91cffc36ace6e0dae2fb7a9756bcb0d3509dc00b8d09b3b1629/goygram-0.8.28-cp38-abi3-macosx_10_12_universal2.macosx_10_12_x86_64.macosx_11_0_arm64.whl", hash = "sha256:62034509ab17f409e630d3813ca7a58c3b7b3d6a8c4d23fc2e661d76bf14be08", size = 834630, upload-time = "2026-10-30T19:03:04.983Z" },
+    { url = "https://files.pythonhosted.org/packages/4c/8c/0406c9102984b8fb9261f23285aac78432b1d2e86ff7a387b9b2cf2e123f/goygram-0.8.28-cp38-abi3-macosx_11_0_arm64.whl", hash = "sha256:f48b88923d50374d546d1fa9fdd02a2e23b22e2bda7980078aa5c7092ddd8765", size = 552973, upload-time = "2026-10-30T19:03:06.415Z" },
+    { url = "https://files.pythonhosted.org/packages/21/30/129369d5edb37f5f9edbba3f7cb0cedbe95fd208ff3b96a92f0c86583e40/goygram-0.8.28-cp38-abi3-manylinux_2_28_aarch64.whl", hash = "sha256:45ea43f68901918e01a576e0e817d5a823e426abd3d8d841b6ce219c7afcd73c", size = 566736, upload-time = "2026-10-30T19:03:07.898Z" },
+    { url = "https://files.pythonhosted.org/packages/15/4d/17f687fce34196c6faf67d0fe605b38955990c7b0568f23b54b306b1a95c/goygram-0.8.28-cp38-abi3-manylinux_2_34_x86_64.whl", hash = "sha256:c3f8a56a98ac0679dbf41979f9f9abbf473953ebaf85ec0437024e500836534e", size = 581471, upload-time = "2026-10-30T19:03:09.289Z" },
+    { url = "https://files.pythonhosted.org/packages/c4/a0/59a64a5339968797d6adcb6991d942578a195e611b323b99168ceed9d701/goygram-0.8.28-cp38-abi3-musllinux_1_2_aarch64.whl", hash = "sha256:cca365410e4711b6a986214773a20f894d26fee12a01c09396fe47a5caafb7a3", size = 745642, upload-time = "2026-10-30T19:03:10.639Z" },
+    { url = "https://files.pythonhosted.org/packages/fa/3f/27ff2851007f6fedb7c6a00626eb65d5d7ca2fd63df3c4be5aeb26d23a7d/goygram-0.8.28-cp38-abi3-musllinux_1_2_x86_64.whl", hash = "sha256:d6a34148e335d92e765df27644bd34089fc02b5b2eb09428e167559bbd19b12c", size = 793469, upload-time = "2026-10-30T19:03:11.947Z" },
+    { url = "https://files.pythonhosted.org/packages/ff/37/721e6af4183c7b5184b33de61ef18e0a1ae6339affc66bf4a64a88e9d867/goygram-0.8.28-cp38-abi3-win_amd64.whl", hash = "sha256:0a36f303031f1c7bc39c978eff642d956d757b9e69af6d78db3929078f64c76c", size = 498106, upload-time = "2026-10-30T19:03:13.283Z" },
+    { url = "https://files.pythonhosted.org/packages/e2/05/aeca8f6f7ad2a406ca112565880e3c8c0cf45493fab31f1d26fd94bc1f83/goygram-0.8.28-cp38-abi3-win_arm64.whl", hash = "sha256:c3bf522482b39ab8a6739041f40575c3b7a28efbca10e47c998c0a858f23f119", size = 484557, upload-time = "2026-10-30T19:03:14.65Z" },
 ]
 
 [[package]]
@@ -270,7 +270,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "goygram", specifier = "==0.8.27" },
+    { name = "goygram", specifier = "==0.8.28" },
     { name = "psutil", specifier = ">=6.1.0" },
 ]
 
