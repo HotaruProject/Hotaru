@@ -472,9 +472,6 @@ class InlineManager:
         if info is None:
             raise InlineError("no inline bot available: nothing stored, nothing found, creation disabled")
         self._persist(info)
-        branding = getattr(self.runtime, "branding", None)
-        if branding is not None:
-            await branding.apply_bot_avatar(info)
         if recovered:
             try:
                 await asyncio.wait_for(self._tune_bot(info), timeout=10.0)

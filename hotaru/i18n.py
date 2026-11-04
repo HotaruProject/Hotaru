@@ -32,7 +32,10 @@ class Lexicon:
         self._cache: dict[str, dict[str, object]] = {}
 
     def available_languages(self) -> tuple[str, ...]:
-        return tuple(language for language in SUPPORTED_LANGUAGES if (self.root / f"{language}.json").is_file())
+        files = {f.stem.casefold() for f in self.root.glob("*.json")}
+        known = [lang for lang in SUPPORTED_LANGUAGES if lang in files]
+        custom = sorted(files - set(SUPPORTED_LANGUAGES))
+        return tuple(known + custom)
 
     def load(self, language: str) -> dict[str, object]:
         language = self.validate_language(language)
@@ -47,7 +50,7 @@ class Lexicon:
             raise TranslationError(f"locale root must be an object: {language}")
         payload = cast('dict[str, object]', decoded)
         meta = payload.get("meta")
-        if meta is not None and (not isinstance(meta, dict) or cast('dict[str, object]', meta).get("language", language) != language):
+        if meta is not None and not isinstance(meta, dict):
             raise TranslationError(f"locale metadata is invalid: {language}")
         self._validate_values(payload)
         self._cache[language] = payload
@@ -59,9 +62,7 @@ class Lexicon:
     def get(self, locale: str, key: str, default: Any = None, **params: Any) -> str:
         if not key:
             raise TranslationError("translation key must be a non-empty string")
-        languages: list[str] = []
-        if locale.casefold() in SUPPORTED_LANGUAGES:
-            languages.append(locale.casefold())
+        languages: list[str] = [locale.casefold()]
         for extra in (self.default_language, "ru", "en"):
             if extra not in languages:
                 languages.append(extra)
@@ -108,15 +109,17 @@ class Lexicon:
             value = mapping[part]
         return value
 
-    @staticmethod
-    def validate_language(language: str) -> str:
-        if language.casefold() not in SUPPORTED_LANGUAGES:
-            raise TranslationError(f"unsupported language: {language}")
-        return language.casefold()
+    def validate_language(self, language: str) -> str:
+        code = str(language).casefold().strip()
+        if code in SUPPORTED_LANGUAGES or (self.root / f"{code}.json").is_file() or bool(re.fullmatch(r"[a-z]{2,8}(?:-[a-z0-9]{2,8})*", code)):
+            return code
+        raise TranslationError(f"unsupported language: {language}")
 
-    @staticmethod
-    def _validate_language(language: object) -> bool:
-        return isinstance(language, str) and language.casefold() in SUPPORTED_LANGUAGES
+    def _validate_language(self, language: object) -> bool:
+        if not isinstance(language, str):
+            return False
+        code = language.casefold().strip()
+        return code in SUPPORTED_LANGUAGES or (self.root / f"{code}.json").is_file() or bool(re.fullmatch(r"[a-z]{2,8}(?:-[a-z0-9]{2,8})*", code))
 
     @classmethod
     def _validate_values(cls, value: object) -> None:

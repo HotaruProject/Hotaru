@@ -326,7 +326,6 @@ def _offer(ctx: Any, text: str, latest: str) -> Any:
             k.primary(btn_update, update_now),
             k.button(btn_ignore, skip_update, commit=latest),
         ]],
-        banner=k.banner("brand"),
         rich=True,
     )
 

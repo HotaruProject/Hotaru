@@ -186,12 +186,12 @@ def home(ctx: Any, nav: Any = None) -> Any:
     lines.append(f"<code>{_escape(ctx.runtime.config.prefix)}prefix</code> · <code>{_escape(ctx.runtime.config.prefix)}alias</code> · <code>{_escape(ctx.runtime.config.prefix)}lsalias</code>")
     if not modules:
         lines.append(f"<i>{_escape(ctx.t('kernel.config.empty'))}</i>")
-        return k.screen("\n".join(lines), [k.footer()], banner=k.banner("brand"), rich=True)
+        return k.screen("\n".join(lines), [k.footer()], rich=True)
     for module_id, manifest, schema in modules:
         description = str(manifest.localized(ctx.runtime.language(), manifest.description).get("description", "") or "")
-        line = f"{k.tap(module_id, module, id=module_id)} {k.badge(str(len(schema)))}"
+        line = f"{k.module_icon(module_id)} {k.tap(module_id, module, id=module_id)} {k.badge(str(len(schema)))}"
         lines.append(line + (f" <i>{_escape(ctx.tools.truncate(description, 48))}</i>" if description else ""))
-    return k.screen("\n".join(lines), [k.footer()], banner=k.banner("brand"), rich=True)
+    return k.screen("\n".join(lines), [k.footer()], rich=True)
 
 
 def _module_screen(ctx: Any, module_id: str, origin: Optional[str]) -> Any:
@@ -206,17 +206,17 @@ def _module_screen(ctx: Any, module_id: str, origin: Optional[str]) -> Any:
     for key, field in schema.items():
         default = _is_default(config, key)
         changed += not default
-        mark = "" if default else " ✏️"
+        mark = "" if default else " " + k.icon("edit")
         entries.append(f"{k.tap(key, param, id=module_id, key=key, origin=origin)}{mark}  {_shown(ctx, field, config.get(key), 32)}")
         description = _describe(ctx, manifest, field)
         if description:
             notes.append(f"• <b>{_escape(key)}</b> — {_escape(ctx.tools.truncate(description, 160))}")
-    head = f"<b>{_escape(module_id)}</b>  {k.badge(_escape(ctx.t('kernel.config.title_short')))}"
+    head = f"{k.module_icon(module_id)} <b>{_escape(module_id)}</b>  {k.badge(_escape(ctx.t('kernel.config.title_short')))}"
     if changed:
         head += " " + k.badge(ctx.t("kernel.config.changed", count=changed), "primary")
     text = head + "\n" + "\n".join(entries)
     if notes:
-        text += k.details(f"ℹ️ {_escape(ctx.t('kernel.config.about'))}", "<br>".join(notes))
+        text += k.details(f"{k.icon('info')} {_escape(ctx.t('kernel.config.about'))}", "<br>".join(notes))
     rows: List[List[Any]] = []
     if changed:
         rows.append([k.button(ctx.t("kernel.config.reset_all"), confirm_reset, id=module_id, origin=origin)])
@@ -312,7 +312,7 @@ def _param_screen(ctx: Any, module_id: str, key: str, origin: Optional[str], pag
     default = config.default(key)
     validator = field.validator
     args = {"id": module_id, "key": key, "origin": origin}
-    lines = [f"{_escape(module_id)} › <b>{_escape(key)}</b>"]
+    lines = [f"{k.module_icon(module_id)} {_escape(module_id)} › <b>{_escape(key)}</b>"]
     description = _describe(ctx, manifest, field)
     if description:
         lines.append(f"<i>{_escape(description)}</i>")

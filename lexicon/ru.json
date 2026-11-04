@@ -212,10 +212,19 @@
     },
     "translations": {
       "description": "Управление переводами",
+      "no_text": "Текст для перевода не указан",
       "commands": {
         "language": {
           "description": "Показать или изменить язык",
           "usage": "[язык]"
+        },
+        "translate": {
+          "description": "Перевести текст",
+          "usage": "[язык] <текст/ответ>"
+        },
+        "loadlex": {
+          "description": "Загрузить языковой пакет",
+          "usage": "[ссылка/путь/файл]"
         }
       },
       "native": {

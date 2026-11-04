@@ -11,6 +11,25 @@ from typing import Any, Callable, List, Tuple
 _page_size = 70
 _open_limit = 8
 
+_MODULE_ICONS = {
+    "help": '<tg-emoji emoji-id="5258328383183396223">📖</tg-emoji>',
+    "config": '<tg-emoji emoji-id="5258096772776991776">⚙️</tg-emoji>',
+    "settings": '<tg-emoji emoji-id="5258096772776991776">⚙️</tg-emoji>',
+    "accounts": '<tg-emoji emoji-id="5258513401784573443">👥</tg-emoji>',
+    "acl": '<tg-emoji emoji-id="5258476306152038031">🔒</tg-emoji>',
+    "executor": '<tg-emoji emoji-id="5370546867786523009">🔤</tg-emoji>',
+    "updater": '<tg-emoji emoji-id="5258514780469075716">📥</tg-emoji>',
+    "translations": '<tg-emoji emoji-id="5260512129240276089">🌐</tg-emoji>',
+    "logger": '<tg-emoji emoji-id="5257965810634202885">📄</tg-emoji>',
+    "info": '<tg-emoji emoji-id="5258503720928288433">ℹ️</tg-emoji>',
+    "ping": '<tg-emoji emoji-id="5258152182150077732">⚡</tg-emoji>',
+    "power": '<tg-emoji emoji-id="5258084656674250503">🚪</tg-emoji>',
+    "backups": '<tg-emoji emoji-id="5257969839313526622">📁</tg-emoji>',
+    "catalyst": '<tg-emoji emoji-id="5258514780469075716">📥</tg-emoji>',
+    "singularity": '<tg-emoji emoji-id="5258152182150077732">⚡</tg-emoji>',
+    "shield": '<tg-emoji emoji-id="5258476306152038031">🔒</tg-emoji>',
+}
+
 
 def _escape(value: Any) -> str:
     import html
@@ -59,7 +78,8 @@ def _catalog(runtime: Any) -> List[Tuple[str, Any, bool]]:
 def _entry(ctx: Any, module_id: str, manifest: Any, fn: Any, **args: Any) -> str:
     k = ctx.screens
     description = _description(ctx.runtime, manifest)
-    line = k.tap(module_id, fn, id=module_id, **args)
+    icon = _MODULE_ICONS.get(module_id, '<tg-emoji emoji-id="5257969839313526622">📁</tg-emoji>')
+    line = f"{icon} " + k.tap(module_id, fn, id=module_id, **args)
     return line + (f"  <i>{_escape(ctx.tools.truncate(description, 48))}</i>" if description else "")
 
 
@@ -69,7 +89,7 @@ def home(ctx: Any, nav: Any = None) -> Any:
     catalog = _catalog(runtime)
     items, page, pages = k.page(catalog, nav.int("page") if nav is not None else 0, _page_size)
     kernel_count = sum(1 for row in catalog if row[2])
-    lines = [k.banner("help"),
+    lines = [
         k.wordmark() + "  " + k.badge(ctx.t("kernel.help_ui.count", count=len(catalog)), "primary")
         + " " + k.badge(ctx.t("kernel.help_ui.prefix", prefix=runtime.config.prefix)),
     ]
@@ -79,7 +99,8 @@ def home(ctx: Any, nav: Any = None) -> Any:
         if not entries:
             continue
         title = ctx.t("kernel.help_ui.kernel_modules" if kernel else "kernel.help_ui.user_modules")
-        summary = f"<b>{_escape(title)}</b> · {kernel_count if kernel else user_count}"
+        icon = '<tg-emoji emoji-id="4974681956907221809">▪️</tg-emoji>' if kernel else '<tg-emoji emoji-id="4974508259839836856">▪️</tg-emoji>'
+        summary = f"{icon} <b>{_escape(title)}</b> · {kernel_count if kernel else user_count}"
         lines.append(k.details(summary, "\n".join(entries), open=not kernel or user_count == 0))
     rows = [k.pager(home, page, pages)]
     rows.append([k.input(ctx.t("ui.search"), search, ctx.t("kernel.help_ui.search_prompt")), k.close()])
@@ -96,8 +117,9 @@ def _card(ctx: Any, module_id: str, actor: Any, back: Any, **back_args: Any) -> 
     prefix = runtime.config.prefix
     kernel = _is_kernel(runtime, module_id)
     badge = ctx.t("kernel.help_ui.kernel_badge" if kernel else "kernel.help_ui.user_badge")
+    icon = _MODULE_ICONS.get(module_id, '<tg-emoji emoji-id="5257969839313526622">📁</tg-emoji>')
     lines = [
-        f"<b>{_escape(module_id)}</b>  "
+        f"{icon} <b>{_escape(module_id)}</b>  "
         + k.badge(f"v{manifest.version}") + " " + k.badge(badge, "primary" if kernel else "success"),
     ]
     description = _description(runtime, manifest)

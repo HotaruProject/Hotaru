@@ -212,10 +212,19 @@
     },
     "translations": {
       "description": "Translation management",
+      "no_text": "No text provided for translation",
       "commands": {
         "language": {
           "description": "Show or change language",
           "usage": "[language]"
+        },
+        "translate": {
+          "description": "Translate text",
+          "usage": "[language] <text/reply>"
+        },
+        "loadlex": {
+          "description": "Load language pack",
+          "usage": "[url/path/file]"
         }
       },
       "native": {

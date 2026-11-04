@@ -1,32 +1,41 @@
 HOTARU = {
     "id": "translations",
-    "version": "2.0.0",
-    "commands": ["language"],
-    "capabilities": []
+    "version": "2.1.0",
+    "commands": ["language", "translate", "loadlex"],
+    "capabilities": ["mt", "net", "files", "state"],
 }
 
+import html
+import json
+import logging
+import re
+import tempfile
+import urllib.request
+from pathlib import Path
 from typing import Any, Callable, List
 
+log = logging.getLogger(__name__)
 
 LANGUAGES = ("ru", "en", "kz", "uk", "ja", "zh")
 
 
 def _escape(value: Any) -> Any:
-    import html
     return html.escape(str(value), quote=False)
 
 
 def home(ctx: Any, nav: Any = None) -> Any:
     k = ctx.screens
     current = ctx.runtime.language()
+    langs = ctx.runtime.lexicon.available_languages() if getattr(ctx.runtime, "lexicon", None) is not None else LANGUAGES
     options = [
-        k.button(k.radio(ctx.t('kernel.translations.native.' + language), language == current), select, style="success" if language == current else None, language=language)
-        for language in LANGUAGES
+        k.button(k.radio(ctx.t('kernel.translations.native.' + language, language.upper()), language == current), select, style="success" if language == current else None, language=language)
+        for language in langs
     ]
     rows = k.grid(options, 2)
     rows.append(k.footer())
     title = _escape(ctx.t('commands.lang.description'))
-    text = f"<b>🌐 {title}</b>\n{_escape(ctx.t('commands.lang.current', language=ctx.t('kernel.translations.native.' + current)))}"
+    current_label = ctx.t('kernel.translations.native.' + current, current.upper())
+    text = f'<b><tg-emoji emoji-id="5260512129240276089">📚</tg-emoji> {title}</b>\n{_escape(ctx.t("commands.lang.current", language=current_label))}'
     return k.screen(text, rows)
 
 
@@ -55,7 +64,7 @@ async def _show(ctx: Any) -> Any:
     await ctx.screens.show(home(ctx))
 
 
-async def command_lang(ctx: Any, invocation: Any) -> Any:
+async def command_language(ctx: Any, invocation: Any) -> Any:
     if len(invocation.args) > 1:
         await ctx.respond(ctx.t('commands.lang.usage', prefix=ctx.runtime.config.prefix))
         return
@@ -63,16 +72,175 @@ async def command_lang(ctx: Any, invocation: Any) -> Any:
         try:
             ctx.runtime.set_language(invocation.args[0])
         except Exception:
-            language_key: Callable[[str], List[str]] = lambda code: [code, ctx.t('kernel.translations.native.' + code)]
-            matches = await ctx.tools.search(list(LANGUAGES), invocation.args[0], key=language_key, limit=5)
+            language_key: Callable[[str], List[str]] = lambda code: [code, ctx.t('kernel.translations.native.' + code, code)]
+            langs = list(ctx.runtime.lexicon.available_languages()) if getattr(ctx.runtime, "lexicon", None) is not None else list(LANGUAGES)
+            matches = await ctx.tools.search(langs, invocation.args[0], key=language_key, limit=5)
             text = _escape(ctx.t('commands.lang.invalid', language=invocation.args[0]))
             for hit in matches:
                 code = hit['value']
-                text += f"\n<code>{_escape(ctx.runtime.config.prefix)}lang {code}</code> · {_escape(ctx.t('kernel.translations.native.' + code))}"
+                text += f"\n<code>{_escape(ctx.runtime.config.prefix)}language {code}</code> · {_escape(ctx.t('kernel.translations.native.' + code, code))}"
             await ctx.respond(text)
             return
     await _show(ctx)
 
 
-async def command_language(ctx: Any, invocation: Any) -> Any:
-    await command_lang(ctx, invocation)
+async def _extract_reply_source(ctx: Any, invocation: Any) -> Any:
+    reply = getattr(invocation, "reply", None)
+    if reply is None and getattr(invocation, "message", None) is not None:
+        reply = getattr(invocation.message, "reply_to_message", None) or getattr(invocation.message, "reply", None)
+    if reply is None and getattr(invocation, "chat_id", None) and getattr(invocation, "reply_to_msg_id", None):
+        try:
+            reply = await ctx.msg(invocation.chat_id, invocation.reply_to_msg_id)
+        except Exception:
+            reply = None
+    return reply
+
+
+async def command_translate(ctx: Any, invocation: Any) -> Any:
+    args = list(invocation.args or [])
+    to_lang = None
+    target_text = None
+
+    if args and re.fullmatch(r"[a-zA-Z]{2,3}(?:-[a-zA-Z0-9]{2,8})*", args[0]):
+        if len(args) > 1:
+            to_lang = args[0].lower()
+            target_text = " ".join(args[1:])
+        else:
+            to_lang = args[0].lower()
+    elif args:
+        target_text = " ".join(args)
+
+    if to_lang is None:
+        to_lang = ctx.runtime.language() if getattr(ctx, "runtime", None) is not None else "en"
+
+    reply = await _extract_reply_source(ctx, invocation)
+    source_msg = reply if reply is not None else getattr(invocation, "message", None)
+
+    if not target_text and source_msg is not None:
+        doc = getattr(source_msg, "document", None) or (source_msg.get("document") if isinstance(source_msg, dict) else None)
+        if doc is None and getattr(source_msg, "media", None):
+            media = getattr(source_msg, "media")
+            doc = getattr(media, "document", None) or (media.get("document") if isinstance(media, dict) else None)
+        if doc is not None and getattr(ctx.runtime, "_download_module_message", None) is not None:
+            with tempfile.NamedTemporaryFile(suffix=".txt", delete=False) as handle:
+                tmp_path = Path(handle.name)
+            try:
+                await ctx.runtime._download_module_message(source_msg, tmp_path)
+                target_text = tmp_path.read_text(encoding="utf-8", errors="replace")
+            except Exception as exc:
+                log.error("translate file fetch failed: %s", exc)
+            finally:
+                tmp_path.unlink(missing_ok=True)
+
+    if not target_text and reply is not None:
+        target_text = getattr(reply, "text", None) or getattr(reply, "caption", None)
+        if isinstance(target_text, dict):
+            target_text = target_text.get("text", "")
+
+    if not target_text and getattr(invocation, "message", None) is not None:
+        target_text = getattr(invocation.message, "caption", None)
+        if isinstance(target_text, dict):
+            target_text = target_text.get("text", "")
+
+    if not target_text:
+        await ctx.respond(f'<tg-emoji emoji-id="5778527486270770928">❌</tg-emoji> <b>{_escape(ctx.t("kernel.translations.no_text", "Текст для перевода не указан"))}</b>', parse_mode="HTML")
+        return
+
+    try:
+        translated = await ctx.translate(target_text, to_lang=to_lang)
+    except Exception as exc:
+        err = html.escape(str(exc), quote=False)
+        await ctx.respond(f'<tg-emoji emoji-id="5778527486270770928">❌</tg-emoji> <b>Ошибка перевода:</b>\n<blockquote>{err}</blockquote>', parse_mode="HTML")
+        return
+
+    res = f'<tg-emoji emoji-id="5260512129240276089">📚</tg-emoji> <b>{to_lang.upper()}</b>:\n{html.escape(translated, quote=False)}'
+    await ctx.paginate(res)
+
+
+async def command_loadlex(ctx: Any, invocation: Any) -> Any:
+    runtime = ctx.runtime
+    if runtime is None:
+        await ctx.respond(ctx.t('kernel.kernel.runtime_unavailable'))
+        return
+
+    temporary = None
+    log_lines = ["-----> Fetching lexicon pack..."]
+    await ctx.respond(f"<pre>{chr(10).join(log_lines)}</pre>", parse_mode="HTML")
+
+    try:
+        source = None
+        code_override = None
+        if invocation.args:
+            arg = str(invocation.args[0]).strip()
+            if arg.startswith("https://") or arg.startswith("http://"):
+                req = urllib.request.Request(arg, headers={"User-Agent": "Hotaru/1.0"})
+                with urllib.request.urlopen(req, timeout=10) as resp:
+                    source = resp.read().decode("utf-8")
+                code_override = Path(arg.split("?")[0]).stem.lower()
+            elif Path(arg).is_file():
+                source = Path(arg).read_text(encoding="utf-8")
+                code_override = Path(arg).stem.lower()
+            elif arg.startswith("{") and arg.endswith("}"):
+                source = arg
+
+        if source is None:
+            if invocation.message is None:
+                await ctx.respond("<pre> !     Error: reply to a JSON file or provide a url</pre>", parse_mode="HTML", output="edit")
+                return
+
+            reply = await _extract_reply_source(ctx, invocation)
+            source_msg = reply if reply is not None else invocation.message
+            reply_text = str(getattr(source_msg, "text", "") or "").strip()
+
+            if reply_text.startswith("{") and reply_text.endswith("}"):
+                source = reply_text
+            else:
+                with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as handle:
+                    temporary = Path(handle.name)
+                await runtime._download_module_message(source_msg, temporary)
+                source = temporary.read_text(encoding="utf-8")
+                doc = getattr(source_msg, "document", None) or (source_msg.get("document") if isinstance(source_msg, dict) else None)
+                if doc:
+                    file_name = getattr(doc, "file_name", None) or (doc.get("file_name") if isinstance(doc, dict) else None)
+                    if file_name and str(file_name).endswith(".json"):
+                        code_override = Path(str(file_name)).stem.lower()
+
+        log_lines[-1] += " done"
+        log_lines.append("-----> Validating lexicon format...")
+        await ctx.respond(f"<pre>{chr(10).join(log_lines)}</pre>", parse_mode="HTML", output="edit")
+
+        data = json.loads(source)
+        if not isinstance(data, dict):
+            raise ValueError("Lexicon root must be a JSON object")
+
+        meta = data.get("meta") if isinstance(data.get("meta"), dict) else {}
+        code = str(meta.get("code") or meta.get("language") or code_override or "custom").strip().lower()
+        name = str(meta.get("name") or code.upper())
+        if not re.fullmatch(r"[a-z]{2,8}(?:-[a-z0-9]{2,8})*", code):
+            code = "custom"
+
+        data["meta"] = {**meta, "language": code, "name": name}
+        lex_dir = getattr(runtime, "lexicon_dir", Path("lexicon"))
+        lex_dir.mkdir(parents=True, exist_ok=True)
+        target = lex_dir / f"{code}.json"
+        target.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+
+        if runtime.lexicon is not None:
+            runtime.lexicon._cache.clear()
+
+        runtime.set_language(code)
+        log_lines[-1] += " done"
+        log_lines.append(f"-----> Loaded language pack: {name} [{code}]")
+        await ctx.respond(f"<pre>{chr(10).join(log_lines)}</pre>", parse_mode="HTML", output="edit")
+    except Exception as exc:
+        log_lines.append(f" !     {type(exc).__name__}: {html.escape(str(exc))}")
+        await ctx.respond(f"<pre>{chr(10).join(log_lines)}</pre>", parse_mode="HTML", output="edit")
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+
+
+command_lang = command_language
+command_tr = command_translate
+command_ldlex = command_loadlex
+command_lexicon = command_loadlex

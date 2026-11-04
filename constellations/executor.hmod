@@ -166,8 +166,8 @@ class OutputUpdater:
             "output": '<tg-emoji emoji-id="5257965174979042426">📝</tg-emoji>',
             "traceback": '<tg-emoji emoji-id="5778527486270770928">❌</tg-emoji>',
             "error": '<tg-emoji emoji-id="5778527486270770928">❌</tg-emoji>',
-            "code": '<tg-emoji emoji-id="5289608677244811430">🐍</tg-emoji>',
-            "command": '<tg-emoji emoji-id="5298632983354291951">🧑‍💻</tg-emoji>',
+            "code": "",
+            "command": "",
             "result": '<tg-emoji emoji-id="5260726538302660868">✅</tg-emoji>',
         }
         icon = icon_map.get(title, "")
@@ -217,7 +217,7 @@ class OutputUpdater:
     async def _deliver(self, text: str, final: bool) -> None:
         if final and len(self._pages) > 1:
             try:
-                await self.ctx.screens.show(_output_screen(self.ctx, _keep_pages(self.ctx, self._pages), self._pages, 0), fallback=False)
+                await self.ctx.paginate(self._pages)
                 return
             except Exception as exc:
                 logging.getLogger(__name__).error("executor screen delivery failed: %s: %s", type(exc).__name__, exc)
@@ -299,37 +299,6 @@ class OutputUpdater:
     async def finish(self, sections: list[Any] | None = None, returncode: int | None = None) -> None:
         self.closed = True
         await self._send(sections, returncode=returncode, final=True)
-
-
-_kept = 8
-
-
-def _keep_pages(ctx: Any, pages: list[str]) -> str:
-    import secrets
-    kept: list[Any] = [entry for entry in _outputs(ctx) if len(entry) == 2]
-    key = secrets.token_hex(4)
-    kept.append([key, pages])
-    ctx.state.set("outputs", kept[-_kept:])
-    return key
-
-
-def _outputs(ctx: Any) -> list[list[Any]]:
-    raw = ctx.state.get("outputs", [])
-    return [cast('list[Any]', entry) for entry in cast('list[Any]', raw) if isinstance(entry, list)] if isinstance(raw, list) else []
-
-
-def _output_screen(ctx: Any, key: str, pages: list[str], page: int) -> Any:
-    k = ctx.screens
-    page = max(0, min(page, len(pages) - 1))
-    return k.screen(pages[page], [k.pager(output_page, page, len(pages), id=key), [k.close()]])
-
-
-def output_page(ctx: Any, nav: Any) -> Any:
-    key = nav.arg("id")
-    pages: Any = next((entry[1] for entry in _outputs(ctx) if entry and entry[0] == key), None)
-    if not isinstance(pages, list) or not pages:
-        return ctx.t("ui.expired")
-    return _output_screen(ctx, str(key), [str(page) for page in cast('list[Any]', pages)], nav.int("page"))
 
 
 class StreamInterceptor(io.StringIO):

@@ -70,7 +70,7 @@ async def command_info(ctx: 'ModuleContext', invocation: 'CommandInvocation') ->
 
     if hasattr(ctx, "screens") and hasattr(ctx.screens, "show"):
         k = ctx.screens
-        screen = k.screen(body, [[k.close(ctx.t("common.close") if hasattr(ctx, "t") else "Закрыть")]], banner=k.banner("brand"), rich=True)
+        screen = k.screen(body, [[k.close(ctx.t("common.close") if hasattr(ctx, "t") else "Закрыть")]], rich=True)
         await ctx.screens.show(screen)
     else:
         await ctx.respond(body, parse_mode="HTML", rich=True)
