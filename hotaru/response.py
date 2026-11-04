@@ -695,6 +695,33 @@ class ModuleContext(ContextOperations):
 
     def wordmark(self) -> str:
         return TOOLS.wordmark()
+
+    async def paginate(self, content: str | list[str], *, page: int = 0, limit: int = 4000, rich: bool = True) -> Any:
+        if isinstance(content, str):
+            pages = TOOLS.paginate_chunks(content, limit=limit)
+        else:
+            pages = [str(p) for p in content]
+        if not pages:
+            pages = [""]
+        if len(pages) == 1:
+            return await self.respond(pages[0], parse_mode="HTML", rich=rich)
+        engine = getattr(self.runtime, "screens", None)
+        if engine is not None:
+            import secrets
+            import time
+            from .screens import _PAGE_CACHE, Screen
+            now = time.time()
+            if len(_PAGE_CACHE) > 200:
+                expired = [k for k, v in _PAGE_CACHE.items() if now - v.get("time", 0) > 3600]
+                for k in expired:
+                    _PAGE_CACHE.pop(k, None)
+            key = secrets.token_hex(6)
+            _PAGE_CACHE[key] = {"pages": pages, "time": now, "rich": rich}
+            page = max(0, min(page, len(pages) - 1))
+            rows = [engine.kit.pager("paginate", page, len(pages), k=key), [engine.kit.close()]]
+            screen = Screen(pages[page], rows, rich=rich)
+            return await engine.show(self, screen)
+        return await self.respond(pages[page], parse_mode="HTML", rich=rich)
     @staticmethod
     async def _ctx_prepare(text: Any, parse_mode: Any, buttons: Any) -> dict[str, Any]:
         data: dict[str, Any] = {}

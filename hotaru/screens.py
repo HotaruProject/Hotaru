@@ -43,6 +43,88 @@ _styles = {"primary", "danger", "success", "link"}
 _tap = re.compile(r'<tg-button(\s[^>]*?)\sdata-hs="([A-Za-z0-9_-]+)"([^>]*)>')
 _rich = re.compile(r"<(?:table|tg-button|tg-button-row|details|h[1-6]|hr|footer|ul|ol|aside|tg-time|tg-math|mark|sup|sub|img|video)\b", re.IGNORECASE)
 
+_PAGE_CACHE: dict[str, dict[str, Any]] = {}
+
+_ICONS: dict[str, str] = {
+    "back": '<tg-emoji emoji-id="5258236805890710909">⬅️</tg-emoji>',
+    "close": '<tg-emoji emoji-id="5778527486270770928">❌</tg-emoji>',
+    "search": '<tg-emoji emoji-id="5429571366384842791">🔎</tg-emoji>',
+    "settings": '<tg-emoji emoji-id="5258096772776991776">⚙️</tg-emoji>',
+    "edit": '<tg-emoji emoji-id="5258331647358540449">✍️</tg-emoji>',
+    "copy": '<tg-emoji emoji-id="5258477770735885832">📄</tg-emoji>',
+    "trash": '<tg-emoji emoji-id="5258130763148172425">🗑</tg-emoji>',
+    "undo": '<tg-emoji emoji-id="5260687119092817530">🔄</tg-emoji>',
+    "redo": '<tg-emoji emoji-id="5258420634785947640">🔄</tg-emoji>',
+    "add": '<tg-emoji emoji-id="5258108352008823107">➕</tg-emoji>',
+    "check": '<tg-emoji emoji-id="5260726538302660868">✅</tg-emoji>',
+    "done": '<tg-emoji emoji-id="5260416304224936047">✅</tg-emoji>',
+    "more": '<tg-emoji emoji-id="5260348422266822411">💬</tg-emoji>',
+    "open": '<tg-emoji emoji-id="5257991477358763590">↗️</tg-emoji>',
+    "link": '<tg-emoji emoji-id="5260730055880876557">⛓</tg-emoji>',
+    "save": '<tg-emoji emoji-id="5258336354642697821">⬇️</tg-emoji>',
+    "download": '<tg-emoji emoji-id="5258514780469075716">📂</tg-emoji>',
+    "upload": '<tg-emoji emoji-id="5260652420052032852">⬆️</tg-emoji>',
+    "share": '<tg-emoji emoji-id="5258043150110301407">⬆️</tg-emoji>',
+    "login": '<tg-emoji emoji-id="5258215850745275216">➡️</tg-emoji>',
+    "logout": '<tg-emoji emoji-id="5258084656674250503">🚪</tg-emoji>',
+    "ban": '<tg-emoji emoji-id="5258318620722733379">❌</tg-emoji>',
+    "lock": '<tg-emoji emoji-id="5258476306152038031">🔒</tg-emoji>',
+    "eye": '<tg-emoji emoji-id="5253959125838090076">👁</tg-emoji>',
+    "loading": '<tg-emoji emoji-id="5258012149036365477">📸</tg-emoji>',
+    "minus": '<tg-emoji emoji-id="5275969776668134187">⛔️</tg-emoji>',
+    "bot": '<tg-emoji emoji-id="5258093637450866522">🤖</tg-emoji>',
+    "book": '<tg-emoji emoji-id="5258328383183396223">📖</tg-emoji>',
+    "bolt": '<tg-emoji emoji-id="5258152182150077732">⚡️</tg-emoji>',
+    "users": '<tg-emoji emoji-id="5258513401784573443">👥</tg-emoji>',
+    "user": '<tg-emoji emoji-id="5258011929993026890">👤</tg-emoji>',
+    "user_add": '<tg-emoji emoji-id="5258362837411045098">👤</tg-emoji>',
+    "account": '<tg-emoji emoji-id="5260399854500191689">👤</tg-emoji>',
+    "phone": '<tg-emoji emoji-id="5258337316715373336">🤙</tg-emoji>',
+    "camera": '<tg-emoji emoji-id="5258205968025525531">📸</tg-emoji>',
+    "file": '<tg-emoji emoji-id="5257965810634202885">📁</tg-emoji>',
+    "folder": '<tg-emoji emoji-id="5257969839313526622">📁</tg-emoji>',
+    "apps": '<tg-emoji emoji-id="5226513232549664618">🔢</tg-emoji>',
+    "info": '<tg-emoji emoji-id="5258503720928288433">ℹ️</tg-emoji>',
+    "warning": '<tg-emoji emoji-id="5258474669769497337">❗️</tg-emoji>',
+    "clock": '<tg-emoji emoji-id="5258419835922030550">🕔</tg-emoji>',
+    "timer": '<tg-emoji emoji-id="5258258882022612173">⏲</tg-emoji>',
+    "stats": '<tg-emoji emoji-id="5258330865674494479">🍑</tg-emoji>',
+    "chart": '<tg-emoji emoji-id="5258391025281408576">📈</tg-emoji>',
+    "translate": '<tg-emoji emoji-id="5260512129240276089">📚</tg-emoji>',
+    "tag": '<tg-emoji emoji-id="5296385246579670377">🏷</tg-emoji>',
+    "pin": '<tg-emoji emoji-id="5258461531464539536">📌</tg-emoji>',
+    "star": '<tg-emoji emoji-id="5258185631355378853">⭐️</tg-emoji>',
+    "star_fill": '<tg-emoji emoji-id="5258165702707125574">⭐️</tg-emoji>',
+    "premium": '<tg-emoji emoji-id="5280962371207077415">💎</tg-emoji>',
+    "idea": '<tg-emoji emoji-id="5258216851472654189">💡</tg-emoji>',
+    "home": '<tg-emoji emoji-id="5257963315258204021">🏘</tg-emoji>',
+    "send": '<tg-emoji emoji-id="5258073068852485953">✈️</tg-emoji>',
+    "checkbox": '<tg-emoji emoji-id="5258453452631056344">❌</tg-emoji>',
+    "text": '<tg-emoji emoji-id="5370546867786523009">📝</tg-emoji>',
+    "kernel": '<tg-emoji emoji-id="4974681956907221809">▪️</tg-emoji>',
+    "module": '<tg-emoji emoji-id="4974508259839836856">▪️</tg-emoji>',
+    "terminal": '<tg-emoji emoji-id="5289601856836745198">💻</tg-emoji>',
+}
+
+_MODULE_ICONS: dict[str, str] = {
+    "help": "book",
+    "config": "settings",
+    "accounts": "users",
+    "acl": "lock",
+    "executor": "text",
+    "updater": "download",
+    "translations": "translate",
+    "logger": "file",
+    "info": "info",
+    "ping": "bolt",
+    "power": "logout",
+    "settings": "settings",
+    "backups": "folder",
+    "catalyst": "download",
+    "singularity": "bolt",
+    "shield": "lock",
+}
+
 
 class ScreenError(RuntimeError):
     pass
@@ -202,8 +284,7 @@ class Kit:
 
     @staticmethod
     def banner(name: str = "brand") -> str:
-        from .branding import banner
-        return banner(name)
+        return ""
 
     @staticmethod
     def screen(text: str, rows: Optional[list[list[dict[str, Any]]]] = None, **options: Any) -> Screen:
@@ -212,7 +293,7 @@ class Kit:
     @staticmethod
     def _target(fn: Any) -> dict[str, str]:
         if isinstance(fn, str):
-            return {"f": fn}
+            return {"m": _kernel, "f": fn}
         if not callable(fn):
             raise ScreenError("screen handler is not callable")
         name = str(getattr(fn, "__name__", ""))
@@ -291,7 +372,16 @@ class Kit:
 
     @staticmethod
     def icon(name: Optional[str] = None) -> str:
-        return str(name or "")
+        if not name:
+            return ""
+        if name.startswith("<tg-emoji") or name.startswith("<a "):
+            return name
+        return _ICONS.get(name, "")
+
+    @staticmethod
+    def module_icon(module_id: str) -> str:
+        icon_name = _MODULE_ICONS.get(module_id, "folder")
+        return _ICONS.get(icon_name, _ICONS["folder"])
 
     @staticmethod
     def wordmark() -> str:
@@ -388,6 +478,17 @@ class ScreenEngine:
         self._cache: dict[int, Form] = {}
         self._locks: dict[int, _ReentrantLock] = {}
         self._ready = False
+        self.register("paginate", self._kernel_paginate)
+
+    def _kernel_paginate(self, nav: Nav) -> Any:
+        key = nav.arg("k")
+        entry = _PAGE_CACHE.get(key)
+        if not entry:
+            return self._t("ui.expired", "This menu has expired. Open it again.")
+        pages = entry["pages"]
+        page = max(0, min(nav.int("page"), len(pages) - 1))
+        rows = [self.kit.pager("paginate", page, len(pages), k=key), [self.kit.close()]]
+        return Screen(pages[page], rows, rich=entry.get("rich", True))
 
     _columns = "id,module,actor,command,chat,message_id,inline_id,bot,gen,actions,text,rich,touched,ttl,language"
 
@@ -568,8 +669,14 @@ class ScreenEngine:
                 for key in ("style", "icon_custom_emoji_id"):
                     if spec.get(key):
                         button[key] = spec[key]
-                if spec.get("icon") and str(spec["icon"]).isdigit() and not spec.get("style"):
-                    button["icon_custom_emoji_id"] = str(spec["icon"])
+                if spec.get("icon"):
+                    icon_val = str(spec["icon"])
+                    if icon_val in _ICONS:
+                        match = re.search(r'emoji-id="(\d+)"', _ICONS[icon_val])
+                        if match and not spec.get("style"):
+                            button["icon_custom_emoji_id"] = match.group(1)
+                    elif icon_val.isdigit() and not spec.get("style"):
+                        button["icon_custom_emoji_id"] = icon_val
                 kind = spec.get("k")
                 if kind in {"go", "input", "close"}:
                     token = self._action(form, spec, actions, gen)
@@ -628,9 +735,6 @@ class ScreenEngine:
         return app
 
     async def _rich(self, text: str) -> dict[str, Any]:
-        branding = getattr(self.runtime, "branding", None)
-        if branding is not None:
-            return await branding.rich(text)
         return {"_": "inputRichMessageHTML", **to_rich(text)}
 
     async def show(self, ctx: Any, screen: Screen, *, reply_to: Optional[int] = None, fallback: bool = True) -> Optional[Form]:

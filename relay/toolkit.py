@@ -1483,8 +1483,40 @@ def wordmark() -> str:
     return '<tg-emoji emoji-id="5985527717183888277">⚡</tg-emoji><tg-emoji emoji-id="5985515480822061758">⚡</tg-emoji><tg-emoji emoji-id="5985558606588681366">⚡</tg-emoji><tg-emoji emoji-id="5985757321840565902">⚡</tg-emoji>'
 
 
+def paginate_chunks(text: str, limit: int = 4000) -> list[str]:
+    if not text:
+        return [""]
+    if len(text) <= limit:
+        return [text]
+    lines = text.split("\n")
+    pages: list[str] = []
+    current: list[str] = []
+    current_len = 0
+    for line in lines:
+        line_len = len(line) + 1
+        if current_len + line_len > limit and current:
+            pages.append("\n".join(current))
+            current = []
+            current_len = 0
+        if len(line) > limit:
+            for i in range(0, len(line), limit):
+                chunk = line[i:i + limit]
+                if current:
+                    pages.append("\n".join(current))
+                    current = []
+                    current_len = 0
+                pages.append(chunk)
+            continue
+        current.append(line)
+        current_len += line_len
+    if current:
+        pages.append("\n".join(current))
+    return pages or [text]
+
+
 TOOLKIT_FUNCS = {
     "wordmark": wordmark,
+    "paginate_chunks": paginate_chunks,
     "regdate": regdate,
     "template_fields": template_fields,
     "template_names": template_names,

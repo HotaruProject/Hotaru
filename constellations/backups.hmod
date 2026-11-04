@@ -26,7 +26,7 @@ def home(ctx: Any, nav: Any = None) -> Any:
     hours = ctx.config.get("interval_hours", 24)
     last = ctx.state.get("last_sent", 0)
     status = ctx.t("kernel.backups.enabled" if enabled else "kernel.backups.disabled")
-    text = k.banner() + ctx.t("kernel.backups.heading", icon=k.icon("folder"), status=status, hours=hours)
+    text = ctx.t("kernel.backups.heading", icon='<tg-emoji emoji-id="5257969839313526622">📁</tg-emoji>', status=status, hours=hours)
     if last:
         text += "\n" + ctx.t("kernel.backups.last_sent", date=time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime(last)))
     text += "\n" + ctx.t("kernel.backups.destination", topic=html.escape(ctx.t("kernel.backups.topic")))

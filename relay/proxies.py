@@ -940,9 +940,6 @@ class ForumHelper:
             await self._promote_bot(chat_id)
             await self._hide_general(chat_id)
             await self._sync_channel_to_bot(chat_id)
-            branding = getattr(self._runtime, "branding", None)
-            if branding is not None:
-                await branding.apply_avatars(self, chat_id)
             self._applied.add(chat_id)
         except Exception as exc:
             self._emit("apply_failed", error=type(exc).__name__, detail=str(exc)[:160])
