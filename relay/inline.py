@@ -496,17 +496,14 @@ class InlineManager:
         try:
             await app.get_me()
             await self._inspect_webhook(app)
-            banner_url = "https://raw.githubusercontent.com/HotaruProject/Hotaru/develop/hotaru/assets/banner.png"
             for method, payload in (
                 ("deleteWebhook", {"drop_pending_updates": True}),
                 ("setMyName", {"name": "Hotaru Userbot"}),
-                ("setMyShortDescription", {"short_description": "Hotaru Userbot"}),
-                ("setMyDescription", {"description": f"Hotaru Userbot\n\n{banner_url}"}),
+                ("setMyShortDescription", {"short_description": "Hotaru Userbot — security-first modular userbot"}),
+                ("setMyDescription", {"description": "Hotaru Userbot — security-first modular Telegram userbot with capability sandboxing."}),
             ):
                 try:
-                    fn = getattr(app, method, None)
-                    if callable(fn):
-                        await cast(Any, fn)(**payload)
+                    await app.bot_req(method, **payload)
                 except Exception:
                     continue
         except Exception:
@@ -778,8 +775,16 @@ class InlineManager:
             clicked = await conv.click_button(r_about, at, username)
             if not clicked:
                 await conv.ask(at)
-            banner_url = "https://raw.githubusercontent.com/HotaruProject/Hotaru/develop/hotaru/assets/banner.png"
-            await conv.ask(f"Hotaru Userbot\n{banner_url}")
+            await conv.ask("Hotaru Userbot — security-first modular userbot")
+        except Exception:
+            pass
+
+        try:
+            r_desc = await conv.ask("/setdescription")
+            clicked = await conv.click_button(r_desc, at, username)
+            if not clicked:
+                await conv.ask(at)
+            await conv.ask("Hotaru Userbot — security-first modular Telegram userbot with capability sandboxing.")
         except Exception:
             pass
 

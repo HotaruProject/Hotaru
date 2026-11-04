@@ -1,8 +1,8 @@
 HOTARU = {
     "id": "genesis",
-    "version": "1.0.0",
-    "commands": ["genesis", "quickstart"],
-    "bot_commands": ["start", "setup"],
+    "version": "1.1.0",
+    "commands": [],
+    "bot_commands": ["start", "github"],
     "capabilities": ["mt", "state"],
     "banner": "https://raw.githubusercontent.com/HotaruProject/Hotaru/develop/hotaru/assets/genesis.mp4",
     "rise": "on_rise",
@@ -20,7 +20,58 @@ def _escape(text: Any) -> str:
     return html.escape(str(text), quote=False)
 
 
+def _webapp_button(ctx: Any) -> Optional[Any]:
+    k = ctx.screens
+    runtime = getattr(ctx, "runtime", None)
+    if not runtime:
+        return None
+    bot_user = ""
+    if getattr(runtime, "state", None):
+        bot_user = str(runtime.state.get_setting("inline-bot-username") or "").lstrip("@").strip()
+    if not bot_user and getattr(runtime, "inline", None) and getattr(runtime.inline, "info", None):
+        bot_user = str(getattr(runtime.inline.info, "username", "") or "").lstrip("@").strip()
+
+    short_slug = "dashboard"
+    svc = getattr(runtime, "singularity", None)
+    if svc is not None:
+        short_slug = getattr(getattr(svc, "config", None), "short_name", "dashboard") or "dashboard"
+
+    app_link = f"https://t.me/{bot_user}/{short_slug}" if bot_user else ""
+    tunnel_url = ""
+    if svc is not None:
+        tunnel_url = str(getattr(svc, "tunnel_url", "") or getattr(svc, "local_url", "") or "")
+    if not tunnel_url and getattr(runtime, "state", None):
+        tunnel_url = str(runtime.state.get_setting("singularity-last-tunnel-url") or "")
+
+    label = ctx.t("kernel.genesis.btn_webapp", "🌐 Open WebApp")
+    if app_link:
+        return k.url(label, app_link)
+    if tunnel_url and hasattr(k, "webapp"):
+        return k.webapp(label, tunnel_url)
+    if tunnel_url:
+        return k.url(label, tunnel_url)
+    return None
+
+
+def active_screen(ctx: Any, nav: Any = None) -> Any:
+    k = ctx.screens
+    text = (
+        f'{k.wordmark()} — <b>{_escape(ctx.t("kernel.genesis.active_title", "Active & Online"))}</b>\n\n'
+        f'<i>{_escape(ctx.t("kernel.genesis.active_desc", "Hotaru Userbot is configured and running. Use commands directly in your account."))}</i>'
+    )
+    rows: List[List[Any]] = []
+    wb = _webapp_button(ctx)
+    if wb:
+        rows.append([wb])
+    rows.append([k.url(ctx.t("kernel.genesis.btn_github", "GitHub Repository"), "https://github.com/HotaruProject/Hotaru")])
+    rows.append([k.close()])
+    return k.screen(text, rows, banner=k.banner("genesis"), rich=True)
+
+
 def home(ctx: Any, nav: Any = None) -> Any:
+    if ctx.state.get("setup_completed"):
+        return active_screen(ctx, nav)
+
     k = ctx.screens
     runtime = ctx.runtime
     lang = runtime.language() if runtime else "en"
@@ -48,15 +99,17 @@ def home(ctx: Any, nav: Any = None) -> Any:
         [k.button(ctx.t("kernel.genesis.btn_language", "🌐 Language"), step_lang), k.button(ctx.t("kernel.genesis.btn_prefix", "💻 Prefix"), step_prefix)],
         [k.button(ctx.t("kernel.genesis.btn_logs", "📔 Log Level"), step_logs), k.button(ctx.t("kernel.genesis.btn_backups", "📂 Backups"), step_backups)],
     ]
-    if getattr(runtime, "singularity", None) is not None:
-        url = getattr(runtime.singularity, "tunnel_url", None) or getattr(runtime.singularity, "local_url", None)
-        if url:
-            rows.append([k.url(ctx.t("kernel.genesis.btn_webapp", "🌐 Open WebApp"), url)])
+    wb = _webapp_button(ctx)
+    if wb:
+        rows.append([wb])
     rows.append([k.close()])
     return k.screen(text, rows, banner=k.banner("genesis"), rich=True)
 
 
 def step_lang(ctx: Any, nav: Any = None) -> Any:
+    if ctx.state.get("setup_completed"):
+        return active_screen(ctx, nav)
+
     k = ctx.screens
     runtime = ctx.runtime
     current = runtime.language() if runtime else "en"
@@ -79,6 +132,8 @@ def step_lang(ctx: Any, nav: Any = None) -> Any:
 
 
 async def apply_lang(ctx: Any, nav: Any) -> Any:
+    if ctx.state.get("setup_completed"):
+        return active_screen(ctx, nav)
     code = str(nav.arg("code") or "en")
     runtime = ctx.runtime
     if runtime is not None:
@@ -90,6 +145,9 @@ async def apply_lang(ctx: Any, nav: Any) -> Any:
 
 
 def step_prefix(ctx: Any, nav: Any = None) -> Any:
+    if ctx.state.get("setup_completed"):
+        return active_screen(ctx, nav)
+
     k = ctx.screens
     runtime = ctx.runtime
     current = getattr(runtime.config, "prefix", ".") if runtime else "."
@@ -111,11 +169,15 @@ def step_prefix(ctx: Any, nav: Any = None) -> Any:
 
 
 async def apply_prefix(ctx: Any, nav: Any) -> Any:
+    if ctx.state.get("setup_completed"):
+        return active_screen(ctx, nav)
     new_prefix = str(nav.arg("p") or ".").strip()
     return await _save_prefix(ctx, nav, new_prefix)
 
 
 async def set_custom_prefix(ctx: Any, nav: Any) -> Any:
+    if ctx.state.get("setup_completed"):
+        return active_screen(ctx, nav)
     new_prefix = str(nav.value or ".").strip()
     return await _save_prefix(ctx, nav, new_prefix)
 
@@ -139,6 +201,9 @@ async def _save_prefix(ctx: Any, nav: Any, new_prefix: str) -> Any:
 
 
 def step_logs(ctx: Any, nav: Any = None) -> Any:
+    if ctx.state.get("setup_completed"):
+        return active_screen(ctx, nav)
+
     k = ctx.screens
     runtime = ctx.runtime
     logger_mod = runtime.modules.get("logger") if runtime and runtime.modules else None
@@ -161,6 +226,8 @@ def step_logs(ctx: Any, nav: Any = None) -> Any:
 
 
 async def apply_loglevel(ctx: Any, nav: Any) -> Any:
+    if ctx.state.get("setup_completed"):
+        return active_screen(ctx, nav)
     level = str(nav.arg("level") or "info").lower()
     runtime = ctx.runtime
     logger_mod = runtime.modules.get("logger") if runtime and runtime.modules else None
@@ -173,6 +240,9 @@ async def apply_loglevel(ctx: Any, nav: Any) -> Any:
 
 
 def step_backups(ctx: Any, nav: Any = None) -> Any:
+    if ctx.state.get("setup_completed"):
+        return active_screen(ctx, nav)
+
     k = ctx.screens
     runtime = ctx.runtime
     backups_mod = runtime.modules.get("backups") if runtime and runtime.modules else None
@@ -201,6 +271,8 @@ def step_backups(ctx: Any, nav: Any = None) -> Any:
 
 
 async def toggle_backup(ctx: Any, nav: Any) -> Any:
+    if ctx.state.get("setup_completed"):
+        return active_screen(ctx, nav)
     runtime = ctx.runtime
     backups_mod = runtime.modules.get("backups") if runtime and runtime.modules else None
     backups_cfg = getattr(getattr(backups_mod, "loaded", None), "config", None)
@@ -210,6 +282,8 @@ async def toggle_backup(ctx: Any, nav: Any) -> Any:
 
 
 async def apply_backup_hours(ctx: Any, nav: Any) -> Any:
+    if ctx.state.get("setup_completed"):
+        return active_screen(ctx, nav)
     hours = int(nav.arg("hours") or 24)
     runtime = ctx.runtime
     backups_mod = runtime.modules.get("backups") if runtime and runtime.modules else None
@@ -222,6 +296,7 @@ async def apply_backup_hours(ctx: Any, nav: Any) -> Any:
 
 
 def step_finish(ctx: Any, nav: Any = None) -> Any:
+    ctx.state.set("setup_completed", True)
     k = ctx.screens
     runtime = ctx.runtime
     prefix = getattr(runtime.config, "prefix", ".") if runtime else "."
@@ -235,21 +310,30 @@ def step_finish(ctx: Any, nav: Any = None) -> Any:
     rows: List[List[Any]] = [
         [k.link(ctx.t("kernel.genesis.btn_help", "📖 Help"), "help", "home"), k.link(ctx.t("kernel.genesis.btn_settings", "⚙️ Settings"), "settings", "home")],
     ]
-    if getattr(runtime, "singularity", None) is not None:
-        url = getattr(runtime.singularity, "tunnel_url", None) or getattr(runtime.singularity, "local_url", None)
-        if url:
-            rows.append([k.url(ctx.t("kernel.genesis.btn_webapp", "🌐 Open WebApp"), url)])
+    wb = _webapp_button(ctx)
+    if wb:
+        rows.append([wb])
     rows.append([k.close()])
     return k.screen(text, rows, banner=k.banner("genesis"), rich=True)
 
 
 async def command_start(ctx: Any, invocation: Any) -> Any:
-    await ctx.screens.show(home(ctx))
+    if ctx.state.get("setup_completed"):
+        await ctx.screens.show(active_screen(ctx))
+    else:
+        await ctx.screens.show(home(ctx))
 
 
-command_setup = command_start
-command_genesis = command_start
-command_quickstart = command_start
+async def command_github(ctx: Any, invocation: Any) -> Any:
+    k = ctx.screens
+    text = (
+        f'{k.wordmark()} — <b>{_escape(ctx.t("kernel.genesis.links_title", "Hotaru Links"))}</b>\n\n'
+        f'<i>{_escape(ctx.t("kernel.genesis.links_desc", "Official Hotaru project repository, documentation, and source code:"))}</i>'
+    )
+    rows = [
+        [k.url(ctx.t("kernel.genesis.btn_github", "GitHub Repository"), "https://github.com/HotaruProject/Hotaru")]
+    ]
+    await ctx.screens.show(k.screen(text, rows, banner=k.banner("genesis"), rich=True))
 
 
 async def on_rise(ctx: Any) -> None:
@@ -263,10 +347,16 @@ async def _rise_tasks(ctx: Any) -> None:
     except Exception:
         pass
     try:
-        if not ctx.state.get("onboarded"):
+        if not ctx.state.get("onboarded") and not ctx.state.get("setup_completed"):
             ctx.state.set("onboarded", True)
-            if hasattr(ctx, "screens") and hasattr(ctx.screens, "send"):
-                await ctx.screens.send("me", home(ctx))
+            bot_user = ""
+            runtime = getattr(ctx, "runtime", None)
+            if runtime and getattr(runtime, "state", None):
+                bot_user = str(runtime.state.get_setting("inline-bot-username") or "").lstrip("@").strip()
+            if not bot_user and runtime and getattr(runtime, "inline", None) and getattr(runtime.inline, "info", None):
+                bot_user = str(getattr(runtime.inline.info, "username", "") or "").lstrip("@").strip()
+            if bot_user and hasattr(ctx, "screens") and hasattr(ctx.screens, "send"):
+                await ctx.screens.send(bot_user, home(ctx))
     except Exception:
         pass
 
@@ -296,7 +386,7 @@ async def _sync_bot_commands(ctx: Any) -> None:
             data = json.loads(resp.read().decode())
             existing = data.get("result", [])
             existing_cmds = {cmd.get("command") for cmd in existing if isinstance(cmd, dict)}
-            if "start" not in existing_cmds or "setup" not in existing_cmds:
+            if existing_cmds != {"start", "github"}:
                 needs_set = True
     except Exception:
         needs_set = True
@@ -304,11 +394,8 @@ async def _sync_bot_commands(ctx: Any) -> None:
     if needs_set:
         payload = {
             "commands": [
-                {"command": "start", "description": "Quickstart & Setup Wizard"},
-                {"command": "setup", "description": "Configuration Wizard"},
-                {"command": "help", "description": "Userbot Help & Modules"},
-                {"command": "config", "description": "Module Settings"},
-                {"command": "dash", "description": "Singularity WebApp Dashboard"},
+                {"command": "start", "description": "Hotaru Userbot"},
+                {"command": "github", "description": "GitHub Repository"},
             ],
             "scope": {"type": "all_private_chats"},
         }

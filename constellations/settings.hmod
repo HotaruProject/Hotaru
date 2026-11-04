@@ -8,45 +8,50 @@ HOTARU = {
 
 from typing import Any, Callable, Dict, List, Optional, Tuple, cast
 from dataclasses import replace
+import html
+
+
+def _escape(value: Any) -> str:
+    return html.escape(str(value), quote=False)
 
 
 async def command_alias(ctx: Any, invocation: Any) -> Any:
     runtime = ctx.runtime
     if runtime is None:
-        await ctx.respond(f'<tg-emoji emoji-id="5260342697075416641">❌</tg-emoji> {ctx.t("settings.runtime_unavailable")}', parse_mode="HTML", output="edit")
+        await ctx.respond(f'<tg-emoji emoji-id="5260342697075416641">❌</tg-emoji> {_escape(ctx.t("settings.runtime_unavailable"))}', parse_mode="HTML", output="edit")
         return
     if len(invocation.args) < 2:
-        await ctx.respond(f'<tg-emoji emoji-id="5260342697075416641">❌</tg-emoji> <b>{ctx.t("settings.usage_alias", prefix=runtime.config.prefix)}</b>', parse_mode="HTML", output="edit")
+        await ctx.respond(f'<tg-emoji emoji-id="5260342697075416641">❌</tg-emoji> <b>{ctx.t("settings.usage_alias", prefix=_escape(runtime.config.prefix))}</b>', parse_mode="HTML", output="edit")
         return
     alias = invocation.args[0].casefold()
     words = list(invocation.args[1:])
     command = words[0].casefold().lstrip("/")
     if runtime.kernel.registry.resolve_name(alias) is not None:
-        await ctx.respond(f'<tg-emoji emoji-id="5260342697075416641">❌</tg-emoji> {ctx.t("settings.alias_exists", alias=alias)}', parse_mode="HTML", output="edit")
+        await ctx.respond(f'<tg-emoji emoji-id="5260342697075416641">❌</tg-emoji> {_escape(ctx.t("settings.alias_exists", alias=alias))}', parse_mode="HTML", output="edit")
         return
     target = runtime.kernel.registry.resolve_name(command)
     if target is None:
         known = ", ".join(sorted(runtime.kernel.registry.names()))[:800]
-        await ctx.respond(f'<tg-emoji emoji-id="5260342697075416641">❌</tg-emoji> {ctx.t("settings.command_not_found", command=command, known=known)}', parse_mode="HTML", output="edit")
+        await ctx.respond(f'<tg-emoji emoji-id="5260342697075416641">❌</tg-emoji> {_escape(ctx.t("settings.command_not_found", command=command, known=known))}', parse_mode="HTML", output="edit")
         return
     aliases = runtime.state.get_setting("user_aliases", {})
     if alias in aliases:
-        await ctx.respond(f'<tg-emoji emoji-id="5260342697075416641">❌</tg-emoji> {ctx.t("settings.alias_taken", alias=alias, command=aliases[alias], prefix=runtime.config.prefix)}', parse_mode="HTML", output="edit")
+        await ctx.respond(f'<tg-emoji emoji-id="5260342697075416641">❌</tg-emoji> {_escape(ctx.t("settings.alias_taken", alias=alias, command=aliases[alias], prefix=runtime.config.prefix))}', parse_mode="HTML", output="edit")
         return
     command = " ".join([target.name] + words[1:])
     aliases[alias] = command
     runtime.state.set_setting("user_aliases", aliases)
     runtime.kernel.registry.register_alias(alias, command)
-    await ctx.respond(f'<tg-emoji emoji-id="5260726538302660868">✅</tg-emoji> <b>{ctx.t("settings.alias_set", alias=alias, command=command)}</b>', parse_mode="HTML", output="edit")
+    await ctx.respond(f'<tg-emoji emoji-id="5260726538302660868">✅</tg-emoji> <b>{_escape(ctx.t("settings.alias_set", alias=alias, command=command))}</b>', parse_mode="HTML", output="edit")
 
 
 async def command_rmalias(ctx: Any, invocation: Any) -> Any:
     runtime = ctx.runtime
     if runtime is None:
-        await ctx.respond(f'<tg-emoji emoji-id="5260342697075416641">❌</tg-emoji> {ctx.t("settings.runtime_unavailable")}', parse_mode="HTML", output="edit")
+        await ctx.respond(f'<tg-emoji emoji-id="5260342697075416641">❌</tg-emoji> {_escape(ctx.t("settings.runtime_unavailable"))}', parse_mode="HTML", output="edit")
         return
     if not invocation.args:
-        await ctx.respond(f'<tg-emoji emoji-id="5260342697075416641">❌</tg-emoji> {ctx.t("settings.usage_rmalias", prefix=runtime.config.prefix)}', parse_mode="HTML", output="edit")
+        await ctx.respond(f'<tg-emoji emoji-id="5260342697075416641">❌</tg-emoji> <b>{ctx.t("settings.usage_rmalias", prefix=_escape(runtime.config.prefix))}</b>', parse_mode="HTML", output="edit")
         return
     alias = " ".join(invocation.args).casefold()
     aliases = runtime.state.get_setting("user_aliases", {})
@@ -54,9 +59,9 @@ async def command_rmalias(ctx: Any, invocation: Any) -> Any:
         del aliases[alias]
         runtime.state.set_setting("user_aliases", aliases)
         runtime.kernel.registry.unregister_alias(alias)
-        await ctx.respond(f'<tg-emoji emoji-id="5260726538302660868">✅</tg-emoji> <b>{ctx.t("settings.alias_removed", alias=alias)}</b>', parse_mode="HTML", output="edit")
+        await ctx.respond(f'<tg-emoji emoji-id="5260726538302660868">✅</tg-emoji> <b>{_escape(ctx.t("settings.alias_removed", alias=alias))}</b>', parse_mode="HTML", output="edit")
     else:
-        await ctx.respond(f'<tg-emoji emoji-id="5260342697075416641">❌</tg-emoji> {ctx.t("settings.alias_not_found", alias=alias)}', parse_mode="HTML", output="edit")
+        await ctx.respond(f'<tg-emoji emoji-id="5260342697075416641">❌</tg-emoji> {_escape(ctx.t("settings.alias_not_found", alias=alias))}', parse_mode="HTML", output="edit")
 
 
 async def command_lsalias(ctx: Any, invocation: Any) -> Any:
@@ -79,24 +84,23 @@ async def command_lsalias(ctx: Any, invocation: Any) -> Any:
 async def command_prefix(ctx: Any, invocation: Any) -> Any:
     runtime = ctx.runtime
     if runtime is None:
-        await ctx.respond(f'<tg-emoji emoji-id="5260342697075416641">❌</tg-emoji> {ctx.t("settings.runtime_unavailable")}', parse_mode="HTML", output="edit")
+        await ctx.respond(f'<tg-emoji emoji-id="5260342697075416641">❌</tg-emoji> {_escape(ctx.t("settings.runtime_unavailable"))}', parse_mode="HTML", output="edit")
         return
     if len(invocation.args) != 1:
         current = runtime.kernel.parser.prefix
-        await ctx.respond(f'<tg-emoji emoji-id="5289601856836745198">💻</tg-emoji> <b>{ctx.t("settings.prefix_current", prefix=f"<code>{current}</code>")}</b>', parse_mode="HTML", output="edit")
+        await ctx.respond(f'<tg-emoji emoji-id="5289601856836745198">💻</tg-emoji> <b>{ctx.t("settings.prefix_current", prefix=_escape(current))}</b>', parse_mode="HTML", output="edit")
         return
     new_prefix = invocation.args[0]
     from hotaru.commands import valid_prefix
     if len(invocation.args) != 1 or not valid_prefix(new_prefix):
-        await ctx.respond(f'<tg-emoji emoji-id="5260342697075416641">❌</tg-emoji> {ctx.t("settings.prefix_invalid")}', parse_mode="HTML", output="edit")
+        await ctx.respond(f'<tg-emoji emoji-id="5260342697075416641">❌</tg-emoji> {_escape(ctx.t("settings.prefix_invalid"))}', parse_mode="HTML", output="edit")
         return
     runtime.state.set_setting("prefix", new_prefix)
     runtime.kernel.parser.prefix = new_prefix
     runtime.config = replace(runtime.config, prefix=new_prefix)
-    await ctx.respond(f'<tg-emoji emoji-id="5260726538302660868">✅</tg-emoji> <b>{ctx.t("settings.prefix_set", prefix=f"<code>{new_prefix}</code>")}</b>', parse_mode="HTML", output="edit")
+    await ctx.respond(f'<tg-emoji emoji-id="5260726538302660868">✅</tg-emoji> <b>{ctx.t("settings.prefix_set", prefix=_escape(new_prefix))}</b>', parse_mode="HTML", output="edit")
 
 
-import html
 import re
 from hotaru.config import (
     BooleanValidator,
