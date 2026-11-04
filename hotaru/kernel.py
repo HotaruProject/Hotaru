@@ -193,11 +193,9 @@ class Kernel:
 
     async def dispatch_bot(self, message: Any) -> object | None:
         text = str(getattr(message, "text", "") or "").strip()
-        if not text:
+        if not text or not text.startswith("/"):
             return None
-        prefix = "/" if text.startswith("/") else self.parser.prefix
-        if not text.startswith(prefix):
-            return None
+        prefix = "/"
         body = text[len(prefix):].lstrip()
         if not body:
             return None
@@ -219,13 +217,7 @@ class Kernel:
             message=message,
             raw_args=raw_args,
         )
-        spec = self.registry.resolve(invocation)
-        if spec is None:
-            swapped = self.parser.swap_invocation(invocation)
-            if swapped is not None:
-                spec = self.registry.resolve(swapped)
-                if spec is not None:
-                    invocation = swapped
+        spec = self.registry.resolve_bot(invocation)
         if spec is None:
             return None
         context = self.context_factory.create(spec.module_id, message) if self.context_factory is not None else None

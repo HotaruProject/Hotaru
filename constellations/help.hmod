@@ -139,10 +139,14 @@ def _card(ctx: Any, module_id: str, actor: Any, back: Any, **back_args: Any) -> 
     if description:
         lines.append(f"<i>{_escape(description)}</i>")
     commands: List[str] = []
-    for command in manifest.commands:
+    all_cmds: list[tuple[str, bool]] = [(c, False) for c in manifest.commands]
+    for bc in getattr(manifest, "bot_commands", ()):
+        if not any(c == bc for c, _ in all_cmds):
+            all_cmds.append((bc, True))
+    for command, is_bot_flag in all_cmds:
         details = manifest.command_details(command, runtime.language())
         usage = str(details.get("usage", "") or "").strip()
-        is_bot = command in getattr(manifest, "bot_commands", ()) or (getattr(manifest, "module_id", "") == "genesis") or bool(details.get("bot"))
+        is_bot = is_bot_flag or command in getattr(manifest, "bot_commands", ()) or (getattr(manifest, "module_id", "") == "genesis") or bool(details.get("bot"))
         cmd_prefix = "/" if is_bot else prefix
         if usage:
             if usage.startswith(prefix) or usage.startswith("/"):

@@ -902,7 +902,7 @@
     "alias_not_found": "別名が見つかりません: {alias}",
     "alias_list_empty": "エイリアスはまだありません",
     "alias_list_title": "<b>エイリアス</b>",
-    "prefix_current": "現在のプレフィックス: {prefix}。変更: {prefix}prefix <文字>",
+    "prefix_current": "現在のプレフィックス: {prefix} · 変更: {prefix}prefix <文字>",
     "prefix_invalid": "プレフィックスは空白を含まない1～8文字にしてください。",
     "prefix_set": "プレフィックスを {prefix} に変更しました",
     "description": "別名とプレフィックスの管理",

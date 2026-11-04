@@ -925,7 +925,7 @@
     "alias_not_found": "Alias not found: {alias}",
     "alias_list_empty": "No aliases yet",
     "alias_list_title": "<b>Aliases</b>",
-    "prefix_current": "Current prefix: {prefix}. Change: {prefix}prefix <character>",
+    "prefix_current": "Current prefix: {prefix} · Change: {prefix}prefix <character>",
     "prefix_invalid": "Prefix must contain 1 to 8 visible characters without whitespace.",
     "prefix_set": "Prefix changed to {prefix}",
     "description": "Alias and prefix management",

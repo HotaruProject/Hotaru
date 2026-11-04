@@ -929,7 +929,7 @@
     "alias_not_found": "未找到别名：{alias}",
     "alias_list_empty": "还没有别名",
     "alias_list_title": "<b>别名</b>",
-    "prefix_current": "当前前缀：{prefix}。更改：{prefix}prefix <字符>",
+    "prefix_current": "当前前缀：{prefix} · 更改：{prefix}prefix <字符>",
     "prefix_invalid": "前缀必须包含 1 到 8 个可见字符且不含空白。",
     "prefix_set": "前缀已更改为 {prefix}",
     "description": "别名与前缀管理",

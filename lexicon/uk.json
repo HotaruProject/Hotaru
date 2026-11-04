@@ -902,7 +902,7 @@
     "alias_not_found": "Аліас не знайдено: {alias}",
     "alias_list_empty": "Аліасів поки немає",
     "alias_list_title": "<b>Аліаси</b>",
-    "prefix_current": "Поточний префікс: {prefix}. Змінити: {prefix}prefix <символ>",
+    "prefix_current": "Поточний префікс: {prefix} · Змінити: {prefix}prefix <символ>",
     "prefix_invalid": "Префікс: від 1 до 8 видимих символів без пробілів.",
     "prefix_set": "Префікс змінено на {prefix}",
     "description": "Керування аліасами та префіксом",

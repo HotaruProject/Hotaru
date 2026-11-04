@@ -1,7 +1,7 @@
 HOTARU = {
     "id": "genesis",
     "version": "1.0.0",
-    "commands": ["start", "setup", "genesis", "quickstart"],
+    "commands": ["genesis", "quickstart"],
     "bot_commands": ["start", "setup"],
     "capabilities": ["mt", "state"],
     "banner": "https://raw.githubusercontent.com/HotaruProject/Hotaru/develop/hotaru/assets/genesis.mp4",
@@ -65,16 +65,15 @@ def step_lang(ctx: Any, nav: Any = None) -> Any:
     for code in available:
         meta = ctx.i18n.get_meta(code) if hasattr(ctx.i18n, "get_meta") else {"name_native": code}
         label = meta.get("name_native", code)
-        if code == current:
-            label = f"✓ {label}"
-        style = "primary" if code == current else "default"
-        buttons.append(k.button(label, apply_lang, style=style, code=code))
+        is_selected = (code == current)
+        buttons.append(k.button(k.radio(label, is_selected), apply_lang, style="success" if is_selected else None, code=code))
     rows = k.grid(buttons, 2)
     rows.append([k.back(home), k.button(ctx.t("kernel.genesis.btn_next", "Next: Prefix ›"), step_prefix)])
     rows.append([k.close()])
     text = (
         f'{k.wordmark()} · <tg-emoji emoji-id="5291803847914698795">🌐</tg-emoji> <b>{_escape(ctx.t("kernel.genesis.step_lang_title", "Step 1/4 · Language"))}</b>\n\n'
-        f'{_escape(ctx.t("kernel.genesis.step_lang_desc", "Select your interface language:"))}'
+        f'{_escape(ctx.t("kernel.genesis.step_lang_desc", "Select your interface language:"))}\n'
+        f'<tg-emoji emoji-id="5260726538302660868">✅</tg-emoji> {_escape(ctx.t("kernel.genesis.current", "Current:"))} <code>{_escape(current)}</code>'
     )
     return k.screen(text, rows, banner=k.banner("genesis"), rich=True)
 
@@ -83,13 +82,11 @@ async def apply_lang(ctx: Any, nav: Any) -> Any:
     code = str(nav.arg("code") or "en")
     runtime = ctx.runtime
     if runtime is not None:
-        runtime.state.set_setting("language", code)
-        runtime.translator_override = None
-        if hasattr(runtime, "_language_cache"):
-            runtime._language_cache = code
-    if hasattr(ctx.i18n, "clear_cache"):
-        ctx.i18n.clear_cache()
-    return step_lang(ctx, nav).with_notice(ctx.t("kernel.genesis.lang_applied", "Language updated!"))
+        runtime.set_language(code)
+    meta = ctx.i18n.get_meta(code) if hasattr(ctx, "i18n") and hasattr(ctx.i18n, "get_meta") else {"name_native": code}
+    screen = step_lang(ctx, nav)
+    screen.toast = f"✅ {meta.get('name_native', code)}"
+    return screen
 
 
 def step_prefix(ctx: Any, nav: Any = None) -> Any:
@@ -99,9 +96,8 @@ def step_prefix(ctx: Any, nav: Any = None) -> Any:
     presets = [".", "!", ",", "/", "$", "~"]
     buttons = []
     for p in presets:
-        label = f"✓ {p}" if p == current else p
-        style = "primary" if p == current else "default"
-        buttons.append(k.button(label, apply_prefix, style=style, p=p))
+        is_selected = (p == current)
+        buttons.append(k.button(k.radio(p, is_selected), apply_prefix, style="success" if is_selected else None, p=p))
     rows = k.grid(buttons, 3)
     rows.append([k.input(ctx.t("ui.edit", "Custom Prefix"), set_custom_prefix, ctx.t("kernel.genesis.enter_prefix", "Enter command prefix:"))])
     rows.append([k.back(step_lang), k.button(ctx.t("kernel.genesis.btn_next_logs", "Next: Logs ›"), step_logs)])
@@ -128,13 +124,18 @@ async def _save_prefix(ctx: Any, nav: Any, new_prefix: str) -> Any:
     from dataclasses import replace
     from hotaru.commands import valid_prefix
     if not valid_prefix(new_prefix):
-        return step_prefix(ctx, nav).with_notice(ctx.t("settings.prefix_invalid"))
+        screen = step_prefix(ctx, nav)
+        screen.toast = ctx.t("settings.prefix_invalid")
+        screen.alert = True
+        return screen
     runtime = ctx.runtime
     if runtime is not None:
         runtime.state.set_setting("prefix", new_prefix)
         runtime.kernel.parser.prefix = new_prefix
         runtime.config = replace(runtime.config, prefix=new_prefix)
-    return step_prefix(ctx, nav).with_notice(ctx.t("kernel.genesis.prefix_applied", prefix=new_prefix))
+    screen = step_prefix(ctx, nav)
+    screen.toast = ctx.t("kernel.genesis.prefix_applied", prefix=new_prefix)
+    return screen
 
 
 def step_logs(ctx: Any, nav: Any = None) -> Any:
@@ -146,9 +147,8 @@ def step_logs(ctx: Any, nav: Any = None) -> Any:
     options = ["all", "debug", "info", "warn", "error", "fatal"]
     buttons = []
     for opt in options:
-        label = f"✓ {opt.upper()}" if opt == current else opt.upper()
-        style = "primary" if opt == current else "default"
-        buttons.append(k.button(label, apply_loglevel, style=style, level=opt))
+        is_selected = (opt == current)
+        buttons.append(k.button(k.radio(opt.upper(), is_selected), apply_loglevel, style="success" if is_selected else None, level=opt))
     rows = k.grid(buttons, 3)
     rows.append([k.back(step_prefix), k.button(ctx.t("kernel.genesis.btn_next_backups", "Next: Backups ›"), step_backups)])
     rows.append([k.close()])
@@ -167,7 +167,9 @@ async def apply_loglevel(ctx: Any, nav: Any) -> Any:
     logger_cfg = getattr(getattr(logger_mod, "loaded", None), "config", None)
     if logger_cfg is not None:
         logger_cfg.set("level", level)
-    return step_logs(ctx, nav).with_notice(ctx.t("kernel.logger.level_set", level=level.upper()))
+    screen = step_logs(ctx, nav)
+    screen.toast = ctx.t("kernel.logger.level_set", level=level.upper())
+    return screen
 
 
 def step_backups(ctx: Any, nav: Any = None) -> Any:
@@ -180,9 +182,8 @@ def step_backups(ctx: Any, nav: Any = None) -> Any:
     intervals = [6, 12, 24, 48, 72]
     buttons = []
     for h in intervals:
-        label = f"✓ {h}h" if h == current_hours else f"{h}h"
-        style = "primary" if h == current_hours else "default"
-        buttons.append(k.button(label, apply_backup_hours, style=style, hours=h))
+        is_selected = (h == current_hours)
+        buttons.append(k.button(k.radio(f"{h}h", is_selected), apply_backup_hours, style="success" if is_selected else None, hours=h))
     status_label = f"✅ {ctx.t('kernel.backups.enabled')}" if enabled else f"❌ {ctx.t('kernel.backups.disabled')}"
     status_style = "success" if enabled else "danger"
     rows = [
@@ -215,7 +216,9 @@ async def apply_backup_hours(ctx: Any, nav: Any) -> Any:
     backups_cfg = getattr(getattr(backups_mod, "loaded", None), "config", None)
     if backups_cfg is not None:
         backups_cfg.set("interval_hours", hours)
-    return step_backups(ctx, nav).with_notice(ctx.t("kernel.genesis.backup_hours_applied", hours=hours))
+    screen = step_backups(ctx, nav)
+    screen.toast = ctx.t("kernel.genesis.backup_hours_applied", hours=hours)
+    return screen
 
 
 def step_finish(ctx: Any, nav: Any = None) -> Any:
@@ -227,7 +230,7 @@ def step_finish(ctx: Any, nav: Any = None) -> Any:
         f'<tg-emoji emoji-id="5366045973988522066">✨</tg-emoji> {_escape(ctx.t("kernel.genesis.done_desc", "Hotaru is fully configured and ready to shine."))}\n\n'
         f'• <code>{_escape(prefix)}help</code> — {_escape(ctx.t("kernel.help.description", "Module list"))}\n'
         f'• <code>{_escape(prefix)}config</code> — {_escape(ctx.t("kernel.config.title", "Settings"))}\n'
-        f'• <code>{_escape(prefix)}ping</code> — {_escape(ctx.t("kernel.ping.description", "Latency"))}\n'
+        f'• <code>{_escape(prefix)}info</code> — {_escape(ctx.t("kernel.info.description", "Information and latency"))}\n'
     )
     rows: List[List[Any]] = [
         [k.link(ctx.t("kernel.genesis.btn_help", "📖 Help"), "help", "home"), k.link(ctx.t("kernel.genesis.btn_settings", "⚙️ Settings"), "settings", "home")],
