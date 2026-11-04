@@ -3,6 +3,7 @@ HOTARU = {
     "version": "2.1.0",
     "commands": ["language", "translate", "loadlex"],
     "capabilities": ["mt", "net", "files", "state"],
+    "banner": "https://raw.githubusercontent.com/HotaruProject/Hotaru/develop/hotaru/assets/translations.mp4",
 }
 
 import html

@@ -3,6 +3,7 @@ HOTARU = {
     "version": "2.0.0",
     "commands": ["upd", "updlog", "updoff", "updon"],
     "capabilities": ["net", "mt"],
+    "banner": "https://raw.githubusercontent.com/HotaruProject/Hotaru/develop/hotaru/assets/updater.mp4",
     "tasks": {
         "poller": {"interval": 300, "autostart": True},
     },

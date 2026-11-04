@@ -3,6 +3,7 @@ HOTARU = {
     "version": "2.0.0",
     "commands": ["help"],
     "capabilities": ["mt"],
+    "banner": "https://raw.githubusercontent.com/HotaruProject/Hotaru/develop/hotaru/assets/help.mp4",
 }
 
 import re
@@ -108,7 +109,14 @@ def home(ctx: Any, nav: Any = None) -> Any:
         lines.append(k.details(summary, "\n".join(entries), open=not kernel or user_count == 0))
     rows = [k.pager(home, page, pages)]
     rows.append([k.input(ctx.t("ui.search"), search, ctx.t("kernel.help_ui.search_prompt")), k.close()])
-    return k.screen("\n".join(lines), rows, banner=k.banner("help"))
+    help_mod = runtime.modules.get("help") if runtime.modules is not None else None
+    banner_val = getattr(getattr(help_mod, "loaded", None), "manifest", None)
+    banner_url = getattr(banner_val, "banner", None) if banner_val else None
+    if not banner_url:
+        banner_url = k.banner("help")
+    else:
+        banner_url = k.banner(banner_url)
+    return k.screen("\n".join(lines), rows, banner=banner_url)
 
 
 def _card(ctx: Any, module_id: str, actor: Any, back: Any, **back_args: Any) -> Any:

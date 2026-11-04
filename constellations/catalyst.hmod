@@ -3,6 +3,7 @@ HOTARU = {
     "version": "1.3.0",
     "commands": ['ld', 'ul', 'rl', 'ex', 'resetdb'],
     "capabilities": ["modules"],
+    "banner": "https://raw.githubusercontent.com/HotaruProject/Hotaru/develop/hotaru/assets/catalyst.mp4",
 }
 
 from typing import Any, Tuple, cast

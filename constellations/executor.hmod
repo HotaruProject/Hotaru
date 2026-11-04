@@ -3,6 +3,7 @@ HOTARU = {
     "version": "3.4.0",
     "commands": ["sh", "py", "kill"],
     "capabilities": ["mt", "files", "net", "state", "assets"],
+    "banner": "https://raw.githubusercontent.com/HotaruProject/Hotaru/develop/hotaru/assets/executor.mp4",
 }
 
 import ast
