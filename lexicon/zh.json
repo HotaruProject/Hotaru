@@ -1,7 +1,10 @@
 {
   "meta": {
+    "code": "zh",
     "language": "zh",
-    "name": "中文"
+    "name": "中文",
+    "name_en": "Chinese",
+    "name_native": "中文"
   },
   "common": {
     "brand": "<tg-emoji emoji-id=\"5985527717183888277\">⚡</tg-emoji><tg-emoji emoji-id=\"5985515480822061758\">⚡</tg-emoji><tg-emoji emoji-id=\"5985558606588681366\">⚡</tg-emoji><tg-emoji emoji-id=\"5985757321840565902\">⚡</tg-emoji>",
@@ -224,6 +227,10 @@
         "loadlex": {
           "description": "加载语言包",
           "usage": "[链接/路径/文件]"
+        },
+        "rmlex": {
+          "description": "删除自定义语言包",
+          "usage": "<code>"
         }
       },
       "native": {
@@ -235,7 +242,18 @@
         "ja": "日本語",
         "zh": "中文"
       },
-      "no_text": "未提供待翻译的文本"
+      "no_text": "未提供待翻译的文本",
+      "custom_packs": "自定义语言包",
+      "no_custom_packs": "未安装自定义语言包",
+      "custom_title": "自定义语言包",
+      "removed": "自定义语言包已删除",
+      "not_found": "未找到自定义语言包",
+      "cannot_remove_builtin": "无法删除系统语言包",
+      "usage_rm": "请指定自定义包的两位字母代码: {prefix}rmlex <code>",
+      "code_len_error": "语言代码必须正好由2个字母组成",
+      "code_collision": "语言代码 '{code}' 已被使用",
+      "name_collision": "语言包名称 '{name}' 已被使用",
+      "missing_keys": "语言包未100%覆盖所有键: 缺少 {count} 个键"
     },
     "test-features": {
       "description": "Hotaru 代理与能力测试模块",

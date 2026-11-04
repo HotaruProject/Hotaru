@@ -1,7 +1,10 @@
 {
   "meta": {
+    "code": "ja",
     "language": "ja",
-    "name": "日本語"
+    "name": "日本語",
+    "name_en": "Japanese",
+    "name_native": "日本語"
   },
   "commands": {
     "lang": {
@@ -156,6 +159,18 @@
         "language": {
           "description": "言語を表示または変更",
           "usage": "[言語]"
+        },
+        "rmlex": {
+          "description": "カスタム言語パックを削除",
+          "usage": "<code>"
+        },
+        "loadlex": {
+          "description": "言語パックを読み込む",
+          "usage": "[URL/パス/ファイル]"
+        },
+        "translate": {
+          "description": "テキストを翻訳",
+          "usage": "[言語] <テキスト/返信>"
         }
       },
       "native": {
@@ -166,7 +181,19 @@
         "uk": "Українська",
         "ja": "日本語",
         "zh": "中文"
-      }
+      },
+      "custom_packs": "カスタム言語パック",
+      "no_custom_packs": "インストールされたカスタム言語パックはありません",
+      "custom_title": "カスタム言語パック",
+      "removed": "カスタム言語パックを削除しました",
+      "not_found": "カスタム言語パックが見つかりません",
+      "cannot_remove_builtin": "システム言語パックは削除できません",
+      "usage_rm": "カスタムパックの2文字コードを指定してください: {prefix}rmlex <code>",
+      "code_len_error": "言語コードは正確に2文字である必要があります",
+      "code_collision": "言語コード「{code}」はすでに使用されています",
+      "name_collision": "言語パック名「{name}」はすでに使用されています",
+      "missing_keys": "言語パックがキーの100%をカバーしていません: {count}個のキーが不足しています",
+      "no_text": "翻訳するテキストが指定されていません"
     },
     "test-features": {
       "description": "Hotaru プロキシと機能のテストモジュール",
@@ -685,7 +712,10 @@
         "dash": {
           "description": "Singularity Mini App のインラインランチャーを開く"
         }
-      }
+      },
+      "inline_bot": "インラインボット",
+      "probe": "プローブ",
+      "relay": "リレー"
     },
     "backups": {
       "description": "サービス用フォーラムにバックアップを送信",
