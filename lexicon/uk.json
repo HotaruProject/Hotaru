@@ -581,6 +581,10 @@
         "logs": {
           "description": "Логи юзербота з файлом",
           "usage": "[on|off|status|рівень] [кількість] [компонент]"
+        },
+        "loglevel": {
+          "description": "Змінити або вибрати рівень логування",
+          "usage": "[level]"
         }
       },
       "pending": "очікування",
@@ -593,7 +597,13 @@
         "level": "Мінімальний рівень записуваних логів",
         "batch_size": "Кількість подій в одному повідомленні",
         "auto_topic": "Автоматично керувати темою логів у форумі"
-      }
+      },
+      "loglevel_menu_title": "Рівень логування",
+      "loglevel_choose": "Оберіть мінімальний рівень для запису:",
+      "loglevel_current": "Поточний рівень:",
+      "invalid_level": "Неприпустимий рівень. Доступні: {levels}",
+      "logs_menu_title": "Вивантаження логів",
+      "logs_choose": "Оберіть рівень логів для вивантаження:"
     },
     "executor": {
       "exit_code": "Код завершення: {returncode}",
@@ -679,11 +689,16 @@
       "fields": {
         "latency": "Час відповіді в мілісекундах",
         "uptime": "Час роботи юзербота, лише ненульові одиниці",
-        "uptime_seconds": "Час роботи юзербота в секундах"
+        "uptime_seconds": "Час роботи юзербота в секундах",
+        "custom_message": "Текст кастомного повідомлення"
       },
       "example_uptime": "2 години 3 хвилини",
       "config_fields": {
-        "template": "Текст відповіді на ping"
+        "template": "Текст відповіді на ping",
+        "custom_message": "Кастомне повідомлення у відповіді на ping"
+      },
+      "config": {
+        "custom_message": "Кастомне повідомлення у відповіді на ping"
       }
     },
     "info": {
@@ -697,10 +712,12 @@
       "empty_template": "Шаблон інформації порожній",
       "bad_placeholder": "Некоректний заповнювач: {error}",
       "config": {
-        "template": "Шаблон .info, заповнювачі {version} {uptime} {modules}"
+        "template": "Шаблон .info, заповнювачі {version} {uptime} {modules}",
+        "custom_message": "Кастомне повідомлення на картці інфо"
       },
       "config_fields": {
-        "template": "Шаблон .info, заповнювачі {version} {uptime} {modules}"
+        "template": "Шаблон .info, заповнювачі {version} {uptime} {modules}",
+        "custom_message": "Кастомне повідомлення на картці інфо"
       }
     },
     "singularity": {
