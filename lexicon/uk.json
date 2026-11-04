@@ -681,7 +681,7 @@
     },
     "singularity": {
       "description": "3D-телеметрія ядра та потік Observatory (Singularity)",
-      "card_title": "{wordmark} <b>// Singularity</b>",
+      "card_title": "<tg-emoji emoji-id=\"5985527717183888277\">⚡</tg-emoji><tg-emoji emoji-id=\"5985515480822061758\">⚡</tg-emoji><tg-emoji emoji-id=\"5985558606588681366\">⚡</tg-emoji><tg-emoji emoji-id=\"5985757321840565902\">⚡</tg-emoji> <b>// Singularity</b>",
       "card_subtitle": "<i>3D Event Horizon · Node.Probe · Read-Only Observatory Stream</i>",
       "open_button": "🕳 Відкрити Singularity",
       "commands": {
@@ -777,6 +777,7 @@
     "alias_invalid": "Аліас: 1–32 символи, літери будь-яких мов, цифри та _; не може починатися з цифри."
   },
   "common": {
+    "brand": "<tg-emoji emoji-id=\"5985527717183888277\">⚡</tg-emoji><tg-emoji emoji-id=\"5985515480822061758\">⚡</tg-emoji><tg-emoji emoji-id=\"5985558606588681366\">⚡</tg-emoji><tg-emoji emoji-id=\"5985757321840565902\">⚡</tg-emoji>",
     "ok": "ОК",
     "cancel": "Скасувати",
     "close": "Закрити",

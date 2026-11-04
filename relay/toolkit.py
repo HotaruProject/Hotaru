@@ -1476,7 +1476,15 @@ def regdate(user_id: object, *, registration_month: object = None, not_after: ob
     }
 
 
+def wordmark() -> str:
+    from relay.emoji import premium
+    if not premium():
+        return "<b>HOTARU</b>"
+    return '<tg-emoji emoji-id="5985527717183888277">⚡</tg-emoji><tg-emoji emoji-id="5985515480822061758">⚡</tg-emoji><tg-emoji emoji-id="5985558606588681366">⚡</tg-emoji><tg-emoji emoji-id="5985757321840565902">⚡</tg-emoji>'
+
+
 TOOLKIT_FUNCS = {
+    "wordmark": wordmark,
     "regdate": regdate,
     "template_fields": template_fields,
     "template_names": template_names,

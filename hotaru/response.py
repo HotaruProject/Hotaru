@@ -632,6 +632,10 @@ class ModuleContext(ContextOperations):
         return TOOLS
 
     @property
+    def toolkit(self) -> Any:
+        return TOOLS
+
+    @property
     def assets(self) -> Any:
             return AssetsHelper(self)
 
@@ -690,8 +694,7 @@ class ModuleContext(ContextOperations):
         return Kit(getattr(self.runtime, "screens", None) if self.runtime is not None else None, self)
 
     def wordmark(self) -> str:
-        from . import icons
-        return icons.wordmark()
+        return TOOLS.wordmark()
     @staticmethod
     async def _ctx_prepare(text: Any, parse_mode: Any, buttons: Any) -> dict[str, Any]:
         data: dict[str, Any] = {}

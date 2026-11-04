@@ -23,7 +23,6 @@ from relay.emoji import has_emoji, premium, to_entities, to_rich
 from relay.firewall import module_scope, trusted_scope
 from relay.rpc import delete_chat_msg
 
-from . import icons
 from .callback_codec import open_callback, seal_callback
 from .markup import copy_limit, row_limit, kbd_to_tl
 
@@ -291,19 +290,16 @@ class Kit:
 
 
     @staticmethod
-    def icon(name: Optional[str]) -> str:
-        if not name:
-            return ""
-        return icons.emoji(name) if premium() else _esc(icons.fallback(name))
+    def icon(name: Optional[str] = None) -> str:
+        return str(name or "")
 
     @staticmethod
     def wordmark() -> str:
-        return icons.wordmark()
+        from relay.toolkit import TOOLS
+        return TOOLS.wordmark()
 
     @classmethod
-    def _label(cls, text: str, icon: Optional[str], style: Optional[str] = None) -> str:
-        if style in {"primary", "success", "danger"} and premium():
-            icon = None
+    def _label(cls, text: str, icon: Optional[str] = None, style: Optional[str] = None) -> str:
         mark = cls.icon(icon)
         body = _esc(text)
         return f"{mark} {body}" if mark and body else (mark or body or " ")
@@ -572,11 +568,8 @@ class ScreenEngine:
                 for key in ("style", "icon_custom_emoji_id"):
                     if spec.get(key):
                         button[key] = spec[key]
-                icon = icons.get(spec.get("icon"))
-                if icon is not None and not premium():
-                    button["text"] = f"{icon[1]} {button['text']}".strip()
-                elif icon is not None and not spec.get("style"):
-                    button["icon_custom_emoji_id"] = str(icon[0])
+                if spec.get("icon") and str(spec["icon"]).isdigit() and not spec.get("style"):
+                    button["icon_custom_emoji_id"] = str(spec["icon"])
                 kind = spec.get("k")
                 if kind in {"go", "input", "close"}:
                     token = self._action(form, spec, actions, gen)
