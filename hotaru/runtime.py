@@ -1359,7 +1359,7 @@ class Runtime:
                         via = via_data.get("user_id") or via_data.get("id")
                     if int(via or 0) != bot_id:
                         continue
-                    if str(message_data.get("message") or "") not in {"[~]", "\u200b"}:
+                    if str(message_data.get("message") or "") not in {"[~]", "\u200b", "🔄"}:
                         continue
                     mid = message_data.get("id")
                     if isinstance(mid, int):
