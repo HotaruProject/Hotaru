@@ -231,9 +231,10 @@
         "ru": "Русский",
         "en": "English",
         "kz": "Қазақша",
+        "kk": "Қазақша",
         "uk": "Українська",
         "ja": "日本語",
-        "zh": "Chinese"
+        "zh": "中文"
       }
     },
     "test-features": {
@@ -625,10 +626,6 @@
           "description": "Export a module",
           "usage": "[module]"
         },
-        "rs": {
-          "description": "Reset module data",
-          "usage": "[module]"
-        },
         "resetdb": {
           "description": "Reset module data",
           "usage": "[module]"
@@ -869,7 +866,7 @@
     "usage_mi": "<b>Usage:</b> <code>{prefix}mi [module]</code> — <i>module info</i>",
     "usage_help": "<b>Usage:</b> <code>{prefix}help &lt;page|module&gt;</code> — <i>commands help</i>",
     "usage_reload": "<b>Usage:</b> <code>{prefix}rl [module] &lt;force&gt;</code> — <i>reload module</i>",
-    "usage_unload": "<b>Usage:</b> <code>{prefix}ul [module] &lt;-c&gt;</code> — <i>unload module (-c to purge)</i>",
+    "usage_unload": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>Specify a module:</b> <code>{prefix}ul &lt;module&gt;</code>",
     "usage_reset": "<b>Usage:</b> <code>{prefix}rs [module]</code> — <i>reset module state</i>",
     "usage_export": "<b>Usage:</b> <code>{prefix}ex [module]</code> — <i>export module source</i>",
     "usage_backup": "<b>Usage:</b> <code>{prefix}bk &lt;list|test|restore&gt; &lt;archive&gt;</code> — <i>backup management</i>",
@@ -901,7 +898,10 @@
     "file_document": "module file must be a document",
     "unknown_capability": "unknown capability (denied)",
     "loading_module": "Loading {module_id}…",
-    "export_caption": "<tg-emoji emoji-id=\"5258514780469075716\">📂</tg-emoji> <b>{module}</b> <code>v{version}</code>\n<blockquote><tg-emoji emoji-id=\"5258134813302332906\">📦</tg-emoji> Hotaru module export</blockquote>"
+    "export_caption": "<tg-emoji emoji-id=\"5258514780469075716\">📂</tg-emoji> <b>{module}</b> <code>v{version}</code>\n<blockquote><tg-emoji emoji-id=\"5258134813302332906\">📦</tg-emoji> Hotaru module export</blockquote>",
+    "usage_load_source": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>Specify a link, file path, or reply to a module file (.hmod)</b>",
+    "unloading": "<tg-emoji emoji-id=\"5258130763148172425\">🗑</tg-emoji> <i>Unloading <code>{module}</code>...</i>",
+    "invalid_path": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>Specified file or path not found.</b>"
   },
   "acl": {
     "owners": "<b>Owners</b><br>",

@@ -220,7 +220,7 @@ def _detail(ctx: Any, actor: int, number: int, page: int = 0, note: str = '') ->
     if note:
         text = note + '\n' + text
     rows = [[k.button(ui.t('button.accounts'), home, icon='back', page=page), k.button(ui.t('button.refresh'), account, icon='redo', **data), k.close()]]
-    return k.screen(text, rows)
+    return k.screen(text, rows, banner=k.banner("accounts"), rich=True)
 
 
 def _rights(ctx: Any, actor: int, uid: int, page: int = 0) -> Any:

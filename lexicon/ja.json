@@ -162,9 +162,10 @@
         "ru": "Русский",
         "en": "English",
         "kz": "Қазақша",
+        "kk": "Қазақша",
         "uk": "Українська",
         "ja": "日本語",
-        "zh": "中国語"
+        "zh": "中文"
       }
     },
     "test-features": {
@@ -621,10 +622,6 @@
           "description": "モジュールをエクスポート",
           "usage": "[モジュール]"
         },
-        "rs": {
-          "description": "モジュールのデータをリセット",
-          "usage": "[モジュール]"
-        },
         "resetdb": {
           "description": "モジュールのデータをリセット",
           "usage": "[モジュール]"
@@ -857,7 +854,7 @@
     "usage_mi": "<b>使い方:</b> <code>{prefix}mi [module]</code> — <i>モジュール情報</i>",
     "usage_help": "<b>使い方:</b> <code>{prefix}help &lt;page|module&gt;</code> — <i>ヘルプ表示</i>",
     "usage_reload": "<b>使い方:</b> <code>{prefix}rl [module] &lt;force&gt;</code> — <i>モジュール再読み込み</i>",
-    "usage_unload": "<b>使い方:</b> <code>{prefix}ul [module] &lt;-c&gt;</code> — <i>モジュールアンロード (-c データ消去)</i>",
+    "usage_unload": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>モジュールを指定してください:</b> <code>{prefix}ul &lt;モジュール&gt;</code>",
     "usage_reset": "<b>使い方:</b> <code>{prefix}rs [module]</code> — <i>状態リセット</i>",
     "usage_export": "<b>使い方:</b> <code>{prefix}ex [module]</code> — <i>エクスポート</i>",
     "usage_backup": "<b>使い方:</b> <code>{prefix}bk &lt;list|test|restore&gt; &lt;archive&gt;</code> — <i>バックアップ管理</i>",
@@ -889,7 +886,10 @@
     "file_document": "モジュールをファイルとして送信してください",
     "unknown_capability": "不明な機能（拒否）",
     "loading_module": "{module_id} を読み込み中…",
-    "export_caption": "<tg-emoji emoji-id=\"5258514780469075716\">📂</tg-emoji> <b>{module}</b> <code>v{version}</code>\n<blockquote><tg-emoji emoji-id=\"5258134813302332906\">📦</tg-emoji> Hotaruモジュールエクスポート</blockquote>"
+    "export_caption": "<tg-emoji emoji-id=\"5258514780469075716\">📂</tg-emoji> <b>{module}</b> <code>v{version}</code>\n<blockquote><tg-emoji emoji-id=\"5258134813302332906\">📦</tg-emoji> Hotaruモジュールエクスポート</blockquote>",
+    "usage_load_source": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>リンク、パスを指定するか、モジュールファイル (.hmod) に返信してください</b>",
+    "unloading": "<tg-emoji emoji-id=\"5258130763148172425\">🗑</tg-emoji> <i><code>{module}</code> をアンロード中...</i>",
+    "invalid_path": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>指定されたファイルまたはパスが見つかりません。</b>"
   },
   "acl": {
     "owners": "<b>オーナー</b><br>",

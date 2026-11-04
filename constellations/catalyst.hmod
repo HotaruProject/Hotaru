@@ -1,7 +1,7 @@
 HOTARU = {
     "id": "catalyst",
     "version": "1.3.0",
-    "commands": ['ld', 'ul', 'rl', 'ex', 'rs', 'resetdb'],
+    "commands": ['ld', 'ul', 'rl', 'ex', 'resetdb'],
     "capabilities": ["modules"],
 }
 
@@ -20,21 +20,51 @@ async def command_ld(ctx: Any, invocation: Any) -> Any:
         await ctx.respond(ctx.t('runtime.usage_load', prefix=runtime.config.prefix))
         return
 
-    reply = getattr(invocation, "reply_message", None)
+    reply = None
+    if callable(getattr(ctx, "reply", None)):
+        try:
+            reply = await ctx.reply()
+        except Exception:
+            reply = None
     if reply is None and hasattr(invocation, "reply") and callable(invocation.reply):
         try:
             reply = await invocation.reply()
         except Exception:
             reply = None
+    if reply is None:
+        reply = getattr(invocation, "reply_message", None)
     if reply is None and invocation.message:
         reply = getattr(invocation.message, "reply_to_message", None) or (invocation.message.get("reply_to_message") if isinstance(invocation.message, dict) else None)
     if callable(reply):
         reply = None
+
+    from hotaru.response import reply_message_id
+    reply_id = reply_message_id(invocation.message)
+    if reply is None and reply_id is not None:
+        chat_id = invocation.chat_id or (invocation.message.get("chat_id") if isinstance(invocation.message, dict) else None)
+        if chat_id is not None and callable(getattr(ctx, "msg", None)):
+            try:
+                reply = await ctx.msg(chat_id, reply_id)
+            except Exception:
+                reply = None
+        if reply is None and runtime is not None:
+            cap_host = getattr(runtime, "cap_host", None)
+            if cap_host is not None:
+                from relay.firewall import trusted_scope
+                with trusted_scope():
+                    try:
+                        reply = await cap_host.call("loader", "fetch", {"op": "message", "peer": chat_id, "id": reply_id})
+                    except Exception:
+                        reply = None
+
     doc = None
     if invocation.message is not None and not callable(invocation.message):
         doc = getattr(invocation.message, "document", None) or getattr(invocation.message, "media", None)
-    if not invocation.args and reply is None and doc is None:
-        await ctx.respond(f'<tg-emoji emoji-id="5778527486270770928">❌</tg-emoji> <b>Укажите ссылку, путь или сделайте реплай на файл модуля (.hmod)</b>', parse_mode="HTML")
+        if doc is None and hasattr(invocation.message, "get"):
+            doc = invocation.message.get("document") or invocation.message.get("media")
+
+    if not invocation.args and reply is None and reply_id is None and doc is None:
+        await ctx.respond(ctx.t("runtime.usage_load_source"), parse_mode="HTML")
         return
 
     temporary = None
@@ -70,15 +100,15 @@ async def command_ld(ctx: Any, invocation: Any) -> Any:
         log.error("module load error: %s", exc, exc_info=True)
         err_raw = str(exc)
         if "file_missing" in err_raw or "not found" in err_raw.lower() or "не найден" in err_raw or isinstance(exc, FileNotFoundError):
-            err_msg = "Файл модуля не найден: прикрепите .hmod или сделайте реплай"
+            err_msg = ctx.t("runtime.file_missing")
         elif "file_document" in err_raw or "должно содержать" in err_raw:
-            err_msg = "Сообщение должно содержать файл модуля (.hmod)"
+            err_msg = ctx.t("runtime.file_document")
         elif "invalid path" in err_raw.lower():
-            err_msg = "Указанный файл или путь не найден"
+            err_msg = ctx.t("runtime.invalid_path")
         elif isinstance(exc, (ValueError, TypeError)):
-            err_msg = f"Ошибка формата модуля: {err_raw}"
+            err_msg = ctx.t("runtime.invalid_module") + f": {err_raw}"
         else:
-            err_msg = f"Не удалось загрузить модуль: {err_raw}"
+            err_msg = ctx.t("runtime.activation_failed") + f": {err_raw}"
         log_lines.append(f" !     {html.escape(err_msg, quote=False)}")
         await ctx.respond(f"<pre>{chr(10).join(log_lines)}</pre>", parse_mode="HTML", output="edit")
         return
@@ -119,20 +149,21 @@ async def command_ul(ctx: Any, invocation: Any) -> Any:
     args = [arg for arg in invocation.args if arg.casefold() not in flags]
     purge = len(args) != len(invocation.args)
     if len(args) != 1:
-        await ctx.respond(f'<tg-emoji emoji-id="5778527486270770928">❌</tg-emoji> <b>Укажите модуль:</b> <code>{runtime.config.prefix}ul &lt;модуль&gt;</code>', parse_mode="HTML")
+        await ctx.respond(ctx.t("runtime.usage_unload", prefix=runtime.config.prefix), parse_mode="HTML")
         return
     raw_mod = str(args[0]).casefold()
     module_id = (runtime.find_module(raw_mod) if hasattr(runtime, "find_module") else None) or raw_mod
     if runtime._is_kernel_module(module_id):
         await ctx.respond(ctx.t('runtime.protected', module_id=module_id))
         return
+    await ctx.respond(ctx.t('runtime.unloading', module=module_id), parse_mode="HTML")
     try:
         await ctx.unload_module(module_id, purge=purge)
     except Exception as exc:
         err = html.escape(str(exc), quote=False)
-        await ctx.respond(f'<tg-emoji emoji-id="5778527486270770928">❌</tg-emoji> <b>Ошибка выгрузки модуля:</b>\n<blockquote>{err}</blockquote>')
+        await ctx.respond(ctx.t('runtime.unload_failed', error=err), parse_mode="HTML", output="edit")
         return
-    await ctx.respond(ctx.t('runtime.purged' if purge else 'runtime.unloaded', module=module_id))
+    await ctx.respond(ctx.t('runtime.purged' if purge else 'runtime.unloaded', module=module_id), parse_mode="HTML", output="edit")
 
 async def command_rl(ctx: Any, invocation: Any) -> Any:
     runtime = ctx.runtime
@@ -155,12 +186,10 @@ async def command_ex(ctx: Any, invocation: Any) -> Any:
     if result:
         await ctx.respond(result)
 
-async def command_rs(ctx: Any, invocation: Any) -> Any:
+async def command_resetdb(ctx: Any, invocation: Any) -> Any:
     runtime = ctx.runtime
     if runtime is None:
         await ctx.respond(ctx.t('kernel.kernel.runtime_unavailable'))
         return
     result = await runtime._command_rs(invocation)
     await ctx.respond(result)
-
-command_resetdb = command_rs

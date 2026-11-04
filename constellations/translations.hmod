@@ -18,6 +18,16 @@ log = logging.getLogger(__name__)
 
 LANGUAGES = ("ru", "en", "kz", "uk", "ja", "zh")
 
+NATIVE_NAMES = {
+    "ru": "Русский",
+    "en": "English",
+    "kz": "Қазақша",
+    "kk": "Қазақша",
+    "uk": "Українська",
+    "ja": "日本語",
+    "zh": "中文",
+}
+
 
 def _escape(value: Any) -> Any:
     return html.escape(str(value), quote=False)
@@ -28,17 +38,17 @@ def home(ctx: Any, nav: Any = None) -> Any:
     current = ctx.runtime.language()
     langs = ctx.runtime.lexicon.available_languages() if getattr(ctx.runtime, "lexicon", None) is not None else LANGUAGES
     options = [
-        k.button(k.radio(ctx.t('kernel.translations.native.' + language, language.upper()), language == current), select, style="success" if language == current else None, language=language)
+        k.button(k.radio(NATIVE_NAMES.get(language, language.upper()), language == current), select, style="success" if language == current else None, language=language)
         for language in langs
     ]
     rows = k.grid(options, 2)
     rows.append(k.footer())
-    current_label = ctx.t('kernel.translations.native.' + current, current.upper())
+    current_label = NATIVE_NAMES.get(current, current.upper())
     text = (
         f'{k.wordmark()}  <b>// Language</b>\n'
         f'<tg-emoji emoji-id="5260512129240276089">📚</tg-emoji> <b>{_escape(current_label)}</b> · <code>{_escape(current)}</code>'
     )
-    return k.screen(text, rows)
+    return k.screen(text, rows, banner=k.banner("translations"), rich=True)
 
 
 def select(ctx: Any, nav: Any) -> Any:
@@ -46,7 +56,7 @@ def select(ctx: Any, nav: Any) -> Any:
     if language != ctx.runtime.language():
         ctx.runtime.set_language(language)
     screen = home(ctx)
-    name = ctx.t("kernel.translations.native." + language, language.upper())
+    name = NATIVE_NAMES.get(language, language.upper())
     screen.toast = f"✅ {name}"
     return screen
 
@@ -75,7 +85,7 @@ async def command_language(ctx: Any, invocation: Any) -> Any:
         code_input = invocation.args[0].lower().strip()
         try:
             ctx.runtime.set_language(code_input)
-            native = ctx.t('kernel.translations.native.' + code_input, code_input.upper())
+            native = NATIVE_NAMES.get(code_input, code_input.upper())
             await ctx.respond(
                 f'<tg-emoji emoji-id="5260726538302660868">✅</tg-emoji> <b>{_escape(native)}</b> (<code>{_escape(code_input)}</code>)',
                 parse_mode="HTML",
@@ -104,9 +114,11 @@ async def _extract_reply_source(ctx: Any, invocation: Any) -> Any:
     if reply is None and getattr(invocation, "message", None) is not None:
         msg = invocation.message
         reply = getattr(msg, "reply_to_message", None) or (msg.get("reply_to_message") if isinstance(msg, dict) else None)
-    if reply is None and getattr(invocation, "chat_id", None) and getattr(invocation, "reply_to_msg_id", None):
+    from hotaru.response import reply_message_id
+    rid = reply_message_id(getattr(invocation, "message", None))
+    if reply is None and rid is not None and getattr(invocation, "chat_id", None) and callable(getattr(ctx, "msg", None)):
         try:
-            reply = await ctx.msg(invocation.chat_id, invocation.reply_to_msg_id)
+            reply = await ctx.msg(invocation.chat_id, rid)
         except Exception:
             reply = None
     if callable(reply):
