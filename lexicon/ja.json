@@ -263,7 +263,7 @@
       "button": {
         "add": "アカウント追加",
         "refresh": "更新",
-        "close": "閉じる",
+        "close": "✕ Close",
         "permissions": "権限",
         "start": "起動",
         "stop": "停止",
@@ -780,7 +780,7 @@
     "brand": "<tg-emoji emoji-id=\"5985527717183888277\">⚡</tg-emoji><tg-emoji emoji-id=\"5985515480822061758\">⚡</tg-emoji><tg-emoji emoji-id=\"5985558606588681366\">⚡</tg-emoji><tg-emoji emoji-id=\"5985757321840565902\">⚡</tg-emoji>",
     "ok": "OK",
     "cancel": "キャンセル",
-    "close": "閉じる",
+    "close": "✕ Close",
     "back": "戻る",
     "unknown_error": "不明なエラー",
     "confirm": "確認",
@@ -1024,7 +1024,7 @@
     }
   },
   "ui": {
-    "close": "✕ 閉じる",
+    "close": "✕ Close",
     "back": "‹ 戻る",
     "expired": "このメニューは期限切れです。コマンドをもう一度実行してください。",
     "stale": "メニューが更新されました。もう一度押してください。",

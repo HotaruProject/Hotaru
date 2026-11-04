@@ -263,7 +263,7 @@
       "button": {
         "add": "Додати акаунт",
         "refresh": "Оновити",
-        "close": "Закрити",
+        "close": "✕ Close",
         "permissions": "Права",
         "start": "Запустити",
         "stop": "Зупинити",
@@ -780,7 +780,7 @@
     "brand": "<tg-emoji emoji-id=\"5985527717183888277\">⚡</tg-emoji><tg-emoji emoji-id=\"5985515480822061758\">⚡</tg-emoji><tg-emoji emoji-id=\"5985558606588681366\">⚡</tg-emoji><tg-emoji emoji-id=\"5985757321840565902\">⚡</tg-emoji>",
     "ok": "ОК",
     "cancel": "Скасувати",
-    "close": "Закрити",
+    "close": "✕ Close",
     "back": "Назад",
     "unknown_error": "Невідома помилка",
     "confirm": "Підтвердити",
@@ -1024,7 +1024,7 @@
     }
   },
   "ui": {
-    "close": "✕ Закрити",
+    "close": "✕ Close",
     "back": "‹ Назад",
     "expired": "Меню застаріло. Викличте команду ще раз.",
     "stale": "Меню щойно оновилося, натисніть ще раз.",

@@ -117,7 +117,7 @@ def _status_screen(ctx: Any) -> Any:
             k.button(ctx.t("kernel.shield.btn_toggle"), action_toggle, style="primary"),
             k.button(ctx.t("kernel.shield.btn_stats"), action_stats),
         ],
-        [k.close(ctx.t("kernel.shield.btn_close"))],
+        [k.close()],
     ]
     return k.screen(text, buttons, rich=True)
 
@@ -149,7 +149,7 @@ async def action_stats(ctx: Any, nav: Any) -> Any:
     )
     buttons = [
         [k.button(ctx.t("common.back", "Back"), action_back, icon="back")],
-        [k.close(ctx.t("kernel.shield.btn_close"))],
+        [k.close()],
     ]
     return k.screen(title, buttons, rich=True)
 
