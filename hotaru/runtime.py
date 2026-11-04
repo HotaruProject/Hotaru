@@ -387,13 +387,27 @@ class Runtime:
             return
         except Exception as exc:
             log.error("restart notice edit failed: %s: %s", type(exc).__name__, exc)
-            if bot is not None and "INLINE_BOT_REQUIRED" in str(exc):
-                try:
-                    with trusted_scope():
-                        await bot.mt_messages_edit_message(peer=chat_id, id=message_id, message=plain, **extra)
-                    return
-                except Exception as inner:
-                    log.error("restart notice bot fallback edit failed: %s: %s", type(inner).__name__, inner)
+        if hasattr(app, "edit_rich"):
+            try:
+                with trusted_scope():
+                    await app.edit_rich(chat_id, message_id, html)
+                return
+            except Exception as exc:
+                log.error("restart notice edit_rich fallback failed: %s: %s", type(exc).__name__, exc)
+        if hasattr(app, "edit_msg"):
+            try:
+                with trusted_scope():
+                    await app.edit_msg(chat_id, message_id, plain, parse_mode="html")
+                return
+            except Exception as exc:
+                log.error("restart notice edit_msg fallback failed: %s: %s", type(exc).__name__, exc)
+        if bot is not None:
+            try:
+                with trusted_scope():
+                    await bot.mt_messages_edit_message(peer=chat_id, id=message_id, message=plain, **extra)
+                return
+            except Exception as inner:
+                log.error("restart notice bot fallback edit failed: %s: %s", type(inner).__name__, inner)
 
     async def _restart_notice_progress(self, done: int, total: int) -> None:
         await self._restart_notice_edit(self.t("kernel.power.restoring", done=done, total=total))

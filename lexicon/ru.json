@@ -109,7 +109,7 @@
       "already_running": "<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> <b>Hotaru уже работает.</b>",
       "stop_confirm": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>Приостановка Hotaru</b><blockquote><tg-emoji emoji-id=\"5258258882022612173\">⏳</tg-emoji> Обычные модули перестанут отвечать до вызова <code>{prefix}start</code>.</blockquote>",
       "stop_action": "Приостановить",
-      "restart_confirm": "<tg-emoji emoji-id=\"5258152182150077732\">⚡</tg-emoji> <b>Перезапуск Hotaru</b><blockquote><tg-emoji emoji-id=\"5258420634785947640\">🔄</tg-emoji> Состояние сохранится, модули и сессии будут перезагружены без потери данных.</blockquote>",
+      "restart_confirm": "<tg-emoji emoji-id=\"5258420634785947640\">🔄</tg-emoji> <b>Перезапуск Hotaru</b><blockquote><tg-emoji emoji-id=\"5258258882022612173\">⏳</tg-emoji> Подтвердите перезапуск процессов ядра. Состояние и сессии сохранятся.</blockquote>",
       "restart_action": "Перезапустить",
       "restoring": "<tg-emoji emoji-id=\"5258420634785947640\">🔄</tg-emoji> <b>Восстановление модулей…</b><blockquote><tg-emoji emoji-id=\"5325732612084351248\">📦</tg-emoji> <b>Загружено:</b> <code>{done}/{total}</code></blockquote>"
     },
@@ -321,20 +321,20 @@
     "accounts": {
       "description": "Управление аккаунтами",
       "commands": {
-        "acc": {
+        "account": {
           "description": "Управление аккаунтом",
           "usage": "[number] [start|stop|restart|del]"
         },
-        "acca": {
+        "account_add": {
           "description": "Добавить аккаунт или войти",
           "usage": "[number|cancel]"
         },
-        "accs": {
+        "accounts": {
           "description": "Открыть панель аккаунтов",
           "usage": "[number]"
         }
       },
-      "usage": "<b>Аккаунты</b>\n<code>{prefix}acca [user_id]</code> · добавить по QR / номеру\n<code>{prefix}acca cancel</code> · отменить вход\n<code>{prefix}accs [#]</code> · панель аккаунтов\n<code>{prefix}acc [#]</code> · панель аккаунтов\n<code>{prefix}acc 2 start|stop|restart|on|off|del</code>",
+      "usage": "<b>Аккаунты</b>\n<code>{prefix}account_add [user_id]</code> · добавить по QR / номеру\n<code>{prefix}account_add cancel</code> · отменить вход\n<code>{prefix}accounts [#]</code> · панель аккаунтов\n<code>{prefix}account [#]</code> · панель аккаунтов\n<code>{prefix}account 2 start|stop|restart|on|off|del</code>",
       "empty": "Аккаунты не зарегистрированы.",
       "no_self": "Не удалось определить user id сессии.",
       "not_registered": "Аккаунт #{n} не зарегистрирован.",

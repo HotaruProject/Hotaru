@@ -304,12 +304,11 @@ def step_finish(ctx: Any, nav: Any = None) -> Any:
         f'• <code>{_escape(prefix)}config</code> — {_escape(ctx.t("kernel.config.title", "Settings"))}\n'
         f'• <code>{_escape(prefix)}info</code> — {_escape(ctx.t("kernel.info.description", "Information and latency"))}\n'
     )
-    rows: List[List[Any]] = [
-        [k.link(ctx.t("kernel.genesis.btn_help", "📖 Help"), "help", "home"), k.link(ctx.t("kernel.genesis.btn_settings", "⚙️ Settings"), "settings", "home")],
-    ]
+    rows: List[List[Any]] = []
     wb = _webapp_button(ctx)
     if wb:
         rows.append([wb])
+    rows.append([k.link(ctx.t("kernel.genesis.btn_settings", "⚙️ Settings"), "settings", "home")])
     rows.append([k.close()])
     return k.screen(text, rows, banner=k.banner("genesis"), rich=True)
 
@@ -347,7 +346,17 @@ async def _rise_tasks(ctx: Any) -> None:
                 bot_user = str(runtime.state.get_setting("inline-bot-username") or "").lstrip("@").strip()
             if not bot_user and runtime and getattr(runtime, "inline", None) and getattr(runtime.inline, "info", None):
                 bot_user = str(getattr(runtime.inline.info, "username", "") or "").lstrip("@").strip()
-            if bot_user and hasattr(ctx, "screens") and hasattr(ctx.screens, "send"):
-                await ctx.screens.send(bot_user, home(ctx))
+            if bot_user and runtime and getattr(runtime, "app", None):
+                target = "@" + bot_user
+                sent = await runtime.app.send_msg(target, "/start")
+                from goygram.sugar import extract_sent_message
+                msg = extract_sent_message(sent)
+                mid = msg.get("id") if isinstance(msg, dict) else None
+                if mid is not None:
+                    await asyncio.sleep(0.5)
+                    try:
+                        await runtime.app.delete_msg(target, mid, revoke=True)
+                    except Exception:
+                        pass
     except Exception:
         pass

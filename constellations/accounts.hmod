@@ -1,7 +1,7 @@
 HOTARU = {
     "id": "accounts",
     "version": "2.0.0",
-    "commands": ["acc", "acca", "accs"],
+    "commands": ["account", "account_add", "accounts"],
     "capabilities": ["mt"],
     "banner": "https://raw.githubusercontent.com/HotaruProject/Hotaru/develop/hotaru/assets/accounts.mp4",
     "rise": "sunrise",
@@ -551,7 +551,7 @@ class AccountLogin:
 
     async def open(self, screen: Any) -> None:
         engine = self.runtime.screens
-        source = SimpleNamespace(chat_id=self.actor, from_id=self.actor, _hotaru_actor_id=self.actor, _hotaru_command='acca', id=None, src='mt')
+        source = SimpleNamespace(chat_id=self.actor, from_id=self.actor, _hotaru_actor_id=self.actor, _hotaru_command='account_add', id=None, src='mt')
         form = await engine.open('accounts', source, screen)
         self.view = engine.ref(form)
 
@@ -971,7 +971,7 @@ async def _panel(ctx: Any, number: Optional[int]) -> None:
     await ctx.screens.show(_list(ctx, actor) if number is None else _detail(ctx, actor, number))
 
 
-async def command_accs(ctx: Any, invocation: Any) -> Any:
+async def command_accounts(ctx: Any, invocation: Any) -> Any:
     args = invocation.args
     number = _number(args[0]) if args else None
     if len(args) > 1 or (args and number is None):
@@ -980,7 +980,7 @@ async def command_accs(ctx: Any, invocation: Any) -> Any:
     await _panel(ctx, number)
 
 
-async def command_acca(ctx: Any, invocation: Any) -> Any:
+async def command_account_add(ctx: Any, invocation: Any) -> Any:
     args = invocation.args
     login = ctx.runtime.account_login
     if args and args[0] == 'password':
@@ -1012,7 +1012,7 @@ async def command_acca(ctx: Any, invocation: Any) -> Any:
     await login.start(ctx, uid)
 
 
-async def command_acc(ctx: Any, invocation: Any) -> Any:
+async def command_account(ctx: Any, invocation: Any) -> Any:
     args = invocation.args
     number = _number(args[0]) if args else None
     if not args or (len(args) == 1 and number is not None):

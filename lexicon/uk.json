@@ -119,7 +119,7 @@
       "already_running": "<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> <b>Юзербот уже працює.</b>",
       "stop_confirm": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>Призупинити юзербота?</b><br>Звичайні модулі замовкнуть до {prefix}start.",
       "stop_action": "Призупинити",
-      "restart_confirm": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>Перезапустити юзербота?</b><br>Стан збережеться, модулі перезавантажаться.",
+      "restart_confirm": "<tg-emoji emoji-id=\"5258420634785947640\">🔄</tg-emoji> <b>Перезапуск Hotaru</b><blockquote><tg-emoji emoji-id=\"5258258882022612173\">⏳</tg-emoji> Підтвердіть перезапуск процесів ядра. Стан та сесії збережуться.</blockquote>",
       "restart_action": "Перезапустити",
       "restoring": "<tg-emoji emoji-id=\"5258420634785947640\">🔄</tg-emoji> <b>Відновлюю модулі…</b> <code>{done}/{total}</code>"
     },
@@ -261,20 +261,20 @@
     "accounts": {
       "description": "Керування акаунтами",
       "commands": {
-        "acc": {
+        "account": {
           "description": "Керування акаунтом",
           "usage": "[number] [start|stop|restart|del]"
         },
-        "acca": {
+        "account_add": {
           "description": "Додати акаунт або увійти",
           "usage": "[number|cancel]"
         },
-        "accs": {
+        "accounts": {
           "description": "Відкрити панель акаунтів",
           "usage": "[number]"
         }
       },
-      "usage": "<b>Акаунти</b>\n<code>{prefix}acca [user_id]</code> · додати за QR / номером\n<code>{prefix}acca cancel</code> · скасувати вхід\n<code>{prefix}accs [#]</code> · панель акаунтів\n<code>{prefix}acc [#]</code> · панель акаунтів\n<code>{prefix}acc 2 start|stop|restart|on|off|del</code>",
+      "usage": "<b>Акаунти</b>\n<code>{prefix}account_add [user_id]</code> · додати за QR / номером\n<code>{prefix}account_add cancel</code> · скасувати вхід\n<code>{prefix}accounts [#]</code> · панель акаунтів\n<code>{prefix}account [#]</code> · панель акаунтів\n<code>{prefix}account 2 start|stop|restart|on|off|del</code>",
       "empty": "Акаунти не зареєстровані.",
       "no_self": "Не вдалося визначити user id сесії.",
       "not_registered": "Акаунт #{n} не зареєстрований.",

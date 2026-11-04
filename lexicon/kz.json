@@ -119,7 +119,7 @@
       "already_running": "<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> <b>Юзербот әлдеқашан жұмыс істеп тұр.</b>",
       "stop_confirm": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>Юзерботты тоқтатасыз ба?</b><br>Қалыпты модульдер {prefix}start пәрменіне дейін үнсіз қалады.",
       "stop_action": "Тоқтату",
-      "restart_confirm": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>Юзерботты қайта қосу керек пе?</b><br>Күй сақталады, модульдер қайта жүктеледі.",
+      "restart_confirm": "<tg-emoji emoji-id=\"5258420634785947640\">🔄</tg-emoji> <b>Hotaru қайта іске қосу</b><blockquote><tg-emoji emoji-id=\"5258258882022612173\">⏳</tg-emoji> Ядро процестерін қайта жүктеуді растаңыз. Күй мен сессиялар сақталады.</blockquote>",
       "restart_action": "Қайта қосу",
       "restoring": "<tg-emoji emoji-id=\"5258420634785947640\">🔄</tg-emoji> <b>Модульдерді қалпына келтіруде…</b> <code>{done}/{total}</code>"
     },
@@ -261,20 +261,20 @@
     "accounts": {
       "description": "Аккаунттарды басқару",
       "commands": {
-        "acc": {
+        "account": {
           "description": "Аккаунтты басқару",
           "usage": "[number] [start|stop|restart|del]"
         },
-        "acca": {
+        "account_add": {
           "description": "Аккаунт қосу немесе кіру",
           "usage": "[number|cancel]"
         },
-        "accs": {
+        "accounts": {
           "description": "Аккаунттар тақтасын ашу",
           "usage": "[number]"
         }
       },
-      "usage": "<b>Аккаунттар</b>\n<code>{prefix}acca [user_id]</code> · QR / нөмір арқылы қосу\n<code>{prefix}acca cancel</code> · кіруден бас тарту\n<code>{prefix}accs [#]</code> · аккаунттар панелі\n<code>{prefix}acc [#]</code> · аккаунттар панелі\n<code>{prefix}acc 2 start|stop|restart|on|off|del</code>",
+      "usage": "<b>Аккаунттар</b>\n<code>{prefix}account_add [user_id]</code> · QR / нөмір арқылы қосу\n<code>{prefix}account_add cancel</code> · кіруден бас тарту\n<code>{prefix}accounts [#]</code> · аккаунттар панелі\n<code>{prefix}account [#]</code> · аккаунттар панелі\n<code>{prefix}account 2 start|stop|restart|on|off|del</code>",
       "empty": "Тіркелген аккаунттар жоқ.",
       "no_self": "Сессия user id анықталмады.",
       "not_registered": "#{n} аккаунты тіркелмеген.",
