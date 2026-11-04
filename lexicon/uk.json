@@ -162,9 +162,10 @@
         "ru": "Русский",
         "en": "English",
         "kz": "Қазақша",
+        "kk": "Қазақша",
         "uk": "Українська",
         "ja": "日本語",
-        "zh": "Китайська"
+        "zh": "中文"
       }
     },
     "test-features": {
@@ -621,10 +622,6 @@
           "description": "Експортувати модуль",
           "usage": "[модуль]"
         },
-        "rs": {
-          "description": "Очистити дані модуля",
-          "usage": "[модуль]"
-        },
         "resetdb": {
           "description": "Очистити дані модуля",
           "usage": "[модуль]"
@@ -857,7 +854,7 @@
     "usage_mi": "<b>Використання:</b> <code>{prefix}mi [module]</code> — <i>інформація про модуль</i>",
     "usage_help": "<b>Використання:</b> <code>{prefix}help &lt;page|module&gt;</code> — <i>довідка по командах</i>",
     "usage_reload": "<b>Використання:</b> <code>{prefix}rl [module] &lt;force&gt;</code> — <i>перезавантажити модуль</i>",
-    "usage_unload": "<b>Використання:</b> <code>{prefix}ul [module] &lt;-c&gt;</code> — <i>вивантажити модуль (-c для очищення)</i>",
+    "usage_unload": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>Вкажіть модуль:</b> <code>{prefix}ul &lt;модуль&gt;</code>",
     "usage_reset": "<b>Використання:</b> <code>{prefix}rs [module]</code> — <i>скинути стан модуля</i>",
     "usage_export": "<b>Використання:</b> <code>{prefix}ex [module]</code> — <i>експортувати вихідний код модуля</i>",
     "usage_backup": "<b>Використання:</b> <code>{prefix}bk &lt;list|test|restore&gt; &lt;archive&gt;</code> — <i>керування резервними копіями</i>",
@@ -889,7 +886,10 @@
     "file_document": "Надішли модуль файлом",
     "unknown_capability": "невідома можливість (заборонена)",
     "loading_module": "Завантажую {module_id}…",
-    "export_caption": "<tg-emoji emoji-id=\"5258514780469075716\">📂</tg-emoji> <b>{module}</b> <code>v{version}</code>\n<blockquote><tg-emoji emoji-id=\"5258134813302332906\">📦</tg-emoji> Експорт модуля Hotaru</blockquote>"
+    "export_caption": "<tg-emoji emoji-id=\"5258514780469075716\">📂</tg-emoji> <b>{module}</b> <code>v{version}</code>\n<blockquote><tg-emoji emoji-id=\"5258134813302332906\">📦</tg-emoji> Експорт модуля Hotaru</blockquote>",
+    "usage_load_source": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>Вкажіть посилання, шлях або зробіть реплай на файл модуля (.hmod)</b>",
+    "unloading": "<tg-emoji emoji-id=\"5258130763148172425\">🗑</tg-emoji> <i>Вивантажую <code>{module}</code>...</i>",
+    "invalid_path": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>Вказаний файл або шлях не знайдено.</b>"
   },
   "acl": {
     "owners": "<b>Власники</b><br>",

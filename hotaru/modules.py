@@ -153,17 +153,9 @@ class HmodLoader:
             source = candidate.read_text(encoding="utf-8")
         except (OSError, UnicodeError) as exc:
             raise ModuleValidationError("module is not valid UTF-8") from exc
-        meta_banner = ""
-        for raw_line in source.splitlines()[:30]:
-            line_str = raw_line.strip()
-            if line_str.startswith("#"):
-                m = re.match(r"^#\s*(?:meta\s+)?banner\s*:\s*(.+)$", line_str, re.IGNORECASE)
-                if m:
-                    meta_banner = m.group(1).strip()
-                    break
         try:
             tree = ast.parse(source, filename=str(candidate), mode="exec")
-            manifest = self._manifest(tree, default_banner=meta_banner)
+            manifest = self._manifest(tree)
             for definition in (manifest.template_fields or {}).values():
                 if "provider" in definition:
                     target = "template_" + definition["provider"]
@@ -185,7 +177,7 @@ class HmodLoader:
             raise ModuleValidationError("module path must be a regular file")
 
     @staticmethod
-    def _manifest(tree: ast.Module, default_banner: str = "") -> ModuleManifest:
+    def _manifest(tree: ast.Module) -> ModuleManifest:
         if not tree.body or not isinstance(tree.body[0], (ast.Assign, ast.AnnAssign)):
             raise ModuleValidationError("HOTARU must be the first statement")
         statement = tree.body[0]
@@ -207,10 +199,10 @@ class HmodLoader:
             raise ModuleValidationError("HOTARU must be a literal mapping") from exc
         if not isinstance(raw, dict):
             raise ModuleValidationError("HOTARU must be a mapping")
-        return HmodLoader._build_manifest(cast('dict[object, object]', raw), default_banner=default_banner)
+        return HmodLoader._build_manifest(cast('dict[object, object]', raw))
 
     @staticmethod
-    def _build_manifest(raw: dict[object, object], default_banner: str = "") -> ModuleManifest:
+    def _build_manifest(raw: dict[object, object]) -> ModuleManifest:
         required = ("id", "version", "commands", "capabilities")
         if any(key not in raw for key in required):
             raise ModuleValidationError("manifest is missing required fields")
@@ -282,9 +274,12 @@ class HmodLoader:
         if fade and not fade.isidentifier():
             raise ModuleValidationError("manifest fade is invalid")
 
-        banner = raw.get("banner") or default_banner
+        banner = raw.get("banner", "")
         if not isinstance(banner, str):
             raise ModuleValidationError("manifest banner must be a string")
+        banner = banner.strip()
+        if banner and not (banner.startswith("https://") or banner.startswith("http://")):
+            raise ModuleValidationError("manifest banner must be a valid URL")
         for language, translation in cast('dict[object, object]', translations).items():
             if not isinstance(language, str) or not re.fullmatch(r"[A-Za-z]{2,8}(?:[-_][A-Za-z0-9]{1,8})*", language) or not isinstance(translation, dict):
                 raise ModuleValidationError("manifest translations are invalid")

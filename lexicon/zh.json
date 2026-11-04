@@ -57,7 +57,23 @@
       "parameter_missing": "未找到参数 <code>{parameter}</code>。",
       "error_html": "错误：<code>{error}</code>",
       "missing": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>模块 <code>{module}</code> 无设置或未加载。</b>",
-      "param_missing": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>未找到参数 <code>{name}</code>。</b>"
+      "param_missing": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>未找到参数 <code>{name}</code>。</b>",
+      "title": "⚙️ 设置",
+      "title_short": "设置",
+      "pick": "选择模块：",
+      "reset_all": "↺ 重置全部",
+      "reset_confirm": "将 <b>{module}</b> 的所有参数重置为默认值？",
+      "reset_yes": "重置",
+      "reset_done": "已恢复默认值",
+      "value": "当前值",
+      "default": "默认值",
+      "type": "类型",
+      "restart": "重启后生效。",
+      "copy": "⧉ 复制",
+      "field_unavailable": "模板字段不可用或未导出：{name}",
+      "param": "参数",
+      "about": "参数说明",
+      "changed": "已更改：{count}"
     },
     "power": {
       "already_stopped": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>用户机器人已处于暂停状态。</b>",
@@ -200,15 +216,26 @@
         "language": {
           "description": "显示或切换语言",
           "usage": "[language]"
+        },
+        "translate": {
+          "description": "翻译文本",
+          "usage": "[语言代码] <文本/回复>"
+        },
+        "loadlex": {
+          "description": "加载语言包",
+          "usage": "[链接/路径/文件]"
         }
       },
       "native": {
-        "ru": "俄语",
-        "en": "英语",
-        "kz": "哈萨克语",
-        "uk": "乌克兰语",
-        "ja": "日语"
-      }
+        "ru": "Русский",
+        "en": "English",
+        "kz": "Қазақша",
+        "kk": "Қазақша",
+        "uk": "Українська",
+        "ja": "日本語",
+        "zh": "中文"
+      },
+      "no_text": "未提供待翻译的文本"
     },
     "test-features": {
       "description": "Hotaru 代理与能力测试模块",
@@ -254,7 +281,17 @@
       "disabled": "<b>模块已停用：</b><code>{module}</code><br><i>错误：{error}</i>",
       "missing": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>未找到模块：</b> <code>{module}</code>",
       "aliases": "别名",
-      "kernel_badge": "kernel"
+      "kernel_badge": "kernel",
+      "title": "Hotaru · 帮助",
+      "summary": "{count} 个模块 · 前缀 <code>{prefix}</code>",
+      "pick": "点击模块查看其命令。",
+      "user_badge": "已安装",
+      "no_commands": "无命令",
+      "settings": "⚙️ 设置",
+      "search_prompt": "模块或命令",
+      "results": "«{query}» 的搜索结果",
+      "count": "{count} 个模块",
+      "prefix": "前缀 {prefix}"
     },
     "accounts": {
       "description": "账号管理",
@@ -402,7 +439,11 @@
         "no_user": "登录未返回用户。",
         "wrong_account": "账号错误，期望用户 {uid}。",
         "unknown": "无法完成此操作。"
-      }
+      },
+      "field": {
+        "autostart": "自动启动"
+      },
+      "title": "账户"
     },
     "acl": {
       "description": "访问控制",
@@ -418,6 +459,42 @@
         "whois": {
           "description": "显示用户权限",
           "usage": "[ID|@username] [command]"
+        },
+        "owadd": {
+          "description": "添加所有者"
+        },
+        "owrm": {
+          "description": "移除所有者"
+        },
+        "owls": {
+          "description": "所有者列表"
+        },
+        "sgnew": {
+          "description": "创建权限组"
+        },
+        "sgls": {
+          "description": "权限组列表"
+        },
+        "sg": {
+          "description": "显示组成员和规则"
+        },
+        "sgdel": {
+          "description": "删除权限组"
+        },
+        "sgadd": {
+          "description": "添加组成员"
+        },
+        "sgrm": {
+          "description": "移除组成员"
+        },
+        "rule": {
+          "description": "添加访问规则"
+        },
+        "rulerm": {
+          "description": "移除规则"
+        },
+        "ruleclr": {
+          "description": "清除规则"
         }
       },
       "bad_group": "组名：仅限字母和数字，最多 32 个字符。",
@@ -425,7 +502,10 @@
       "bad_rule": "规则：command/name 或 module/name。",
       "self_owner": "该用户已是账号所有者。",
       "empty": "未授予任何权限。使用 !perm <user_id> <role>。",
-      "bad_label": "未知权限：{label}。"
+      "bad_label": "未知权限：{label}。",
+      "usage": "用法：\n!owadd <user_id|reply> — 授予所有者\n!owrm <user_id|reply> — 撤销所有者\n!owls — 所有者列表\n!sgnew <name> — 创建安全组\n!sgls — 列出组\n!sg <name> — 显示组成员和规则\n!sgdel <name> — 删除组\n!sgadd <name> <user_id|reply> — 向组添加用户\n!sgrm <name> <user_id|reply> — 从组中移除用户\n!rule <user|chat|sgroup> <target> <command|module>/<name> [expiry] — 添加规则\n!rulerm — 移除规则\n!ruleclr — 清除目标规则\n!perm <user_id> <admin|trusted|everyone> [remove] — 授予/撤销权限\n!perms — 列出权限\n!whois <user_id> — 查询用户权限",
+      "no_groups": "暂无安全组。创建：!sgnew <name>",
+      "no_owner_grant": "所有者需通过 !owadd 授予。"
     },
     "lg": "日志尾部：\n{lines}",
     "commands": {
@@ -448,6 +528,12 @@
         "prefix": {
           "description": "更改命令前缀",
           "usage": "[prefix]"
+        },
+        "settings": {
+          "description": "打开统一设置"
+        },
+        "config": {
+          "description": "配置模块参数"
         }
       }
     },
@@ -540,10 +626,6 @@
           "description": "导出模块",
           "usage": "[module]"
         },
-        "rs": {
-          "description": "重置模块数据",
-          "usage": "[module]"
-        },
         "resetdb": {
           "description": "重置模块数据",
           "usage": "[module]"
@@ -576,7 +658,11 @@
         "uptime": "用户机器人运行时长，仅显示非零单位",
         "uptime_seconds": "用户机器人运行时长（秒）"
       },
-      "example_uptime": "2 小时 3 分钟"
+      "example_uptime": "2 小时 3 分钟",
+      "config_fields": {
+        "banner": "Ping 横幅模式",
+        "template": "Ping 回复的文本内容"
+      }
     },
     "info": {
       "description": "用户机器人信息卡片",
@@ -601,7 +687,16 @@
       "probe": "探测器",
       "relay": "中继",
       "inline_bot": "内联机器人",
-      "open_button": "打开 Singularity"
+      "open_button": "打开 Singularity",
+      "description": "3D 内核遥测与 Observatory 调试流 (Singularity)",
+      "commands": {
+        "dashboard": {
+          "description": "打开 WebApp 仪表板"
+        },
+        "dash": {
+          "description": "打开 Singularity Mini App 的内联启动器"
+        }
+      }
     },
     "intrusion": {
       "alert": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>Hotaru 会话正被外部使用</b>\n\n{source}\n\n<blockquote><code>{detail}</code></blockquote>\n\n另一个客户端使用 Hotaru 自身的会话连接。为确保安全，Hotaru 已停止运行。",
@@ -635,6 +730,33 @@
       "btn_stats": "统计",
       "btn_close": "关闭",
       "description": "Telegram API 泛洪与速率限制保护"
+    },
+    "backups": {
+      "description": "将备份发送至服务论坛",
+      "commands": {
+        "backup": {
+          "description": "发送备份或管理自动备份"
+        }
+      },
+      "config_fields": {
+        "enabled": "发送自动备份",
+        "interval_hours": "备份间隔小时数"
+      },
+      "heading": "{icon} <b>备份</b>\n{status} · {hours} 小时",
+      "enabled": "已启用",
+      "disabled": "已禁用",
+      "last_sent": "上次发送：{date}",
+      "destination": "目标存储：服务群组中的 {topic} 主题。",
+      "encrypted": "使用会话密钥加密。恢复需要相同的密钥。",
+      "send_now": "立即发送",
+      "disable": "禁用",
+      "enable": "启用",
+      "not_ready": "服务群组尚未准备就绪",
+      "caption": "Hotaru 备份文件",
+      "failed": "备份失败：{error}",
+      "sent": "备份已发送",
+      "topic": "备份",
+      "usage": "<code>{prefix}backup [now|on|off]</code>"
     }
   },
   "commands": {
@@ -687,7 +809,8 @@
       "rmalias": "删除命令别名",
       "lsalias": "列出命令别名",
       "prefix": "更改命令前缀"
-    }
+    },
+    "alias_invalid": "别名：1-32个字符，支持字母、数字和下划线；不能以数字开头。"
   },
   "runtime": {
     "modules_unavailable": "模块：不可用",
@@ -747,7 +870,7 @@
     "usage_mi": "<b>用法：</b> <code>{prefix}mi [module]</code> — <i>模块信息</i>",
     "usage_help": "<b>用法：</b> <code>{prefix}help &lt;page|module&gt;</code> — <i>帮助信息</i>",
     "usage_reload": "<b>用法：</b> <code>{prefix}rl [module] &lt;force&gt;</code> — <i>重载模块</i>",
-    "usage_unload": "<b>用法：</b> <code>{prefix}ul [module] &lt;-c&gt;</code> — <i>卸载模块 (-c 清除数据)</i>",
+    "usage_unload": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>请指定模块：</b> <code>{prefix}ul &lt;模块&gt;</code>",
     "usage_reset": "<b>用法：</b> <code>{prefix}rs [module]</code> — <i>重置状态</i>",
     "usage_export": "<b>用法：</b> <code>{prefix}ex [module]</code> — <i>导出源代码</i>",
     "usage_backup": "<b>用法：</b> <code>{prefix}bk &lt;list|test|restore&gt; &lt;archive&gt;</code> — <i>备份管理</i>",
@@ -778,7 +901,11 @@
     "file_missing": "缺少模块文件",
     "file_document": "模块文件必须是文档",
     "unknown_capability": "未知能力（已拒绝）",
-    "export_caption": "<tg-emoji emoji-id=\"5258514780469075716\">📂</tg-emoji> <b>{module}</b> <code>v{version}</code>\n<blockquote><tg-emoji emoji-id=\"5258134813302332906\">📦</tg-emoji> Hotaru 模块导出</blockquote>"
+    "export_caption": "<tg-emoji emoji-id=\"5258514780469075716\">📂</tg-emoji> <b>{module}</b> <code>v{version}</code>\n<blockquote><tg-emoji emoji-id=\"5258134813302332906\">📦</tg-emoji> Hotaru 模块导出</blockquote>",
+    "loading_module": "正在加载 {module_id}…",
+    "usage_load_source": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>请指定链接、路径或回复模块文件 (.hmod)</b>",
+    "unloading": "<tg-emoji emoji-id=\"5258130763148172425\">🗑</tg-emoji> <i>正在卸载 <code>{module}</code>...</i>",
+    "invalid_path": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>未找到指定的文件或路径。</b>"
   },
   "acl": {
     "owners": "<b>所有者</b><br>",
@@ -860,9 +987,45 @@
     "syntax": {
       "perms": "<code>{prefix}perms [ID|@username]</code>",
       "whois": "<code>{prefix}whois [ID|@username] [command]</code>",
-      "perm": "<code>{prefix}perm [ID|@username|command/name] &lt;role&gt; [remove]</code>"
+      "perm": "<code>{prefix}perm [ID|@username|command/name] &lt;role&gt; [remove]</code>",
+      "owadd": "<code>{prefix}owadd [ID|@username]</code>",
+      "owrm": "<code>{prefix}owrm [ID|@username]</code>",
+      "owls": "<code>{prefix}owls</code>",
+      "sgnew": "<code>{prefix}sgnew &lt;name&gt;</code>",
+      "sgdel": "<code>{prefix}sgdel &lt;name&gt;</code>",
+      "sgls": "<code>{prefix}sgls</code>",
+      "sg": "<code>{prefix}sg &lt;name&gt;</code>",
+      "sgadd": "<code>{prefix}sgadd &lt;name&gt; [ID|@username]</code>",
+      "sgrm": "<code>{prefix}sgrm &lt;name&gt; [ID|@username]</code>",
+      "rule": "<code>{prefix}rule &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;command/name|module/name&gt; [1h|forever]</code>",
+      "rulerm": "<code>{prefix}rulerm &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;command/name|module/name|*&gt;</code>",
+      "ruleclr": "<code>{prefix}ruleclr &lt;user|chat|sgroup&gt; [target]</code>"
     },
-    "all_chats": "对所有聊天中的所有人开放。"
+    "all_chats": "对所有聊天中的所有人开放。",
+    "account": " · 账户",
+    "protected": " · 受保护",
+    "failed": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>错误：</b>\n<blockquote>{error}</blockquote>",
+    "owner_added": "已授予 <code>{user_id}</code> 所有者权限",
+    "owner_exists": "<code>{user_id}</code> 已经是所有者",
+    "owner_removed": "已撤销 <code>{user_id}</code> 的所有者权限",
+    "owner_missing": "<code>{user_id}</code> 不是附加所有者",
+    "group_created": "<b>已创建权限组</b> <code>{name}</code>",
+    "group_deleted": "<b>已删除权限组</b> <code>{name}</code>",
+    "group_detail": "<b>权限组 {name}</b><br><b>用户</b><br>{users}<br><b>规则</b><br>{rules}",
+    "member_exists": "<code>{user_id}</code> 已在 <code>{name}</code> 中",
+    "member_missing": "<code>{user_id}</code> 不在 <code>{name}</code> 中",
+    "member_added": "<b>已将</b> <code>{user_id}</code> 添加至 <code>{name}</code>",
+    "member_removed": "<b>已将</b> <code>{user_id}</code> 从 <code>{name}</code> 移除",
+    "duration": "，有效期 {duration}",
+    "rule_added": "<b>已添加规则：</b> {kind} <code>{target}</code> → {type}/{rule}{until}",
+    "rule_removed": "<b>规则已移除</b>",
+    "nothing_remove": "无可移除的规则",
+    "rules_cleared": "<b>规则已清空</b>",
+    "nothing_clear": "无可清空的规则",
+    "self_owner": "该用户已拥有此账户。",
+    "no_groups": "暂无权限组。",
+    "usage": "<code>{prefix}owadd &lt;user_id|reply&gt;</code> — 添加所有者\n<code>{prefix}owrm &lt;user_id|reply&gt;</code> — 移除所有者\n<code>{prefix}owls</code> — 列出所有者\n<code>{prefix}sgnew &lt;name&gt;</code> — 创建权限组\n<code>{prefix}sgls</code> — 列出权限组\n<code>{prefix}sg &lt;name&gt;</code> — 查看权限组成员与规则\n<code>{prefix}sgdel &lt;name&gt;</code> — 删除权限组\n<code>{prefix}sgadd &lt;name&gt; &lt;user_id|reply&gt;</code> — 添加成员\n<code>{prefix}sgrm &lt;name&gt; &lt;user_id|reply&gt;</code> — 移除成员\n<code>{prefix}rule &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;command|module&gt;/&lt;name&gt; [expiry]</code> — 添加访问规则\n<code>{prefix}rulerm &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;rule&gt;</code> — 移除规则\n<code>{prefix}ruleclr &lt;user|chat|sgroup&gt; [target]</code> — 清空规则\n<code>{prefix}perm &lt;user_id&gt; &lt;admin|trusted|everyone&gt; [remove]</code> — 授予或撤销权限\n<code>{prefix}perms</code> — 权限列表\n<code>{prefix}whois &lt;user_id&gt;</code> — 查看用户权限",
+    "account_owner": "账户所有者不可被移除。"
   },
   "inline": {
     "command_open": "打开 {command}",
@@ -879,6 +1042,22 @@
   "ui": {
     "error": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> {error}",
     "failed": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>发生错误：</b>\n<blockquote>{error}</blockquote>",
-    "denied": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> 该按钮不可用。"
+    "denied": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> 该按钮不可用。",
+    "close": "✕ Close",
+    "back": "‹ 返回",
+    "expired": "菜单已过期，请重新运行命令。",
+    "stale": "菜单已更新，请再次点击。",
+    "flood": "Telegram 要求等待 {seconds} 秒。",
+    "slow_down": "操作过于频繁，请稍候。",
+    "inline_unavailable": "<i>此聊天不支持内联菜单，显示为纯文本。</i>",
+    "input_send_secret": "发送（{count} 个字符，隐藏）",
+    "search": "🔍 搜索",
+    "edit": "✎ 编辑",
+    "reset": "↺ 默认",
+    "on": "开启",
+    "off": "关闭",
+    "saved": "已保存",
+    "empty": "空",
+    "nothing_found": "未找到 «{query}» 的相关结果。"
   }
 }

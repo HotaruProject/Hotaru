@@ -612,7 +612,7 @@ def _screen(ctx: Any, data: dict[str, Any]) -> Any:
             back = {"view": "rules", "kind": data["kind"], "target": data["target"]}
         rows = [[k.danger(ctx.t("acl.confirm"), action, **{**data, "view": back["view"], "confirmed": True})]]
     rows.append(k.footer(action, **{**back, "chat": chat}) if view != "home" else k.footer())
-    return k.screen(text, rows)
+    return k.screen(text, rows, banner=k.banner("acl"), rich=True)
 
 def _allowed(ctx: Any, nav: Any) -> bool:
     return bool(ctx.access_admin.is_owner(nav.actor))
