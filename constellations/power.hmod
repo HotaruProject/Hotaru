@@ -1,7 +1,8 @@
 HOTARU = {
     "id": "power",
     "version": "1.5.0",
-    "commands": ["restart", "stop", "start"],
+    "commands": ["restart", "stop", "resume"],
+    "aliases": {"unpause": "resume"},
     "capabilities": ["mt"],
     "banner": "https://raw.githubusercontent.com/HotaruProject/Hotaru/develop/hotaru/assets/power.mp4",
     "fade": "sundown",
@@ -84,15 +85,17 @@ async def confirm_stop(ctx: Any, nav: Any) -> Any:
     k = ctx.screens
     return k.screen(_text_stopped_details(ctx), [k.footer()], rich=True)
 
-async def command_start(ctx: Any, invocation: Any) -> Any:
+async def command_resume(ctx: Any, invocation: Any) -> Any:
     runtime = ctx.runtime
     if not runtime.kernel.suspended:
-        await ctx.respond(ctx.t('kernel.power.already_running'))
+        await ctx.respond(ctx.t('kernel.power.already_running'), output="edit")
         return
     runtime.kernel.suspended = False
     if runtime.state is not None:
         runtime.state.set_setting("suspended", "0")
-    await ctx.respond(_text_running(ctx), parse_mode="HTML")
+    await ctx.respond(_text_running(ctx), parse_mode="HTML", output="edit")
+
+command_start = command_resume
 
 async def command_restart(ctx: Any, invocation: Any) -> Any:
     args = [str(a).casefold() for a in getattr(invocation, "args", [])]

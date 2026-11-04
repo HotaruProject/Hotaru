@@ -99,6 +99,10 @@
         },
         "start": {
           "description": "ユーザーボット再開"
+        },
+        "resume": {
+          "description": "ユーザーボットの実行を再開",
+          "usage": ""
         }
       },
       "restarted": "<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> <b>Hotaruが正常に再起動しました</b>\n<blockquote><tg-emoji emoji-id=\"5258152182150077732\">⚡️</tg-emoji> <b>所要時間:</b> <code>{took}</code></blockquote>",
@@ -759,7 +763,8 @@
       "failed": "バックアップの送信に失敗しました: {error}",
       "sent": "バックアップを送信しました",
       "topic": "Backups",
-      "usage": "<code>{prefix}backup [now|on|off]</code>"
+      "usage": "<code>{prefix}backup [now|on|off]</code>",
+      "restored_files": "復元されたファイル: {count}"
     },
     "intrusion": {
       "alert": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>Hotaruセッションが外部で使用されています</b>\n\n{source}\n\n<blockquote><code>{detail}</code></blockquote>\n\n別のクライアントがHotaruのセッションに接続しました。安全のためHotaruを停止しました。",
@@ -793,6 +798,60 @@
       "btn_stats": "統計",
       "btn_close": "閉じる",
       "description": "Telegram APIフラッドおよびレート制限からの保護"
+    },
+    "genesis": {
+      "title": "初期セットアップ",
+      "welcome": "Hotaruへようこそ！初期設定ウィザード:",
+      "language": "言語",
+      "prefix": "プレフィックス",
+      "log_level": "ログレベル",
+      "backups": "バックアップ",
+      "start_wizard": "🚀 セットアップを開始",
+      "btn_language": "🌐 言語",
+      "btn_prefix": "💻 プレフィックス",
+      "btn_logs": "📔 ログレベル",
+      "btn_backups": "📂 バックアップ",
+      "btn_webapp": "🌐 WebAppを開く",
+      "step_lang_title": "ステップ 1/4 · 言語設定",
+      "step_lang_desc": "インターフェース言語を選択してください:",
+      "lang_applied": "言語が更新されました！",
+      "btn_next": "次へ: プレフィックス ›",
+      "step_prefix_title": "ステップ 2/4 · コマンドプレフィックス",
+      "step_prefix_desc": "コマンドプレフィックスを選択してください:",
+      "current": "現在:",
+      "enter_prefix": "新しいプレフィックスを入力:",
+      "prefix_applied": "プレフィックスが設定されました: {prefix}",
+      "btn_next_logs": "次へ: ログ ›",
+      "step_logs_title": "ステップ 3/4 · ログレベル",
+      "step_logs_desc": "記録する最小ログレベルを選択してください:",
+      "btn_next_backups": "次へ: バックアップ ›",
+      "step_backups_title": "ステップ 4/4 · バックアップスケジュール",
+      "step_backups_desc": "自動暗号化バックアップを設定:",
+      "backup_hours_applied": "バックアップ間隔が {hours} 時間に設定されました",
+      "btn_complete": "セットアップ完了 ✅",
+      "done_title": "セットアップが完了しました！",
+      "done_desc": "Hotaruは準備完了です。",
+      "btn_help": "📖 ヘルプ",
+      "btn_settings": "⚙️ 設定",
+      "description": "Hotaruの初期設定ウィザード",
+      "commands": {
+        "start": {
+          "description": "初期設定ウィザードを開く",
+          "usage": ""
+        },
+        "setup": {
+          "description": "初期設定ウィザードを開く",
+          "usage": ""
+        },
+        "genesis": {
+          "description": "初期設定ウィザードを開く",
+          "usage": ""
+        },
+        "quickstart": {
+          "description": "初期設定ウィザードを開く",
+          "usage": ""
+        }
+      }
     }
   },
   "inline_commands_hint": "コマンドを選択 — 任意のチャットで @<bot> とコマンド名を入力",

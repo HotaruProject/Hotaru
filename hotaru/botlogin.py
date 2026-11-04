@@ -46,6 +46,7 @@ class EchoBot:
         self._pending: asyncio.Queue[str] | None = None
         self._runner: asyncio.Task[Any] | None = None
         self._keypad: tuple[int, str, list[str], asyncio.Future[str]] | None = None
+        self._last_msg_id: int | None = None
 
     def _vault(self) -> Path:
         return self.session_dir / PENDING_VAULT_NAME
@@ -96,8 +97,17 @@ class EchoBot:
         if not isinstance(chat, int) or chat <= 0:
             chat = sender
         self.owner = sender
+        welcome_html = (
+            f'<tg-emoji emoji-id="5366045973988522066">✨</tg-emoji> <b>HOTARU USERBOT</b> · Authentication\n\n'
+            f'<tg-emoji emoji-id="5258362837411045098">👤</tg-emoji> <b>Telegram ID:</b> <code>{sender}</code>\n'
+            f'<tg-emoji emoji-id="5260726538302660868">✅</tg-emoji> <i>Echo mode active. Confirm this ID in your terminal.</i>'
+        )
         try:
-            await self.app.send_msg(chat, str(sender))
+            sent = await self.app.send_msg(chat, welcome_html, parse_mode="HTML")
+            result = (sent or {}).get("result") if isinstance(sent, dict) else None
+            mid = result.get("id") if isinstance(result, dict) else None
+            if isinstance(mid, int):
+                self._last_msg_id = mid
         except Exception:
             pass
         self._event.set()
@@ -105,15 +115,29 @@ class EchoBot:
     async def send(self, text: str) -> None:
         if self.owner is None or self.app is None:
             raise BotLoginError("the bot has no owner chat yet")
-        await self.app.send_msg(self.owner, text)
+        if self._last_msg_id is not None:
+            try:
+                await self.app.edit_msg(self.owner, self._last_msg_id, text, parse_mode="HTML")
+                return
+            except Exception:
+                pass
+        sent = await self.app.send_msg(self.owner, text, parse_mode="HTML")
+        result = (sent or {}).get("result") if isinstance(sent, dict) else None
+        mid = result.get("id") if isinstance(result, dict) else None
+        if isinstance(mid, int):
+            self._last_msg_id = mid
 
     async def ask(self, prompt: str, *, timeout: float = 300.0) -> str:
         if self.owner is None:
             raise BotLoginError("the bot has no owner chat yet")
         queue: asyncio.Queue[str] = asyncio.Queue()
         self._pending = queue
+        styled = (
+            f'<tg-emoji emoji-id="5366045973988522066">✨</tg-emoji> <b>HOTARU USERBOT</b>\n\n'
+            f'{prompt}'
+        )
         try:
-            await self.send(prompt)
+            await self.send(styled)
             return await asyncio.wait_for(queue.get(), timeout=timeout)
         except asyncio.TimeoutError as exc:
             raise BotLoginError(f"no answer in the bot chat: {prompt}") from exc
@@ -128,16 +152,31 @@ class EchoBot:
 
     @staticmethod
     def _masked(prompt: str, digits: list[str]) -> str:
-        return f"{prompt}\n\n{' '.join('•' * len(digits)) or '…'}"
+        code_str = " ".join(digits) if digits else "• • • • •"
+        return (
+            f'<tg-emoji emoji-id="5366045973988522066">✨</tg-emoji> <b>HOTARU USERBOT</b> · Verification\n\n'
+            f'<tg-emoji emoji-id="5258476306152038031">🔒</tg-emoji> {prompt}\n\n'
+            f'<code>[ {code_str} ]</code>'
+        )
 
     async def ask_code(self, prompt: str, *, timeout: float = 300.0) -> str:
         if self.owner is None or self.app is None:
             raise BotLoginError("the bot has no owner chat yet")
-        sent = await self.app.send_msg(self.owner, self._masked(prompt, []), kbd=self._keys())
-        result = (sent or {}).get("result") if isinstance(sent, dict) else None
-        mid = result.get("id") if isinstance(result, dict) else None
+        if self._last_msg_id is not None:
+            try:
+                await self.app.edit_msg(self.owner, self._last_msg_id, self._masked(prompt, []), kbd=self._keys(), parse_mode="HTML")
+                mid = self._last_msg_id
+            except Exception:
+                sent = await self.app.send_msg(self.owner, self._masked(prompt, []), kbd=self._keys(), parse_mode="HTML")
+                result = (sent or {}).get("result") if isinstance(sent, dict) else None
+                mid = result.get("id") if isinstance(result, dict) else None
+        else:
+            sent = await self.app.send_msg(self.owner, self._masked(prompt, []), kbd=self._keys(), parse_mode="HTML")
+            result = (sent or {}).get("result") if isinstance(sent, dict) else None
+            mid = result.get("id") if isinstance(result, dict) else None
         if not isinstance(mid, int):
             raise BotLoginError("the keypad message has no ID")
+        self._last_msg_id = mid
         done: asyncio.Future[str] = asyncio.get_running_loop().create_future()
         self._keypad = (mid, prompt, [], done)
         try:
@@ -174,7 +213,7 @@ class EchoBot:
             digits.append(key)
         await callback.answer()
         try:
-            await self.app.edit_msg(self.owner, mid, self._masked(prompt, digits), kbd=self._keys())
+            await self.app.edit_msg(self.owner, mid, self._masked(prompt, digits), kbd=self._keys(), parse_mode="HTML")
         except Exception:
             pass
 

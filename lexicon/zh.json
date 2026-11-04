@@ -95,6 +95,10 @@
         },
         "start": {
           "description": "恢复用户机器人"
+        },
+        "resume": {
+          "description": "恢复用户机器人运行",
+          "usage": ""
         }
       },
       "restarted": "<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> <b>Hotaru 重启成功</b>\n<blockquote><tg-emoji emoji-id=\"5258152182150077732\">⚡️</tg-emoji> <b>耗时:</b> <code>{took}</code></blockquote>",
@@ -791,7 +795,62 @@
       "failed": "备份失败：{error}",
       "sent": "备份已发送",
       "topic": "备份",
-      "usage": "<code>{prefix}backup [now|on|off]</code>"
+      "usage": "<code>{prefix}backup [now|on|off]</code>",
+      "restored_files": "已恢复文件：{count}"
+    },
+    "genesis": {
+      "title": "初始设置",
+      "welcome": "欢迎使用 Hotaru！快速初始设置向导：",
+      "language": "语言",
+      "prefix": "前缀",
+      "log_level": "日志级别",
+      "backups": "备份",
+      "start_wizard": "🚀 开始设置向导",
+      "btn_language": "🌐 语言",
+      "btn_prefix": "💻 前缀",
+      "btn_logs": "📔 日志级别",
+      "btn_backups": "📂 备份",
+      "btn_webapp": "🌐 打开 WebApp",
+      "step_lang_title": "第 1/4 步 · 界面语言",
+      "step_lang_desc": "选择您的系统界面语言：",
+      "lang_applied": "语言已更新！",
+      "btn_next": "下一步：前缀 ›",
+      "step_prefix_title": "第 2/4 步 · 命令前缀",
+      "step_prefix_desc": "选择用户机器人命令前缀：",
+      "current": "当前：",
+      "enter_prefix": "输入新前缀：",
+      "prefix_applied": "前缀已设置为：{prefix}",
+      "btn_next_logs": "下一步：日志 ›",
+      "step_logs_title": "第 3/4 步 · 日志级别",
+      "step_logs_desc": "选择最低日志记录级别：",
+      "btn_next_backups": "下一步：备份 ›",
+      "step_backups_title": "第 4/4 步 · 备份计划",
+      "step_backups_desc": "配置自动加密备份：",
+      "backup_hours_applied": "备份间隔已设置为 {hours} 小时",
+      "btn_complete": "完成设置 ✅",
+      "done_title": "设置完成！",
+      "done_desc": "Hotaru 已完全配置就绪。",
+      "btn_help": "📖 帮助",
+      "btn_settings": "⚙️ 设置",
+      "description": "Hotaru 初始设置向导",
+      "commands": {
+        "start": {
+          "description": "打开初始设置向导",
+          "usage": ""
+        },
+        "setup": {
+          "description": "打开初始设置向导",
+          "usage": ""
+        },
+        "genesis": {
+          "description": "打开初始设置向导",
+          "usage": ""
+        },
+        "quickstart": {
+          "description": "打开初始设置向导",
+          "usage": ""
+        }
+      }
     }
   },
   "commands": {

@@ -22,31 +22,31 @@ async def command_alias(ctx: Any, invocation: Any) -> Any:
     words = list(invocation.args[1:])
     command = words[0].casefold().lstrip("/")
     if runtime.kernel.registry.resolve_name(alias) is not None:
-        await ctx.respond(ctx.t('settings.alias_exists', alias=alias))
+        await ctx.respond(f'<tg-emoji emoji-id="5260342697075416641">❌</tg-emoji> {ctx.t("settings.alias_exists", alias=alias)}', parse_mode="HTML", output="edit")
         return
     target = runtime.kernel.registry.resolve_name(command)
     if target is None:
         known = ", ".join(sorted(runtime.kernel.registry.names()))[:800]
-        await ctx.respond(ctx.t('settings.command_not_found', command=command, known=known))
+        await ctx.respond(f'<tg-emoji emoji-id="5260342697075416641">❌</tg-emoji> {ctx.t("settings.command_not_found", command=command, known=known)}', parse_mode="HTML", output="edit")
         return
     aliases = runtime.state.get_setting("user_aliases", {})
     if alias in aliases:
-        await ctx.respond(ctx.t('settings.alias_taken', alias=alias, command=aliases[alias], prefix=runtime.config.prefix))
+        await ctx.respond(f'<tg-emoji emoji-id="5260342697075416641">❌</tg-emoji> {ctx.t("settings.alias_taken", alias=alias, command=aliases[alias], prefix=runtime.config.prefix)}', parse_mode="HTML", output="edit")
         return
     command = " ".join([target.name] + words[1:])
     aliases[alias] = command
     runtime.state.set_setting("user_aliases", aliases)
     runtime.kernel.registry.register_alias(alias, command)
-    await ctx.respond(ctx.t('settings.alias_set', alias=alias, command=command))
+    await ctx.respond(f'<tg-emoji emoji-id="5260726538302660868">✅</tg-emoji> <b>{ctx.t("settings.alias_set", alias=alias, command=command)}</b>', parse_mode="HTML", output="edit")
 
 
 async def command_rmalias(ctx: Any, invocation: Any) -> Any:
     runtime = ctx.runtime
     if runtime is None:
-        await ctx.respond(ctx.t('settings.runtime_unavailable'))
+        await ctx.respond(f'<tg-emoji emoji-id="5260342697075416641">❌</tg-emoji> {ctx.t("settings.runtime_unavailable")}', parse_mode="HTML", output="edit")
         return
     if not invocation.args:
-        await ctx.respond(ctx.t('settings.usage_rmalias', prefix=runtime.config.prefix))
+        await ctx.respond(f'<tg-emoji emoji-id="5260342697075416641">❌</tg-emoji> {ctx.t("settings.usage_rmalias", prefix=runtime.config.prefix)}', parse_mode="HTML", output="edit")
         return
     alias = " ".join(invocation.args).casefold()
     aliases = runtime.state.get_setting("user_aliases", {})
@@ -54,46 +54,46 @@ async def command_rmalias(ctx: Any, invocation: Any) -> Any:
         del aliases[alias]
         runtime.state.set_setting("user_aliases", aliases)
         runtime.kernel.registry.unregister_alias(alias)
-        await ctx.respond(ctx.t('settings.alias_removed', alias=alias))
+        await ctx.respond(f'<tg-emoji emoji-id="5260726538302660868">✅</tg-emoji> <b>{ctx.t("settings.alias_removed", alias=alias)}</b>', parse_mode="HTML", output="edit")
     else:
-        await ctx.respond(ctx.t('settings.alias_not_found', alias=alias))
+        await ctx.respond(f'<tg-emoji emoji-id="5260342697075416641">❌</tg-emoji> {ctx.t("settings.alias_not_found", alias=alias)}', parse_mode="HTML", output="edit")
 
 
 async def command_lsalias(ctx: Any, invocation: Any) -> Any:
     runtime = ctx.runtime
     if runtime is None:
-        await ctx.respond(ctx.t('settings.runtime_unavailable'))
+        await ctx.respond(f'<tg-emoji emoji-id="5260342697075416641">❌</tg-emoji> {ctx.t("settings.runtime_unavailable")}', parse_mode="HTML", output="edit")
         return
     aliases = runtime.state.get_setting("user_aliases", {})
     if not isinstance(aliases, dict) or not aliases:
-        await ctx.respond(ctx.t('settings.alias_list_empty'))
+        await ctx.respond(f'<tg-emoji emoji-id="5260342697075416641">❌</tg-emoji> {ctx.t("settings.alias_list_empty")}', parse_mode="HTML", output="edit")
         return
     data = cast(Any, aliases)
     prefix = runtime.config.prefix
-    lines = [ctx.t('settings.alias_list_title')]
+    lines = [f'<tg-emoji emoji-id="5258260149037965799">💼</tg-emoji> <b>{ctx.t("settings.alias_list_title")}</b>']
     for alias in sorted(data):
         lines.append(f"<code>{prefix}{alias}</code> → <code>{prefix}{data[alias]}</code>")
-    await ctx.respond("<br>".join(lines), parse_mode="HTML")
+    await ctx.respond("<br>".join(lines), parse_mode="HTML", output="edit")
 
 
 async def command_prefix(ctx: Any, invocation: Any) -> Any:
     runtime = ctx.runtime
     if runtime is None:
-        await ctx.respond(ctx.t('settings.runtime_unavailable'))
+        await ctx.respond(f'<tg-emoji emoji-id="5260342697075416641">❌</tg-emoji> {ctx.t("settings.runtime_unavailable")}', parse_mode="HTML", output="edit")
         return
     if len(invocation.args) != 1:
         current = runtime.kernel.parser.prefix
-        await ctx.respond(ctx.t('settings.prefix_current', prefix=current))
+        await ctx.respond(f'<tg-emoji emoji-id="5289601856836745198">💻</tg-emoji> <b>{ctx.t("settings.prefix_current", prefix=f"<code>{current}</code>")}</b>', parse_mode="HTML", output="edit")
         return
     new_prefix = invocation.args[0]
     from hotaru.commands import valid_prefix
     if len(invocation.args) != 1 or not valid_prefix(new_prefix):
-        await ctx.respond(ctx.t('settings.prefix_invalid'))
+        await ctx.respond(f'<tg-emoji emoji-id="5260342697075416641">❌</tg-emoji> {ctx.t("settings.prefix_invalid")}', parse_mode="HTML", output="edit")
         return
     runtime.state.set_setting("prefix", new_prefix)
     runtime.kernel.parser.prefix = new_prefix
     runtime.config = replace(runtime.config, prefix=new_prefix)
-    await ctx.respond(ctx.t('settings.prefix_set', prefix=new_prefix))
+    await ctx.respond(f'<tg-emoji emoji-id="5260726538302660868">✅</tg-emoji> <b>{ctx.t("settings.prefix_set", prefix=f"<code>{new_prefix}</code>")}</b>', parse_mode="HTML", output="edit")
 
 
 import html

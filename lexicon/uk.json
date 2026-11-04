@@ -99,6 +99,10 @@
         },
         "start": {
           "description": "Відновити юзербота"
+        },
+        "resume": {
+          "description": "Відновити роботу юзербота",
+          "usage": ""
         }
       },
       "restarted": "<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> <b>Hotaru успішно перезапущено</b>\n<blockquote><tg-emoji emoji-id=\"5258152182150077732\">⚡️</tg-emoji> <b>Завершено за:</b> <code>{took}</code></blockquote>",
@@ -759,7 +763,8 @@
       "failed": "Не вдалося надіслати резервну копію: {error}",
       "sent": "Резервну копію надіслано",
       "topic": "Backups",
-      "usage": "<code>{prefix}backup [now|on|off]</code>"
+      "usage": "<code>{prefix}backup [now|on|off]</code>",
+      "restored_files": "Відновлено файлів: {count}"
     },
     "intrusion": {
       "alert": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>Сесія Hotaru використовується ззовні</b>\n\n{source}\n\n<blockquote><code>{detail}</code></blockquote>\n\nІнший клієнт підключився до сесії Hotaru. Hotaru зупинився для безпеки. Якщо це були не ви, завершіть чужу сесію.",
@@ -793,6 +798,60 @@
       "btn_stats": "Статистика",
       "btn_close": "Закрити",
       "description": "Захист від флудвейту та перевантаження Telegram API"
+    },
+    "genesis": {
+      "title": "Швидке налаштування",
+      "welcome": "Ласкаво просимо до Hotaru! Майстер початкового налаштування:",
+      "language": "Мова",
+      "prefix": "Префікс",
+      "log_level": "Рівень логів",
+      "backups": "Бекапи",
+      "start_wizard": "🚀 Почати налаштування",
+      "btn_language": "🌐 Мова",
+      "btn_prefix": "💻 Префікс",
+      "btn_logs": "📔 Рівень логів",
+      "btn_backups": "📂 Бекапи",
+      "btn_webapp": "🌐 Панель WebApp",
+      "step_lang_title": "Крок 1/4 · Мова інтерфейсу",
+      "step_lang_desc": "Оберіть основну мову системи:",
+      "lang_applied": "Мову успішно оновлено!",
+      "btn_next": "Далі: Префікс ›",
+      "step_prefix_title": "Крок 2/4 · Префікс команд",
+      "step_prefix_desc": "Оберіть символ перед командами юзербота:",
+      "current": "Поточний:",
+      "enter_prefix": "Введіть новий префікс:",
+      "prefix_applied": "Префікс встановлено на: {prefix}",
+      "btn_next_logs": "Далі: Логи ›",
+      "step_logs_title": "Крок 3/4 · Рівень логування",
+      "step_logs_desc": "Оберіть мінімальний рівень запису подій:",
+      "btn_next_backups": "Далі: Бекапи ›",
+      "step_backups_title": "Крок 4/4 · Резервні копії",
+      "step_backups_desc": "Налаштуйте автоматичне шифроване резервування:",
+      "backup_hours_applied": "Інтервал бекапів встановлено на {hours} год.",
+      "btn_complete": "Завершити налаштування ✅",
+      "done_title": "Налаштування завершено!",
+      "done_desc": "Hotaru повністю налаштований і готовий до роботи.",
+      "btn_help": "📖 Довідка",
+      "btn_settings": "⚙️ Налаштування",
+      "description": "Майстер початкового налаштування Hotaru",
+      "commands": {
+        "start": {
+          "description": "Відкрити майстер початкового налаштування",
+          "usage": ""
+        },
+        "setup": {
+          "description": "Відкрити майстер початкового налаштування",
+          "usage": ""
+        },
+        "genesis": {
+          "description": "Відкрити майстер початкового налаштування",
+          "usage": ""
+        },
+        "quickstart": {
+          "description": "Відкрити майстер початкового налаштування",
+          "usage": ""
+        }
+      }
     }
   },
   "inline_commands_hint": "Обери команду — введи @<бот> і її назву в будь-якому чаті",

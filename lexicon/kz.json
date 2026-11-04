@@ -99,6 +99,10 @@
         },
         "start": {
           "description": "Юзерботты жалғастыру"
+        },
+        "resume": {
+          "description": "Юзербот жұмысын жалғастыру",
+          "usage": ""
         }
       },
       "restarted": "<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> <b>Hotaru сәтті қайта іске қосылды</b>\n<blockquote><tg-emoji emoji-id=\"5258152182150077732\">⚡️</tg-emoji> <b>Аяқталды:</b> <code>{took}</code></blockquote>",
@@ -759,7 +763,8 @@
       "failed": "Сақтық көшірмені жіберу мүмкін болмады: {error}",
       "sent": "Сақтық көшірме жіберілді",
       "topic": "Backups",
-      "usage": "<code>{prefix}backup [now|on|off]</code>"
+      "usage": "<code>{prefix}backup [now|on|off]</code>",
+      "restored_files": "Қалпына келтірілген файлдар: {count}"
     },
     "intrusion": {
       "alert": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>Hotaru сессиясы сырттан пайдаланылуда</b>\n\n{source}\n\n<blockquote><code>{detail}</code></blockquote>\n\nБасқа клиент Hotaru сессиясына қосылды. Hotaru қауіпсіздік үшін тоқтатылды.",
@@ -793,6 +798,60 @@
       "btn_stats": "Статистика",
       "btn_close": "Жабу",
       "description": "Telegram API флудвейті мен шамадан тыс жүктемеден қорғау"
+    },
+    "genesis": {
+      "title": "Жылдам баптау",
+      "welcome": "Hotaru-ға қош келдіңіз! Бастапқы баптау шебері:",
+      "language": "Тіл",
+      "prefix": "Префикс",
+      "log_level": "Лог деңгейі",
+      "backups": "Бэкаптар",
+      "start_wizard": "🚀 Баптауды бастау",
+      "btn_language": "🌐 Тіл",
+      "btn_prefix": "💻 Префикс",
+      "btn_logs": "📔 Лог деңгейі",
+      "btn_backups": "📂 Бэкаптар",
+      "btn_webapp": "🌐 WebApp панелі",
+      "step_lang_title": "1/4 қадам · Тілді таңдау",
+      "step_lang_desc": "Негізгі интерфейс тілін таңдаңыз:",
+      "lang_applied": "Тіл сәтті жаңартылды!",
+      "btn_next": "Келесі: Префикс ›",
+      "step_prefix_title": "2/4 қадам · Команда префиксі",
+      "step_prefix_desc": "Юзербот командалары алдындағы таңбаны таңдаңыз:",
+      "current": "Ағымдағы:",
+      "enter_prefix": "Жаңа префиксті енгізіңіз:",
+      "prefix_applied": "Префикс орнатылды: {prefix}",
+      "btn_next_logs": "Келесі: Логтар ›",
+      "step_logs_title": "3/4 қадам · Лог деңгейі",
+      "step_logs_desc": "Оқиғаларды жазудың минималды деңгейін таңдаңыз:",
+      "btn_next_backups": "Келесі: Бэкаптар ›",
+      "step_backups_title": "4/4 қадам · Сақтық көшірмелер",
+      "step_backups_desc": "Автоматты шифрланған сақтық көшірмелерді баптаңыз:",
+      "backup_hours_applied": "Бэкап аралығы {hours} сағатқа орнатылды",
+      "btn_complete": "Баптауды аяқтау ✅",
+      "done_title": "Баптау аяқталды!",
+      "done_desc": "Hotaru толықтай бапталды және жұмысқа дайын.",
+      "btn_help": "📖 Анықтама",
+      "btn_settings": "⚙️ Баптаулар",
+      "description": "Hotaru бастапқы баптау шебері",
+      "commands": {
+        "start": {
+          "description": "Бастапқы баптау шеберін ашу",
+          "usage": ""
+        },
+        "setup": {
+          "description": "Бастапқы баптау шеберін ашу",
+          "usage": ""
+        },
+        "genesis": {
+          "description": "Бастапқы баптау шеберін ашу",
+          "usage": ""
+        },
+        "quickstart": {
+          "description": "Бастапқы баптау шеберін ашу",
+          "usage": ""
+        }
+      }
     }
   },
   "inline_commands_hint": "Команданы таңда — кез келген чатта @<бот> және оның атын тер",

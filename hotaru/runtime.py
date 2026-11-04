@@ -313,6 +313,7 @@ class Runtime:
         self.inline.on_inline(self._on_inline_query)
         self.inline.on_callback(self._on_inline_callback)
         self.inline.on_chosen(self._on_chosen_input)
+        self.inline.on_bot_pm(self._on_bot_pm)
         self.callbacks.register("help_page", self._help_page)
         self.callbacks.register("module_detail", self._module_detail)
         self.kernel.attach(self.app)
@@ -454,6 +455,20 @@ class Runtime:
             except Exception as inner:
                 log.error("callback failure notify failed: %s: %s", type(inner).__name__, inner)
             return None
+
+    async def _on_bot_pm(self, message: Any) -> None:
+        if self.kernel is None:
+            return
+        setattr(message, "src", "bot")
+        text = str(getattr(message, "text", "") or "").strip()
+        if not text:
+            return
+        from_id = getattr(message, "from_id", None) or getattr(getattr(message, "from_user", None), "id", None)
+        owner_id = getattr(self.kernel, "owner_id", None)
+        if owner_id and from_id != owner_id:
+            if getattr(self, "access", None) is not None and not self.access.is_owner(from_id) and not self.access.can(from_id, "bot"):
+                return
+        await self.kernel.dispatch_bot(message)
 
     async def _inline_ready(self) -> None:
         if self.inline is None:

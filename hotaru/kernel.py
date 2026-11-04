@@ -191,6 +191,55 @@ class Kernel:
         self._running[task_key] = task
         task.add_done_callback(lambda t: self._running.pop(task_key, None) if self._running.get(task_key) is t else None)
 
+    async def dispatch_bot(self, message: Any) -> object | None:
+        text = str(getattr(message, "text", "") or "").strip()
+        if not text:
+            return None
+        prefix = "/" if text.startswith("/") else self.parser.prefix
+        if not text.startswith(prefix):
+            return None
+        body = text[len(prefix):].lstrip()
+        if not body:
+            return None
+        parts = body.split()
+        cmd_part = parts[0]
+        if "@" in cmd_part:
+            cmd_part = cmd_part.split("@")[0]
+        command_name = cmd_part.casefold()
+        args = tuple(parts[1:])
+        raw_args = body[len(parts[0]):].lstrip()
+        message_id = self._message_id(message)
+        chat_id = getattr(message, "chat_id", None) or getattr(message, "from_id", None)
+        invocation = CommandInvocation(
+            name=command_name,
+            args=args,
+            source="bot",
+            message_id=message_id,
+            chat_id=chat_id,
+            message=message,
+            raw_args=raw_args,
+        )
+        spec = self.registry.resolve(invocation)
+        if spec is None:
+            swapped = self.parser.swap_invocation(invocation)
+            if swapped is not None:
+                spec = self.registry.resolve(swapped)
+                if spec is not None:
+                    invocation = swapped
+        if spec is None:
+            return None
+        context = self.context_factory.create(spec.module_id, message) if self.context_factory is not None else None
+        try:
+            work = self.tasks.spawn(
+                spec.module_id,
+                self._invoke(spec, invocation, message, context),
+                name=f"hotaru:cmd:bot:{spec.name}",
+            )
+        except TaskLimitError:
+            return None
+        task = asyncio.create_task(self._execute(spec, message, work, context), name=f"hotaru:response:bot:{spec.name}")
+        return await task
+
     async def _execute(self, spec: Any, message: Any, task: asyncio.Task[Any], context: Any = None) -> object | None:
         try:
             result = await task
