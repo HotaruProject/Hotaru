@@ -212,7 +212,19 @@
       "manager_unavailable": "<b>モジュール管理を利用できません</b>",
       "usage": "<b>使い方:</b> <code>{prefix}hlp</code> または <code>{prefix}hlp &lt;モジュール&gt;</code>",
       "disabled": "<b>モジュールは無効です:</b> <code>{module}</code><br><i>エラー: {error}</i>",
-      "missing": "<b>モジュールが見つかりません:</b> <code>{module}</code>"
+      "missing": "<b>モジュールが見つかりません:</b> <code>{module}</code>",
+      "title": "Hotaru · ヘルプ",
+      "summary": "モジュール {count} 件 · プレフィックス <code>{prefix}</code>",
+      "pick": "モジュールをタップするとコマンドを表示します。",
+      "kernel_badge": "コア",
+      "user_badge": "追加",
+      "no_commands": "コマンドなし",
+      "settings": "⚙️ 設定",
+      "search_prompt": "モジュールまたはコマンド",
+      "results": "「{query}」の結果",
+      "aliases": "エイリアス",
+      "count": "モジュール {count} 件",
+      "prefix": "プレフィックス {prefix}"
     },
     "accounts": {
       "description": "アカウント管理",
@@ -360,7 +372,11 @@
         "no_user": "ログインでユーザーを取得できませんでした。",
         "wrong_account": "アカウントが違います。ユーザー {uid} が必要です。",
         "unknown": "操作を完了できませんでした。"
-      }
+      },
+      "field": {
+        "autostart": "自動起動"
+      },
+      "title": "アカウント"
     },
     "acl": {
       "description": "権限管理",
@@ -371,11 +387,47 @@
         },
         "perm": {
           "description": "権限を付与・取り消し",
-          "usage": "[ID|@username|command/名前] [ロール] [remove]"
+          "usage": "[ID|@username|command/name] <role> [remove]"
         },
         "whois": {
           "description": "ユーザーの権限",
-          "usage": "[ID|@username] [コマンド]"
+          "usage": "[ID|@username] [command]"
+        },
+        "owadd": {
+          "description": "オーナーを追加"
+        },
+        "owrm": {
+          "description": "オーナーを削除"
+        },
+        "owls": {
+          "description": "オーナー一覧"
+        },
+        "sgnew": {
+          "description": "権限グループを作成"
+        },
+        "sgls": {
+          "description": "グループ一覧"
+        },
+        "sg": {
+          "description": "グループのメンバーとルール"
+        },
+        "sgdel": {
+          "description": "グループを削除"
+        },
+        "sgadd": {
+          "description": "メンバーを追加"
+        },
+        "sgrm": {
+          "description": "メンバーを削除"
+        },
+        "rule": {
+          "description": "アクセスルールを追加"
+        },
+        "rulerm": {
+          "description": "ルールを削除"
+        },
+        "ruleclr": {
+          "description": "ルールを消去"
         }
       },
       "bad_group": "グループ名: 英数字のみ、32文字まで。",
@@ -383,7 +435,10 @@
       "bad_rule": "ルール: command/名前 または module/名前。",
       "self_owner": "このユーザーはすでにアカウントのオーナーです。",
       "empty": "付与された権限はありません。!perm <user_id> <role> を使用。",
-      "bad_label": "不明な権限: {label}。"
+      "bad_label": "不明な権限: {label}。",
+      "usage": "使い方:\n!owadd <user_id|reply> — owner を付与\n!owrm <user_id|reply> — owner を取り消す\n!owls — オーナー一覧\n!sgnew <name> — 権限グループを作成\n!sgls — グループ一覧\n!sg <name> — グループのメンバーと権限\n!sgdel <name> — グループを削除\n!sgadd <name> <user_id|reply> — グループに追加\n!sgrm <name> <user_id|reply> — グループから除外\n!rule <user|chat|sgroup> <target> <command|module>/<name> [期限] — ルールを追加\n!rulerm — ルールを削除\n!ruleclr — 対象のルールを全消去\n!perm <user_id> <admin|trusted|everyone> [remove] — 権限の付与/取り消し\n!perms — 権限一覧\n!whois <user_id> — ユーザーの権限",
+      "no_groups": "権限グループはありません。作成: !sgnew <name>",
+      "no_owner_grant": "owner は !owadd で付与されます。"
     },
     "lg": "ログ末尾:\n{lines}",
     "commands": {
@@ -411,7 +466,7 @@
       "module_missing_error": "<b>エラー：</b> モジュール <code>{module}</code> が見つかりません。",
       "no_settings": "<b>エラー：</b> モジュール <code>{module}</code> には設定項目がありません。",
       "parameter_missing_error": "<b>エラー：</b> パラメーター <code>{parameter}</code> が見つかりません。",
-      "empty": "（空）",
+      "empty": "設定を持つモジュールはまだありません。",
       "parameter_details": "• 値：<code>{value}</code>\n• 型：<code>{type}</code>\n• 既定値：<code>{default}</code>\n",
       "parameter_description": "• 説明：<i>{description}</i>\n",
       "template_unavailable": "テンプレート変数が利用できないか、公開されていません：{name}",
@@ -421,14 +476,32 @@
       "minimum": "最小値：{value}",
       "maximum": "最大値：{value}",
       "enter": "[e] 入力",
-      "new_value": "{parameter} の新しい値",
+      "new_value": "{name} の新しい値",
       "reset": "[~] リセット",
       "module_missing": "モジュール <code>{module}</code> が見つかりません。",
       "parameter_missing": "パラメーター <code>{parameter}</code> が見つかりません。",
-      "error_html": "エラー：<code>{error}</code>"
+      "error_html": "エラー：<code>{error}</code>",
+      "title": "⚙️ 設定",
+      "title_short": "設定",
+      "pick": "モジュールを選択:",
+      "missing": "モジュール <code>{module}</code> には設定がないか、読み込まれていません。",
+      "param_missing": "パラメーター <code>{name}</code> が見つかりません。",
+      "reset_all": "↺ すべてリセット",
+      "reset_confirm": "<b>{module}</b> のすべてのパラメーターを既定値に戻しますか？",
+      "reset_yes": "リセット",
+      "reset_done": "既定値に戻しました",
+      "value": "値",
+      "default": "既定値",
+      "type": "型",
+      "restart": "再起動後に反映されます。",
+      "copy": "⧉ コピー",
+      "field_unavailable": "テンプレート項目が利用できないかエクスポートされていません: {name}",
+      "param": "パラメーター",
+      "about": "各パラメーターの説明",
+      "changed": "変更: {count}"
     },
     "settings": {
-      "description": "別名とプレフィックスの管理",
+      "description": "モジュール設定、プレフィックス、エイリアス",
       "commands": {
         "alias": {
           "description": "コマンドの別名を作成",
@@ -444,6 +517,15 @@
         "prefix": {
           "description": "コマンドのプレフィックスを変更",
           "usage": "[プレフィックス]"
+        },
+        "settings": {
+          "description": "設定を開く"
+        },
+        "conf": {
+          "description": "設定を開く"
+        },
+        "config": {
+          "description": "設定を開く"
         }
       }
     },
@@ -467,7 +549,7 @@
       "mirror_off": "ログ転送を無効にしました",
       "level_set": "転送レベル: {level}",
       "status": "トピック: {topic} • エラー: {failed}",
-      "status_error": "• 最新: {error}",
+      "status_error": " • 最新: {error}",
       "no_observatory": "Observatory を利用できません",
       "no_entries": "このレベルのログはありません",
       "topic_unavailable": "トピックを利用できません: {error}",
@@ -498,7 +580,7 @@
       "usage_sh": "<b>使い方:</b> <code>{prefix}sh &lt;コマンド&gt;</code>",
       "usage_py": "<b>使い方:</b> <code>{prefix}py &lt;コード&gt;</code> またはコードに返信。-so で出力を非表示",
       "cancelled": "実行をキャンセルしました",
-      "done": "完了 [x]",
+      "done": "完了 ✓",
       "kill_reply": "<b>実行中の py/sh の出力メッセージに返信して停止してください。</b>",
       "killed": "<b>プロセスを停止しました。</b>",
       "no_process": "<b>このメッセージに対応する実行中のプロセスはありません。</b>",
@@ -562,7 +644,7 @@
       "inline": "インラインボットへの問い合わせと操作を行います",
       "modules": "モジュールの読み込み、停止、再読み込み、一覧表示と、ハッシュ・マニフェスト情報の確認を行います",
       "assets": "非公開の添付ファイル保存領域にアクセスします",
-      "shell": "モジュールのワークスペースでシェルコマンドを実行します。シェルは常に分離されたサンドボックス内で動作し、ワークスペース・そのツール・独立した /tmp のみが見えます。ネットワークには net capability、ホストファイルシステムには files capability が必要で、どちらもサンドボックスの外には出られません。タイムアウトと出力の制限は引き続き適用されます",
+      "shell": "HotaruプロセスのOS権限でシェルに完全アクセスします。ホストのファイル、認証情報、ネットワークを含み、モジュールの作業フォルダーには制限されません。コマンドのタイムアウトと返却する出力量の制限は引き続き適用されます",
       "logs": "構造化されたイベントをログに記録します。常に許可されます",
       "fetch": "メッセージ、ユーザー・チャット情報、返信元を読み取ります。読み取り専用で常に許可されます"
     },
@@ -579,7 +661,10 @@
         "uptime": "ユーザーボットの稼働時間（ゼロの単位を省略）",
         "uptime_seconds": "ユーザーボットの稼働時間（秒）"
       },
-      "example_uptime": "2時間 3分"
+      "example_uptime": "2時間 3分",
+      "config_fields": {
+        "template": "ping の返信テキスト"
+      }
     },
     "info": {
       "description": "ユーザーボットの情報カード",
@@ -608,12 +693,38 @@
           "description": "Singularity Mini App のインラインランチャーを開く"
         }
       }
+    },
+    "backups": {
+      "description": "サービス用フォーラムにバックアップを送信",
+      "commands": {
+        "backup": {
+          "description": "バックアップを送信、または自動送信を設定"
+        }
+      },
+      "config_fields": {
+        "enabled": "バックアップを自動送信する",
+        "interval_hours": "バックアップの送信間隔（時間）"
+      },
+      "heading": "{icon} <b>バックアップ</b>\n{status} · {hours}時間",
+      "enabled": "有効",
+      "disabled": "無効",
+      "last_sent": "最終送信: {date}",
+      "destination": "送信先: サービス用チャットの「{topic}」トピック。",
+      "send_now": "今すぐ送信",
+      "disable": "無効にする",
+      "enable": "有効にする",
+      "not_ready": "サービス用チャットの準備ができていません",
+      "caption": "Hotaruのバックアップ",
+      "failed": "バックアップの送信に失敗しました: {error}",
+      "sent": "バックアップを送信しました",
+      "topic": "Backups",
+      "usage": "<code>{prefix}backup [now|on|off]</code>"
     }
   },
-  "inline_commands_hint": "コマンドを選択 - 任意のチャットで @<bot> とコマンド名を入力",
+  "inline_commands_hint": "コマンドを選択 — 任意のチャットで @<bot> とコマンド名を入力",
   "settings": {
     "runtime_unavailable": "サービスを利用できません",
-    "usage_alias": "使い方: {prefix}alias <別名> <コマンドと引数>",
+    "usage_alias": "使い方: {prefix}alias <別名> <コマンド>",
     "alias_exists": "コマンドはすでに存在します: {alias}",
     "command_not_found": "コマンドが見つかりません: {command}\n使用可能: {known}",
     "alias_taken": "別名は使用中です: {alias} → {command}。{prefix}rmalias {alias} で削除できます。",
@@ -632,7 +743,8 @@
       "rmalias": "コマンドの別名を削除",
       "lsalias": "コマンドエイリアスの一覧を表示",
       "prefix": "コマンドのプレフィックスを変更"
-    }
+    },
+    "alias_invalid": "別名は1～32文字で、各言語の文字、数字、_ が使用できます。数字で始めることはできません。"
   },
   "common": {
     "ok": "OK",
@@ -665,7 +777,7 @@
     "module_info": "モジュール: {module}\nバージョン: {version}\nコマンド: {commands}\n機能: {capabilities}\n説明: {description}",
     "help_unavailable": "ヘルプを利用できません",
     "page_unavailable": "ヘルプページを利用できません",
-    "catalog": "一覧:",
+    "catalog": "一覧: ",
     "next": "次へ",
     "bot_unavailable": "インラインボットを利用できません",
     "bot_failed": "インラインボットの作成に失敗しました: {error}",
@@ -744,12 +856,13 @@
     },
     "file_missing": "モジュールファイルが見つかりません",
     "file_document": "モジュールをファイルとして送信してください",
-    "unknown_capability": "不明な機能（拒否）"
+    "unknown_capability": "不明な機能（拒否）",
+    "loading_module": "{module_id} を読み込み中…"
   },
   "acl": {
     "owners": "<b>オーナー</b><br>",
     "group_missing": "グループ <code>{name}</code> が見つかりません",
-    "group_item": "<b>{name}</b> - ユーザー: {users}、ルール: {rules}",
+    "group_item": "<b>{name}</b> — ユーザー: {users}、ルール: {rules}",
     "groups": "<b>権限グループ</b><br>",
     "group_rule": "<b>ルールを追加しました:</b> sgroup <code>{target}</code> → {kind}/{rule}{until}",
     "permissions": "<b>権限</b><br>",
@@ -765,7 +878,7 @@
     "bad_rule": "ルールは command/名前 または module/名前 を指定してください。",
     "empty": "付与された権限がありません。{prefix}perm <user_id> <ロール> を使ってください。",
     "bad_label": "不明な権限: {label}",
-    "no_owner_grant": "オーナー権限の付与には {prefix}perms を使ってください。",
+    "no_owner_grant": "オーナー権限の付与には {prefix}owadd を使ってください。",
     "owner_confirm": "<code>{user_id}</code> に全権限を付与しますか？",
     "confirm": "承認",
     "clear_confirm": "<code>{scope}</code> のルールを消去しますか？",
@@ -826,9 +939,45 @@
     "syntax": {
       "perms": "<code>{prefix}perms [ID|@username]</code>",
       "whois": "<code>{prefix}whois [ID|@username] [command]</code>",
-      "perm": "<code>{prefix}perm [ID|@username|command/name] &lt;role&gt; [remove]</code>"
+      "perm": "<code>{prefix}perm [ID|@username|command/name] &lt;role&gt; [remove]</code>",
+      "owadd": "<code>{prefix}owadd [ID|@username]</code>",
+      "owrm": "<code>{prefix}owrm [ID|@username]</code>",
+      "owls": "<code>{prefix}owls</code>",
+      "sgnew": "<code>{prefix}sgnew &lt;name&gt;</code>",
+      "sgdel": "<code>{prefix}sgdel &lt;name&gt;</code>",
+      "sgls": "<code>{prefix}sgls</code>",
+      "sg": "<code>{prefix}sg &lt;name&gt;</code>",
+      "sgadd": "<code>{prefix}sgadd &lt;name&gt; [ID|@username]</code>",
+      "sgrm": "<code>{prefix}sgrm &lt;name&gt; [ID|@username]</code>",
+      "rule": "<code>{prefix}rule &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;command/name|module/name&gt; [1h|forever]</code>",
+      "rulerm": "<code>{prefix}rulerm &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;command/name|module/name|*&gt;</code>",
+      "ruleclr": "<code>{prefix}ruleclr &lt;user|chat|sgroup&gt; [target]</code>"
     },
-    "all_chats": "すべてのチャットで全員が利用できます。"
+    "all_chats": "すべてのチャットで全員が利用できます。",
+    "account": " · アカウント",
+    "protected": " · 保護済み",
+    "failed": "<b>エラー:</b> <i>{error}</i>",
+    "owner_added": "<code>{user_id}</code> <b>にオーナー権限を付与しました</b>",
+    "owner_exists": "<code>{user_id}</code> はすでにオーナーです",
+    "owner_removed": "<code>{user_id}</code> <b>のオーナー権限を取り消しました</b>",
+    "owner_missing": "<code>{user_id}</code> は追加のオーナーではありません",
+    "group_created": "<b>グループを作成しました:</b> <code>{name}</code>",
+    "group_deleted": "<b>グループを削除しました:</b> <code>{name}</code>",
+    "group_detail": "<b>グループ {name}</b><br><b>ユーザー</b><br>{users}<br><b>ルール</b><br>{rules}",
+    "member_exists": "<code>{user_id}</code> はすでに <code>{name}</code> に所属しています",
+    "member_missing": "<code>{user_id}</code> は <code>{name}</code> に所属していません",
+    "member_added": "<code>{user_id}</code> を <code>{name}</code> <b>に追加しました</b>",
+    "member_removed": "<code>{user_id}</code> を <code>{name}</code> <b>から削除しました</b>",
+    "duration": "（期間: {duration}）",
+    "rule_added": "<b>ルールを追加しました:</b> {kind} <code>{target}</code> → {type}/{rule}{until}",
+    "rule_removed": "<b>ルールを削除しました</b>",
+    "nothing_remove": "削除するものがありません",
+    "rules_cleared": "<b>ルールを消去しました</b>",
+    "nothing_clear": "消去するものがありません",
+    "self_owner": "このユーザーはすでにアカウントの所有者です。",
+    "no_groups": "グループはありません。",
+    "usage": "<code>{prefix}owadd &lt;user_id|reply&gt;</code> — オーナーを追加\n<code>{prefix}owrm &lt;user_id|reply&gt;</code> — オーナーを削除\n<code>{prefix}owls</code> — オーナー一覧\n<code>{prefix}sgnew &lt;name&gt;</code> — 権限グループを作成\n<code>{prefix}sgls</code> — グループ一覧\n<code>{prefix}sg &lt;name&gt;</code> — グループのメンバーとルール\n<code>{prefix}sgdel &lt;name&gt;</code> — グループを削除\n<code>{prefix}sgadd &lt;name&gt; &lt;user_id|reply&gt;</code> — メンバーを追加\n<code>{prefix}sgrm &lt;name&gt; &lt;user_id|reply&gt;</code> — メンバーを削除\n<code>{prefix}rule &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;command|module&gt;/&lt;name&gt; [expiry]</code> — アクセスルールを追加\n<code>{prefix}rulerm &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;rule&gt;</code> — ルールを削除\n<code>{prefix}ruleclr &lt;user|chat|sgroup&gt; [target]</code> — ルールを消去\n<code>{prefix}perm &lt;user_id&gt; &lt;admin|trusted|everyone&gt; [remove]</code> — 権限を付与・取り消し\n<code>{prefix}perms</code> — 権限一覧\n<code>{prefix}whois &lt;user_id&gt;</code> — ユーザーの権限",
+    "account_owner": "アカウントの所有者は削除できません。"
   },
   "inline": {
     "command_open": "{command} を開く",
@@ -841,5 +990,26 @@
       "404": "見つかりません",
       "500": "内部エラーです"
     }
+  },
+  "ui": {
+    "close": "✕ 閉じる",
+    "back": "‹ 戻る",
+    "expired": "このメニューは期限切れです。コマンドをもう一度実行してください。",
+    "stale": "メニューが更新されました。もう一度押してください。",
+    "denied": "このボタンはあなた用ではありません。",
+    "failed": "問題が発生しました: {error}",
+    "flood": "Telegram から {seconds} 秒待つよう求められました。",
+    "slow_down": "操作が速すぎます。少し待ってください。",
+    "inline_unavailable": "<i>このチャットではインラインメニューを使えないため、テキストで表示しています。</i>",
+    "input_send_secret": "送信（{count} 文字・非表示）",
+    "search": "🔍 検索",
+    "edit": "✎ 編集",
+    "reset": "↺ 既定値",
+    "on": "オン",
+    "off": "オフ",
+    "error": "⚠️ {error}",
+    "saved": "保存しました",
+    "empty": "空",
+    "nothing_found": "「{query}」に一致するものはありません。"
   }
 }

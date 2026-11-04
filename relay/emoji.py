@@ -51,8 +51,23 @@ def degrade(entities: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return result
 
 
+_quote = re.compile(r"<blockquote(\s+expandable)?\s*>", re.IGNORECASE)
+
+
+def _collapse(html: str, entities: list[dict[str, Any]]) -> None:
+    flags = [bool(match.group(1)) for match in _quote.finditer(html)]
+    if not any(flags):
+        return
+    quotes = sorted((entity for entity in entities if entity.get("_") == "messageEntityBlockquote"), key=lambda entity: cast(int, entity["offset"]))
+    for entity, collapsed in zip(quotes, flags):
+        if collapsed:
+            entity["collapsed"] = True
+
+
 def to_entities(text: str) -> tuple[str, list[dict[str, Any]]]:
-    plain, entities = html_to_entities(str(text))
+    html = str(text)
+    plain, entities = html_to_entities(_quote.sub("<blockquote>", html))
+    _collapse(html, entities)
     if not (_premium or not entities):
         entities = degrade(entities)
     tail = plain.rstrip()
@@ -75,9 +90,17 @@ def has_emoji(html: str) -> bool:
     return bool(_TG_EMOJI.search(str(html)))
 
 
+_button = re.compile(r"<tg-button\s[^>]*>.*?</tg-button>", re.DOTALL | re.IGNORECASE)
+
+
 def _emoji_links(html: str) -> str:
     def replace(match: re.Match[str]) -> str:
         return f'<a href="tg://emoji?id={match.group("id")}">{match.group("text")}</a>'
+
+    def plain(match: re.Match[str]) -> str:
+        return _TG_EMOJI.sub(lambda emoji: emoji.group("text"), match.group(0))
+
+    html = _button.sub(plain, html)
 
     parts: list[str] = []
     pos = 0

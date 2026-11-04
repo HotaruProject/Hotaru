@@ -40,7 +40,7 @@
       "module_missing_error": "<b>Ошибка:</b> Модуль <code>{module}</code> не найден.",
       "no_settings": "<b>Ошибка:</b> У модуля <code>{module}</code> нет настроек.",
       "parameter_missing_error": "<b>Ошибка:</b> Параметр <code>{parameter}</code> не найден.",
-      "empty": "(пусто)",
+      "empty": "Ни у одного модуля пока нет настроек.",
       "parameter_details": "• Значение: <code>{value}</code>\n• Тип: <code>{type}</code>\n• По умолчанию: <code>{default}</code>\n",
       "parameter_description": "• Описание: <i>{description}</i>\n",
       "template_unavailable": "Поле шаблона недоступно или не экспортировано: {name}",
@@ -50,11 +50,29 @@
       "minimum": "Минимум: {value}",
       "maximum": "Максимум: {value}",
       "enter": "[e] Ввести",
-      "new_value": "Новое значение {parameter}",
+      "new_value": "новое значение {name}",
       "reset": "[~] Сброс",
       "module_missing": "Модуль <code>{module}</code> не найден.",
       "parameter_missing": "Параметр <code>{parameter}</code> не найден.",
-      "error_html": "Ошибка: <code>{error}</code>"
+      "error_html": "Ошибка: <code>{error}</code>",
+      "title": "⚙️ Настройки",
+      "title_short": "настройки",
+      "pick": "Выберите модуль:",
+      "missing": "У модуля <code>{module}</code> нет настроек или он не загружен.",
+      "param_missing": "Параметр <code>{name}</code> не найден.",
+      "reset_all": "↺ Сбросить всё",
+      "reset_confirm": "Сбросить все параметры <b>{module}</b> к значениям по умолчанию?",
+      "reset_yes": "Сбросить",
+      "reset_done": "Значения по умолчанию восстановлены",
+      "value": "Значение",
+      "default": "По умолчанию",
+      "type": "Тип",
+      "restart": "Применится после перезапуска.",
+      "copy": "⧉ Копировать",
+      "field_unavailable": "Поле шаблона недоступно или не экспортировано: {name}",
+      "param": "Параметр",
+      "about": "Что означают параметры",
+      "changed": "изменено: {count}"
     },
     "power": {
       "already_stopped": "Юзербот уже остановлен.",
@@ -253,7 +271,19 @@
       "manager_unavailable": "<b>Менеджер модулей недоступен</b>",
       "usage": "<b>Использование:</b> <code>{prefix}hlp</code> или <code>{prefix}hlp &lt;модуль&gt;</code>",
       "disabled": "<b>Модуль отключён:</b> <code>{module}</code><br><i>Ошибка: {error}</i>",
-      "missing": "<b>Модуль не найден:</b> <code>{module}</code>"
+      "missing": "<b>Модуль не найден:</b> <code>{module}</code>",
+      "title": "Hotaru · справка",
+      "summary": "Модулей: {count} · префикс <code>{prefix}</code>",
+      "pick": "Нажмите на модуль, чтобы увидеть его команды.",
+      "kernel_badge": "ядро",
+      "user_badge": "установлен",
+      "no_commands": "Команд нет",
+      "settings": "⚙️ Настройки",
+      "search_prompt": "модуль или команда",
+      "results": "Результаты по «{query}»",
+      "aliases": "Алиасы",
+      "count": "модулей: {count}",
+      "prefix": "префикс {prefix}"
     },
     "accounts": {
       "description": "Управление аккаунтами",
@@ -401,7 +431,11 @@
         "no_user": "При входе не получен пользователь.",
         "wrong_account": "Неверный аккаунт; нужен пользователь {uid}.",
         "unknown": "Не удалось выполнить действие."
-      }
+      },
+      "field": {
+        "autostart": "Автозапуск"
+      },
+      "title": "Аккаунты"
     },
     "acl": {
       "description": "Управление правами",
@@ -412,11 +446,47 @@
         },
         "perm": {
           "description": "Выдать или отозвать права",
-          "usage": "[ID|@username|command/имя] [роль] [remove]"
+          "usage": "[ID|@username|command/name] <role> [remove]"
         },
         "whois": {
           "description": "Права пользователя",
-          "usage": "[ID|@username] [команда]"
+          "usage": "[ID|@username] [command]"
+        },
+        "owadd": {
+          "description": "Добавить владельца"
+        },
+        "owrm": {
+          "description": "Удалить владельца"
+        },
+        "owls": {
+          "description": "Список владельцев"
+        },
+        "sgnew": {
+          "description": "Создать группу прав"
+        },
+        "sgls": {
+          "description": "Список групп"
+        },
+        "sg": {
+          "description": "Участники и правила группы"
+        },
+        "sgdel": {
+          "description": "Удалить группу"
+        },
+        "sgadd": {
+          "description": "Добавить участника"
+        },
+        "sgrm": {
+          "description": "Удалить участника"
+        },
+        "rule": {
+          "description": "Добавить правило доступа"
+        },
+        "rulerm": {
+          "description": "Удалить правило"
+        },
+        "ruleclr": {
+          "description": "Очистить правила"
         }
       },
       "bad_group": "Имя группы: только буквы и цифры, до 32 символов.",
@@ -424,7 +494,10 @@
       "bad_rule": "Правило: command/имя или module/имя.",
       "self_owner": "Этот пользователь уже является владельцем аккаунта.",
       "empty": "Нет выданных прав. Используй !perm <user_id> <role>.",
-      "bad_label": "Неизвестное право: {label}."
+      "bad_label": "Неизвестное право: {label}.",
+      "usage": "использование:\n!owadd <user_id|reply> — выдать owner\n!owrm <user_id|reply> — снять owner\n!owls — владельцы\n!sgnew <name> — создать группу прав\n!sgls — список групп\n!sg <name> — участники и права группы\n!sgdel <name> — удалить группу\n!sgadd <name> <user_id|reply> — добавить юзера в группу\n!sgrm <name> <user_id|reply> — убрать юзера из группы\n!rule <user|chat|sgroup> <target> <command|module>/<name> [срок] — выдать право\n!rulerm — убрать правило\n!ruleclr — очистить все правила цели\n!perm <user_id> <admin|trusted|everyone> [remove] — выдать/снять право\n!perms — список прав\n!whois <user_id> — права пользователя",
+      "no_groups": "Групп прав нет. Создай: !sgnew <name>",
+      "no_owner_grant": "Право owner выдаётся через !owadd."
     },
     "lg": "хвост логов:\n{lines}",
     "logger": {
@@ -438,7 +511,7 @@
       "mirror_off": "Зеркало логов выключено",
       "level_set": "Уровень зеркала: {level}",
       "status": "Топик: {topic} • ошибок: {failed}",
-      "status_error": "• последняя: {error}",
+      "status_error": " • последняя: {error}",
       "no_observatory": "Обсерватория недоступна",
       "no_entries": "Нет записей этого уровня",
       "topic_unavailable": "Топик недоступен: {error}",
@@ -466,7 +539,7 @@
       "lg": "Показать последние записи журнала"
     },
     "settings": {
-      "description": "Управление алиасами и префиксом",
+      "description": "Настройки модулей, префикса и алиасов",
       "commands": {
         "alias": {
           "description": "Создать алиас команды",
@@ -482,6 +555,15 @@
         "prefix": {
           "description": "Сменить префикс команд",
           "usage": "[префикс]"
+        },
+        "settings": {
+          "description": "Открыть настройки"
+        },
+        "conf": {
+          "description": "Открыть настройки"
+        },
+        "config": {
+          "description": "Открыть настройки"
         }
       }
     },
@@ -490,9 +572,9 @@
       "exit_code": "Код завершения: {returncode}",
       "running": "Выполняется…",
       "usage_sh": "<b>Использование:</b> <code>{prefix}sh &lt;команда&gt;</code>",
-      "usage_py": "<b>Использование:</b> <code>{prefix}py &lt;код&gt;</code> или ответ на код; -so - без вывода",
+      "usage_py": "<b>Использование:</b> <code>{prefix}py &lt;код&gt;</code> или ответ на код; -so — без вывода",
       "cancelled": "Выполнение отменено",
-      "done": "Готово [x]",
+      "done": "Готово ✓",
       "kill_reply": "<b>Ответь на сообщение выполняющейся py/sh, чтобы остановить процесс.</b>",
       "killed": "<b>Процесс остановлен.</b>",
       "no_process": "<b>У этого сообщения нет активного процесса.</b>",
@@ -556,7 +638,7 @@
       "inline": "запросы к инлайн-ботам и взаимодействие с ними",
       "modules": "загрузка, выгрузка, перезагрузка и просмотр модулей, их хешей и описаний",
       "assets": "доступ к скрытому хранилищу вложений",
-      "shell": "запускает команды shell в workspace модуля; shell всегда работает в изолированной песочнице, где виден только workspace, его инструменты и отдельный /tmp; сеть появляется только с capability net, доступ к файлам хоста - только с files, и то и другое остаётся внутри песочницы; таймаут и лимиты на вывод команд сохраняются",
+      "shell": "полный доступ к оболочке с правами процесса Hotaru в ОС, включая файлы хоста, учётные данные и сеть; НЕ ограничен рабочей папкой модуля. Сохраняются таймаут команды и ограничение возвращаемого вывода",
       "logs": "запись структурированных событий в журнал; разрешено всегда",
       "fetch": "чтение сообщений, данных пользователей и чатов, получение ответов; разрешено всегда"
     },
@@ -573,7 +655,10 @@
         "uptime": "Время работы юзербота, только ненулевые единицы",
         "uptime_seconds": "Время работы юзербота в секундах"
       },
-      "example_uptime": "2 часа 3 минуты"
+      "example_uptime": "2 часа 3 минуты",
+      "config_fields": {
+        "template": "Текст ответа на ping"
+      }
     },
     "info": {
       "description": "Карточка юзербота",
@@ -605,6 +690,32 @@
           "description": "Открыть инлайн-запускатель Mini App Singularity"
         }
       }
+    },
+    "backups": {
+      "description": "Отправка бекапов в служебный чат",
+      "commands": {
+        "backup": {
+          "description": "Отправить бекап или настроить автоотправку"
+        }
+      },
+      "config_fields": {
+        "enabled": "Отправлять бекапы автоматически",
+        "interval_hours": "Интервал между бекапами в часах"
+      },
+      "heading": "{icon} <b>Бекапы</b>\n{status} · {hours} ч.",
+      "enabled": "Включено",
+      "disabled": "Выключено",
+      "last_sent": "Последняя отправка: {date}",
+      "destination": "Куда: топик {topic} в служебном чате.",
+      "send_now": "Отправить сейчас",
+      "disable": "Выключить",
+      "enable": "Включить",
+      "not_ready": "Служебный чат ещё не готов",
+      "caption": "Бекап Hotaru",
+      "failed": "Не удалось отправить бекап: {error}",
+      "sent": "Бекап отправлен",
+      "topic": "Backups",
+      "usage": "<code>{prefix}backup [now|on|off]</code>"
     }
   },
   "commands": {
@@ -635,10 +746,10 @@
     "ja": "Японский",
     "zh": "Китайский"
   },
-  "inline_commands_hint": "Выбери команду - введи @<бот> и её имя в любом чате",
+  "inline_commands_hint": "Выбери команду — введи @<бот> и её имя в любом чате",
   "settings": {
     "runtime_unavailable": "Сервис недоступен",
-    "usage_alias": "Использование: {prefix}alias <алиас> <команда с аргументами>",
+    "usage_alias": "Использование: {prefix}alias <алиас> <команда>",
     "alias_exists": "Команда уже существует: {alias}",
     "command_not_found": "Команда не найдена: {command}\nДоступны: {known}",
     "alias_taken": "Алиас занят: {alias} → {command}. Удали через {prefix}rmalias {alias}.",
@@ -657,7 +768,8 @@
       "rmalias": "Удалить алиас команды",
       "lsalias": "Показать алиасы команд",
       "prefix": "Сменить префикс команд"
-    }
+    },
+    "alias_invalid": "Алиас: 1–32 символа, буквы любых языков, цифры и _; не может начинаться с цифры."
   },
   "runtime": {
     "modules_unavailable": "Модули недоступны",
@@ -668,7 +780,7 @@
     "module_info": "Модуль: {module}\nВерсия: {version}\nКоманды: {commands}\nВозможности: {capabilities}\nОписание: {description}",
     "help_unavailable": "Справка недоступна",
     "page_unavailable": "Страница справки недоступна",
-    "catalog": "Каталог:",
+    "catalog": "Каталог: ",
     "next": "Далее",
     "bot_unavailable": "Инлайн-бот недоступен",
     "bot_failed": "Не удалось создать инлайн-бота: {error}",
@@ -747,12 +859,13 @@
     },
     "file_missing": "Файл модуля не найден",
     "file_document": "Отправь модуль файлом",
-    "unknown_capability": "неизвестная возможность (запрещена)"
+    "unknown_capability": "неизвестная возможность (запрещена)",
+    "loading_module": "Загружаю {module_id}…"
   },
   "acl": {
     "owners": "<b>Владельцы</b><br>",
     "group_missing": "Группа <code>{name}</code> не найдена",
-    "group_item": "<b>{name}</b> - участников: {users}, правил: {rules}",
+    "group_item": "<b>{name}</b> — участников: {users}, правил: {rules}",
     "groups": "<b>Группы прав</b><br>",
     "group_rule": "<b>Правило добавлено:</b> sgroup <code>{target}</code> → {kind}/{rule}{until}",
     "permissions": "<b>Права</b><br>",
@@ -764,15 +877,15 @@
     "grant_failed": "<b>Не удалось выдать права:</b> <i>{error}</i>",
     "granted": "<code>{user_id}</code> <b>выдано</b> <code>{label}</code>",
     "bad_group": "Имя группы: буквы и цифры, до 32 символов.",
-    "bad_duration": "Укажи 1m, 1h, 1d, 1w или forever. Максимум - 100 лет.",
+    "bad_duration": "Укажи 1m, 1h, 1d, 1w или forever. Максимум — 100 лет.",
     "bad_rule": "Правило: command/имя или module/имя.",
     "empty": "Выданных прав нет. Используй {prefix}perm <user_id> <роль>.",
     "bad_label": "Неизвестное право: {label}",
-    "no_owner_grant": "Права владельца выдаются через {prefix}perms.",
+    "no_owner_grant": "Права владельца выдаются через {prefix}owadd.",
     "owner_confirm": "Выдать <code>{user_id}</code> полный доступ?",
     "confirm": "Подтвердить",
     "clear_confirm": "Очистить правила для <code>{scope}</code>?",
-    "kernel_rule": "Системные команды - только для владельцев.",
+    "kernel_rule": "Системные команды — только для владельцев.",
     "invalid_target": "Неверный пользователь, чат или группа.",
     "model": "У владельцев полный доступ. Остальные права настраиваются отдельно.",
     "forever": "Бессрочно",
@@ -829,9 +942,45 @@
     "syntax": {
       "perms": "<code>{prefix}perms [ID|@username]</code>",
       "whois": "<code>{prefix}whois [ID|@username] [command]</code>",
-      "perm": "<code>{prefix}perm [ID|@username|command/name] &lt;role&gt; [remove]</code>"
+      "perm": "<code>{prefix}perm [ID|@username|command/name] &lt;role&gt; [remove]</code>",
+      "owadd": "<code>{prefix}owadd [ID|@username]</code>",
+      "owrm": "<code>{prefix}owrm [ID|@username]</code>",
+      "owls": "<code>{prefix}owls</code>",
+      "sgnew": "<code>{prefix}sgnew &lt;name&gt;</code>",
+      "sgdel": "<code>{prefix}sgdel &lt;name&gt;</code>",
+      "sgls": "<code>{prefix}sgls</code>",
+      "sg": "<code>{prefix}sg &lt;name&gt;</code>",
+      "sgadd": "<code>{prefix}sgadd &lt;name&gt; [ID|@username]</code>",
+      "sgrm": "<code>{prefix}sgrm &lt;name&gt; [ID|@username]</code>",
+      "rule": "<code>{prefix}rule &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;command/name|module/name&gt; [1h|forever]</code>",
+      "rulerm": "<code>{prefix}rulerm &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;command/name|module/name|*&gt;</code>",
+      "ruleclr": "<code>{prefix}ruleclr &lt;user|chat|sgroup&gt; [target]</code>"
     },
-    "all_chats": "Доступно всем во всех чатах."
+    "all_chats": "Доступно всем во всех чатах.",
+    "account": " · аккаунт",
+    "protected": " · защищён",
+    "failed": "<b>Ошибка:</b> <i>{error}</i>",
+    "owner_added": "<code>{user_id}</code> <b>добавлен во владельцы</b>",
+    "owner_exists": "<code>{user_id}</code> уже владелец",
+    "owner_removed": "У <code>{user_id}</code> <b>сняты права владельца</b>",
+    "owner_missing": "<code>{user_id}</code> не назначен владельцем",
+    "group_created": "<b>Создана группа</b> <code>{name}</code>",
+    "group_deleted": "<b>Удалена группа</b> <code>{name}</code>",
+    "group_detail": "<b>Группа {name}</b><br><b>Участники</b><br>{users}<br><b>Правила</b><br>{rules}",
+    "member_exists": "<code>{user_id}</code> уже в группе <code>{name}</code>",
+    "member_missing": "<code>{user_id}</code> нет в группе <code>{name}</code>",
+    "member_added": "<code>{user_id}</code> <b>добавлен в</b> <code>{name}</code>",
+    "member_removed": "<code>{user_id}</code> <b>удалён из</b> <code>{name}</code>",
+    "duration": " на {duration}",
+    "rule_added": "<b>Правило добавлено:</b> {kind} <code>{target}</code> → {type}/{rule}{until}",
+    "rule_removed": "<b>Правило удалено</b>",
+    "nothing_remove": "Удалять нечего",
+    "rules_cleared": "<b>Правила очищены</b>",
+    "nothing_clear": "Очищать нечего",
+    "self_owner": "Этот пользователь уже владеет аккаунтом.",
+    "no_groups": "Групп нет.",
+    "usage": "<code>{prefix}owadd &lt;user_id|reply&gt;</code> — Добавить владельца\n<code>{prefix}owrm &lt;user_id|reply&gt;</code> — Удалить владельца\n<code>{prefix}owls</code> — Список владельцев\n<code>{prefix}sgnew &lt;name&gt;</code> — Создать группу прав\n<code>{prefix}sgls</code> — Список групп\n<code>{prefix}sg &lt;name&gt;</code> — Участники и правила группы\n<code>{prefix}sgdel &lt;name&gt;</code> — Удалить группу\n<code>{prefix}sgadd &lt;name&gt; &lt;user_id|reply&gt;</code> — Добавить участника\n<code>{prefix}sgrm &lt;name&gt; &lt;user_id|reply&gt;</code> — Удалить участника\n<code>{prefix}rule &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;command|module&gt;/&lt;name&gt; [expiry]</code> — Добавить правило доступа\n<code>{prefix}rulerm &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;rule&gt;</code> — Удалить правило\n<code>{prefix}ruleclr &lt;user|chat|sgroup&gt; [target]</code> — Очистить правила\n<code>{prefix}perm &lt;user_id&gt; &lt;admin|trusted|everyone&gt; [remove]</code> — Выдать или отозвать права\n<code>{prefix}perms</code> — Список прав\n<code>{prefix}whois &lt;user_id&gt;</code> — Права пользователя",
+    "account_owner": "Владельца аккаунта нельзя удалить."
   },
   "inline": {
     "command_open": "Открыть {command}",
@@ -844,5 +993,26 @@
       "404": "Не найдено",
       "500": "Внутренняя ошибка"
     }
+  },
+  "ui": {
+    "close": "✕ Закрыть",
+    "back": "‹ Назад",
+    "expired": "Меню устарело. Вызовите команду ещё раз.",
+    "stale": "Меню только что обновилось, нажмите ещё раз.",
+    "denied": "Эта кнопка не для вас.",
+    "failed": "Что-то пошло не так: {error}",
+    "flood": "Telegram просит подождать {seconds} с.",
+    "slow_down": "Слишком быстро, подождите секунду.",
+    "inline_unavailable": "<i>Инлайн-меню в этом чате недоступно, поэтому здесь обычный текст.</i>",
+    "input_send_secret": "Отправить (символов: {count}, скрыто)",
+    "search": "🔍 Поиск",
+    "edit": "✎ Изменить",
+    "reset": "↺ По умолчанию",
+    "on": "Вкл",
+    "off": "Выкл",
+    "error": "⚠️ {error}",
+    "saved": "Сохранено",
+    "empty": "пусто",
+    "nothing_found": "По запросу «{query}» ничего не найдено."
   }
 }

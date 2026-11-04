@@ -662,6 +662,10 @@ class ModuleContext(ContextOperations):
             owner_id = None
         return UiHelper(self.module_id, self.callback_router.store, owner_id, getattr(self._source, "chat_id", None), getattr(self._source, "id", 0), self.callback_router)
 
+    @property
+    def screens(self) -> Any:
+        from .screens import Kit
+        return Kit(getattr(self.runtime, "screens", None) if self.runtime is not None else None, self)
     @staticmethod
     async def _ctx_prepare(text: Any, parse_mode: Any, buttons: Any) -> dict[str, Any]:
         data: dict[str, Any] = {}
@@ -1270,7 +1274,7 @@ class ModuleContext(ContextOperations):
                 result = await self._bot_form(html, buttons, {**kwargs, "rich": True})
                 return result if isinstance(result, Response) else Response(True, "reply", getattr(self._source, "src", None), result)
             if kind == "inline":
-                from goygram.types.kbd import kbd_to_tl
+                from .markup import kbd_to_tl
                 kwargs["reply_markup"] = kbd_to_tl({"inline_keyboard": buttons})
             else:
                 html = str(html) + buttons_html(buttons, kind=kind)
@@ -1502,6 +1506,7 @@ class ModuleContextFactory:
         self.callback_router: Any = None
         self.inline_manager: Any = None
         self.form_sender: Any = None
+        self.screens: Any = None
         self.runtime: Any = runtime
 
     def create(self, module_id: str, message: Any) -> ModuleContext:
