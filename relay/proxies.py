@@ -1517,9 +1517,9 @@ class UiHelper:
     def url(self, text: str, url: str) -> dict[str, str]:
         return self.button_url(text, url)
 
-    def close(self, text: str = "Close") -> dict[str, str]:
-        if text == "Close" and self._router is not None and self._router.runtime is not None:
-            text = self._router.runtime.t("common.close")
+    def close(self, text: str = "✕ Close") -> dict[str, str]:
+        if not text or text in {"Close", "Закрыть", "✕ Закрыть", "閉じる", "Жабу", "关闭", "Закрити"}:
+            text = "✕ Close"
         async def handler(callback: Any, payload: Any) -> Any:
             try:
                 await callback.respond()

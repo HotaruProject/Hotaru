@@ -7,7 +7,7 @@
     "brand": "<tg-emoji emoji-id=\"5985527717183888277\">⚡</tg-emoji><tg-emoji emoji-id=\"5985515480822061758\">⚡</tg-emoji><tg-emoji emoji-id=\"5985558606588681366\">⚡</tg-emoji><tg-emoji emoji-id=\"5985757321840565902\">⚡</tg-emoji>",
     "ok": "确定",
     "cancel": "取消",
-    "close": "关闭",
+    "close": "✕ Close",
     "back": "返回",
     "unknown_error": "未知错误",
     "confirm": "确认",
@@ -296,7 +296,7 @@
       "button": {
         "add": "添加账号",
         "refresh": "刷新",
-        "close": "关闭",
+        "close": "✕ Close",
         "permissions": "权限",
         "start": "启动",
         "stop": "停止",

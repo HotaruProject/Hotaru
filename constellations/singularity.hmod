@@ -91,7 +91,7 @@ async def command_dash(ctx: Any, invocation: Any) -> None:
         buttons.append([{"text": f"⚡ {open_label}", "url": launch_url, "style": "primary"}])
 
     if hasattr(ctx, "ui") and hasattr(ctx.ui, "close"):
-        buttons.append([ctx.ui.close(close_label)])
+        buttons.append([ctx.ui.close("✕ Close")])
 
     banner_url = ready_info.get("banner_url")
     if not banner_url:

@@ -7,7 +7,7 @@
     "brand": "<tg-emoji emoji-id=\"5985527717183888277\">⚡</tg-emoji><tg-emoji emoji-id=\"5985515480822061758\">⚡</tg-emoji><tg-emoji emoji-id=\"5985558606588681366\">⚡</tg-emoji><tg-emoji emoji-id=\"5985757321840565902\">⚡</tg-emoji>",
     "ok": "ОК",
     "cancel": "Отмена",
-    "close": "Закрыть",
+    "close": "✕ Close",
     "back": "Назад",
     "unknown_error": "Неизвестная ошибка",
     "confirm": "Подтвердить",
@@ -332,7 +332,7 @@
       "button": {
         "add": "Добавить аккаунт",
         "refresh": "Обновить",
-        "close": "Закрыть",
+        "close": "✕ Close",
         "permissions": "Права",
         "start": "Запустить",
         "stop": "Остановить",
@@ -1036,7 +1036,7 @@
     }
   },
   "ui": {
-    "close": "✕ Закрыть",
+    "close": "✕ Close",
     "back": "‹ Назад",
     "expired": "Меню устарело. Вызовите команду ещё раз.",
     "stale": "Меню только что обновилось, нажмите ещё раз.",

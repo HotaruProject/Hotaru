@@ -419,7 +419,7 @@ class Kit:
         return _decorate({"text": text, "k": "go", "m": module_id, "f": fn, "a": _plain(args)}, style, icon)
 
     def close(self, text: Optional[str] = None) -> dict[str, Any]:
-        return _decorate({"text": text or self._t("common.close", "Close"), "k": "close"}, None, "close")
+        return _decorate({"text": "✕ Close" if not text or text in {"Close", "Закрыть", "✕ Закрыть", "閉じる", "Жабу", "关闭", "Закрити"} else text, "k": "close"}, "danger", None)
 
     def back(self, fn: Any, text: Optional[str] = None, **args: Any) -> dict[str, Any]:
         return self.button(text or self._t("common.back", "Back"), fn, icon="back", **args)
@@ -766,6 +766,10 @@ class ScreenEngine:
                     elif icon_val.isdigit() and not spec.get("style"):
                         button["icon_custom_emoji_id"] = icon_val
                 kind = spec.get("k")
+                if kind == "close":
+                    button["style"] = "danger"
+                    if not button.get("text") or button.get("text") in {"Close", "Закрыть", "✕ Закрыть", "閉じる", "Жабу", "关闭", "Закрити"}:
+                        button["text"] = "✕ Close"
                 if kind in {"go", "input", "close"}:
                     token = self._action(form, spec, actions, gen)
                     button["switch_inline_query_current_chat" if kind == "input" else "callback_data"] = "hotaru-input:" + token + " " if kind == "input" else token
