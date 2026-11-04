@@ -581,6 +581,10 @@
         "logs": {
           "description": "ユーザーボットのログとファイル",
           "usage": "[on|off|status|レベル] [件数] [コンポーネント]"
+        },
+        "loglevel": {
+          "description": "ログレベルの変更または選択",
+          "usage": "[level]"
         }
       },
       "pending": "待機中",
@@ -593,7 +597,13 @@
         "level": "記録するログの最低レベル",
         "batch_size": "1つのメッセージにまとめるイベント数",
         "auto_topic": "フォーラムのログトピックを自動管理する"
-      }
+      },
+      "loglevel_menu_title": "ログレベル",
+      "loglevel_choose": "記録する最小ログレベルを選択してください:",
+      "loglevel_current": "現在のレベル:",
+      "invalid_level": "無効なログレベルです。使用可能: {levels}",
+      "logs_menu_title": "ログのエクスポート",
+      "logs_choose": "エクスポートするログレベルを選択してください:"
     },
     "executor": {
       "exit_code": "終了コード: {returncode}",
@@ -679,11 +689,16 @@
       "fields": {
         "latency": "応答時間（ミリ秒）",
         "uptime": "ユーザーボットの稼働時間（ゼロの単位を省略）",
-        "uptime_seconds": "ユーザーボットの稼働時間（秒）"
+        "uptime_seconds": "ユーザーボットの稼働時間（秒）",
+        "custom_message": "カスタムメッセージのテキスト"
       },
       "example_uptime": "2時間 3分",
       "config_fields": {
-        "template": "ping の返信テキスト"
+        "template": "ping の返信テキスト",
+        "custom_message": "ping応答に追加するカスタムメッセージ"
+      },
+      "config": {
+        "custom_message": "ping応答に追加するカスタムメッセージ"
       }
     },
     "info": {
@@ -697,10 +712,12 @@
       "empty_template": "情報テンプレートが空です",
       "bad_placeholder": "無効なプレースホルダー: {error}",
       "config": {
-        "template": ".info のテンプレート。プレースホルダー: {version} {uptime} {modules}"
+        "template": ".info のテンプレート。プレースホルダー: {version} {uptime} {modules}",
+        "custom_message": "情報カードに表示されるカスタムメッセージ"
       },
       "config_fields": {
-        "template": ".info のテンプレート。プレースホルダー: {version} {uptime} {modules}"
+        "template": ".info のテンプレート。プレースホルダー: {version} {uptime} {modules}",
+        "custom_message": "情報カードに表示されるカスタムメッセージ"
       }
     },
     "singularity": {

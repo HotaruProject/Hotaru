@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import html
+import inspect
 import secrets
 import time
 from typing import Any, Awaitable, Callable, cast
@@ -1097,7 +1098,7 @@ class ForumHelper:
             self._emit("bot_sync_failed", chat=chat_id, error=type(exc).__name__, detail=str(exc)[:160])
             return
 
-    async def ensure_topic(self, title: str) -> int | None:
+    async def ensure_topic(self, title: str, icon_emoji_id: int | None = None) -> int | None:
         chat_id = await self.ensure_group()
         if chat_id is None:
             return None
@@ -1110,7 +1111,22 @@ class ForumHelper:
         for item in _items(self._body(result).get("topics")):
             topic = _data(item)
             if topic is not None and isinstance(topic.get("id"), int) and str(topic.get("title") or "") == title:
-                return int(topic["id"])
+                tid = int(topic["id"])
+                eid = icon_emoji_id if icon_emoji_id is not None else topic_emoji_id(title)
+                if eid:
+                    prem = False
+                    try:
+                        if hasattr(self._runtime, "is_premium"):
+                            val = self._runtime.is_premium()
+                            prem = await val if inspect.isawaitable(val) else bool(val)
+                    except Exception:
+                        pass
+                    if prem and topic.get("icon_emoji_id") != eid:
+                        try:
+                            await self._user_call("messages.editForumTopic", peer=chat_id, topic_id=tid, icon_emoji_id=eid)
+                        except Exception:
+                            pass
+                return tid
         now = time.monotonic()
         last = self._topic_tries.get(title, 0.0)
         if now - last < 60.0:
@@ -1123,7 +1139,7 @@ class ForumHelper:
                 val = self._runtime.is_premium()
                 prem = await val if inspect.isawaitable(val) else bool(val)
             if prem:
-                eid = topic_emoji_id(title)
+                eid = icon_emoji_id if icon_emoji_id is not None else topic_emoji_id(title)
                 if eid:
                     topic_kwargs["icon_emoji_id"] = eid
         except Exception:

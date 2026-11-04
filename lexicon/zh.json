@@ -576,6 +576,10 @@
         "logs": {
           "description": "带文件的用户机器人日志",
           "usage": "[on|off|status|level] [count] [component]"
+        },
+        "loglevel": {
+          "description": "更改或选择日志级别",
+          "usage": "[level]"
         }
       },
       "pending": "待处理",
@@ -588,7 +592,13 @@
         "level": "记录日志的最低级别",
         "batch_size": "每条消息批量记录的事件数",
         "auto_topic": "自动管理论坛中的日志话题"
-      }
+      },
+      "loglevel_menu_title": "日志级别",
+      "loglevel_choose": "选择要记录的最低日志级别：",
+      "loglevel_current": "当前级别：",
+      "invalid_level": "无效的日志级别。可用：{levels}",
+      "logs_menu_title": "导出日志",
+      "logs_choose": "选择要导出的日志级别："
     },
     "executor": {
       "exit_code": "退出码：{returncode}",
@@ -674,12 +684,17 @@
       "fields": {
         "latency": "响应时间（毫秒）",
         "uptime": "用户机器人运行时长，仅显示非零单位",
-        "uptime_seconds": "用户机器人运行时长（秒）"
+        "uptime_seconds": "用户机器人运行时长（秒）",
+        "custom_message": "自定义消息文本"
       },
       "example_uptime": "2 小时 3 分钟",
       "config_fields": {
         "banner": "Ping 横幅模式",
-        "template": "Ping 回复的文本内容"
+        "template": "Ping 回复的文本内容",
+        "custom_message": "附加到ping回复的自定义消息"
+      },
+      "config": {
+        "custom_message": "附加到ping回复的自定义消息"
       }
     },
     "info": {
@@ -693,10 +708,12 @@
       "empty_template": "信息模板为空",
       "bad_placeholder": "无效占位符：{error}",
       "config": {
-        "template": "信息模板，占位符：{version} {uptime} {modules}"
+        "template": "信息模板，占位符：{version} {uptime} {modules}",
+        "custom_message": "在信息卡上显示的自定义消息"
       },
       "config_fields": {
-        "template": "信息模板，占位符：{version} {uptime} {modules}"
+        "template": "信息模板，占位符：{version} {uptime} {modules}",
+        "custom_message": "在信息卡上显示的自定义消息"
       }
     },
     "singularity": {

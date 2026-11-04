@@ -134,15 +134,24 @@ def _localized_schema(ctx: Any, manifest: Any) -> ConfigSchema:
     return ConfigSchema.from_manifest(schema)
 
 
-def _modules(ctx: Any) -> List[Tuple[str, Any, ConfigSchema]]:
-    items: List[Tuple[str, Any, ConfigSchema]] = []
+def _is_kernel(runtime: Any, module_id: str) -> bool:
+    mod = runtime.modules.get(module_id)
+    if mod is None:
+        return False
+    path = getattr(mod, "path", None)
+    return path is not None and "constellations" in getattr(path, "parts", ())
+
+
+def _modules(ctx: Any) -> List[Tuple[str, Any, ConfigSchema, bool]]:
+    items: List[Tuple[str, Any, ConfigSchema, bool]] = []
     for active in ctx.runtime.modules.items():
         manifest = getattr(getattr(active, "loaded", None), "manifest", None)
         if manifest is not None and getattr(manifest, "config_schema", None):
             schema = _localized_schema(ctx, manifest)
             if len(schema) > 0:
-                items.append((str(manifest.module_id), manifest, schema))
-    return sorted(items, key=lambda item: item[0].casefold())
+                module_id = str(manifest.module_id)
+                items.append((module_id, manifest, schema, _is_kernel(ctx.runtime, module_id)))
+    return sorted(items, key=lambda item: (not item[3], item[0].casefold()))
 
 
 def _open(ctx: Any, module_id: str) -> Optional[Tuple[Any, ConfigSchema, ModuleConfig]]:
@@ -195,10 +204,24 @@ def home(ctx: Any, nav: Any = None) -> Any:
     if not modules:
         lines.append(f"<i>{_escape(ctx.t('kernel.config.empty'))}</i>")
         return k.screen("\n".join(lines), [k.footer()], banner=banner_url, rich=True)
-    for module_id, manifest, schema in modules:
-        description = str(manifest.localized(ctx.runtime.language(), manifest.description).get("description", "") or "")
-        line = f"{k.module_icon(module_id)} {k.tap(module_id, module, id=module_id)} {k.badge(str(len(schema)))}"
-        lines.append(line + (f" <i>{_escape(ctx.tools.truncate(description, 48))}</i>" if description else ""))
+    kernel_count = sum(1 for row in modules if row[3])
+    user_count = len(modules) - kernel_count
+    for kernel in (True, False):
+        entries = []
+        for module_id, manifest, schema, is_k in modules:
+            if is_k != kernel:
+                continue
+            description = str(manifest.localized(ctx.runtime.language(), manifest.description).get("description", "") or "")
+            line = f"{k.module_icon(module_id)} {k.tap(module_id, module, id=module_id)} {k.badge(str(len(schema)))}"
+            if description:
+                line += f" <i>{_escape(ctx.tools.truncate(description, 48))}</i>"
+            entries.append(line)
+        if not entries:
+            continue
+        title = ctx.t("kernel.help_ui.kernel_modules" if kernel else "kernel.help_ui.user_modules")
+        icon = '<tg-emoji emoji-id="4974681956907221809">▪️</tg-emoji>' if kernel else '<tg-emoji emoji-id="4974508259839836856">▪️</tg-emoji>'
+        summary = f"{icon} <b>{_escape(title)}</b> · {kernel_count if kernel else user_count}"
+        lines.append(k.details(summary, "\n".join(entries), open=not kernel or user_count == 0))
     return k.screen("\n".join(lines), [k.footer()], banner=banner_url, rich=True)
 
 
@@ -454,7 +477,7 @@ async def command_conf(ctx: Any, invocation: Any) -> Any:
     found_mod = next((item for item in candidates if item[0] == module_id), None)
     if found_mod is None and len(args) >= 2:
         matches_field = []
-        for m_id, _, m_schema in candidates:
+        for m_id, _, m_schema, *_ in candidates:
             if args[0] in m_schema:
                 matches_field.append((m_id, args[0]))
         if len(matches_field) == 1:

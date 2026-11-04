@@ -576,6 +576,10 @@
         "logs": {
           "description": "Userbot logs with a file",
           "usage": "[on|off|status|level] [count] [component]"
+        },
+        "loglevel": {
+          "description": "Change or select logging level",
+          "usage": "[level]"
         }
       },
       "pending": "pending",
@@ -588,7 +592,13 @@
         "level": "Minimum log level to record",
         "batch_size": "Log events to batch per message",
         "auto_topic": "Automatically manage the logs topic in the forum"
-      }
+      },
+      "loglevel_menu_title": "Log Level",
+      "loglevel_choose": "Select minimum log level to record:",
+      "loglevel_current": "Current level:",
+      "invalid_level": "Invalid log level. Allowed: {levels}",
+      "logs_menu_title": "Export Logs",
+      "logs_choose": "Select log level to export:"
     },
     "executor": {
       "exit_code": "Exit code: {returncode}",
@@ -674,11 +684,16 @@
       "fields": {
         "latency": "Response time in milliseconds",
         "uptime": "Userbot runtime, nonzero units only",
-        "uptime_seconds": "Userbot runtime in seconds"
+        "uptime_seconds": "Userbot runtime in seconds",
+        "custom_message": "Custom message text"
       },
       "example_uptime": "2 hours 3 minutes",
       "config_fields": {
-        "template": "Text of the ping reply"
+        "template": "Text of the ping reply",
+        "custom_message": "Custom message to append to ping response"
+      },
+      "config": {
+        "custom_message": "Custom message to append to ping response"
       }
     },
     "info": {
@@ -692,10 +707,12 @@
       "empty_template": "The info template is empty",
       "bad_placeholder": "Invalid placeholder: {error}",
       "config": {
-        "template": "Info template; placeholders: {version} {uptime} {modules}"
+        "template": "Info template; placeholders: {version} {uptime} {modules}",
+        "custom_message": "Custom message displayed on the info card"
       },
       "config_fields": {
-        "template": "Info template; placeholders: {version} {uptime} {modules}"
+        "template": "Info template; placeholders: {version} {uptime} {modules}",
+        "custom_message": "Custom message displayed on the info card"
       }
     },
     "singularity": {

@@ -581,6 +581,10 @@
         "logs": {
           "description": "Юзербот логтары файлмен бірге",
           "usage": "[on|off|status|деңгей] [саны] [компонент]"
+        },
+        "loglevel": {
+          "description": "Лог деңгейін өзгерту немесе таңдау",
+          "usage": "[level]"
         }
       },
       "pending": "күтілуде",
@@ -593,7 +597,13 @@
         "level": "Журналға жазылатын ең төменгі деңгей",
         "batch_size": "Бір хабарламадағы оқиғалар саны",
         "auto_topic": "Форумдағы журнал тақырыбын автоматты басқару"
-      }
+      },
+      "loglevel_menu_title": "Лог деңгейі",
+      "loglevel_choose": "Жазу үшін минималды деңгейді таңдаңыз:",
+      "loglevel_current": "Ағымдағы деңгей:",
+      "invalid_level": "Жарамсыз деңгей. Қолжетімді: {levels}",
+      "logs_menu_title": "Логтарды жүктеп алу",
+      "logs_choose": "Жүктеп алу үшін лог деңгейін таңдаңыз:"
     },
     "executor": {
       "exit_code": "Аяқталу коды: {returncode}",
@@ -679,11 +689,16 @@
       "fields": {
         "latency": "Жауап беру уақыты, миллисекундпен",
         "uptime": "Юзерботтың жұмыс уақыты, тек нөлден үлкен бірліктер",
-        "uptime_seconds": "Юзерботтың жұмыс уақыты, секундпен"
+        "uptime_seconds": "Юзерботтың жұмыс уақыты, секундпен",
+        "custom_message": "Пайдаланушы хабарламасының мәтіні"
       },
       "example_uptime": "2 сағат 3 минут",
       "config_fields": {
-        "template": "ping жауабының мәтіні"
+        "template": "ping жауабының мәтіні",
+        "custom_message": "Ping жауабына қосылатын пайдаланушы хабарламасы"
+      },
+      "config": {
+        "custom_message": "Ping жауабына қосылатын пайдаланушы хабарламасы"
       }
     },
     "info": {
@@ -697,10 +712,12 @@
       "empty_template": "Ақпарат үлгісі бос",
       "bad_placeholder": "Қате толтырғыш: {error}",
       "config": {
-        "template": ".info үлгісі, толтырғыштар: {version} {uptime} {modules}"
+        "template": ".info үлгісі, толтырғыштар: {version} {uptime} {modules}",
+        "custom_message": "Инфо картасында көрсетілетін хабарлама"
       },
       "config_fields": {
-        "template": ".info үлгісі, толтырғыштар: {version} {uptime} {modules}"
+        "template": ".info үлгісі, толтырғыштар: {version} {uptime} {modules}",
+        "custom_message": "Инфо картасында көрсетілетін хабарлама"
       }
     },
     "singularity": {

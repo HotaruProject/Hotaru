@@ -547,6 +547,10 @@
         "logs": {
           "description": "Логи юзербота с файлом",
           "usage": "[on|off|status|уровень] [количество] [компонент]"
+        },
+        "loglevel": {
+          "description": "Изменить или выбрать уровень логирования",
+          "usage": "[level]"
         }
       },
       "pending": "ожидание",
@@ -559,7 +563,13 @@
         "level": "Минимальный уровень записываемых логов",
         "batch_size": "Количество событий в одном сообщении",
         "auto_topic": "Автоматически управлять топиком логов в форуме"
-      }
+      },
+      "loglevel_menu_title": "Уровень логирования",
+      "loglevel_choose": "Выберите минимальный уровень для записи:",
+      "loglevel_current": "Текущий уровень:",
+      "invalid_level": "Недопустимый уровень. Доступны: {levels}",
+      "logs_menu_title": "Выгрузка логов",
+      "logs_choose": "Выберите уровень логов для выгрузки:"
     },
     "commands": {
       "lg": "Показать последние записи журнала"
@@ -674,11 +684,16 @@
       "fields": {
         "latency": "Время ответа в миллисекундах",
         "uptime": "Время работы юзербота, только ненулевые единицы",
-        "uptime_seconds": "Время работы юзербота в секундах"
+        "uptime_seconds": "Время работы юзербота в секундах",
+        "custom_message": "Текст кастомного сообщения"
       },
       "example_uptime": "2 часа 3 минуты",
       "config_fields": {
-        "template": "Текст ответа на ping"
+        "template": "Текст ответа на ping",
+        "custom_message": "Кастомное сообщение в ответе на ping"
+      },
+      "config": {
+        "custom_message": "Кастомное сообщение в ответе на ping"
       }
     },
     "info": {
@@ -692,10 +707,12 @@
       "empty_template": "Шаблон информации пуст",
       "bad_placeholder": "Некорректный плейсхолдер: {error}",
       "config": {
-        "template": "Шаблон .info, плейсхолдеры {version} {uptime} {modules}"
+        "template": "Шаблон .info, плейсхолдеры {version} {uptime} {modules}",
+        "custom_message": "Кастомное сообщение на карточке инфо"
       },
       "config_fields": {
-        "template": "Шаблон .info, плейсхолдеры {version} {uptime} {modules}"
+        "template": "Шаблон .info, плейсхолдеры {version} {uptime} {modules}",
+        "custom_message": "Кастомное сообщение на карточке инфо"
       }
     },
     "singularity": {

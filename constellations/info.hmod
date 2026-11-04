@@ -1,9 +1,17 @@
 HOTARU = {
     "id": "info",
-    "version": "2.0.0",
+    "version": "2.1.0",
     "commands": ["info"],
     "capabilities": ["mt", "state"],
     "banner": "https://raw.githubusercontent.com/HotaruProject/Hotaru/develop/hotaru/assets/info.mp4",
+    "config_schema": {
+        "custom_message": {
+            "type": "str",
+            "default": "",
+            "max_len": 1000,
+            "category": "General",
+        },
+    },
 }
 
 import html
@@ -57,6 +65,9 @@ async def command_info(ctx: 'ModuleContext', invocation: 'CommandInvocation') ->
     else:
         user_handle = "Hotaru User"
 
+    custom_msg = str(ctx.config.get("custom_message", "") or "").strip() if hasattr(ctx, "config") else ""
+    footer_quote = f'<blockquote><tg-emoji emoji-id="5366045973988522066">✨</tg-emoji> {custom_msg}</blockquote>' if custom_msg else f'<blockquote><tg-emoji emoji-id="5366045973988522066">✨</tg-emoji> (✧▽✧) {user_handle}</blockquote>'
+
     wm = ctx.wordmark() if hasattr(ctx, "wordmark") else "<b>HOTARU</b>"
     body = (
         f'<table bordered striped compact>'
@@ -66,7 +77,7 @@ async def command_info(ctx: 'ModuleContext', invocation: 'CommandInvocation') ->
         f'<tr><td><tg-emoji emoji-id="5325732612084351248">📦</tg-emoji> <b>Modules:</b></td><td align="right"><code>{modules} loaded</code></td></tr>'
         f'</table>'
         f'<hr>'
-        f'<blockquote><tg-emoji emoji-id="5366045973988522066">✨</tg-emoji> (✧▽✧) {user_handle}</blockquote>'
+        f'{footer_quote}'
     )
 
     if hasattr(ctx, "screens") and hasattr(ctx.screens, "show"):

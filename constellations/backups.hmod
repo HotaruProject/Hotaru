@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any
 
 _lock = asyncio.Lock()
+TOPIC_EMOJI_ID = 5258514780469075716
 
 
 def home(ctx: Any, nav: Any = None) -> Any:
@@ -52,7 +53,7 @@ async def _send(ctx: Any, *, automatic: bool = False) -> bool:
                 return False
             if now - ctx.state.get("last_sent", 0) < ctx.config.get("interval_hours", 24) * 3600:
                 return False
-        topic = await ctx.forum.ensure_topic(ctx.t("kernel.backups.topic"))
+        topic = await ctx.forum.ensure_topic(ctx.t("kernel.backups.topic"), icon_emoji_id=TOPIC_EMOJI_ID)
         if topic is None:
             raise RuntimeError(ctx.t("kernel.backups.not_ready"))
         archive = ctx.runtime.create_backup()
