@@ -215,7 +215,7 @@
       "no_text": "Текст для перевода не указан",
       "commands": {
         "language": {
-          "description": "Показать или изменить язык",
+          "description": "Язык интерфейса",
           "usage": "[язык]"
         },
         "translate": {
@@ -768,7 +768,7 @@
       "usage": "{prefix}help [модуль]"
     },
     "lang": {
-      "description": "Показать или изменить язык",
+      "description": "Язык интерфейса",
       "usage": "{prefix}language [язык]",
       "invalid": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>Неподдерживаемый язык:</b> <code>{language}</code>",
       "changed": "Язык изменён на {language}",

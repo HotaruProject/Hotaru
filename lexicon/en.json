@@ -215,7 +215,7 @@
       "no_text": "No text provided for translation",
       "commands": {
         "language": {
-          "description": "Show or change language",
+          "description": "Interface language",
           "usage": "[language]"
         },
         "translate": {
@@ -768,7 +768,7 @@
       "usage": "{prefix}help [module-id]"
     },
     "lang": {
-      "description": "Show or change language",
+      "description": "Interface language",
       "usage": "{prefix}language [language]",
       "invalid": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>Unsupported language:</b> <code>{language}</code>",
       "changed": "Language changed to {language}",

@@ -433,15 +433,27 @@ async def command_conf(ctx: Any, invocation: Any) -> Any:
         await ctx.screens.show(home(ctx))
         return
 
-    module_id = args[0].casefold()
     candidates = _modules(ctx)
-    if not any(item[0] == module_id for item in candidates):
+    module_id = args[0].casefold()
+    found_mod = next((item for item in candidates if item[0] == module_id), None)
+    if found_mod is None and len(args) >= 2:
+        matches_field = []
+        for m_id, _, m_schema in candidates:
+            if args[0] in m_schema:
+                matches_field.append((m_id, args[0]))
+        if len(matches_field) == 1:
+            module_id = matches_field[0][0]
+            args = [module_id, args[0]] + args[1:]
+            found_mod = next((item for item in candidates if item[0] == module_id), None)
+
+    if found_mod is None:
         module_key: Callable[[Tuple[str, Any, ConfigSchema]], str] = lambda item: item[0]
         matches = await ctx.tools.search(candidates, module_id, key=module_key, limit=1)
         if not matches:
             await ctx.respond(ctx.t("kernel.config.missing", module=_escape(module_id)))
             return
         module_id = matches[0]["value"][0]
+
     if len(args) == 1:
         await ctx.screens.show(_module_screen(ctx, module_id, None))
         return
@@ -451,9 +463,13 @@ async def command_conf(ctx: Any, invocation: Any) -> Any:
         await ctx.respond(ctx.t("kernel.config.missing", module=_escape(module_id)))
         return
     _, schema, config = opened
+
     if args[1].casefold() == "reset":
         config.reset()
-        await ctx.screens.show(_module_screen(ctx, module_id, None))
+        await ctx.respond(
+            f'<tg-emoji emoji-id="5260687119092817530">🔄</tg-emoji> <b>{_escape(module_id)}</b>: {_escape(ctx.t("kernel.config.reset_done", "Параметры сброшены"))}',
+            parse_mode="HTML",
+        )
         return
 
     key = args[1]
@@ -464,6 +480,7 @@ async def command_conf(ctx: Any, invocation: Any) -> Any:
         new_val = suffix[1:] if suffix else None
     else:
         new_val = " ".join(args[2:]) if len(args) > 2 else None
+
     field = schema.get(key)
     if not field:
         field_key: Callable[[Tuple[str, ConfigField]], List[str]] = lambda item: [item[0], item[1].description or ""]
@@ -473,13 +490,22 @@ async def command_conf(ctx: Any, invocation: Any) -> Any:
             return
         key, field = matches[0]["value"]
 
-    screen = None
     if new_val is not None:
         try:
-            config.set(key, field.parse_input(new_val))
+            parsed = field.parse_input(new_val)
+            config.set(key, parsed)
+            val_str = _shown(ctx, field, config.get(key), 64)
+            await ctx.respond(
+                f'<tg-emoji emoji-id="5260726538302660868">✅</tg-emoji> <b>{_escape(module_id)} › {_escape(key)}:</b> <code>{val_str}</code>',
+                parse_mode="HTML",
+            )
+            return
         except Exception as exc:
             screen = _param_screen(ctx, module_id, key, None).with_notice(ctx.t("ui.error", error=_escape(exc)))
-    await ctx.screens.show(screen or _param_screen(ctx, module_id, key, None))
+            await ctx.screens.show(screen)
+            return
+
+    await ctx.screens.show(_param_screen(ctx, module_id, key, None))
 
 
 command_config = command_conf

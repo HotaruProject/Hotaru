@@ -858,6 +858,11 @@ class Runtime:
                         if self.observatory is not None:
                             self.observatory.emit("sandbox", "worker_reaped", module=module_id)
                 try:
+                    from hotaru.observatory import prune_logs
+                    prune_logs(self.config.session_dir, max_file_bytes=8 * 1024 * 1024)
+                except Exception as exc:
+                    log.error("log prune failed: %s", exc)
+                try:
                     import ctypes as _ctypes, gc as _gc
                     _gc.collect()
                     _ctypes.CDLL(None).malloc_trim(0)
@@ -3090,8 +3095,12 @@ class Runtime:
                 if self.ratelimit is not None:
                     self._connection.rate_limiter = self.ratelimit.check
                 self._connection_task = asyncio.create_task(self._connection.watch(), name="hotaru:user-health")
-        except BaseException:
+        except BaseException as exc:
             await self.close()
+            exc_str = str(exc).upper()
+            if any(err in exc_str for err in ("USER_DEACTIVATED_BAN", "ACCOUNT_RESTRICTED", "FROZEN_METHOD_NOT_AVAILABLE", "PRIVACY_RESTRICTED", "AUTH_KEY_UNREGISTERED", "SESSION_REVOKED")):
+                from hotaru.accounts import handle_account_critical_failure
+                handle_account_critical_failure(self.config.session_dir, self.config.owner_id, f"Session authorization restricted: {type(exc).__name__} ({exc})", self)
             raise
         if self.inline is not None:
             try:

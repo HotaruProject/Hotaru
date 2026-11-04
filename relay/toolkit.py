@@ -1514,9 +1514,94 @@ def paginate_chunks(text: str, limit: int = 4000) -> list[str]:
     return pages or [text]
 
 
+def classify_error(exc: Any) -> dict[str, Any]:
+    text = str(exc or "")
+    text_upper = text.upper()
+    flood_seconds = 0
+    match = re.search(r"FLOOD_WAIT_(\d+)", text_upper)
+    if match:
+        flood_seconds = int(match.group(1))
+    elif hasattr(exc, "seconds") and isinstance(getattr(exc, "seconds"), (int, float)):
+        flood_seconds = int(exc.seconds)
+    elif "WAIT " in text_upper:
+        m2 = re.search(r"WAIT (\d+) SECOND", text_upper)
+        if m2:
+            flood_seconds = int(m2.group(1))
+
+    is_flood = flood_seconds > 0 or "FLOOD" in text_upper
+    is_spam = any(k in text_upper for k in ("PEER_FLOOD", "SPAMPROTECTION", "USER_BANNED_IN_CHANNEL", "CHAT_WRITE_FORBIDDEN", "SPAMBOT", "SPAMBAN"))
+    is_frozen = any(k in text_upper for k in ("PRIVACY_RESTRICTED", "ACCOUNT_RESTRICTED", "FROZEN_METHOD_NOT_AVAILABLE", "USER_RESTRICTED", "USER_DEACTIVATED_BAN", "AUTH_KEY_UNREGISTERED", "SESSION_REVOKED", "SESSION_EXPIRED", "FROZEN"))
+
+    if is_flood:
+        err_type = "flood_wait"
+    elif is_spam:
+        err_type = "spamblock"
+    elif is_frozen:
+        err_type = "frozen"
+    elif any(k in text_upper for k in ("SLOWMODE", "RATELIMIT", "RATE_LIMIT")):
+        err_type = "rate_limit"
+    elif any(k in text_upper for k in ("CONNECTION", "TIMEOUT", "NETWORK", "OSERROR", "RESET BY PEER")):
+        err_type = "network"
+    else:
+        err_type = "unknown"
+
+    return {
+        "type": err_type,
+        "is_restriction": is_flood or is_spam or is_frozen,
+        "flood_wait": flood_seconds,
+        "detail": text,
+        "recoverable": not is_frozen and err_type != "unknown",
+    }
+
+
+async def check_restrictions(ctx: Any) -> dict[str, Any]:
+    reasons: list[str] = []
+    is_spam = False
+    is_frozen = False
+    flood_wait = 0
+    can_send = True
+
+    app = getattr(ctx, "app", None) or getattr(getattr(ctx, "runtime", None), "app", None)
+    if app is not None and getattr(app, "mt", None) is not None:
+        try:
+            from relay.firewall import trusted_scope
+            with trusted_scope():
+                await app.mt_users_get_users(id=[{"_": "inputUserSelf"}], retry=0)
+        except Exception as exc:
+            classified = classify_error(exc)
+            if classified["type"] == "frozen":
+                is_frozen = True
+                reasons.append(str(exc))
+                can_send = False
+            elif classified["type"] == "flood_wait":
+                flood_wait = classified["flood_wait"]
+                reasons.append(f"Flood wait {flood_wait}s")
+            elif classified["type"] == "spamblock":
+                is_spam = True
+                reasons.append(str(exc))
+                can_send = False
+
+    return {
+        "restricted": is_spam or is_frozen or (flood_wait > 0),
+        "spamblock": is_spam,
+        "frozen": is_frozen,
+        "flood_wait": flood_wait,
+        "reasons": reasons,
+        "can_send": can_send,
+    }
+
+
+def prune_logs(root: str | Path = ".", max_file_bytes: int = 8 * 1024 * 1024, keep_tail_bytes: int = 1 * 1024 * 1024) -> int:
+    from hotaru.observatory import prune_logs as _prune
+    return _prune(root, max_file_bytes, keep_tail_bytes)
+
+
 TOOLKIT_FUNCS = {
     "wordmark": wordmark,
     "paginate_chunks": paginate_chunks,
+    "classify_error": classify_error,
+    "check_restrictions": check_restrictions,
+    "prune_logs": prune_logs,
     "regdate": regdate,
     "template_fields": template_fields,
     "template_names": template_names,

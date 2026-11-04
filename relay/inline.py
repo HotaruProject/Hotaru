@@ -693,8 +693,12 @@ class InlineManager:
             text = response.get("message", "")
             lowered = text.lower()
             if "cannot create new bots" in lowered or "contact @spambot" in lowered or "cannot create" in lowered:
+                from hotaru.accounts import handle_account_critical_failure
+                handle_account_critical_failure(self.runtime.config.session_dir, self.runtime.config.owner_id, "BotFather spamban: account cannot create new bots, contact @SpamBot", self.runtime)
                 raise InlineError("BotFather spamban: account cannot create new bots, contact @SpamBot")
             if "too many" in lowered or "up to 20" in lowered or "limit" in lowered:
+                from hotaru.accounts import handle_account_critical_failure
+                handle_account_critical_failure(self.runtime.config.session_dir, self.runtime.config.owner_id, "BotFather limit reached: max 20 bots per account", self.runtime)
                 raise InlineError("BotFather limit reached: max 20 bots per account")
             if "a new bot" not in lowered:
                 raise InlineError("BotFather refused: " + text.splitlines()[0][:120] if text else "BotFather refused")

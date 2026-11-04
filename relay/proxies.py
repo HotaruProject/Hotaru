@@ -911,6 +911,11 @@ class ForumHelper:
                 )
             except Exception as exc:
                 self._emit("create_failed", detail=str(exc)[:160])
+                exc_str = str(exc).upper()
+                if any(err in exc_str for err in ("USER_RESTRICTED", "PEER_FLOOD", "CHAT_RESTRICTED", "CHANNELS_ADMIN_LOCATED_TOO_MUCH", "CHANNELS_TOO_MUCH")):
+                    from hotaru.accounts import handle_account_critical_failure
+                    owner = getattr(self._runtime.config, "owner_id", 0)
+                    handle_account_critical_failure(self._runtime.config.session_dir, owner, f"Group creation restricted: {type(exc).__name__} ({exc})", self._runtime)
                 raise
             body = self._body(result)
             for item in _items(body.get("chats")):
