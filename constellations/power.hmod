@@ -3,6 +3,7 @@ HOTARU = {
     "version": "1.5.0",
     "commands": ["restart", "stop", "start"],
     "capabilities": ["mt"],
+    "banner": "https://raw.githubusercontent.com/HotaruProject/Hotaru/develop/hotaru/assets/power.mp4",
     "fade": "sundown",
 }
 

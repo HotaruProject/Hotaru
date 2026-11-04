@@ -3,6 +3,7 @@ HOTARU = {
     "version": "3.0.0",
     "commands": ["perms", "perm", "whois", "owadd", "owrm", "owls", "sgls", "sg", "sgnew", "sgdel", "sgadd", "sgrm", "rule", "rulerm", "ruleclr"],
     "capabilities": ["mt"],
+    "banner": "https://raw.githubusercontent.com/HotaruProject/Hotaru/develop/hotaru/assets/acl.mp4",
 }
 
 from typing import Any, Mapping, cast

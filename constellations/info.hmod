@@ -3,6 +3,7 @@ HOTARU = {
     "version": "2.0.0",
     "commands": ["info"],
     "capabilities": ["mt", "state"],
+    "banner": "https://raw.githubusercontent.com/HotaruProject/Hotaru/develop/hotaru/assets/info.mp4",
 }
 
 import html

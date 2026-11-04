@@ -3,6 +3,7 @@ HOTARU = {
     "version": "2.0.1",
     "commands": ["dash"],
     "capabilities": ["mt"],
+    "banner": "https://raw.githubusercontent.com/HotaruProject/Hotaru/develop/hotaru/assets/singularity.mp4",
 }
 
 from typing import Any

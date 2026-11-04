@@ -3,6 +3,7 @@ HOTARU = {
     "version": "3.1.0",
     "commands": ["config", "alias", "rmalias", "lsalias", "prefix"],
     "capabilities": ["mt", "state"],
+    "banner": "https://raw.githubusercontent.com/HotaruProject/Hotaru/develop/hotaru/assets/banner.png",
 }
 
 from typing import Any, Callable, Dict, List, Optional, Tuple, cast
@@ -182,16 +183,23 @@ def _missing(ctx: Any, module_id: str) -> Any:
 def home(ctx: Any, nav: Any = None) -> Any:
     k = ctx.screens
     modules = _modules(ctx)
+    settings_mod = ctx.runtime.modules.get("settings") if ctx.runtime.modules is not None else None
+    banner_val = getattr(getattr(settings_mod, "loaded", None), "manifest", None)
+    banner_url = getattr(banner_val, "banner", None) if banner_val else None
+    if not banner_url:
+        banner_url = k.banner("banner")
+    else:
+        banner_url = k.banner(banner_url)
     lines = [f"{k.wordmark()}  <b>{_escape(ctx.t('kernel.config.title'))}</b>" + (f"  {k.badge(str(len(modules)), 'primary')}" if modules else "")]
     lines.append(f"<code>{_escape(ctx.runtime.config.prefix)}prefix</code> · <code>{_escape(ctx.runtime.config.prefix)}alias</code> · <code>{_escape(ctx.runtime.config.prefix)}lsalias</code>")
     if not modules:
         lines.append(f"<i>{_escape(ctx.t('kernel.config.empty'))}</i>")
-        return k.screen("\n".join(lines), [k.footer()], banner=k.banner("banner"), rich=True)
+        return k.screen("\n".join(lines), [k.footer()], banner=banner_url, rich=True)
     for module_id, manifest, schema in modules:
         description = str(manifest.localized(ctx.runtime.language(), manifest.description).get("description", "") or "")
         line = f"{k.module_icon(module_id)} {k.tap(module_id, module, id=module_id)} {k.badge(str(len(schema)))}"
         lines.append(line + (f" <i>{_escape(ctx.tools.truncate(description, 48))}</i>" if description else ""))
-    return k.screen("\n".join(lines), [k.footer()], banner=k.banner("banner"), rich=True)
+    return k.screen("\n".join(lines), [k.footer()], banner=banner_url, rich=True)
 
 
 def _module_screen(ctx: Any, module_id: str, origin: Optional[str]) -> Any:

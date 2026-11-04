@@ -3,6 +3,7 @@ HOTARU = {
     "version": "1.1.0",
     "commands": ["backup", "restore"],
     "capabilities": ["mt", "state", "files", "modules"],
+    "banner": "https://raw.githubusercontent.com/HotaruProject/Hotaru/develop/hotaru/assets/backups.mp4",
     "tasks": {"send": {"interval": 60, "autostart": True}},
     "config_schema": {
         "enabled": {"type": "bool", "default": True},

@@ -3,6 +3,7 @@ HOTARU = {
     "version": "1.4.0",
     "commands": ["ping"],
     "capabilities": [],
+    "banner": "https://raw.githubusercontent.com/HotaruProject/Hotaru/develop/hotaru/assets/ping.mp4",
     "config_schema": {
         "template": {
             "type": "str",

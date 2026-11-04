@@ -3,6 +3,7 @@ HOTARU = {
     "version": "1.0.0",
     "commands": ["logs"],
     "capabilities": ["mt", "state"],
+    "banner": "https://raw.githubusercontent.com/HotaruProject/Hotaru/develop/hotaru/assets/logger.mp4",
     "tasks": {
         "pump": {"interval": 2, "autostart": True},
     },

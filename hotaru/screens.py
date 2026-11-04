@@ -93,6 +93,11 @@ async def _upload_asset(app: Any, media_id: str, kind: str, file_path: Path) -> 
         result = await app.mt_messages_upload_media(peer={"_": "inputPeerSelf"}, media=media)
     if not isinstance(result, dict):
         result = result.to_dict() if hasattr(result, "to_dict") else dict(getattr(result, "__dict__", {}))
+    if isinstance(result, dict) and "result" in result:
+        inner = result["result"]
+        if not isinstance(inner, dict):
+            inner = inner.to_dict() if hasattr(inner, "to_dict") else dict(getattr(inner, "__dict__", {}))
+        result = inner
     if kind == "photo":
         photo = result.get("photo") if isinstance(result, dict) else getattr(result, "photo", {})
         if hasattr(photo, "to_dict"):
@@ -884,14 +889,19 @@ class ScreenEngine:
                 temp_p: Path | None = None
                 try:
                     if is_web:
-                        req = urllib.request.Request(str(path_or_url), headers={"User-Agent": "Hotaru/1.0"})
-                        with urllib.request.urlopen(req, timeout=6.0) as resp:
-                            content = resp.read()
-                        ext = ".mp4" if kind == "video" else ".png"
-                        with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as handle:
-                            temp_p = Path(handle.name)
-                            temp_p.write_bytes(content)
-                        actual_path = temp_p
+                        url_name = Path(urllib.parse.urlparse(str(path_or_url)).path).name
+                        local_asset = _assets / url_name if url_name else None
+                        if local_asset is not None and local_asset.exists():
+                            actual_path = local_asset
+                        else:
+                            req = urllib.request.Request(str(path_or_url), headers={"User-Agent": "Hotaru/1.0"})
+                            with urllib.request.urlopen(req, timeout=12.0) as resp:
+                                content = resp.read()
+                            ext = ".mp4" if kind == "video" else ".png"
+                            with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as handle:
+                                temp_p = Path(handle.name)
+                                temp_p.write_bytes(content)
+                            actual_path = temp_p
                     else:
                         actual_path = cast('Path', path_or_url)
                     entry = await _upload_asset(app, media_id, kind, actual_path)
@@ -905,6 +915,7 @@ class ScreenEngine:
                             payload.get("html", "")
                         )
                 except Exception as exc:
+                    log.error("screen banner upload failed for %s (%s): %s: %s", media_id, path_or_url, type(exc).__name__, exc)
                     tag = "video" if kind == "video" else "img"
                     if "html" in payload:
                         payload["html"] = payload["html"].replace(f'<{tag} src="tg://{kind}?id={media_id}"/>', "")
