@@ -902,14 +902,18 @@ class _ScreensProxy:
         return _ScreensProxy.button(text, callback, style="success", **args)
 
     @staticmethod
-    def close(text="Закрыть"):
-        return _UiProxy.button(text or "Закрыть", "close")
+    def close(text="✕ Close"):
+        return _UiProxy.button(text or "✕ Close", "close", style="danger")
+
+    @staticmethod
+    def url(text, link, style=None):
+        return {"text": text, "url": str(link), "style": style}
 
     @staticmethod
     def footer(back=None, **args):
         row = []
         if back:
-            row.append(_ScreensProxy.button("« Назад", back, **args))
+            row.append(_ScreensProxy.button("« Back", back, **args))
         row.append(_ScreensProxy.close())
         return [row]
 

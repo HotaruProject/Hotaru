@@ -235,18 +235,13 @@ async def task_pump(ctx: Any) -> Any:
 def level_menu(ctx: Any, nav: Any = None) -> Any:
     k = ctx.screens
     current = str(ctx.config.get("level", "info")).lower()
-    buttons = []
-    for opt in LEVEL_NAMES:
-        label = f"✓ {opt.upper()}" if opt == current else opt.upper()
-        style = "primary" if opt == current else "default"
-        buttons.append(k.button(label, set_level_screen, style=style, level=opt))
-    rows = k.grid(buttons, 3)
-    rows.append([k.close()])
-    text = (
-        f"{k.wordmark()} · <tg-emoji emoji-id=\"5310285203858535580\">📔</tg-emoji> <b>{html.escape(ctx.t('kernel.logger.loglevel_menu_title', 'Log Level'), quote=False)}</b>\n\n"
-        f'<tg-emoji emoji-id="5258216851472654189">💡</tg-emoji> {html.escape(ctx.t("kernel.logger.loglevel_choose", "Select minimum log level to record:"), quote=False)}\n'
-        f'<tg-emoji emoji-id="5260726538302660868">✅</tg-emoji> {html.escape(ctx.t("kernel.logger.loglevel_current", "Current:"), quote=False)} <code>{current.upper()}</code>'
-    )
+    options = [
+        k.button(k.radio(opt.upper(), opt == current), set_level_screen, style="success" if opt == current else None, level=opt)
+        for opt in LEVEL_NAMES
+    ]
+    rows = k.grid(options, 2)
+    rows.append(k.footer())
+    text = f"{k.wordmark()}  <b>// Log Level</b>"
     return k.screen(text, rows, banner=k.banner("logger"), rich=True)
 
 
@@ -255,7 +250,9 @@ async def set_level_screen(ctx: Any, nav: Any) -> Any:
     if level in LEVELS:
         canonical = "warn" if level == "warning" else "fatal" if level == "critical" else level
         ctx.config.set("level", canonical)
-    return level_menu(ctx, nav).with_notice(ctx.t("kernel.logger.level_set", level=level.upper()))
+    screen = level_menu(ctx, nav)
+    screen.toast = f"✅ {level.upper()}"
+    return screen
 
 
 async def command_loglevel(ctx: Any, invocation: Any) -> Any:
@@ -283,22 +280,22 @@ async def command_loglevel(ctx: Any, invocation: Any) -> Any:
 
 def logs_menu(ctx: Any, nav: Any = None) -> Any:
     k = ctx.screens
-    buttons = []
-    for opt in LEVEL_NAMES:
-        buttons.append(k.button(opt.upper(), send_logs_screen, level=opt))
-    rows = k.grid(buttons, 3)
-    rows.append([k.close()])
-    text = (
-        f"{k.wordmark()} · <tg-emoji emoji-id=\"5257965174979042426\">📝</tg-emoji> <b>{html.escape(ctx.t('kernel.logger.logs_menu_title', 'Export Logs'), quote=False)}</b>\n\n"
-        f'<tg-emoji emoji-id="5258216851472654189">💡</tg-emoji> {html.escape(ctx.t("kernel.logger.logs_choose", "Select log level to export:"), quote=False)}'
-    )
+    options = [
+        k.button(opt.upper(), send_logs_screen, level=opt)
+        for opt in LEVEL_NAMES
+    ]
+    rows = k.grid(options, 2)
+    rows.append(k.footer())
+    text = f"{k.wordmark()}  <b>// Export Logs</b>"
     return k.screen(text, rows, banner=k.banner("logger"), rich=True)
 
 
 async def send_logs_screen(ctx: Any, nav: Any) -> Any:
     level = str(nav.arg("level") or "debug").lower()
     await _export_logs(ctx, level=level, count=100, component=None)
-    return logs_menu(ctx, nav).with_notice(ctx.t("kernel.logger.logs_sent", count=100))
+    screen = logs_menu(ctx, nav)
+    screen.toast = f"✅ {level.upper()}"
+    return screen
 
 
 async def _export_logs(ctx: Any, level: str = "debug", count: int = 60, component: Optional[str] = None) -> None:

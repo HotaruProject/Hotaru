@@ -3,6 +3,7 @@ HOTARU = {
     "version": "1.0.0",
     "commands": ["shield", "suspend_api"],
     "capabilities": ["mt", "state"],
+    "banner": "https://raw.githubusercontent.com/HotaruProject/Hotaru/develop/hotaru/assets/shield.mp4",
     "about": "API flood and rate limit protection",
     "lexicon": {
         "en": {
@@ -119,7 +120,7 @@ def _status_screen(ctx: Any) -> Any:
         ],
         [k.close()],
     ]
-    return k.screen(text, buttons, rich=True)
+    return k.screen(text, buttons, banner=k.banner("shield"), rich=True)
 
 
 async def action_toggle(ctx: Any, nav: Any) -> Any:
@@ -151,7 +152,7 @@ async def action_stats(ctx: Any, nav: Any) -> Any:
         [k.button(ctx.t("common.back", "Back"), action_back, icon="back")],
         [k.close()],
     ]
-    return k.screen(title, buttons, rich=True)
+    return k.screen(title, buttons, banner=k.banner("shield"), rich=True)
 
 
 async def action_back(ctx: Any, nav: Any) -> Any:
