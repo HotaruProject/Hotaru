@@ -675,7 +675,7 @@
     },
     "singularity": {
       "description": "3D телеметрия ядра и поток отладки Обсерватории (Singularity)",
-      "card_title": "<tg-emoji emoji-id=\"5258152182150077732\">⚡️</tg-emoji> <b>Hotaru // Singularity</b>",
+      "card_title": "{wordmark} <b>// Singularity</b>",
       "card_subtitle": "<i>3D Горизонт событий · Node.Probe · Поток наблюдателя только для чтения</i>",
       "probe": "Зонд",
       "relay": "Релей",

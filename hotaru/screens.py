@@ -298,7 +298,7 @@ class Kit:
 
     @staticmethod
     def wordmark() -> str:
-        return icons.wordmark() if premium() else "<b>HOTARU</b>"
+        return icons.wordmark()
 
     @classmethod
     def _label(cls, text: str, icon: Optional[str], style: Optional[str] = None) -> str:

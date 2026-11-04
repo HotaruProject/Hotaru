@@ -70,7 +70,8 @@ async def command_dash(ctx: Any, invocation: Any) -> None:
     status_emoji = '<tg-emoji emoji-id="5260726538302660868">✅</tg-emoji>' if probe_online else '<tg-emoji emoji-id="5778527486270770928">❌</tg-emoji>'
     sync_emoji = '<tg-emoji emoji-id="5260726538302660868">✅</tg-emoji>' if registered else '<tg-emoji emoji-id="5778527486270770928">❌</tg-emoji>'
 
-    header = _tr(ctx, "kernel.singularity.card_title", '<tg-emoji emoji-id="5258152182150077732">⚡️</tg-emoji> <b>Hotaru // Singularity</b>')
+    wm = ctx.wordmark() if hasattr(ctx, "wordmark") else "<b>HOTARU</b>"
+    header = _tr(ctx, "kernel.singularity.card_title", "{wordmark} <b>// Singularity</b>", wordmark=wm)
     probe_label = _tr(ctx, "kernel.singularity.probe", "Probe")
     relay_label = _tr(ctx, "kernel.singularity.relay", "Relay")
     lines = [

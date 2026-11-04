@@ -56,9 +56,10 @@ async def command_info(ctx: 'ModuleContext', invocation: 'CommandInvocation') ->
     else:
         user_handle = "Hotaru User"
 
+    wm = ctx.wordmark() if hasattr(ctx, "wordmark") else "<b>HOTARU</b>"
     body = (
         f'<table bordered striped compact>'
-        f'<tr><th colspan="2" align="center"><tg-emoji emoji-id="5258152182150077732">⚡️</tg-emoji> <b>Hotaru Userbot</b> · <code>v{ctx.version}</code></th></tr>'
+        f'<tr><th colspan="2" align="center">{wm} · <code>v{ctx.version}</code></th></tr>'
         f'<tr><td><tg-emoji emoji-id="5289589186683222806">📶</tg-emoji> <b>Ping:</b></td><td align="right"><code>{ping_ms:.2f} ms</code></td></tr>'
         f'<tr><td><tg-emoji emoji-id="5258258882022612173">⏱</tg-emoji> <b>Uptime:</b></td><td align="right"><code>{uptime_fmt}</code></td></tr>'
         f'<tr><td><tg-emoji emoji-id="5325732612084351248">📦</tg-emoji> <b>Modules:</b></td><td align="right"><code>{modules} loaded</code></td></tr>'

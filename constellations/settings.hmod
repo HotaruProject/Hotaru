@@ -183,7 +183,7 @@ def _missing(ctx: Any, module_id: str) -> Any:
 def home(ctx: Any, nav: Any = None) -> Any:
     k = ctx.screens
     modules = _modules(ctx)
-    lines = [f"<b>{_escape(ctx.t('kernel.config.title'))}</b>" + (f"  {k.badge(str(len(modules)), 'primary')}" if modules else "")]
+    lines = [f"{k.wordmark()}  <b>{_escape(ctx.t('kernel.config.title'))}</b>" + (f"  {k.badge(str(len(modules)), 'primary')}" if modules else "")]
     lines.append(f"<code>{_escape(ctx.runtime.config.prefix)}prefix</code> · <code>{_escape(ctx.runtime.config.prefix)}alias</code> · <code>{_escape(ctx.runtime.config.prefix)}lsalias</code>")
     if not modules:
         lines.append(f"<i>{_escape(ctx.t('kernel.config.empty'))}</i>")

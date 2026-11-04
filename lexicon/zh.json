@@ -595,7 +595,7 @@
       }
     },
     "singularity": {
-      "card_title": "<tg-emoji emoji-id=\"5258152182150077732\">⚡️</tg-emoji> <b>Hotaru // Singularity</b>",
+      "card_title": "{wordmark} <b>// Singularity</b>",
       "card_subtitle": "<i>3D 事件视界 · Node.Probe · 只读观测站数据流</i>",
       "probe": "探测器",
       "relay": "中继",
