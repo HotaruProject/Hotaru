@@ -712,7 +712,6 @@
       },
       "example_uptime": "2 小时 3 分钟",
       "config_fields": {
-        "banner": "Ping 横幅模式",
         "template": "Ping 回复的文本内容",
         "custom_message": "附加到ping回复的自定义消息"
       },
@@ -752,9 +751,6 @@
       "open_button": "打开 Singularity",
       "description": "3D 内核遥测与 Observatory 调试流 (Singularity)",
       "commands": {
-        "dashboard": {
-          "description": "打开 WebApp 仪表板"
-        },
         "dash": {
           "description": "打开 Singularity Mini App 的内联启动器"
         }
@@ -885,7 +881,12 @@
           "description": "打开初始设置向导",
           "usage": ""
         }
-      }
+      },
+      "active_title": "运行中 · 在线",
+      "active_desc": "Hotaru Userbot 已配置并正在运行。直接在您的账户中使用命令。",
+      "links_title": "Hotaru 链接",
+      "links_desc": "Hotaru 官方项目仓库、文档和源代码：",
+      "btn_github": "GitHub 仓库"
     }
   },
   "commands": {
@@ -919,19 +920,19 @@
   "inline_commands_hint": "选择命令 - 在任意聊天中输入 @<bot> 和它的名称",
   "settings": {
     "runtime_unavailable": "运行时不可用",
-    "usage_alias": "用法：{prefix}alias <alias> <带参数的命令>",
+    "usage_alias": "用法：<code>{prefix}alias &lt;alias&gt; &lt;带参数的命令&gt;</code>",
     "alias_exists": "命令已存在：{alias}",
     "command_not_found": "未找到命令：{command}\n可用：{known}",
     "alias_taken": "别名已被占用：{alias} → {command}。使用 {prefix}rmalias {alias} 删除。",
     "alias_set": "别名已设置：{alias} → {command}",
-    "usage_rmalias": "用法：{prefix}rmalias <alias>",
+    "usage_rmalias": "用法：<code>{prefix}rmalias &lt;alias&gt;</code>",
     "alias_removed": "别名已删除：{alias}",
     "alias_not_found": "未找到别名：{alias}",
     "alias_list_empty": "还没有别名",
     "alias_list_title": "<b>别名</b>",
-    "prefix_current": "当前前缀：{prefix} · 更改：{prefix}prefix <字符>",
+    "prefix_current": "当前前缀：<code>{prefix}</code> · 更改：<code>{prefix}prefix &lt;字符&gt;</code>",
     "prefix_invalid": "前缀必须包含 1 到 8 个可见字符且不含空白。",
-    "prefix_set": "前缀已更改为 {prefix}",
+    "prefix_set": "前缀已更新为 <code>{prefix}</code>",
     "description": "别名与前缀管理",
     "commands": {
       "alias": "创建命令别名",
@@ -1053,7 +1054,7 @@
     "bad_group": "组名：仅限字母和数字，最多 32 个字符。",
     "bad_duration": "使用 1m、1h、1d、1w 或 forever，最长 100 年。",
     "bad_rule": "规则：command/name 或 module/name。",
-    "empty": "未授予任何权限。使用 {prefix}perm <user_id> <role>。",
+    "empty": "未授予任何权限。使用 {prefix}perm &lt;user_id&gt; &lt;role&gt;。",
     "bad_label": "未知权限：{label}",
     "no_owner_grant": "使用 {prefix}perms 授予所有者权限。",
     "owner_confirm": "授予 <code>{user_id}</code> 完全访问权限吗？",
@@ -1152,7 +1153,7 @@
     "rules_cleared": "<b>规则已清空</b>",
     "nothing_clear": "无可清空的规则",
     "self_owner": "该用户已拥有此账户。",
-    "no_groups": "暂无权限组。",
+    "no_groups": "没有安全组。创建一个：{prefix}sgnew &lt;name&gt;",
     "usage": "<code>{prefix}owadd &lt;user_id|reply&gt;</code> — 添加所有者\n<code>{prefix}owrm &lt;user_id|reply&gt;</code> — 移除所有者\n<code>{prefix}owls</code> — 列出所有者\n<code>{prefix}sgnew &lt;name&gt;</code> — 创建权限组\n<code>{prefix}sgls</code> — 列出权限组\n<code>{prefix}sg &lt;name&gt;</code> — 查看权限组成员与规则\n<code>{prefix}sgdel &lt;name&gt;</code> — 删除权限组\n<code>{prefix}sgadd &lt;name&gt; &lt;user_id|reply&gt;</code> — 添加成员\n<code>{prefix}sgrm &lt;name&gt; &lt;user_id|reply&gt;</code> — 移除成员\n<code>{prefix}rule &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;command|module&gt;/&lt;name&gt; [expiry]</code> — 添加访问规则\n<code>{prefix}rulerm &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;rule&gt;</code> — 移除规则\n<code>{prefix}ruleclr &lt;user|chat|sgroup&gt; [target]</code> — 清空规则\n<code>{prefix}perm &lt;user_id&gt; &lt;admin|trusted|everyone&gt; [remove]</code> — 授予或撤销权限\n<code>{prefix}perms</code> — 权限列表\n<code>{prefix}whois &lt;user_id&gt;</code> — 查看用户权限",
     "account_owner": "账户所有者不可被移除。"
   },

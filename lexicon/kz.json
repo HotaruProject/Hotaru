@@ -886,25 +886,30 @@
           "description": "Бастапқы баптау шеберін ашу",
           "usage": ""
         }
-      }
+      },
+      "active_title": "Белсенді және онлайн",
+      "active_desc": "Hotaru Userbot бапталды және қосылды. Пәрмендерді тікелей аккаунтыңызда пайдаланыңыз.",
+      "links_title": "Hotaru сілтемелері",
+      "links_desc": "Hotaru ресми репозиторийі, құжаттама және бастапқы код:",
+      "btn_github": "GitHub репозиторийі"
     }
   },
   "inline_commands_hint": "Команданы таңда — кез келген чатта @<бот> және оның атын тер",
   "settings": {
     "runtime_unavailable": "Қызмет қолжетімсіз",
-    "usage_alias": "Қолдану: {prefix}alias <бүркеншік_ат> <команда>",
+    "usage_alias": "Қолдану: <code>{prefix}alias &lt;бүркеншік_ат&gt; &lt;команда&gt;</code>",
     "alias_exists": "Команда бұрыннан бар: {alias}",
     "command_not_found": "Команда табылмады: {command}\nҚолжетімді: {known}",
     "alias_taken": "Бүркеншік ат қолданылуда: {alias} → {command}. Жою: {prefix}rmalias {alias}.",
     "alias_set": "Бүркеншік ат орнатылды: {alias} → {command}",
-    "usage_rmalias": "Қолдану: {prefix}rmalias <бүркеншік_ат>",
+    "usage_rmalias": "Қолдану: <code>{prefix}rmalias &lt;бүркеншік_ат&gt;</code>",
     "alias_removed": "Бүркеншік ат жойылды: {alias}",
     "alias_not_found": "Бүркеншік ат табылмады: {alias}",
     "alias_list_empty": "Бүркеншік аттар жоқ",
     "alias_list_title": "<b>Бүркеншік аттар</b>",
-    "prefix_current": "Қазіргі префикс: {prefix} · Өзгерту: {prefix}prefix <таңба>",
+    "prefix_current": "Қазіргі префикс: <code>{prefix}</code> · Өзгерту: <code>{prefix}prefix &lt;таңба&gt;</code>",
     "prefix_invalid": "Префикс бос орынсыз 1–8 көрінетін таңбадан тұруы керек.",
-    "prefix_set": "Префикс {prefix} болып өзгертілді",
+    "prefix_set": "Префикс <code>{prefix}</code> етіп өзгертілді",
     "description": "Бүркеншік аттар мен префиксті басқару",
     "commands": {
       "alias": "Командаға бүркеншік ат беру",
@@ -1049,7 +1054,7 @@
     "bad_group": "Топ атауы: әріптер мен сандар, 32 таңбаға дейін.",
     "bad_duration": "1m, 1h, 1d, 1w немесе forever енгіз. Ең көбі — 100 жыл.",
     "bad_rule": "Ереже: command/атау немесе module/атау.",
-    "empty": "Берілген құқықтар жоқ. {prefix}perm <user_id> <рөл> командасын қолдан.",
+    "empty": "Берілген рұқсаттар жоқ. {prefix}perm &lt;user_id&gt; &lt;role&gt; қолданыңыз.",
     "bad_label": "Белгісіз құқық: {label}",
     "no_owner_grant": "Ие құқығы {prefix}owadd арқылы беріледі.",
     "owner_confirm": "<code>{user_id}</code> пайдаланушысына толық рұқсат берілсін бе?",
@@ -1148,7 +1153,7 @@
     "rules_cleared": "<b>Ережелер тазартылды</b>",
     "nothing_clear": "Тазартатын ештеңе жоқ",
     "self_owner": "Бұл пайдаланушы аккаунттың иесі.",
-    "no_groups": "Топтар жоқ.",
+    "no_groups": "Қолжетімділік топтары жоқ. Жасау: {prefix}sgnew &lt;name&gt;",
     "usage": "<code>{prefix}owadd &lt;user_id|reply&gt;</code> — Ие қосу\n<code>{prefix}owrm &lt;user_id|reply&gt;</code> — Иені жою\n<code>{prefix}owls</code> — Иелер тізімі\n<code>{prefix}sgnew &lt;name&gt;</code> — Құқық тобын құру\n<code>{prefix}sgls</code> — Топтар тізімі\n<code>{prefix}sg &lt;name&gt;</code> — Топ мүшелері мен ережелері\n<code>{prefix}sgdel &lt;name&gt;</code> — Топты жою\n<code>{prefix}sgadd &lt;name&gt; &lt;user_id|reply&gt;</code> — Қатысушы қосу\n<code>{prefix}sgrm &lt;name&gt; &lt;user_id|reply&gt;</code> — Қатысушыны жою\n<code>{prefix}rule &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;command|module&gt;/&lt;name&gt; [expiry]</code> — Рұқсат ережесін қосу\n<code>{prefix}rulerm &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;rule&gt;</code> — Ережені жою\n<code>{prefix}ruleclr &lt;user|chat|sgroup&gt; [target]</code> — Ережелерді тазарту\n<code>{prefix}perm &lt;user_id&gt; &lt;admin|trusted|everyone&gt; [remove]</code> — Құқық беру немесе қайтару\n<code>{prefix}perms</code> — Құқықтар тізімі\n<code>{prefix}whois &lt;user_id&gt;</code> — Пайдаланушы құқықтары",
     "account_owner": "Аккаунт иесін жоюға болмайды."
   },

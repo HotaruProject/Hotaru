@@ -881,7 +881,12 @@
           "description": "Открыть мастер первоначальной настройки",
           "usage": ""
         }
-      }
+      },
+      "active_title": "Активен и онлайн",
+      "active_desc": "Hotaru Userbot настроен и запущен. Используйте команды прямо в вашем аккаунте.",
+      "links_title": "Ссылки Hotaru",
+      "links_desc": "Официальный репозиторий проекта Hotaru, документация и исходный код:",
+      "btn_github": "Репозиторий GitHub"
     }
   },
   "commands": {
@@ -915,19 +920,19 @@
   "inline_commands_hint": "Выбери команду — введи @<бот> и её имя в любом чате",
   "settings": {
     "runtime_unavailable": "Сервис недоступен",
-    "usage_alias": "Использование: {prefix}alias <алиас> <команда>",
+    "usage_alias": "Использование: <code>{prefix}alias &lt;алиас&gt; &lt;команда&gt;</code>",
     "alias_exists": "Команда уже существует: {alias}",
     "command_not_found": "Команда не найдена: {command}\nДоступны: {known}",
     "alias_taken": "Алиас занят: {alias} → {command}. Удали через {prefix}rmalias {alias}.",
     "alias_set": "Алиас установлен: {alias} → {command}",
-    "usage_rmalias": "Использование: {prefix}rmalias <алиас>",
+    "usage_rmalias": "Использование: <code>{prefix}rmalias &lt;алиас&gt;</code>",
     "alias_removed": "Алиас удалён: {alias}",
     "alias_not_found": "Алиас не найден: {alias}",
     "alias_list_empty": "Алиасов пока нет",
     "alias_list_title": "<b>Алиасы</b>",
-    "prefix_current": "Текущий префикс: {prefix} · Сменить: {prefix}prefix <символ>",
+    "prefix_current": "Текущий префикс: <code>{prefix}</code> · Сменить: <code>{prefix}prefix &lt;символ&gt;</code>",
     "prefix_invalid": "Префикс: от 1 до 8 видимых символов без пробелов.",
-    "prefix_set": "Префикс изменён на {prefix}",
+    "prefix_set": "Префикс изменен на <code>{prefix}</code>",
     "description": "Управление алиасами и префиксом",
     "commands": {
       "alias": "Создать алиас команды",
@@ -1049,7 +1054,7 @@
     "bad_group": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>Имя группы:</b> буквы и цифры, до 32 символов.",
     "bad_duration": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>Срок:</b> укажите <code>1m</code>, <code>1h</code>, <code>1d</code>, <code>1w</code> или <code>forever</code>.",
     "bad_rule": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>Формат правила:</b> <code>command/имя</code> или <code>module/имя</code>.",
-    "empty": "Выданных прав нет. Используй {prefix}perm <user_id> <роль>.",
+    "empty": "Нет выданных прав. Используйте {prefix}perm &lt;user_id&gt; &lt;role&gt;.",
     "bad_label": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>Неизвестное право:</b> <code>{label}</code>",
     "no_owner_grant": "Права владельца выдаются через {prefix}owadd.",
     "owner_confirm": "Выдать <code>{user_id}</code> полный доступ?",
@@ -1148,7 +1153,7 @@
     "rules_cleared": "<b>Правила очищены</b>",
     "nothing_clear": "Очищать нечего",
     "self_owner": "Этот пользователь уже владеет аккаунтом.",
-    "no_groups": "Групп нет.",
+    "no_groups": "Нет групп доступа. Создать: {prefix}sgnew &lt;name&gt;",
     "usage": "<code>{prefix}owadd &lt;user_id|reply&gt;</code> — Добавить владельца\n<code>{prefix}owrm &lt;user_id|reply&gt;</code> — Удалить владельца\n<code>{prefix}owls</code> — Список владельцев\n<code>{prefix}sgnew &lt;name&gt;</code> — Создать группу прав\n<code>{prefix}sgls</code> — Список групп\n<code>{prefix}sg &lt;name&gt;</code> — Участники и правила группы\n<code>{prefix}sgdel &lt;name&gt;</code> — Удалить группу\n<code>{prefix}sgadd &lt;name&gt; &lt;user_id|reply&gt;</code> — Добавить участника\n<code>{prefix}sgrm &lt;name&gt; &lt;user_id|reply&gt;</code> — Удалить участника\n<code>{prefix}rule &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;command|module&gt;/&lt;name&gt; [expiry]</code> — Добавить правило доступа\n<code>{prefix}rulerm &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;rule&gt;</code> — Удалить правило\n<code>{prefix}ruleclr &lt;user|chat|sgroup&gt; [target]</code> — Очистить правила\n<code>{prefix}perm &lt;user_id&gt; &lt;admin|trusted|everyone&gt; [remove]</code> — Выдать или отозвать права\n<code>{prefix}perms</code> — Список прав\n<code>{prefix}whois &lt;user_id&gt;</code> — Права пользователя",
     "account_owner": "Владельца аккаунта нельзя удалить."
   },

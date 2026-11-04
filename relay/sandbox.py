@@ -910,6 +910,10 @@ class _ScreensProxy:
         return {"text": text, "url": str(link), "style": style}
 
     @staticmethod
+    def webapp(text, link, style=None):
+        return {"text": text, "web_app": {"url": str(link)}, "style": style}
+
+    @staticmethod
     def footer(back=None, **args):
         row = []
         if back:
@@ -971,6 +975,10 @@ class _UiProxy:
     @staticmethod
     def url(text, url):
         return {"text": text, "url": url}
+
+    @staticmethod
+    def webapp(text, url):
+        return {"text": text, "web_app": {"url": url}}
 
     def on(self, callback):
         import hashlib

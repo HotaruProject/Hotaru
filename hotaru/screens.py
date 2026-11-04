@@ -433,6 +433,10 @@ class Kit:
         return _decorate({"text": text, "url": str(link)}, style, icon)
 
     @staticmethod
+    def webapp(text: str, link: str, *, style: Optional[str] = None, icon: Optional[str] = None) -> dict[str, Any]:
+        return _decorate({"text": text, "web_app": {"url": str(link)}}, style, icon)
+
+    @staticmethod
     def link(text: str, module_id: str, fn: str, *, style: Optional[str] = None, icon: Optional[str] = None, **args: Any) -> dict[str, Any]:
         return _decorate({"text": text, "k": "go", "m": module_id, "f": fn, "a": _plain(args)}, style, icon)
 

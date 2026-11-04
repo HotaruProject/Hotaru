@@ -881,7 +881,12 @@
           "description": "Open initial setup wizard",
           "usage": ""
         }
-      }
+      },
+      "active_title": "Active & Online",
+      "active_desc": "Hotaru Userbot is configured and running. Use commands directly in your account.",
+      "links_title": "Hotaru Links",
+      "links_desc": "Official Hotaru project repository, documentation, and source code:",
+      "btn_github": "GitHub Repository"
     }
   },
   "commands": {
@@ -915,19 +920,19 @@
   "inline_commands_hint": "Pick a command — type @<bot> and its name in any chat",
   "settings": {
     "runtime_unavailable": "Runtime unavailable",
-    "usage_alias": "Usage: {prefix}alias <alias> <command>",
+    "usage_alias": "Usage: <code>{prefix}alias &lt;alias&gt; &lt;command&gt;</code>",
     "alias_exists": "Command already exists: {alias}",
     "command_not_found": "Command not found: {command}\nAvailable: {known}",
     "alias_taken": "Alias is taken: {alias} → {command}. Remove it with {prefix}rmalias {alias}.",
     "alias_set": "Alias set: {alias} → {command}",
-    "usage_rmalias": "Usage: {prefix}rmalias <alias>",
+    "usage_rmalias": "Usage: <code>{prefix}rmalias &lt;alias&gt;</code>",
     "alias_removed": "Alias removed: {alias}",
     "alias_not_found": "Alias not found: {alias}",
     "alias_list_empty": "No aliases yet",
     "alias_list_title": "<b>Aliases</b>",
-    "prefix_current": "Current prefix: {prefix} · Change: {prefix}prefix <character>",
+    "prefix_current": "Current prefix: <code>{prefix}</code> · Change: <code>{prefix}prefix &lt;character&gt;</code>",
     "prefix_invalid": "Prefix must contain 1 to 8 visible characters without whitespace.",
-    "prefix_set": "Prefix changed to {prefix}",
+    "prefix_set": "Prefix updated to <code>{prefix}</code>",
     "description": "Alias and prefix management",
     "commands": {
       "alias": "Create a command alias",
@@ -1049,7 +1054,7 @@
     "bad_group": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>Group name:</b> letters and digits, up to 32 chars.",
     "bad_duration": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>Duration:</b> specify <code>1m</code>, <code>1h</code>, <code>1d</code>, <code>1w</code>, or <code>forever</code>.",
     "bad_rule": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>Rule format:</b> <code>command/name</code> or <code>module/name</code>.",
-    "empty": "No granted permissions. Use {prefix}perm <user_id> <role>.",
+    "empty": "No permissions granted. Use {prefix}perm &lt;user_id&gt; &lt;role&gt;.",
     "bad_label": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>Unknown permission:</b> <code>{label}</code>",
     "no_owner_grant": "Use {prefix}owadd to grant owner access.",
     "owner_confirm": "Grant <code>{user_id}</code> full access?",
@@ -1148,7 +1153,7 @@
     "rules_cleared": "<b>Rules cleared</b>",
     "nothing_clear": "nothing to clear",
     "self_owner": "This user already owns the account.",
-    "no_groups": "No groups.",
+    "no_groups": "No security groups. Create one: {prefix}sgnew &lt;name&gt;",
     "usage": "<code>{prefix}owadd &lt;user_id|reply&gt;</code> — Add owner\n<code>{prefix}owrm &lt;user_id|reply&gt;</code> — Remove owner\n<code>{prefix}owls</code> — List owners\n<code>{prefix}sgnew &lt;name&gt;</code> — Create permission group\n<code>{prefix}sgls</code> — List groups\n<code>{prefix}sg &lt;name&gt;</code> — Show group members and rules\n<code>{prefix}sgdel &lt;name&gt;</code> — Delete group\n<code>{prefix}sgadd &lt;name&gt; &lt;user_id|reply&gt;</code> — Add group member\n<code>{prefix}sgrm &lt;name&gt; &lt;user_id|reply&gt;</code> — Remove group member\n<code>{prefix}rule &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;command|module&gt;/&lt;name&gt; [expiry]</code> — Add access rule\n<code>{prefix}rulerm &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;rule&gt;</code> — Remove rule\n<code>{prefix}ruleclr &lt;user|chat|sgroup&gt; [target]</code> — Clear rules\n<code>{prefix}perm &lt;user_id&gt; &lt;admin|trusted|everyone&gt; [remove]</code> — Grant or revoke permission\n<code>{prefix}perms</code> — List permissions\n<code>{prefix}whois &lt;user_id&gt;</code> — Show user permissions",
     "account_owner": "The account owner cannot be removed."
   },

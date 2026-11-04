@@ -886,25 +886,30 @@
           "description": "Відкрити майстер початкового налаштування",
           "usage": ""
         }
-      }
+      },
+      "active_title": "Активний та онлайн",
+      "active_desc": "Hotaru Userbot налаштовано та запущено. Використовуйте команди прямо у вашому акаунті.",
+      "links_title": "Посилання Hotaru",
+      "links_desc": "Офіційний репозиторій проєкту Hotaru, документація та вихідний код:",
+      "btn_github": "Репозиторій GitHub"
     }
   },
   "inline_commands_hint": "Обери команду — введи @<бот> і її назву в будь-якому чаті",
   "settings": {
     "runtime_unavailable": "Сервіс недоступний",
-    "usage_alias": "Використання: {prefix}alias <аліас> <команда>",
+    "usage_alias": "Використання: <code>{prefix}alias &lt;аліас&gt; &lt;команда&gt;</code>",
     "alias_exists": "Команда вже існує: {alias}",
     "command_not_found": "Команду не знайдено: {command}\nДоступні: {known}",
     "alias_taken": "Аліас зайнято: {alias} → {command}. Видали через {prefix}rmalias {alias}.",
     "alias_set": "Аліас встановлено: {alias} → {command}",
-    "usage_rmalias": "Використання: {prefix}rmalias <аліас>",
+    "usage_rmalias": "Використання: <code>{prefix}rmalias &lt;аліас&gt;</code>",
     "alias_removed": "Аліас видалено: {alias}",
     "alias_not_found": "Аліас не знайдено: {alias}",
     "alias_list_empty": "Аліасів поки немає",
     "alias_list_title": "<b>Аліаси</b>",
-    "prefix_current": "Поточний префікс: {prefix} · Змінити: {prefix}prefix <символ>",
+    "prefix_current": "Поточний префікс: <code>{prefix}</code> · Змінити: <code>{prefix}prefix &lt;символ&gt;</code>",
     "prefix_invalid": "Префікс: від 1 до 8 видимих символів без пробілів.",
-    "prefix_set": "Префікс змінено на {prefix}",
+    "prefix_set": "Префікс змінено на <code>{prefix}</code>",
     "description": "Керування аліасами та префіксом",
     "commands": {
       "alias": "Створити аліас команди",
@@ -1049,7 +1054,7 @@
     "bad_group": "Назва групи: літери й цифри, до 32 символів.",
     "bad_duration": "Вкажи 1m, 1h, 1d, 1w або forever. Максимум — 100 років.",
     "bad_rule": "Правило: command/назва або module/назва.",
-    "empty": "Наданих прав немає. Використай {prefix}perm <user_id> <роль>.",
+    "empty": "Немає наданих прав. Використовуйте {prefix}perm &lt;user_id&gt; &lt;role&gt;.",
     "bad_label": "Невідоме право: {label}",
     "no_owner_grant": "Права власника надаються через {prefix}owadd.",
     "owner_confirm": "Надати <code>{user_id}</code> повний доступ?",
@@ -1148,7 +1153,7 @@
     "rules_cleared": "<b>Правила очищено</b>",
     "nothing_clear": "Очищати нічого",
     "self_owner": "Цей користувач уже володіє акаунтом.",
-    "no_groups": "Груп немає.",
+    "no_groups": "Немає груп доступу. Створити: {prefix}sgnew &lt;name&gt;",
     "usage": "<code>{prefix}owadd &lt;user_id|reply&gt;</code> — Додати власника\n<code>{prefix}owrm &lt;user_id|reply&gt;</code> — Видалити власника\n<code>{prefix}owls</code> — Список власників\n<code>{prefix}sgnew &lt;name&gt;</code> — Створити групу прав\n<code>{prefix}sgls</code> — Список груп\n<code>{prefix}sg &lt;name&gt;</code> — Учасники та правила групи\n<code>{prefix}sgdel &lt;name&gt;</code> — Видалити групу\n<code>{prefix}sgadd &lt;name&gt; &lt;user_id|reply&gt;</code> — Додати учасника\n<code>{prefix}sgrm &lt;name&gt; &lt;user_id|reply&gt;</code> — Видалити учасника\n<code>{prefix}rule &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;command|module&gt;/&lt;name&gt; [expiry]</code> — Додати правило доступу\n<code>{prefix}rulerm &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;rule&gt;</code> — Видалити правило\n<code>{prefix}ruleclr &lt;user|chat|sgroup&gt; [target]</code> — Очистити правила\n<code>{prefix}perm &lt;user_id&gt; &lt;admin|trusted|everyone&gt; [remove]</code> — Надати або відкликати права\n<code>{prefix}perms</code> — Список прав\n<code>{prefix}whois &lt;user_id&gt;</code> — Права користувача",
     "account_owner": "Власника акаунта не можна видалити."
   },
