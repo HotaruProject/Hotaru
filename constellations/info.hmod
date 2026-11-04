@@ -1,10 +1,24 @@
 HOTARU = {
     "id": "info",
-    "version": "2.1.0",
-    "commands": ["info"],
+    "version": "2.2.0",
+    "commands": ["info", "ping"],
     "capabilities": ["mt", "state"],
     "banner": "https://raw.githubusercontent.com/HotaruProject/Hotaru/develop/hotaru/assets/info.mp4",
     "config_schema": {
+        "template": {
+            "type": "str",
+            "default_key": "kernel.ping.template",
+            "max_len": 3000,
+            "description": "",
+            "legacy_braces": True,
+            "template_fields": {
+                "latency": {"type": "float", "example": 12.345, "format": ".3f", "description_key": "kernel.ping.fields.latency"},
+                "uptime": {"type": "str", "example": "2h 3m", "example_key": "kernel.ping.example_uptime", "description_key": "kernel.ping.fields.uptime"},
+                "uptime_seconds": {"type": "int", "example": 7380, "description_key": "kernel.ping.fields.uptime_seconds"},
+                "custom_message": {"type": "str", "example": "My message", "description_key": "kernel.ping.fields.custom_message"},
+            },
+            "category": "General",
+        },
         "custom_message": {
             "type": "str",
             "default": "",
@@ -86,3 +100,17 @@ async def command_info(ctx: 'ModuleContext', invocation: 'CommandInvocation') ->
         await ctx.screens.show(screen)
     else:
         await ctx.respond(body, parse_mode="HTML", rich=True)
+
+
+async def command_ping(ctx: 'ModuleContext', invocation: 'CommandInvocation') -> None:
+    start = time.perf_counter_ns()
+    await ctx.respond(ctx.t("kernel.ping.measuring"), parse_mode="HTML")
+    ping_ms = (time.perf_counter_ns() - start) / 10**6
+    uptime_s = ctx.uptime
+    lang = getattr(getattr(ctx, "i18n", None), "language", "en")
+    uptime = ctx.tools.duration(uptime_s, lang) if hasattr(ctx, "tools") else f"{uptime_s}s"
+    custom_msg = str(ctx.config.get("custom_message", "") or "").strip() if hasattr(ctx, "config") else ""
+    text = await ctx.render_template_async("template", latency=ping_ms, uptime=uptime, uptime_seconds=uptime_s, custom_message=custom_msg)
+    if custom_msg and custom_msg not in text:
+        text += f"\n<blockquote>{custom_msg}</blockquote>"
+    await ctx.respond(text, parse_mode="HTML", output="edit")

@@ -1153,5 +1153,20 @@
     "saved": "已保存",
     "empty": "空",
     "nothing_found": "未找到 «{query}» 的相关结果。"
+  },
+  "translations": {
+    "translating": "正在翻译…",
+    "empty_text": "翻译文本为空",
+    "text_too_large": "单次请求文本过长",
+    "failed": "翻译文本失败",
+    "error_title": "翻译错误",
+    "usage_file": "请提供链接、路径或回复 JSON 文件 (.json)"
+  },
+  "info": {
+    "commands": {
+      "ping": {
+        "description": "测量用户机器人延迟"
+      }
+    }
   }
 }

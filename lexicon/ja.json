@@ -1149,5 +1149,20 @@
     "saved": "保存しました",
     "empty": "空",
     "nothing_found": "「{query}」に一致するものはありません。"
+  },
+  "translations": {
+    "translating": "翻訳中…",
+    "empty_text": "翻訳するテキストが空です",
+    "text_too_large": "テキストが1回のリクエストに対して大きすぎます",
+    "failed": "テキストの翻訳に失敗しました",
+    "error_title": "翻訳エラー",
+    "usage_file": "リンク、パスを指定するか、JSONファイル（.json）に返信してください"
+  },
+  "info": {
+    "commands": {
+      "ping": {
+        "description": "ユーザーボットのpingを測定"
+      }
+    }
   }
 }

@@ -1149,5 +1149,20 @@
     "saved": "Saved",
     "empty": "empty",
     "nothing_found": "Nothing found for «{query}»."
+  },
+  "translations": {
+    "translating": "Translating…",
+    "empty_text": "Text for translation is empty",
+    "text_too_large": "Text is too large for a single request",
+    "failed": "Failed to translate text",
+    "error_title": "Translation error",
+    "usage_file": "Provide a link, path, or reply to a JSON file (.json)"
+  },
+  "info": {
+    "commands": {
+      "ping": {
+        "description": "Measure userbot ping"
+      }
+    }
   }
 }

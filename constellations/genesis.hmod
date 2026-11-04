@@ -47,7 +47,7 @@ def home(ctx: Any, nav: Any = None) -> Any:
         if url:
             rows.append([k.url(ctx.t("kernel.genesis.btn_webapp", "🌐 Open WebApp"), url)])
     rows.append([k.close()])
-    return k.screen(text, rows, banner=k.banner("banner"), rich=True)
+    return k.screen(text, rows, banner=k.banner("genesis"), rich=True)
 
 
 def step_lang(ctx: Any, nav: Any = None) -> Any:
@@ -70,7 +70,7 @@ def step_lang(ctx: Any, nav: Any = None) -> Any:
         f'{k.wordmark()} · <tg-emoji emoji-id="5291803847914698795">🌐</tg-emoji> <b>{_escape(ctx.t("kernel.genesis.step_lang_title", "Step 1/4 · Language"))}</b>\n\n'
         f'{_escape(ctx.t("kernel.genesis.step_lang_desc", "Select your interface language:"))}'
     )
-    return k.screen(text, rows, banner=k.banner("banner"), rich=True)
+    return k.screen(text, rows, banner=k.banner("genesis"), rich=True)
 
 
 async def apply_lang(ctx: Any, nav: Any) -> Any:
@@ -105,7 +105,7 @@ def step_prefix(ctx: Any, nav: Any = None) -> Any:
         f'{_escape(ctx.t("kernel.genesis.step_prefix_desc", "Choose the prefix for userbot commands:"))}\n'
         f'<tg-emoji emoji-id="5260726538302660868">✅</tg-emoji> {_escape(ctx.t("kernel.genesis.current", "Current:"))} <code>{_escape(current)}</code>'
     )
-    return k.screen(text, rows, banner=k.banner("banner"), rich=True)
+    return k.screen(text, rows, banner=k.banner("genesis"), rich=True)
 
 
 async def apply_prefix(ctx: Any, nav: Any) -> Any:
@@ -151,7 +151,7 @@ def step_logs(ctx: Any, nav: Any = None) -> Any:
         f'{_escape(ctx.t("kernel.genesis.step_logs_desc", "Select minimum log level for mirror & observatory:"))}\n'
         f'<tg-emoji emoji-id="5260726538302660868">✅</tg-emoji> {_escape(ctx.t("kernel.genesis.current", "Current:"))} <code>{current.upper()}</code>'
     )
-    return k.screen(text, rows, banner=k.banner("banner"), rich=True)
+    return k.screen(text, rows, banner=k.banner("genesis"), rich=True)
 
 
 async def apply_loglevel(ctx: Any, nav: Any) -> Any:
@@ -190,7 +190,7 @@ def step_backups(ctx: Any, nav: Any = None) -> Any:
         f'{_escape(ctx.t("kernel.genesis.step_backups_desc", "Configure automatic encrypted backups:"))}\n'
         f'<tg-emoji emoji-id="5260726538302660868">✅</tg-emoji> {_escape(ctx.t("kernel.genesis.current", "Current:"))} <code>{current_hours}h</code> ({ctx.t("kernel.backups.enabled" if enabled else "kernel.backups.disabled")})'
     )
-    return k.screen(text, rows, banner=k.banner("banner"), rich=True)
+    return k.screen(text, rows, banner=k.banner("genesis"), rich=True)
 
 
 async def toggle_backup(ctx: Any, nav: Any) -> Any:
@@ -231,7 +231,7 @@ def step_finish(ctx: Any, nav: Any = None) -> Any:
         if url:
             rows.append([k.url(ctx.t("kernel.genesis.btn_webapp", "🌐 Open WebApp"), url)])
     rows.append([k.close()])
-    return k.screen(text, rows, banner=k.banner("banner"), rich=True)
+    return k.screen(text, rows, banner=k.banner("genesis"), rich=True)
 
 
 async def command_start(ctx: Any, invocation: Any) -> Any:

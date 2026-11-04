@@ -233,8 +233,13 @@ async def command_translate(ctx: Any, invocation: Any) -> Any:
             target_text = target_text.get("text", "")
 
     if not target_text:
-        await ctx.respond(f'<tg-emoji emoji-id="5778527486270770928">❌</tg-emoji> <b>{_escape(ctx.t("kernel.translations.no_text", "Текст для перевода не указан"))}</b>', parse_mode="HTML")
+        await ctx.respond(f'<tg-emoji emoji-id="5260342697075416641">❌</tg-emoji> <b>{_escape(ctx.t("kernel.translations.no_text", "Текст для перевода не указан"))}</b>', parse_mode="HTML", output="edit")
         return
+
+    await ctx.respond(
+        f'<tg-emoji emoji-id="5291803847914698795">🌐</tg-emoji> <i>{_escape(ctx.t("kernel.translations.translating", "Переводим…"))}</i>',
+        parse_mode="HTML",
+    )
 
     try:
         translated = await ctx.translate(target_text, to_lang=to_lang)
@@ -242,19 +247,19 @@ async def command_translate(ctx: Any, invocation: Any) -> Any:
         log.error("translation error: %s", exc, exc_info=True)
         raw_err = str(exc)
         if "requires non-empty text" in raw_err:
-            msg = "Текст для перевода пуст"
+            msg = ctx.t("kernel.translations.empty_text", "Текст для перевода пуст")
         elif "exceeds" in raw_err:
-            msg = "Текст слишком большой для одного запроса"
+            msg = ctx.t("kernel.translations.text_too_large", "Текст слишком большой для одного запроса")
         else:
-            msg = f"Не удалось перевести текст ({raw_err})"
-        await ctx.respond(f'<tg-emoji emoji-id="5778527486270770928">❌</tg-emoji> <b>Ошибка перевода:</b>\n<blockquote>{html.escape(msg, quote=False)}</blockquote>', parse_mode="HTML")
+            msg = f"{ctx.t('kernel.translations.failed', 'Не удалось перевести текст')} ({raw_err})"
+        await ctx.respond(f'<tg-emoji emoji-id="5260342697075416641">❌</tg-emoji> <b>{_escape(ctx.t("kernel.translations.error_title", "Ошибка перевода"))}:</b>\n<blockquote>{html.escape(msg, quote=False)}</blockquote>', parse_mode="HTML", output="edit")
         return
 
     from relay.toolkit import escape_smart
     formatted = escape_smart(translated)
     expandable = " expandable" if (len(formatted) > 200 or "\n" in formatted) else ""
     res = f'<tg-emoji emoji-id="5260512129240276089">📚</tg-emoji> <b>{to_lang.upper()}</b>:\n<blockquote{expandable}>{formatted}</blockquote>'
-    await ctx.paginate(res)
+    await ctx.respond(res, parse_mode="HTML", output="edit")
 
 
 async def command_loadlex(ctx: Any, invocation: Any) -> Any:
@@ -272,7 +277,7 @@ async def command_loadlex(ctx: Any, invocation: Any) -> Any:
         doc = getattr(source_msg, "document", None) or getattr(source_msg, "media", None)
     msg_text = str(getattr(source_msg, "text", "") or "").strip()
     if not invocation.args and doc is None and not (msg_text.startswith("{") and msg_text.endswith("}")):
-        await ctx.respond(f'<tg-emoji emoji-id="5778527486270770928">❌</tg-emoji> <b>Укажите ссылку, путь или сделайте реплай на файл (.json)</b>', parse_mode="HTML")
+        await ctx.respond(f'<tg-emoji emoji-id="5260342697075416641">❌</tg-emoji> <b>{_escape(ctx.t("kernel.translations.usage_file", "Укажите ссылку, путь или сделайте реплай на файл (.json)"))}</b>', parse_mode="HTML", output="edit")
         return
 
     temporary = None
@@ -402,16 +407,18 @@ async def command_rmlex(ctx: Any, invocation: Any) -> Any:
     if not invocation.args:
         prefix = getattr(runtime.config, "prefix", ".")
         await ctx.respond(
-            f'<tg-emoji emoji-id="5778527486270770928">❌</tg-emoji> <b>{_escape(ctx.t("kernel.translations.usage_rm", prefix=prefix))}</b>',
+            f'<tg-emoji emoji-id="5260342697075416641">❌</tg-emoji> <b>{_escape(ctx.t("kernel.translations.usage_rm", prefix=prefix))}</b>',
             parse_mode="HTML",
+            output="edit",
         )
         return
     code = str(invocation.args[0]).strip().lower()
     builtins = set(LANGUAGES) | {"ru", "en", "kz", "kk", "uk", "ja", "zh"}
     if code in builtins:
         await ctx.respond(
-            f'<tg-emoji emoji-id="5778527486270770928">❌</tg-emoji> <b>{_escape(ctx.t("kernel.translations.cannot_remove_builtin", "Нельзя удалить системный языковой пакет"))}:</b> <code>{_escape(code)}</code>',
+            f'<tg-emoji emoji-id="5260342697075416641">❌</tg-emoji> <b>{_escape(ctx.t("kernel.translations.cannot_remove_builtin", "Нельзя удалить системный языковой пакет"))}:</b> <code>{_escape(code)}</code>',
             parse_mode="HTML",
+            output="edit",
         )
         return
     lexicon = getattr(runtime, "lexicon", None)
@@ -420,8 +427,9 @@ async def command_rmlex(ctx: Any, invocation: Any) -> Any:
         return
     if not lexicon.remove_custom(code):
         await ctx.respond(
-            f'<tg-emoji emoji-id="5778527486270770928">❌</tg-emoji> <b>{_escape(ctx.t("kernel.translations.not_found", "Кастомный языковой пакет не найден"))}:</b> <code>{_escape(code)}</code>',
+            f'<tg-emoji emoji-id="5260342697075416641">❌</tg-emoji> <b>{_escape(ctx.t("kernel.translations.not_found", "Кастомный языковой пакет не найден"))}:</b> <code>{_escape(code)}</code>',
             parse_mode="HTML",
+            output="edit",
         )
         return
     if runtime.language() == code:
@@ -429,6 +437,7 @@ async def command_rmlex(ctx: Any, invocation: Any) -> Any:
     await ctx.respond(
         f'<tg-emoji emoji-id="5260726538302660868">✅</tg-emoji> <b>{_escape(ctx.t("kernel.translations.removed", "Кастомный языковой пакет удален"))}:</b> <code>{_escape(code)}</code>',
         parse_mode="HTML",
+        output="edit",
     )
 
 
