@@ -128,6 +128,34 @@ def rotate_file(path: Path, max_bytes: int = 4 * 1024 * 1024, keep_files: int = 
         pass
 
 
+def prune_logs(root: str | Path, max_file_bytes: int = 8 * 1024 * 1024, keep_tail_bytes: int = 1 * 1024 * 1024) -> int:
+    root_path = Path(root).resolve()
+    pruned_count = 0
+    patterns = ("nohup.out", "*.log", "*.out", "observatory/**/*.jsonl", "sanctuary/**/*.log", "sanctuary/**/*.out")
+    scanned: set[Path] = set()
+    for pattern in patterns:
+        for file_path in root_path.glob(pattern):
+            if file_path.is_file() and file_path not in scanned:
+                scanned.add(file_path)
+    for file_path in scanned:
+        try:
+            size = file_path.stat().st_size
+            if size > max_file_bytes:
+                with file_path.open("r+b") as f:
+                    f.seek(max(0, size - keep_tail_bytes))
+                    tail = f.read()
+                    first_nl = tail.find(b"\n")
+                    if first_nl != -1 and first_nl < len(tail) - 1:
+                        tail = tail[first_nl + 1:]
+                    f.seek(0)
+                    f.write(tail)
+                    f.truncate(len(tail))
+                pruned_count += 1
+        except Exception:
+            continue
+    return pruned_count
+
+
 class Observatory:
     def __init__(
         self,
@@ -148,6 +176,10 @@ class Observatory:
         self._failed = 0.0
         self._subscribers: list[Subscriber] = []
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            prune_logs(self.path.parent.parent.parent if "observatory" in self.path.parts else self.path.parent, max_file_bytes=max_bytes)
+        except Exception:
+            pass
         self.path.parent.chmod(0o700)
         self.path.touch(exist_ok=True)
         self.path.chmod(0o600)

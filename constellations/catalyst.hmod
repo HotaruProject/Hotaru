@@ -19,6 +19,15 @@ async def command_ld(ctx: Any, invocation: Any) -> Any:
     if len(invocation.args) > 1:
         await ctx.respond(ctx.t('runtime.usage_load', prefix=runtime.config.prefix))
         return
+
+    reply = getattr(invocation, "reply", None) or (getattr(invocation.message, "reply_to_message", None) if invocation.message else None) or (getattr(invocation.message, "reply", None) if invocation.message else None)
+    doc = None
+    if invocation.message is not None:
+        doc = getattr(invocation.message, "document", None) or getattr(invocation.message, "media", None)
+    if not invocation.args and reply is None and doc is None:
+        await ctx.respond(f'<tg-emoji emoji-id="5778527486270770928">❌</tg-emoji> <b>Укажите ссылку, путь или сделайте реплай на файл модуля (.hmod)</b>', parse_mode="HTML")
+        return
+
     temporary = None
     log_lines = ["-----> Fetching module source..."]
     await ctx.respond(f"<pre>{chr(10).join(log_lines)}</pre>", parse_mode="HTML")
@@ -31,12 +40,13 @@ async def command_ld(ctx: Any, invocation: Any) -> Any:
                     return
                 source = Path(source).read_text(encoding="utf-8")
         else:
-            if invocation.message is None:
+            source_msg = reply if reply is not None else invocation.message
+            if source_msg is None:
                 await ctx.respond(f"<pre> !     Error: reply to a file or provide a url</pre>", parse_mode="HTML", output="edit")
                 return
             with tempfile.NamedTemporaryFile(suffix=".hmod", delete=False) as handle:
                 temporary = Path(handle.name)
-            await runtime._download_module_message(invocation.message, temporary)
+            await runtime._download_module_message(source_msg, temporary)
             source = temporary.read_text(encoding="utf-8")
         log_lines[-1] += " done"
         log_lines.append("-----> Validating capabilities and sandbox...")
@@ -48,7 +58,18 @@ async def command_ld(ctx: Any, invocation: Any) -> Any:
     except Exception as exc:
         if runtime.observatory is not None:
             runtime.observatory.emit("modules", "load_error", error=exc)
-        log_lines.append(f" !     {type(exc).__name__}: {html.escape(str(exc))}")
+        err_raw = str(exc)
+        if "file_missing" in err_raw:
+            err_msg = "Файл модуля не найден: прикрепите .hmod или сделайте реплай"
+        elif "file_document" in err_raw:
+            err_msg = "Сообщение должно содержать файл модуля (.hmod)"
+        elif "invalid path" in err_raw.lower() or isinstance(exc, FileNotFoundError):
+            err_msg = "Указанный файл или путь не найден"
+        elif isinstance(exc, (ValueError, TypeError)):
+            err_msg = f"Ошибка формата модуля: {err_raw}"
+        else:
+            err_msg = f"{type(exc).__name__}: {err_raw}"
+        log_lines.append(f" !     {html.escape(err_msg, quote=False)}")
         await ctx.respond(f"<pre>{chr(10).join(log_lines)}</pre>", parse_mode="HTML", output="edit")
         return
     finally:
@@ -86,7 +107,7 @@ async def command_ul(ctx: Any, invocation: Any) -> Any:
     args = [arg for arg in invocation.args if arg.casefold() not in flags]
     purge = len(args) != len(invocation.args)
     if len(args) != 1:
-        await ctx.respond(ctx.t('runtime.usage_unload', prefix=runtime.config.prefix))
+        await ctx.respond(f'<tg-emoji emoji-id="5778527486270770928">❌</tg-emoji> <b>Укажите модуль:</b> <code>{runtime.config.prefix}ul &lt;модуль&gt;</code>', parse_mode="HTML")
         return
     raw_mod = str(args[0]).casefold()
     module_id = (runtime.find_module(raw_mod) if hasattr(runtime, "find_module") else None) or raw_mod

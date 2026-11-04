@@ -31,6 +31,10 @@ SESSION_ERRORS = frozenset({
     "AUTH_KEY_DUPLICATED",
     "SESSION_REVOKED",
     "SESSION_EXPIRED",
+    "USER_DEACTIVATED_BAN",
+    "ACCOUNT_RESTRICTED",
+    "FROZEN_METHOD_NOT_AVAILABLE",
+    "PRIVACY_RESTRICTED",
 })
 
 log = logging.getLogger(__name__)
@@ -47,7 +51,16 @@ async def check_session(app: Any) -> bool:
             raise
         mt = app.mt
         await asyncio.wait_for(mt.close(), timeout=AUTH_TIMEOUT)
-        if app.session.path is not None:
+        if app.session.path is not None and app.session.path.exists():
+            try:
+                sz = app.session.path.stat().st_size
+                with app.session.path.open("r+b") as h:
+                    h.seek(0)
+                    h.write(b"\x00" * sz)
+                    h.flush()
+                    os.fsync(h.fileno())
+            except Exception:
+                pass
             app.session.path.unlink(missing_ok=True)
         app.session.data.clear()
         app.core.self_id = 0

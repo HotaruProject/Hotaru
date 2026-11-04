@@ -722,6 +722,12 @@ class ModuleContext(ContextOperations):
             screen = Screen(pages[page], rows, rich=rich)
             return await engine.show(self, screen)
         return await self.respond(pages[page], parse_mode="HTML", rich=rich)
+
+    def classify_error(self, exc: Any) -> dict[str, Any]:
+        return TOOLS.classify_error(exc)
+
+    async def check_restrictions(self) -> dict[str, Any]:
+        return await TOOLS.check_restrictions(self)
     @staticmethod
     async def _ctx_prepare(text: Any, parse_mode: Any, buttons: Any) -> dict[str, Any]:
         data: dict[str, Any] = {}

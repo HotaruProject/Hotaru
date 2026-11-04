@@ -58,6 +58,87 @@ def vault_name(session_name: str) -> str:
     return f"{session_name}.vault"
 
 
+def secure_wipe_account(root: Path, user_id: int) -> None:
+    import shutil
+    home = account_home(root, user_id)
+    if not home.exists():
+        return
+    for item in list(home.rglob("*")):
+        if item.is_file():
+            try:
+                size = item.stat().st_size
+                with item.open("r+b") as handle:
+                    handle.seek(0)
+                    handle.write(b"\x00" * size)
+                    handle.flush()
+                    os.fsync(handle.fileno())
+                item.unlink(missing_ok=True)
+            except Exception:
+                item.unlink(missing_ok=True)
+    try:
+        shutil.rmtree(home, ignore_errors=True)
+    except Exception:
+        pass
+
+
+def handle_account_critical_failure(session_dir: str | Path, user_id: int, reason: str, runtime: Any = None) -> bool:
+    import random
+    import sys
+    root = Path(session_dir).resolve()
+    reg_path = root / "sanctuary/state.sqlite3"
+    candidates = []
+    manager = None
+    if reg_path.exists():
+        registry = StateStore(reg_path)
+        try:
+            manager = AccountManager(registry, root)
+            items = manager.items()
+            candidates = [p for p in items if p.user_id != user_id]
+        except Exception:
+            candidates = []
+    if candidates and manager is not None:
+        def score(p: AccountProfile) -> tuple[int, int, int]:
+            en_val = 1 if p.enabled else 0
+            v_val = 1 if manager.vault_ready(p.account_number) else 0
+            db_path = account_db_path(root, p.user_id)
+            prem = 0
+            if db_path.exists():
+                try:
+                    s = StateStore(db_path)
+                    prem = 1 if s.get_setting("is_premium") else 0
+                    s.close()
+                except Exception:
+                    pass
+            weight = en_val * 1000 + v_val * 500 + prem * 100 - p.account_number
+            return (weight, -p.account_number, random.randint(0, 100))
+        winner = max(candidates, key=score)
+        try:
+            old_prof = manager.find_by_user(user_id)
+            if old_prof is not None:
+                manager.unregister(old_prof.account_number)
+        except Exception:
+            pass
+        secure_wipe_account(root, user_id)
+        manager.set_root(winner.user_id)
+        msg = f"[Hotaru] Account {user_id} removed due to restriction: {reason}. Switched primary to #{winner.account_number} ({winner.user_id})."
+        print(msg, file=sys.stderr)
+        if runtime is not None and getattr(runtime, "observatory", None) is not None:
+            runtime.observatory.emit("accounts", "failover", old_user=user_id, new_user=winner.user_id, reason=reason)
+        return True
+    print("\n" + "=" * 70, file=sys.stderr)
+    print(f"[HOTARU CRITICAL RESTRICTION] Account {user_id} encountered restriction: {reason}", file=sys.stderr)
+    print("Cannot proceed with userbot operations. Session and keys securely wiped with zeros.", file=sys.stderr)
+    print("Please restart Hotaru to authorize a new account.", file=sys.stderr)
+    print("=" * 70 + "\n", file=sys.stderr)
+    secure_wipe_account(root, user_id)
+    if runtime is not None:
+        try:
+            asyncio.create_task(runtime.close())
+        except Exception:
+            pass
+    sys.exit(0)
+
+
 @dataclass(frozen=True)
 class AccountProfile:
     user_id: int

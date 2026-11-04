@@ -847,6 +847,14 @@ class ContextOperations:
         return self.get_prefix()
 
     @property
+    def classify_error(self, exc: Any) -> dict[str, Any]:
+        from relay.toolkit import classify_error
+        return classify_error(exc)
+
+    async def check_restrictions(self) -> dict[str, Any]:
+        from relay.toolkit import check_restrictions
+        return await check_restrictions(self)
+
     def mt(self) -> MTContext:
         return MTContext(self)
 
@@ -1573,3 +1581,17 @@ async def _ctx_translate(target: MessageOperations, text: Any, to_lang: str | No
 
 
 CTX_OPERATIONS["translate"] = _ctx_translate
+
+
+async def _ctx_classify_error(target: MessageOperations, exc: Any) -> dict[str, Any]:
+    from relay.toolkit import classify_error
+    return classify_error(exc)
+
+
+async def _ctx_check_restrictions(target: MessageOperations) -> dict[str, Any]:
+    from relay.toolkit import check_restrictions
+    return await check_restrictions(target.ctx)
+
+
+CTX_OPERATIONS["classify_error"] = _ctx_classify_error
+CTX_OPERATIONS["check_restrictions"] = _ctx_check_restrictions
