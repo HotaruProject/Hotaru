@@ -16,6 +16,19 @@ _assets = Path(__file__).parent / "assets"
 _banners = {
     "help": ("hotaru-help", "video", "help.mp4"),
     "brand": ("hotaru-brand", "photo", "logo.png"),
+    "accounts": ("hotaru-accounts", "video", "accounts.mp4"),
+    "acl": ("hotaru-acl", "video", "acl.mp4"),
+    "backups": ("hotaru-backups", "video", "backups.mp4"),
+    "catalyst": ("hotaru-catalyst", "video", "catalyst.mp4"),
+    "executor": ("hotaru-executor", "video", "executor.mp4"),
+    "info": ("hotaru-info", "video", "info.mp4"),
+    "logger": ("hotaru-logger", "video", "logger.mp4"),
+    "ping": ("hotaru-ping", "video", "ping.mp4"),
+    "power": ("hotaru-power", "video", "power.mp4"),
+    "settings": ("hotaru-settings", "video", "settings.mp4"),
+    "singularity": ("hotaru-singularity", "video", "singularity.mp4"),
+    "translations": ("hotaru-translations", "video", "translations.mp4"),
+    "updater": ("hotaru-updater", "video", "updater.mp4"),
 }
 
 
