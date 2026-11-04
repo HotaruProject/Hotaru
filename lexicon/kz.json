@@ -902,7 +902,7 @@
     "alias_not_found": "Бүркеншік ат табылмады: {alias}",
     "alias_list_empty": "Бүркеншік аттар жоқ",
     "alias_list_title": "<b>Бүркеншік аттар</b>",
-    "prefix_current": "Қазіргі префикс: {prefix}. Өзгерту: {prefix}prefix <таңба>",
+    "prefix_current": "Қазіргі префикс: {prefix} · Өзгерту: {prefix}prefix <таңба>",
     "prefix_invalid": "Префикс бос орынсыз 1–8 көрінетін таңбадан тұруы керек.",
     "prefix_set": "Префикс {prefix} болып өзгертілді",
     "description": "Бүркеншік аттар мен префиксті басқару",
