@@ -20,9 +20,18 @@ async def command_ld(ctx: Any, invocation: Any) -> Any:
         await ctx.respond(ctx.t('runtime.usage_load', prefix=runtime.config.prefix))
         return
 
-    reply = getattr(invocation, "reply", None) or (getattr(invocation.message, "reply_to_message", None) if invocation.message else None) or (getattr(invocation.message, "reply", None) if invocation.message else None)
+    reply = getattr(invocation, "reply_message", None)
+    if reply is None and hasattr(invocation, "reply") and callable(invocation.reply):
+        try:
+            reply = await invocation.reply()
+        except Exception:
+            reply = None
+    if reply is None and invocation.message:
+        reply = getattr(invocation.message, "reply_to_message", None) or (invocation.message.get("reply_to_message") if isinstance(invocation.message, dict) else None)
+    if callable(reply):
+        reply = None
     doc = None
-    if invocation.message is not None:
+    if invocation.message is not None and not callable(invocation.message):
         doc = getattr(invocation.message, "document", None) or getattr(invocation.message, "media", None)
     if not invocation.args and reply is None and doc is None:
         await ctx.respond(f'<tg-emoji emoji-id="5778527486270770928">❌</tg-emoji> <b>Укажите ссылку, путь или сделайте реплай на файл модуля (.hmod)</b>', parse_mode="HTML")
@@ -58,17 +67,18 @@ async def command_ld(ctx: Any, invocation: Any) -> Any:
     except Exception as exc:
         if runtime.observatory is not None:
             runtime.observatory.emit("modules", "load_error", error=exc)
+        log.error("module load error: %s", exc, exc_info=True)
         err_raw = str(exc)
-        if "file_missing" in err_raw:
+        if "file_missing" in err_raw or "not found" in err_raw.lower() or "не найден" in err_raw or isinstance(exc, FileNotFoundError):
             err_msg = "Файл модуля не найден: прикрепите .hmod или сделайте реплай"
-        elif "file_document" in err_raw:
+        elif "file_document" in err_raw or "должно содержать" in err_raw:
             err_msg = "Сообщение должно содержать файл модуля (.hmod)"
-        elif "invalid path" in err_raw.lower() or isinstance(exc, FileNotFoundError):
+        elif "invalid path" in err_raw.lower():
             err_msg = "Указанный файл или путь не найден"
         elif isinstance(exc, (ValueError, TypeError)):
             err_msg = f"Ошибка формата модуля: {err_raw}"
         else:
-            err_msg = f"{type(exc).__name__}: {err_raw}"
+            err_msg = f"Не удалось загрузить модуль: {err_raw}"
         log_lines.append(f" !     {html.escape(err_msg, quote=False)}")
         await ctx.respond(f"<pre>{chr(10).join(log_lines)}</pre>", parse_mode="HTML", output="edit")
         return
@@ -94,7 +104,9 @@ async def command_ld(ctx: Any, invocation: Any) -> Any:
             notice = ctx.t("runtime." + action, module_id=result["module_id"], version=result["version"])
             await ctx.screens.show(screen.with_notice(notice))
         else:
-            await ctx.respond(ctx.t("runtime." + action, module_id=result["module_id"], version=result["version"]))
+            notice = ctx.t("runtime." + action, module_id=result["module_id"], version=result["version"])
+            screen = ctx.screens.screen(notice, [[ctx.screens.close()]], banner=ctx.screens.banner(result["module_id"]))
+            await ctx.screens.show(screen)
     else:
         await ctx.respond(action)
 

@@ -36,11 +36,12 @@ def _escape(value: Any) -> str:
     return html.escape(str(value), quote=False)
 
 
-def _banner(manifest: Any) -> str:
+def _banner(manifest: Any, module_id: str = "") -> str:
     import html
     value = str(getattr(manifest, "banner", "") or "").strip()
-    if not value:
-        return ""
+    if not value and module_id:
+        from hotaru.screens import Kit
+        return Kit.banner(module_id)
     if re.fullmatch(r"https?://[^\s<>\"]+", value):
         tag = "video" if value.lower().endswith(".mp4") else "img"
         return f'<{tag} src="{html.escape(value, quote=True)}"/>'
@@ -104,7 +105,7 @@ def home(ctx: Any, nav: Any = None) -> Any:
         lines.append(k.details(summary, "\n".join(entries), open=not kernel or user_count == 0))
     rows = [k.pager(home, page, pages)]
     rows.append([k.input(ctx.t("ui.search"), search, ctx.t("kernel.help_ui.search_prompt")), k.close()])
-    return k.screen("".join(lines), rows)
+    return k.screen("".join(lines), rows, banner=k.banner("help"))
 
 
 def _card(ctx: Any, module_id: str, actor: Any, back: Any, **back_args: Any) -> Any:
@@ -159,7 +160,7 @@ def _card(ctx: Any, module_id: str, actor: Any, back: Any, **back_args: Any) -> 
     if getattr(manifest, "config_schema", None) and runtime.modules.get("settings") is not None and runtime.access.is_owner(actor):
         rows.append([k.link(ctx.t("kernel.help_ui.settings"), "settings", "module", style="primary", id=module_id, origin="help")])
     rows.append(k.footer(back, **back_args))
-    return k.screen("\n".join(lines), rows, banner=_banner(manifest))
+    return k.screen("\n".join(lines), rows, banner=_banner(manifest, module_id))
 
 
 def module(ctx: Any, nav: Any) -> Any:

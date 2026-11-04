@@ -1568,10 +1568,16 @@ async def _ctx_translate(target: MessageOperations, text: Any, to_lang: str | No
             body = _msg_field(body, "result")
         if not isinstance(body, list) or not body:
             raise RuntimeError("Telegram returned no translated text")
-        parts = [_msg_field(item, "text") for item in cast('list[Any]', body)]
-        if any(not isinstance(item, str) for item in parts):
-            raise RuntimeError("Telegram returned invalid translated text")
-        return "".join(cast('list[str]', parts))
+        parts: list[str] = []
+        for item in cast('list[Any]', body):
+            txt = _msg_field(item, "text") or ""
+            ents = _msg_field(item, "entities") or []
+            if ents:
+                from relay.toolkit import entities_to_html
+                parts.append(entities_to_html(txt, ents))
+            else:
+                parts.append(txt)
+        return "".join(parts)
     async def request(payload: dict[str, Any]) -> dict[str, Any]:
         result = await target.ctx.cap("net", payload)
         if not isinstance(result, dict):

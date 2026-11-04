@@ -175,7 +175,7 @@ def _list(ctx: Any, actor: int, page: int = 0) -> Any:
         actions.append(k.primary(ui.t('button.add'), add, icon='user_add', page=page))
     actions += [k.button(ui.t('button.refresh'), home, icon='redo', page=page), k.close()]
     rows.append(actions)
-    return k.screen('\n'.join(lines), rows)
+    return k.screen('\n'.join(lines), rows, banner=k.banner("accounts"))
 
 
 def _detail(ctx: Any, actor: int, number: int, page: int = 0, note: str = '') -> Any:
