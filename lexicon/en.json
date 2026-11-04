@@ -4,6 +4,7 @@
     "name": "English"
   },
   "common": {
+    "brand": "<tg-emoji emoji-id=\"5985527717183888277\">⚡</tg-emoji><tg-emoji emoji-id=\"5985515480822061758\">⚡</tg-emoji><tg-emoji emoji-id=\"5985558606588681366\">⚡</tg-emoji><tg-emoji emoji-id=\"5985757321840565902\">⚡</tg-emoji>",
     "ok": "OK",
     "cancel": "Cancel",
     "close": "Close",
@@ -675,7 +676,7 @@
     },
     "singularity": {
       "description": "3D kernel telemetry & Observatory debug stream (Singularity)",
-      "card_title": "{wordmark} <b>// Singularity</b>",
+      "card_title": "<tg-emoji emoji-id=\"5985527717183888277\">⚡</tg-emoji><tg-emoji emoji-id=\"5985515480822061758\">⚡</tg-emoji><tg-emoji emoji-id=\"5985558606588681366\">⚡</tg-emoji><tg-emoji emoji-id=\"5985757321840565902\">⚡</tg-emoji> <b>// Singularity</b>",
       "card_subtitle": "<i>3D Event Horizon · Node.Probe · Read-Only Observatory Stream</i>",
       "probe": "Probe",
       "relay": "Relay",

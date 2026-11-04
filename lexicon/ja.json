@@ -681,7 +681,7 @@
     },
     "singularity": {
       "description": "3DカーネルテレメトリとObservatoryストリーム (Singularity)",
-      "card_title": "{wordmark} <b>// Singularity</b>",
+      "card_title": "<tg-emoji emoji-id=\"5985527717183888277\">⚡</tg-emoji><tg-emoji emoji-id=\"5985515480822061758\">⚡</tg-emoji><tg-emoji emoji-id=\"5985558606588681366\">⚡</tg-emoji><tg-emoji emoji-id=\"5985757321840565902\">⚡</tg-emoji> <b>// Singularity</b>",
       "card_subtitle": "<i>3D Event Horizon · Node.Probe · Read-Only Observatory Stream</i>",
       "open_button": "🕳 Singularityを開く",
       "commands": {
@@ -777,6 +777,7 @@
     "alias_invalid": "別名は1～32文字で、各言語の文字、数字、_ が使用できます。数字で始めることはできません。"
   },
   "common": {
+    "brand": "<tg-emoji emoji-id=\"5985527717183888277\">⚡</tg-emoji><tg-emoji emoji-id=\"5985515480822061758\">⚡</tg-emoji><tg-emoji emoji-id=\"5985558606588681366\">⚡</tg-emoji><tg-emoji emoji-id=\"5985757321840565902\">⚡</tg-emoji>",
     "ok": "OK",
     "cancel": "キャンセル",
     "close": "閉じる",

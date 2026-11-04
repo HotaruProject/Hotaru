@@ -15,32 +15,30 @@ from relay.files import document, put
 from relay.firewall import trusted_scope
 
 _assets = Path(__file__).parent / "assets"
-_banners = {
-    "brand": ("hotaru-brand", "photo", "banner.png"),
-    "banner": ("hotaru-banner", "photo", "banner.png"),
-    "logo": ("hotaru-logo", "photo", "banner.png"),
-    "help": ("hotaru-help", "video", "help.mp4"),
-    "info": ("hotaru-info", "video", "info.mp4"),
-    "settings": ("hotaru-settings", "video", "settings.mp4"),
-    "backups": ("hotaru-backups", "video", "backups.mp4"),
-    "catalyst": ("hotaru-catalyst", "video", "catalyst.mp4"),
-    "executor": ("hotaru-executor", "video", "executor.mp4"),
-    "logger": ("hotaru-logger", "video", "logger.mp4"),
-    "ping": ("hotaru-ping", "video", "ping.mp4"),
-    "power": ("hotaru-power", "video", "power.mp4"),
-    "singularity": ("hotaru-singularity", "video", "singularity.mp4"),
-    "translations": ("hotaru-translations", "video", "translations.mp4"),
-    "updater": ("hotaru-updater", "video", "updater.mp4"),
-    "accounts": ("hotaru-accounts", "video", "accounts.mp4"),
-    "acl": ("hotaru-acl", "video", "acl.mp4"),
-}
+
+
+def _resolve_asset(name: str) -> tuple[str, str, str] | None:
+    clean = re.sub(r"[^a-zA-Z0-9_-]", "", name).strip().lower()
+    if not clean:
+        clean = "brand"
+    media_id = f"hotaru-{clean}"
+    if clean in ("brand", "banner", "logo"):
+        filename = "banner.png" if clean != "logo" else "logo.png"
+        return (media_id, "photo", filename) if (_assets / filename).exists() else None
+    for ext, kind in ((".mp4", "video"), (".png", "photo"), (".jpg", "photo"), (".webp", "photo")):
+        filename = f"{clean}{ext}"
+        if (_assets / filename).exists():
+            return (media_id, kind, filename)
+    if (_assets / "banner.png").exists():
+        return (media_id, "photo", "banner.png")
+    return None
 
 
 def banner(name: str = "brand") -> str:
-    entry = _banners.get(name)
+    entry = _resolve_asset(name)
     if entry is None:
         return ""
-    media_id, kind, filename = entry
+    media_id, kind, _ = entry
     tag = "video" if kind == "video" else "img"
     return f'<{tag} src="tg://{kind}?id={media_id}"/>'
 
@@ -53,7 +51,13 @@ class Branding:
 
     async def rich(self, text: str) -> dict[str, Any]:
         payload: dict[str, Any] = {"_": "inputRichMessageHTML", **to_rich(text)}
-        needed = [(mid, kind, name) for mid, kind, name in _banners.values() if f"tg://{kind}?id={mid}" in text]
+        matches = re.findall(r'tg://(photo|video)\?id=(hotaru-[a-zA-Z0-9_-]+)', text)
+        needed: list[tuple[str, str, str]] = []
+        for kind, mid in matches:
+            asset_name = mid.removeprefix("hotaru-")
+            entry = _resolve_asset(asset_name)
+            if entry is not None and entry not in needed:
+                needed.append(entry)
         if not needed:
             if "html" in payload:
                 payload["html"] = re.sub(r'<(?:img|video)\s+src="https?://[^"]*"\s*/?>', "", payload["html"])
