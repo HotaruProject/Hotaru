@@ -95,6 +95,10 @@
         },
         "start": {
           "description": "Возобновить юзербота"
+        },
+        "resume": {
+          "description": "Возобновить работу юзербота",
+          "usage": ""
         }
       },
       "restarted": "<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> <b>Hotaru успешно перезапущен</b><blockquote><tg-emoji emoji-id=\"5258152182150077732\">⚡</tg-emoji> <b>Завершено за:</b> <code>{took}</code><br><tg-emoji emoji-id=\"5289589186683222806\">📶</tg-emoji> <b>Система:</b> <code>online</code></blockquote>",
@@ -754,7 +758,8 @@
       "failed": "Не удалось отправить бекап: {error}",
       "sent": "Бекап отправлен",
       "topic": "Backups",
-      "usage": "<code>{prefix}backup [now|on|off]</code>"
+      "usage": "<code>{prefix}backup [now|on|off]</code>",
+      "restored_files": "Восстановлено файлов: {count}"
     },
     "intrusion": {
       "alert": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>Сессия Hotaru используется извне</b>\n\n{source}\n\n<blockquote><code>{detail}</code></blockquote>\n\nДругой клиент подключился к сессии самого Hotaru. Hotaru остановился, чтобы не дать ему читать сообщения и действовать от вашего имени. Если это были не вы, завершите чужую сессию и смените токен бота.",
@@ -788,6 +793,60 @@
       "btn_stats": "Статистика",
       "btn_close": "Закрыть",
       "description": "Защита от флудвейта и перегрузки Telegram API"
+    },
+    "genesis": {
+      "title": "Быстрая настройка",
+      "welcome": "Добро пожаловать в Hotaru! Мастер первоначальной настройки:",
+      "language": "Язык",
+      "prefix": "Префикс",
+      "log_level": "Уровень логов",
+      "backups": "Бэкапы",
+      "start_wizard": "🚀 Начать настройку",
+      "btn_language": "🌐 Язык",
+      "btn_prefix": "💻 Префикс",
+      "btn_logs": "📔 Уровень логов",
+      "btn_backups": "📂 Бэкапы",
+      "btn_webapp": "🌐 Панель WebApp",
+      "step_lang_title": "Шаг 1/4 · Язык интерфейса",
+      "step_lang_desc": "Выберите основной язык системы:",
+      "lang_applied": "Язык успешно изменён!",
+      "btn_next": "Далее: Префикс ›",
+      "step_prefix_title": "Шаг 2/4 · Префикс команд",
+      "step_prefix_desc": "Выберите символ перед командами юзербота:",
+      "current": "Текущий:",
+      "enter_prefix": "Введите новый префикс:",
+      "prefix_applied": "Префикс установлен на: {prefix}",
+      "btn_next_logs": "Далее: Логи ›",
+      "step_logs_title": "Шаг 3/4 · Уровень логирования",
+      "step_logs_desc": "Выберите минимальный уровень записи событий:",
+      "btn_next_backups": "Далее: Бэкапы ›",
+      "step_backups_title": "Шаг 4/4 · Резервные копии",
+      "step_backups_desc": "Настройте автоматическое шифрованное резервирование:",
+      "backup_hours_applied": "Интервал бэкапов установлен на {hours} ч.",
+      "btn_complete": "Завершить настройку ✅",
+      "done_title": "Настройка завершена!",
+      "done_desc": "Hotaru полностью настроен и готов к работе.",
+      "btn_help": "📖 Справка",
+      "btn_settings": "⚙️ Настройки",
+      "description": "Мастер первоначальной настройки Hotaru",
+      "commands": {
+        "start": {
+          "description": "Открыть мастер первоначальной настройки",
+          "usage": ""
+        },
+        "setup": {
+          "description": "Открыть мастер первоначальной настройки",
+          "usage": ""
+        },
+        "genesis": {
+          "description": "Открыть мастер первоначальной настройки",
+          "usage": ""
+        },
+        "quickstart": {
+          "description": "Открыть мастер первоначальной настройки",
+          "usage": ""
+        }
+      }
     }
   },
   "commands": {

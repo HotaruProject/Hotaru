@@ -2376,6 +2376,7 @@ class ModuleSandbox:
                 alert=bool(spec.get("alert", False)),
                 rich=bool(spec.get("rich", False)),
                 notice=spec.get("notice") if isinstance(spec.get("notice"), str) else None,
+                banner=spec.get("banner") if isinstance(spec.get("banner"), str) else None,
             )
             form = await self.runtime.screens.show(context, screen, reply_to=options.get("reply_to"), fallback=bool(options.get("fallback", True)))
             return form.message_id if form is not None else None
