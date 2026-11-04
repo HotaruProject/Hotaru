@@ -186,12 +186,12 @@ def home(ctx: Any, nav: Any = None) -> Any:
     lines.append(f"<code>{_escape(ctx.runtime.config.prefix)}prefix</code> · <code>{_escape(ctx.runtime.config.prefix)}alias</code> · <code>{_escape(ctx.runtime.config.prefix)}lsalias</code>")
     if not modules:
         lines.append(f"<i>{_escape(ctx.t('kernel.config.empty'))}</i>")
-        return k.screen("\n".join(lines), [k.footer()], rich=True)
+        return k.screen("\n".join(lines), [k.footer()], banner=k.banner("banner"), rich=True)
     for module_id, manifest, schema in modules:
         description = str(manifest.localized(ctx.runtime.language(), manifest.description).get("description", "") or "")
         line = f"{k.module_icon(module_id)} {k.tap(module_id, module, id=module_id)} {k.badge(str(len(schema)))}"
         lines.append(line + (f" <i>{_escape(ctx.tools.truncate(description, 48))}</i>" if description else ""))
-    return k.screen("\n".join(lines), [k.footer()], banner=k.banner("settings"), rich=True)
+    return k.screen("\n".join(lines), [k.footer()], banner=k.banner("banner"), rich=True)
 
 
 def _module_screen(ctx: Any, module_id: str, origin: Optional[str]) -> Any:
@@ -228,8 +228,10 @@ def _module_screen(ctx: Any, module_id: str, origin: Optional[str]) -> Any:
     if not banner_val:
         banner_val = k.banner(module_id)
     elif re.fullmatch(r"https?://[^\s<>\"]+", banner_val):
-        tag = "video" if banner_val.lower().endswith(".mp4") else "img"
-        banner_val = f'<{tag} src="{html.escape(banner_val, quote=True)}"/>'
+        tag = "video" if banner_val.lower().split("?")[0].endswith(".mp4") else "img"
+        banner_val = f'<{tag} src="{html.escape(banner_val, quote=True)}"/>\n'
+    else:
+        banner_val = k.banner(banner_val)
     return k.screen(text, rows, banner=banner_val, rich=bool(banner_val))
 
 
