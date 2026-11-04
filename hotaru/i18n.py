@@ -28,20 +28,38 @@ def _object_mapping(value: object) -> dict[str, object] | None:
 class Lexicon:
     def __init__(self, root: str | Path, default_language: str = DEFAULT_LANGUAGE) -> None:
         self.root = Path(root)
+        self.custom_root = self.root / "custom"
+        self.custom_root.mkdir(parents=True, exist_ok=True)
         self.default_language = self.validate_language(default_language)
         self._cache: dict[str, dict[str, object]] = {}
 
     def available_languages(self) -> tuple[str, ...]:
-        files = {f.stem.casefold() for f in self.root.glob("*.json")}
-        known = [lang for lang in SUPPORTED_LANGUAGES if lang in files]
-        custom = sorted(files - set(SUPPORTED_LANGUAGES))
-        return tuple(known + custom)
+        builtins = {f.stem.casefold() for f in self.root.glob("*.json")}
+        customs = {f.stem.casefold() for f in self.custom_root.glob("*.json")} if self.custom_root.is_dir() else set()
+        known = [lang for lang in SUPPORTED_LANGUAGES if lang in builtins]
+        extra = sorted((builtins | customs) - set(SUPPORTED_LANGUAGES))
+        return tuple(known + extra)
+
+    def custom_languages(self) -> tuple[str, ...]:
+        if not self.custom_root.is_dir():
+            return ()
+        return tuple(sorted(f.stem.casefold() for f in self.custom_root.glob("*.json")))
+
+    def path_for(self, language: str) -> Path | None:
+        code = language.casefold().strip()
+        custom = self.custom_root / f"{code}.json"
+        if custom.is_file():
+            return custom
+        standard = self.root / f"{code}.json"
+        if standard.is_file():
+            return standard
+        return None
 
     def load(self, language: str) -> dict[str, object]:
         language = self.validate_language(language)
         if language in self._cache:
             return self._cache[language]
-        path = self.root / f"{language}.json"
+        path = self.path_for(language) or (self.root / f"{language}.json")
         try:
             decoded = cast(object, json.loads(path.read_text(encoding="utf-8")))
         except (OSError, UnicodeError, json.JSONDecodeError) as exc:
@@ -55,6 +73,67 @@ class Lexicon:
         self._validate_values(payload)
         self._cache[language] = payload
         return payload
+
+    def clear_cache(self, language: str | None = None) -> None:
+        if language:
+            self._cache.pop(language.casefold().strip(), None)
+        else:
+            self._cache.clear()
+
+    def get_meta(self, language: str) -> dict[str, str]:
+        try:
+            payload = self.load(language)
+            meta = payload.get("meta")
+            if isinstance(meta, dict):
+                code = str(meta.get("code") or meta.get("language") or language).strip().lower()
+                name_en = str(meta.get("name_en") or meta.get("name") or code.upper()).strip()
+                name_native = str(meta.get("name_native") or meta.get("name") or name_en).strip()
+                return {
+                    "code": code,
+                    "language": code,
+                    "name": name_native,
+                    "name_en": name_en,
+                    "name_native": name_native,
+                }
+        except Exception:
+            pass
+        clean = language.casefold().strip()
+        return {
+            "code": clean,
+            "language": clean,
+            "name": clean.upper(),
+            "name_en": clean.upper(),
+            "name_native": clean.upper(),
+        }
+
+    @staticmethod
+    def collect_leaf_keys(data: dict[str, object], prefix: str = "") -> set[str]:
+        keys: set[str] = set()
+        for k, v in data.items():
+            if k == "meta":
+                continue
+            path = f"{prefix}.{k}" if prefix else k
+            if isinstance(v, dict):
+                keys.update(Lexicon.collect_leaf_keys(cast('dict[str, object]', v), path))
+            else:
+                keys.add(path)
+        return keys
+
+    def validate_coverage(self, custom_data: dict[str, object]) -> tuple[bool, set[str]]:
+        base = self.load(self.default_language)
+        base_keys = self.collect_leaf_keys(base)
+        custom_keys = self.collect_leaf_keys(custom_data)
+        missing = base_keys - custom_keys
+        return len(missing) == 0, missing
+
+    def remove_custom(self, code: str) -> bool:
+        clean = code.casefold().strip()
+        path = self.custom_root / f"{clean}.json"
+        if not path.is_file():
+            return False
+        path.unlink(missing_ok=True)
+        self.clear_cache(clean)
+        return True
 
     def has(self, language: str, key: str) -> bool:
         return self._lookup(self.load(language), key) is not None
@@ -111,7 +190,7 @@ class Lexicon:
 
     def validate_language(self, language: str) -> str:
         code = str(language).casefold().strip()
-        if code in SUPPORTED_LANGUAGES or (self.root / f"{code}.json").is_file() or bool(re.fullmatch(r"[a-z]{2,8}(?:-[a-z0-9]{2,8})*", code)):
+        if code in SUPPORTED_LANGUAGES or (self.custom_root / f"{code}.json").is_file() or (self.root / f"{code}.json").is_file() or bool(re.fullmatch(r"[a-z]{2,8}(?:-[a-z0-9]{2,8})*", code)):
             return code
         raise TranslationError(f"unsupported language: {language}")
 
@@ -119,7 +198,7 @@ class Lexicon:
         if not isinstance(language, str):
             return False
         code = language.casefold().strip()
-        return code in SUPPORTED_LANGUAGES or (self.root / f"{code}.json").is_file() or bool(re.fullmatch(r"[a-z]{2,8}(?:-[a-z0-9]{2,8})*", code))
+        return code in SUPPORTED_LANGUAGES or (self.custom_root / f"{code}.json").is_file() or (self.root / f"{code}.json").is_file() or bool(re.fullmatch(r"[a-z]{2,8}(?:-[a-z0-9]{2,8})*", code))
 
     @classmethod
     def _validate_values(cls, value: object) -> None:

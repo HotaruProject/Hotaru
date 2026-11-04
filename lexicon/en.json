@@ -1,7 +1,10 @@
 {
   "meta": {
+    "code": "en",
     "language": "en",
-    "name": "English"
+    "name": "English",
+    "name_en": "English",
+    "name_native": "English"
   },
   "common": {
     "brand": "<tg-emoji emoji-id=\"5985527717183888277\">⚡</tg-emoji><tg-emoji emoji-id=\"5985515480822061758\">⚡</tg-emoji><tg-emoji emoji-id=\"5985558606588681366\">⚡</tg-emoji><tg-emoji emoji-id=\"5985757321840565902\">⚡</tg-emoji>",
@@ -225,6 +228,10 @@
         "loadlex": {
           "description": "Load language pack",
           "usage": "[url/path/file]"
+        },
+        "rmlex": {
+          "description": "Remove custom language pack",
+          "usage": "<code>"
         }
       },
       "native": {
@@ -235,7 +242,18 @@
         "uk": "Українська",
         "ja": "日本語",
         "zh": "中文"
-      }
+      },
+      "custom_packs": "Custom packs",
+      "no_custom_packs": "No custom language packs installed",
+      "custom_title": "Custom Language Packs",
+      "removed": "Custom language pack removed",
+      "not_found": "Custom language pack not found",
+      "cannot_remove_builtin": "Cannot remove system language pack",
+      "usage_rm": "Specify 2-letter custom pack code: {prefix}rmlex <code>",
+      "code_len_error": "Language code must be exactly 2 letters",
+      "code_collision": "Language code '{code}' is already in use",
+      "name_collision": "Language pack name '{name}' is already in use",
+      "missing_keys": "Language pack does not cover 100% of keys: missing {count} keys"
     },
     "test-features": {
       "description": "Hotaru proxy and capability test module",

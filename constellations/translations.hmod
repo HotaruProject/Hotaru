@@ -1,7 +1,7 @@
 HOTARU = {
     "id": "translations",
-    "version": "2.1.0",
-    "commands": ["language", "translate", "loadlex"],
+    "version": "2.2.0",
+    "commands": ["language", "translate", "loadlex", "rmlex"],
     "capabilities": ["mt", "net", "files", "state"],
     "banner": "https://raw.githubusercontent.com/HotaruProject/Hotaru/develop/hotaru/assets/translations.mp4",
 }
@@ -34,17 +34,36 @@ def _escape(value: Any) -> Any:
     return html.escape(str(value), quote=False)
 
 
+def _lang_meta(ctx: Any, code: str) -> dict[str, str]:
+    if getattr(getattr(ctx, "runtime", None), "lexicon", None) is not None:
+        return ctx.runtime.lexicon.get_meta(code)
+    clean = code.lower().strip()
+    name = NATIVE_NAMES.get(clean, clean.upper())
+    return {
+        "code": clean,
+        "language": clean,
+        "name": name,
+        "name_en": name,
+        "name_native": name,
+    }
+
+
 def home(ctx: Any, nav: Any = None) -> Any:
     k = ctx.screens
     current = ctx.runtime.language()
-    langs = ctx.runtime.lexicon.available_languages() if getattr(ctx.runtime, "lexicon", None) is not None else LANGUAGES
+    lexicon = getattr(ctx.runtime, "lexicon", None)
+    builtins = list(LANGUAGES)
     options = [
-        k.button(k.radio(NATIVE_NAMES.get(language, language.upper()), language == current), select, style="success" if language == current else None, language=language)
-        for language in langs
+        k.button(k.radio(_lang_meta(ctx, language)["name_native"], language == current), select, style="success" if language == current else None, language=language)
+        for language in builtins
     ]
     rows = k.grid(options, 2)
+    custom_langs = lexicon.custom_languages() if lexicon is not None else ()
+    if custom_langs:
+        custom_label = ctx.t("kernel.translations.custom_packs", "Кастомные пакеты")
+        rows.append([k.button(f"{k.icon('apps')} {custom_label} · {len(custom_langs)}", custom_menu)])
     rows.append(k.footer())
-    current_label = NATIVE_NAMES.get(current, current.upper())
+    current_label = _lang_meta(ctx, current)["name_native"]
     text = (
         f'{k.wordmark()}  <b>// Language</b>\n'
         f'<tg-emoji emoji-id="5260512129240276089">📚</tg-emoji> <b>{_escape(current_label)}</b> · <code>{_escape(current)}</code>'
@@ -52,13 +71,35 @@ def home(ctx: Any, nav: Any = None) -> Any:
     return k.screen(text, rows, banner=k.banner("translations"), rich=True)
 
 
+def custom_menu(ctx: Any, nav: Any = None) -> Any:
+    k = ctx.screens
+    current = ctx.runtime.language()
+    lexicon = getattr(ctx.runtime, "lexicon", None)
+    custom_langs = lexicon.custom_languages() if lexicon is not None else ()
+    options = [
+        k.button(k.radio(f"{_lang_meta(ctx, lang)['name_native']} ({lang.upper()})", lang == current), select, style="success" if lang == current else None, language=lang, origin="custom")
+        for lang in custom_langs
+    ]
+    rows = k.grid(options, 2) if options else []
+    back_label = ctx.t("common.back", "Назад")
+    rows.append([k.button(f"{k.icon('back')} {back_label}", home), k.close()])
+    current_label = _lang_meta(ctx, current)["name_native"]
+    title = ctx.t("kernel.translations.custom_title", "Кастомные языковые пакеты")
+    text = (
+        f'{k.wordmark()}  <b>// {title}</b>\n'
+        f'<tg-emoji emoji-id="5260512129240276089">📚</tg-emoji> <b>{_escape(current_label)}</b> · <code>{_escape(current)}</code>'
+    )
+    return k.screen(text, rows, banner=k.banner("translations"), rich=True)
+
+
 def select(ctx: Any, nav: Any) -> Any:
     language = str(nav.arg("language"))
+    origin = str(nav.arg("origin") or "")
     if language != ctx.runtime.language():
         ctx.runtime.set_language(language)
-    screen = home(ctx)
-    name = NATIVE_NAMES.get(language, language.upper())
-    screen.toast = f"✅ {name}"
+    screen = custom_menu(ctx) if origin == "custom" else home(ctx)
+    meta = _lang_meta(ctx, language)
+    screen.toast = f"✅ {meta['name_native']}"
     return screen
 
 
@@ -83,25 +124,33 @@ async def command_language(ctx: Any, invocation: Any) -> Any:
         await ctx.respond(ctx.t('commands.lang.usage', prefix=ctx.runtime.config.prefix))
         return
     if len(invocation.args) == 1:
-        code_input = invocation.args[0].lower().strip()
-        try:
-            ctx.runtime.set_language(code_input)
-            native = NATIVE_NAMES.get(code_input, code_input.upper())
-            await ctx.respond(
-                f'<tg-emoji emoji-id="5260726538302660868">✅</tg-emoji> <b>{_escape(native)}</b> (<code>{_escape(code_input)}</code>)',
-                parse_mode="HTML",
-            )
-            return
-        except Exception:
-            language_key: Callable[[str], List[str]] = lambda code: [code, ctx.t('kernel.translations.native.' + code, code)]
-            langs = list(ctx.runtime.lexicon.available_languages()) if getattr(ctx.runtime, "lexicon", None) is not None else list(LANGUAGES)
-            matches = await ctx.tools.search(langs, code_input, key=language_key, limit=5)
-            text = _escape(ctx.t('commands.lang.invalid', language=code_input))
-            for hit in matches:
-                code = hit['value']
-                text += f"\n<code>{_escape(ctx.runtime.config.prefix)}language {code}</code> · {_escape(ctx.t('kernel.translations.native.' + code, code))}"
-            await ctx.respond(text, parse_mode="HTML")
-            return
+        raw_input = str(invocation.args[0]).strip()
+        code_input = raw_input.lower()
+        lexicon = getattr(ctx.runtime, "lexicon", None)
+        available = lexicon.available_languages() if lexicon is not None else LANGUAGES
+        target_code = None
+        for cand in available:
+            meta = _lang_meta(ctx, cand)
+            if code_input == cand or code_input == meta.get("name_en", "").lower() or code_input == meta.get("name_native", "").lower() or code_input == meta.get("name", "").lower():
+                target_code = cand
+                break
+        if target_code is not None:
+            try:
+                ctx.runtime.set_language(target_code)
+                meta = _lang_meta(ctx, target_code)
+                await ctx.respond(
+                    f'<tg-emoji emoji-id="5260726538302660868">✅</tg-emoji> <b>{_escape(meta["name_native"])}</b> (<code>{_escape(target_code)}</code>)',
+                    parse_mode="HTML",
+                )
+                return
+            except Exception:
+                pass
+        text = _escape(ctx.t('commands.lang.invalid', language=code_input))
+        for cand in available:
+            meta = _lang_meta(ctx, cand)
+            text += f"\n<code>{_escape(ctx.runtime.config.prefix)}language {cand}</code> · {_escape(meta['name_native'])}"
+        await ctx.respond(text, parse_mode="HTML")
+        return
     await _show(ctx)
 
 
@@ -274,23 +323,54 @@ async def command_loadlex(ctx: Any, invocation: Any) -> Any:
             raise ValueError("Lexicon root must be a JSON object")
 
         meta = data.get("meta") if isinstance(data.get("meta"), dict) else {}
-        code = str(meta.get("code") or meta.get("language") or code_override or "custom").strip().lower()
-        name = str(meta.get("name") or code.upper())
-        if not re.fullmatch(r"[a-z]{2,8}(?:-[a-z0-9]{2,8})*", code):
-            code = "custom"
+        code = str(meta.get("code") or meta.get("language") or code_override or "").strip().lower()
+        if not re.fullmatch(r"[a-z]{2}", code):
+            raise ValueError(ctx.t("kernel.translations.code_len_error", "Код языка должен состоять ровно из 2 букв"))
+        name_en = str(meta.get("name_en") or meta.get("name") or code.upper()).strip()
+        name_native = str(meta.get("name_native") or meta.get("name") or name_en).strip()
 
-        data["meta"] = {**meta, "language": code, "name": name}
-        lex_dir = getattr(runtime, "lexicon_dir", Path("lexicon"))
-        lex_dir.mkdir(parents=True, exist_ok=True)
-        target = lex_dir / f"{code}.json"
+        lexicon = runtime.lexicon
+        builtins = set(LANGUAGES) | {"ru", "en", "kz", "kk", "uk", "ja", "zh"}
+        existing_customs = set(lexicon.custom_languages()) if lexicon is not None else set()
+        if code in builtins or code in existing_customs:
+            raise ValueError(ctx.t("kernel.translations.code_collision", "Код языка '{code}' уже используется", code=code))
+
+        existing_names = set()
+        if lexicon is not None:
+            for cand in lexicon.available_languages():
+                m = lexicon.get_meta(cand)
+                for k in ("name_en", "name_native", "name"):
+                    v = m.get(k)
+                    if v:
+                        existing_names.add(v.casefold())
+        for n in (name_en.casefold(), name_native.casefold()):
+            if n in existing_names:
+                raise ValueError(ctx.t("kernel.translations.name_collision", "Название пакета '{name}' уже используется", name=name_native))
+
+        if lexicon is not None:
+            ok, missing = lexicon.validate_coverage(data)
+            if not ok:
+                examples = ", ".join(sorted(missing)[:5])
+                raise ValueError(ctx.t("kernel.translations.missing_keys", "Языковой пакет не покрывает 100% ключей: не хватает {count} ключей", count=len(missing)) + f" ({examples})")
+
+        data["meta"] = {
+            "code": code,
+            "language": code,
+            "name": name_native,
+            "name_en": name_en,
+            "name_native": name_native,
+        }
+        custom_dir = lexicon.custom_root if lexicon is not None else (getattr(runtime, "lexicon_dir", Path("lexicon")) / "custom")
+        custom_dir.mkdir(parents=True, exist_ok=True)
+        target = custom_dir / f"{code}.json"
         target.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
-        if runtime.lexicon is not None:
-            runtime.lexicon._cache.clear()
+        if lexicon is not None:
+            lexicon.clear_cache()
 
         runtime.set_language(code)
         log_lines[-1] += " done"
-        log_lines.append(f"-----> Loaded language pack: {name} [{code}]")
+        log_lines.append(f"-----> Loaded language pack: {name_native} [{code}]")
         await ctx.respond(f"<pre>{chr(10).join(log_lines)}</pre>", parse_mode="HTML", output="edit")
     except Exception as exc:
         if runtime.observatory is not None:
@@ -314,7 +394,48 @@ async def command_loadlex(ctx: Any, invocation: Any) -> Any:
             temporary.unlink(missing_ok=True)
 
 
+async def command_rmlex(ctx: Any, invocation: Any) -> Any:
+    runtime = ctx.runtime
+    if runtime is None:
+        await ctx.respond(ctx.t('kernel.kernel.runtime_unavailable'))
+        return
+    if not invocation.args:
+        prefix = getattr(runtime.config, "prefix", ".")
+        await ctx.respond(
+            f'<tg-emoji emoji-id="5778527486270770928">❌</tg-emoji> <b>{_escape(ctx.t("kernel.translations.usage_rm", prefix=prefix))}</b>',
+            parse_mode="HTML",
+        )
+        return
+    code = str(invocation.args[0]).strip().lower()
+    builtins = set(LANGUAGES) | {"ru", "en", "kz", "kk", "uk", "ja", "zh"}
+    if code in builtins:
+        await ctx.respond(
+            f'<tg-emoji emoji-id="5778527486270770928">❌</tg-emoji> <b>{_escape(ctx.t("kernel.translations.cannot_remove_builtin", "Нельзя удалить системный языковой пакет"))}:</b> <code>{_escape(code)}</code>',
+            parse_mode="HTML",
+        )
+        return
+    lexicon = getattr(runtime, "lexicon", None)
+    if lexicon is None:
+        await ctx.respond(ctx.t('commands.lang.lexicon_unavailable'))
+        return
+    if not lexicon.remove_custom(code):
+        await ctx.respond(
+            f'<tg-emoji emoji-id="5778527486270770928">❌</tg-emoji> <b>{_escape(ctx.t("kernel.translations.not_found", "Кастомный языковой пакет не найден"))}:</b> <code>{_escape(code)}</code>',
+            parse_mode="HTML",
+        )
+        return
+    if runtime.language() == code:
+        runtime.set_language("en")
+    await ctx.respond(
+        f'<tg-emoji emoji-id="5260726538302660868">✅</tg-emoji> <b>{_escape(ctx.t("kernel.translations.removed", "Кастомный языковой пакет удален"))}:</b> <code>{_escape(code)}</code>',
+        parse_mode="HTML",
+    )
+
+
 command_lang = command_language
 command_tr = command_translate
 command_ldlex = command_loadlex
 command_lexicon = command_loadlex
+command_rmlex = command_rmlex
+command_rmpack = command_rmlex
+command_rmlang = command_rmlex
