@@ -484,6 +484,7 @@ class InlineManager:
             except Exception:
                 if self.runtime.observatory is not None:
                     self.runtime.observatory.emit("inline", "configure_failed", username=info.username)
+        asyncio.create_task(self._tune_bot(info), name="hotaru:tune-bot")
         asyncio.create_task(self._start_bot_chat(info.username), name="hotaru:bot-chat")
         if hasattr(self.runtime, "sync_web_app"):
             asyncio.create_task(self.runtime.sync_web_app(clean_bot=info.username), name="hotaru:sync-webapp")
@@ -496,11 +497,26 @@ class InlineManager:
         try:
             await app.get_me()
             await self._inspect_webhook(app)
+            cmd_payload = {
+                "commands": [
+                    {"command": "start", "description": "Hotaru Userbot"},
+                    {"command": "github", "description": "GitHub Repository"},
+                ],
+                "scope": {"type": "all_private_chats"},
+            }
+            default_cmd_payload = {
+                "commands": [
+                    {"command": "start", "description": "Hotaru Userbot"},
+                    {"command": "github", "description": "GitHub Repository"},
+                ],
+            }
             for method, payload in (
                 ("deleteWebhook", {"drop_pending_updates": True}),
                 ("setMyName", {"name": "Hotaru Userbot"}),
                 ("setMyShortDescription", {"short_description": "Hotaru Userbot — security-first modular userbot"}),
                 ("setMyDescription", {"description": "Hotaru Userbot — security-first modular Telegram userbot with capability sandboxing."}),
+                ("setMyCommands", cmd_payload),
+                ("setMyCommands", default_cmd_payload),
             ):
                 try:
                     await app.bot_req(method, **payload)
