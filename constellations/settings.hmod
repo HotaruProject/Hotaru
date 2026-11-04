@@ -139,11 +139,10 @@ def _localized_schema(ctx: Any, manifest: Any) -> ConfigSchema:
 
 
 def _is_kernel(runtime: Any, module_id: str) -> bool:
-    mod = runtime.modules.get(module_id)
-    if mod is None:
-        return False
-    path = getattr(mod, "path", None)
-    return path is not None and "constellations" in getattr(path, "parts", ())
+    if hasattr(runtime, "_is_kernel_module"):
+        return bool(runtime._is_kernel_module(module_id))
+    bindings = getattr(runtime.modules, "_bindings", {})
+    return module_id in bindings and bool(bindings[module_id][2])
 
 
 def _modules(ctx: Any) -> List[Tuple[str, Any, ConfigSchema, bool]]:

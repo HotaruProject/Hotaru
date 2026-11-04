@@ -109,7 +109,7 @@
       "already_running": "<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> <b>用户机器人已在运行中。</b>",
       "stop_confirm": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>暂停用户机器人？</b><br>普通模块将静默，直到运行 {prefix}start。",
       "stop_action": "暂停",
-      "restart_confirm": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>重启用户机器人？</b><br>状态将保留，模块将重新加载。",
+      "restart_confirm": "<tg-emoji emoji-id=\"5258420634785947640\">🔄</tg-emoji> <b>重启 Hotaru</b><blockquote><tg-emoji emoji-id=\"5258258882022612173\">⏳</tg-emoji> 确认重启内核进程。状态和会话将保留。</blockquote>",
       "restart_action": "重启",
       "restoring": "<tg-emoji emoji-id=\"5258420634785947640\">🔄</tg-emoji> <b>正在恢复模块…</b> <code>{done}/{total}</code>"
     },
@@ -321,20 +321,20 @@
     "accounts": {
       "description": "账号管理",
       "commands": {
-        "acc": {
+        "account": {
           "description": "管理账号",
           "usage": "[number] [start|stop|restart|del]"
         },
-        "acca": {
+        "account_add": {
           "description": "添加或登录账号",
           "usage": "[number|cancel]"
         },
-        "accs": {
+        "accounts": {
           "description": "打开账号面板",
           "usage": "[number]"
         }
       },
-      "usage": "<b>账号</b>\n<code>{prefix}acca [user_id]</code> · 通过二维码或手机号添加\n<code>{prefix}acca cancel</code> · 取消登录\n<code>{prefix}accs [#]</code> · 账号面板\n<code>{prefix}acc [#]</code> · 账号面板\n<code>{prefix}acc 2 start|stop|restart|on|off|del</code>",
+      "usage": "<b>账号</b>\n<code>{prefix}account_add [user_id]</code> · 通过二维码或手机号添加\n<code>{prefix}account_add cancel</code> · 取消登录\n<code>{prefix}accounts [#]</code> · 账号面板\n<code>{prefix}account [#]</code> · 账号面板\n<code>{prefix}account 2 start|stop|restart|on|off|del</code>",
       "empty": "没有已注册的账号。",
       "no_self": "无法确定会话用户 ID。",
       "not_registered": "账号 #{n} 未注册。",

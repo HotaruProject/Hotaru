@@ -220,6 +220,12 @@ class Kernel:
         spec = self.registry.resolve_bot(invocation)
         if spec is None:
             return None
+        if not self.is_authorized(message, spec):
+            return None
+        if self.security is not None:
+            verdict = self.security.check(message, transport="bot", module_id=spec.module_id, is_group=self._is_group(message), authorized=True)
+            if verdict is not AccessVerdict.ALLOW:
+                return None
         context = self.context_factory.create(spec.module_id, message) if self.context_factory is not None else None
         try:
             work = self.tasks.spawn(

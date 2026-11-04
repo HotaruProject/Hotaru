@@ -109,7 +109,7 @@
       "already_running": "<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> <b>Hotaru is already active.</b>",
       "stop_confirm": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>Suspend Hotaru?</b><blockquote><tg-emoji emoji-id=\"5258258882022612173\">⏳</tg-emoji> Regular modules will go silent until <code>{prefix}start</code>.</blockquote>",
       "stop_action": "Suspend",
-      "restart_confirm": "<tg-emoji emoji-id=\"5258152182150077732\">⚡</tg-emoji> <b>Restart Hotaru</b><blockquote><tg-emoji emoji-id=\"5258420634785947640\">🔄</tg-emoji> State will be preserved, and modules will reload cleanly.</blockquote>",
+      "restart_confirm": "<tg-emoji emoji-id=\"5258420634785947640\">🔄</tg-emoji> <b>Restart Hotaru</b><blockquote><tg-emoji emoji-id=\"5258258882022612173\">⏳</tg-emoji> Confirm reboot of kernel processes. State and sessions will be preserved.</blockquote>",
       "restart_action": "Restart",
       "restoring": "<tg-emoji emoji-id=\"5258420634785947640\">🔄</tg-emoji> <b>Restoring modules…</b><blockquote><tg-emoji emoji-id=\"5325732612084351248\">📦</tg-emoji> <b>Loaded:</b> <code>{done}/{total}</code></blockquote>"
     },
@@ -321,20 +321,20 @@
     "accounts": {
       "description": "Account management",
       "commands": {
-        "acc": {
+        "account": {
           "description": "Manage an account",
           "usage": "[number] [start|stop|restart|del]"
         },
-        "acca": {
+        "account_add": {
           "description": "Add or log in to an account",
           "usage": "[number|cancel]"
         },
-        "accs": {
+        "accounts": {
           "description": "Open account panel",
           "usage": "[number]"
         }
       },
-      "usage": "<b>Accounts</b>\n<code>{prefix}acca [user_id]</code> · add via QR / Phone\n<code>{prefix}acca cancel</code> · cancel login\n<code>{prefix}accs [#]</code> · account panel\n<code>{prefix}acc [#]</code> · account panel\n<code>{prefix}acc 2 start|stop|restart|on|off|del</code>",
+      "usage": "<b>Accounts</b>\n<code>{prefix}account_add [user_id]</code> · add via QR / Phone\n<code>{prefix}account_add cancel</code> · cancel login\n<code>{prefix}accounts [#]</code> · account panel\n<code>{prefix}account [#]</code> · account panel\n<code>{prefix}account 2 start|stop|restart|on|off|del</code>",
       "empty": "No accounts registered.",
       "no_self": "Failed to determine session user id.",
       "not_registered": "Account #{n} is not registered.",

@@ -102,12 +102,20 @@ async def command_restart(ctx: Any, invocation: Any) -> Any:
     if "-f" in args or "--force" in args:
         runtime = ctx.runtime
         chat_id = getattr(ctx, "chat_id", None)
-        message_id = getattr(ctx, "message_id", None)
+        orig_msg_id = getattr(ctx, "message_id", None)
         peer_hex = await _peer_hex(runtime, chat_id)
-        if isinstance(chat_id, int) and isinstance(message_id, int):
-            ctx.state.set("restart_pending", {"chat_id": chat_id, "message_id": message_id, "peer": peer_hex, "inline_id": None, "bot": False, "ts": time.time()})
+        sent = await ctx.respond(ctx.t("kernel.power.restarting"), parse_mode="HTML", output="edit")
+        target_msg_id = orig_msg_id
+        if sent is not None:
+            from goygram.sugar import extract_sent_message
+            raw_msg = extract_sent_message(getattr(sent, "message", None))
+            if raw_msg and raw_msg.get("id"):
+                target_msg_id = int(raw_msg["id"])
+            elif getattr(sent, "id", None):
+                target_msg_id = int(sent.id)
+        if isinstance(chat_id, int) and isinstance(target_msg_id, int):
+            ctx.state.set("restart_pending", {"chat_id": chat_id, "message_id": target_msg_id, "peer": peer_hex, "inline_id": None, "bot": False, "ts": time.time()})
         runtime.request_restart()
-        await ctx.respond(ctx.t("kernel.power.restarting"), parse_mode="HTML")
         async def _do_shutdown() -> None:
             await asyncio.sleep(0.3)
             try:
@@ -120,7 +128,10 @@ async def command_restart(ctx: Any, invocation: Any) -> Any:
     k = ctx.screens
     screen = k.screen(
         ctx.t('kernel.power.restart_confirm'),
-        [[k.danger(ctx.t('kernel.power.restart_action'), confirm_restart), k.close(ctx.t('common.cancel'))]],
+        [
+            [k.primary(ctx.t('kernel.power.restart_action'), confirm_restart)],
+            [k.close()],
+        ],
         rich=True,
     )
     await ctx.screens.show(screen)

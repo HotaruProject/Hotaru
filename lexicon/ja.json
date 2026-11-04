@@ -119,7 +119,7 @@
       "already_running": "<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> <b>ユーザーボットは既に稼働しています。</b>",
       "stop_confirm": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>ユーザーボットを停止しますか？</b><br>通常のモジュールは {prefix}start まで応答しません。",
       "stop_action": "停止する",
-      "restart_confirm": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>ユーザーボットを再起動しますか？</b><br>状態は保持され、モジュールが再読み込みされます。",
+      "restart_confirm": "<tg-emoji emoji-id=\"5258420634785947640\">🔄</tg-emoji> <b>Hotaruの再起動</b><blockquote><tg-emoji emoji-id=\"5258258882022612173\">⏳</tg-emoji> カーネルプロセスの再起動を確認してください。状態とセッションは保持されます。</blockquote>",
       "restart_action": "再起動する",
       "restoring": "<tg-emoji emoji-id=\"5258420634785947640\">🔄</tg-emoji> <b>モジュールを復元中…</b> <code>{done}/{total}</code>"
     },
@@ -261,20 +261,20 @@
     "accounts": {
       "description": "アカウント管理",
       "commands": {
-        "acc": {
+        "account": {
           "description": "アカウントの管理",
           "usage": "[number] [start|stop|restart|del]"
         },
-        "acca": {
+        "account_add": {
           "description": "アカウントの追加・ログイン",
           "usage": "[number|cancel]"
         },
-        "accs": {
+        "accounts": {
           "description": "アカウント一覧を開く",
           "usage": "[number]"
         }
       },
-      "usage": "<b>アカウント</b>\n<code>{prefix}acca [user_id]</code> · QR / 電話番号で追加\n<code>{prefix}acca cancel</code> · ログインをキャンセル\n<code>{prefix}accs [#]</code> · アカウントパネル\n<code>{prefix}acc [#]</code> · アカウントパネル\n<code>{prefix}acc 2 start|stop|restart|on|off|del</code>",
+      "usage": "<b>アカウント</b>\n<code>{prefix}account_add [user_id]</code> · QR / 電話番号で追加\n<code>{prefix}account_add cancel</code> · ログインをキャンセル\n<code>{prefix}accounts [#]</code> · アカウントパネル\n<code>{prefix}account [#]</code> · アカウントパネル\n<code>{prefix}account 2 start|stop|restart|on|off|del</code>",
       "empty": "登録されたアカウントはありません。",
       "no_self": "セッションの user id を特定できませんでした。",
       "not_registered": "アカウント #{n} は未登録です。",
