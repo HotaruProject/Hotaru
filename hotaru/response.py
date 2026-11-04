@@ -688,6 +688,10 @@ class ModuleContext(ContextOperations):
     def screens(self) -> Any:
         from .screens import Kit
         return Kit(getattr(self.runtime, "screens", None) if self.runtime is not None else None, self)
+
+    def wordmark(self) -> str:
+        from . import icons
+        return icons.wordmark()
     @staticmethod
     async def _ctx_prepare(text: Any, parse_mode: Any, buttons: Any) -> dict[str, Any]:
         data: dict[str, Any] = {}

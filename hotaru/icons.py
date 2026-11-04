@@ -62,10 +62,10 @@ _icons: Dict[str, Tuple[int, str, str]] = {
     "text": (5370546867786523009, "🔤", "📝"),
     "kernel": (4974681956907221809, "▪️", "▪️"),
     "module": (4974508259839836856, "▪️", "▪️"),
-    "hotaru": (5884064191467233197, "◉", "⚡️"),
-    "hotaru_ho": (5886680238867357294, "HO", "⚡️"),
-    "hotaru_ta": (5884059780535821183, "TA", "⚡️"),
-    "hotaru_ru": (5884240418270356231, "RU", "⚡️"),
+    "hotaru": (5985527717183888277, "◉", "⚡"),
+    "hotaru_ho": (5985515480822061758, "HO", "⚡"),
+    "hotaru_ta": (5985558606588681366, "TA", "⚡"),
+    "hotaru_ru": (5985757321840565902, "RU", "⚡"),
     "terminal": (5289601856836745198, "💻", "💻"),
 }
 
@@ -106,6 +106,9 @@ def fallback(name: Optional[str]) -> str:
 
 
 def wordmark() -> str:
+    from relay.emoji import premium
+    if not premium():
+        return "<b>HOTARU</b>"
     return "".join(emoji(name) for name in ("hotaru", "hotaru_ho", "hotaru_ta", "hotaru_ru"))
 
 

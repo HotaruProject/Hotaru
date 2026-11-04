@@ -300,10 +300,11 @@ def _emit(ctx: Any, event: Any, **fields: Any) -> Any:
             pass
 
 def _notify_text(ctx: Any, current: str, latest: str, changelog: list[str]) -> str:
+    wm = ctx.wordmark() if hasattr(ctx, "wordmark") else "<b>HOTARU</b>"
     link = f'<a href="{REPO_URL}/compare/{current[:12]}...{latest[:12]}"><code>{latest[:7]}</code></a>'
     head = (
         '<table bordered striped compact>'
-        f'<tr><th colspan="2" align="center"><tg-emoji emoji-id="5258152182150077732">⚡️</tg-emoji> <b>{ctx.t("kernel.updater.update_available")}</b></th></tr>'
+        f'<tr><th colspan="2" align="center">{wm} · <b>{ctx.t("kernel.updater.update_available")}</b></th></tr>'
         f'<tr><td><tg-emoji emoji-id="5258391025281408576">📈</tg-emoji> <b>Commit:</b></td><td align="right">{link}</td></tr>'
         f'<tr><td><tg-emoji emoji-id="5260730055880876557">🔗</tg-emoji> <b>Branch:</b></td><td align="right"><code>develop</code></td></tr>'
         '</table>'
