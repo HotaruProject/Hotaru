@@ -966,11 +966,19 @@ class InlineManager:
     async def _inspect_webhook(self, app: Any) -> None:
         try:
             info = await app.getWebhookInfo()
+        except (TimeoutError, ConnectionError, OSError) as exc:
+            log.debug("inline webhook check network issue: %s: %s", type(exc).__name__, exc)
+            return
         except Exception as exc:
-            log.warning("inline webhook check failed: %s: %s", type(exc).__name__, exc)
+            name = type(exc).__name__
+            msg = str(exc).lower()
+            if "client" in name.lower() or "connect" in name.lower() or "reset by peer" in msg:
+                log.debug("inline webhook check network issue: %s: %s", name, exc)
+                return
+            log.warning("inline webhook check failed: %s: %s", name, exc)
             if self.runtime.observatory is not None:
                 self.runtime.observatory.emit(
-                    "inline", "webhook_check_failed", "error", error=type(exc).__name__, detail=str(exc)[:240]
+                    "inline", "webhook_check_failed", "error", error=name, detail=str(exc)[:240]
                 )
             return
         guard = getattr(self.runtime, "intrusion", None)
@@ -979,8 +987,13 @@ class InlineManager:
 
     async def _watch_bot(self, app: Any) -> None:
         while not self._stop.is_set():
-            await asyncio.sleep(30.0)
-            await self._check_bot(app)
+            await asyncio.sleep(300.0)
+            try:
+                await self._check_bot(app)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                log.debug("inline watch check skipped: %s: %s", type(exc).__name__, exc)
 
     async def _warm_owner_peer(self, app: Any) -> None:
         runtime = self.runtime
