@@ -165,8 +165,8 @@ class OutputUpdater:
         icon_map = {
             "return": '<tg-emoji emoji-id="5260450573768990626">➡️</tg-emoji>',
             "output": '<tg-emoji emoji-id="5257965174979042426">📝</tg-emoji>',
-            "traceback": '<tg-emoji emoji-id="5778527486270770928">❌</tg-emoji>',
-            "error": '<tg-emoji emoji-id="5778527486270770928">❌</tg-emoji>',
+            "traceback": '<tg-emoji emoji-id="5260342697075416641">❌</tg-emoji>',
+            "error": '<tg-emoji emoji-id="5260342697075416641">❌</tg-emoji>',
             "code": "",
             "command": "",
             "result": '<tg-emoji emoji-id="5260726538302660868">✅</tg-emoji>',

@@ -252,7 +252,7 @@ class Kernel:
                 try:
                     raw_err = getattr(exc, "args", [str(exc)])[0] if getattr(exc, "args", None) else str(exc)
                     err_msg = html.escape(str(raw_err), quote=False)[:3000]
-                    text = f'<tg-emoji emoji-id="5778527486270770928">❌</tg-emoji> <b>{type(exc).__name__}:</b>\n<blockquote>{err_msg}</blockquote>'
+                    text = f'<tg-emoji emoji-id="5260342697075416641">❌</tg-emoji> <b>{type(exc).__name__}:</b>\n<blockquote>{err_msg}</blockquote>'
                     return await context.respond(text, rich=False) if context is not None else await self.response_service.respond(message, text=text, output="auto")
                 except Exception as response_exc:
                     log.error("command error response failed: %s", type(response_exc).__name__, exc_info=response_exc)

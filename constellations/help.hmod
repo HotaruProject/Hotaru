@@ -27,6 +27,7 @@ _MODULE_ICONS = {
     "power": '<tg-emoji emoji-id="5258084656674250503">🚪</tg-emoji>',
     "backups": '<tg-emoji emoji-id="5257969839313526622">📁</tg-emoji>',
     "catalyst": '<tg-emoji emoji-id="5258514780469075716">📥</tg-emoji>',
+    "genesis": '<tg-emoji emoji-id="5258093637450866522">🤖</tg-emoji>',
     "singularity": '<tg-emoji emoji-id="5258152182150077732">⚡</tg-emoji>',
     "shield": '<tg-emoji emoji-id="5258476306152038031">🔒</tg-emoji>',
 }
@@ -141,16 +142,19 @@ def _card(ctx: Any, module_id: str, actor: Any, back: Any, **back_args: Any) -> 
     for command in manifest.commands:
         details = manifest.command_details(command, runtime.language())
         usage = str(details.get("usage", "") or "").strip()
+        is_bot = command in getattr(manifest, "bot_commands", ()) or (getattr(manifest, "module_id", "") == "genesis") or bool(details.get("bot"))
+        cmd_prefix = "/" if is_bot else prefix
         if usage:
-            if usage.startswith(prefix):
+            if usage.startswith(prefix) or usage.startswith("/"):
                 shown = usage
             elif usage.startswith(command):
-                shown = f"{prefix}{usage}"
+                shown = f"{cmd_prefix}{usage}"
             else:
-                shown = f"{prefix}{command} {usage}"
+                shown = f"{cmd_prefix}{command} {usage}"
         else:
-            shown = f"{prefix}{command}"
-        line = f"<code>{_escape(shown)}</code> " + k.tap_copy("", f"{prefix}{command}")
+            shown = f"{cmd_prefix}{command}"
+        bot_badge = f" {k.badge('bot', 'primary')}" if is_bot else ""
+        line = f"<code>{_escape(shown)}</code> " + k.tap_copy("", f"{cmd_prefix}{command}") + bot_badge
         desc = details.get("description", "")
         if desc:
             line += f" — <i>{_escape(desc)}</i>"

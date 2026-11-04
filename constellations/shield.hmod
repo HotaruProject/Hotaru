@@ -96,7 +96,7 @@ def _status_screen(ctx: Any) -> Any:
     runtime = ctx.runtime
     rl = getattr(runtime, "ratelimit", None)
     if rl is None:
-        return k.screen('<tg-emoji emoji-id="5778527486270770928">❌</tg-emoji> <b>API protection unavailable</b>', [[k.close()]], rich=True)
+        return k.screen('<tg-emoji emoji-id="5260342697075416641">❌</tg-emoji> <b>API protection unavailable</b>', [[k.close()]], banner=k.banner("shield"), rich=True)
     st = rl.stats()
     status_str = ctx.t("kernel.shield.enabled") if st["enabled"] else ctx.t("kernel.shield.disabled")
     if st["suspended"]:
