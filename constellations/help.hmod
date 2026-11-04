@@ -42,10 +42,13 @@ def _banner(manifest: Any, module_id: str = "") -> str:
     if not value and module_id:
         from hotaru.screens import Kit
         return Kit.banner(module_id)
+    if not value:
+        return ""
     if re.fullmatch(r"https?://[^\s<>\"]+", value):
-        tag = "video" if value.lower().endswith(".mp4") else "img"
-        return f'<{tag} src="{html.escape(value, quote=True)}"/>'
-    return value
+        tag = "video" if value.lower().split("?")[0].endswith(".mp4") else "img"
+        return f'<{tag} src="{html.escape(value, quote=True)}"/>\n'
+    from hotaru.screens import Kit
+    return Kit.banner(value)
 
 
 def _description(runtime: Any, manifest: Any) -> str:
@@ -105,7 +108,7 @@ def home(ctx: Any, nav: Any = None) -> Any:
         lines.append(k.details(summary, "\n".join(entries), open=not kernel or user_count == 0))
     rows = [k.pager(home, page, pages)]
     rows.append([k.input(ctx.t("ui.search"), search, ctx.t("kernel.help_ui.search_prompt")), k.close()])
-    return k.screen("".join(lines), rows, banner=k.banner("help"))
+    return k.screen("\n".join(lines), rows, banner=k.banner("help"))
 
 
 def _card(ctx: Any, module_id: str, actor: Any, back: Any, **back_args: Any) -> Any:

@@ -1244,7 +1244,7 @@ class Runtime:
                     "parse_mode": "HTML",
                 }
                 if rich:
-                    photo_result["input_message_content"] = {"rich_message": {"_": "inputRichMessageHTML", **to_rich(form_text)}}
+                    photo_result["input_message_content"] = {"rich_message": rich if isinstance(rich, dict) else {"_": "inputRichMessageHTML", **to_rich(form_text)}}
                 if buttons:
                     photo_result["reply_markup"] = {"inline_keyboard": buttons}
                 try:
@@ -1665,7 +1665,7 @@ class Runtime:
                 "reply_markup": {"inline_keyboard": kbd_rows},
             }
             if rich:
-                photo_result["input_message_content"] = {"rich_message": {"_": "inputRichMessageHTML", **to_rich(body)}}
+                photo_result["input_message_content"] = {"rich_message": rich if isinstance(rich, dict) else {"_": "inputRichMessageHTML", **to_rich(body)}}
             try:
                 await answer_tl(query, results=[photo_result], cache_time=0, is_personal=True)
                 return
@@ -1673,7 +1673,7 @@ class Runtime:
                 log.error("inline form photo render failed: %s: %s", type(exc).__name__, exc)
         result = InlineObj.article("hotaru-form", self.t("inline.form"), body, parse_mode="HTML", kbd={"inline_keyboard": kbd_rows})
         if rich:
-            result["input_message_content"] = {"rich_message": {"_": "inputRichMessageHTML", **to_rich(body)}}
+            result["input_message_content"] = {"rich_message": rich if isinstance(rich, dict) else {"_": "inputRichMessageHTML", **to_rich(body)}}
         await answer_tl(query, results=[result], cache_time=0, is_personal=True)
 
     async def _on_inline_callback(self, callback: Any) -> Any:

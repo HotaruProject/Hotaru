@@ -55,11 +55,16 @@ _banner_lock = asyncio.Lock()
 
 
 def _resolve_asset(name: str) -> tuple[str, str, Path] | None:
-    clean = re.sub(r"[^a-zA-Z0-9_-]", "", name).strip().lower()
+    raw = str(name).strip()
+    for ext in (".mp4", ".png", ".jpg", ".jpeg", ".webp"):
+        if raw.lower().endswith(ext):
+            raw = raw[:-len(ext)]
+            break
+    clean = re.sub(r"[^a-zA-Z0-9_-]", "", raw).strip().lower()
     if not clean:
         clean = "brand"
     media_id = f"hotaru-{clean}"
-    if clean in ("brand", "banner", "logo"):
+    if clean in ("brand", "banner", "logo", "config"):
         filename = "banner.png" if clean != "logo" else "logo.png"
         path = _assets / filename
         return (media_id, "photo", path) if path.exists() else None
@@ -87,32 +92,36 @@ async def _upload_asset(app: Any, media_id: str, kind: str, file_path: Path) -> 
     with trusted_scope():
         result = await app.mt_messages_upload_media(peer={"_": "inputPeerSelf"}, media=media)
     if not isinstance(result, dict):
-        result = result.to_dict() if hasattr(result, "to_dict") else {}
+        result = result.to_dict() if hasattr(result, "to_dict") else dict(getattr(result, "__dict__", {}))
     if kind == "photo":
-        photo = result.get("photo", {})
+        photo = result.get("photo") if isinstance(result, dict) else getattr(result, "photo", {})
         if hasattr(photo, "to_dict"):
             photo = photo.to_dict()
+        elif not isinstance(photo, dict):
+            photo = dict(getattr(photo, "__dict__", {}))
         return {
-            "_": "inputRichMessageFilePhoto",
+            "_": "inputRichFilePhoto",
             "id": media_id,
             "photo": {
                 "_": "inputPhoto",
-                "id": photo["id"],
-                "access_hash": photo["access_hash"],
-                "file_reference": photo["file_reference"],
+                "id": int(photo["id"]),
+                "access_hash": int(photo["access_hash"]),
+                "file_reference": bytes(photo["file_reference"]),
             },
         }
-    doc = result.get("document", {})
+    doc = result.get("document") if isinstance(result, dict) else getattr(result, "document", {})
     if hasattr(doc, "to_dict"):
         doc = doc.to_dict()
+    elif not isinstance(doc, dict):
+        doc = dict(getattr(doc, "__dict__", {}))
     return {
-        "_": "inputRichMessageFileDocument",
+        "_": "inputRichFileDocument",
         "id": media_id,
         "document": {
             "_": "inputDocument",
-            "id": doc["id"],
-            "access_hash": doc["access_hash"],
-            "file_reference": doc["file_reference"],
+            "id": int(doc["id"]),
+            "access_hash": int(doc["access_hash"]),
+            "file_reference": bytes(doc["file_reference"]),
         },
     }
 
@@ -360,13 +369,13 @@ class Kit:
         clean_name = str(name).strip()
         if clean_name.startswith("https://") or clean_name.startswith("http://"):
             tag = "video" if clean_name.lower().split("?")[0].endswith(".mp4") else "img"
-            return f'<{tag} src="{clean_name}"/>'
+            return f'<{tag} src="{clean_name}"/>\n'
         entry = _resolve_asset(clean_name)
         if entry is None:
             return ""
         media_id, kind, _ = entry
         tag = "video" if kind == "video" else "img"
-        return f'<{tag} src="tg://{kind}?id={media_id}"/>'
+        return f'<{tag} src="tg://{kind}?id={media_id}"/>\n'
 
     @staticmethod
     def screen(text: str, rows: Optional[list[list[dict[str, Any]]]] = None, **options: Any) -> Screen:
@@ -782,8 +791,11 @@ class ScreenEngine:
                 current.append(button)
             if current:
                 rows.append(current)
-        screen_text = screen.text.lstrip("\n") if screen.banner else screen.text
-        text = f"{screen.banner}{screen_text}" if screen.banner else screen.text
+        if screen.banner:
+            banner_prefix = screen.banner if screen.banner.endswith("\n") else f"{screen.banner}\n"
+            text = f"{banner_prefix}{screen.text.lstrip('\n')}"
+        else:
+            text = screen.text
         text = f"{screen.notice}\n{text}" if screen.notice else text
 
         def swap(match: "re.Match[str]") -> str:
