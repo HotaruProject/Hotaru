@@ -95,14 +95,22 @@ async def command_language(ctx: Any, invocation: Any) -> Any:
 
 
 async def _extract_reply_source(ctx: Any, invocation: Any) -> Any:
-    reply = getattr(invocation, "reply", None)
+    reply = getattr(invocation, "reply_message", None)
+    if reply is None and hasattr(invocation, "reply") and callable(invocation.reply):
+        try:
+            reply = await invocation.reply()
+        except Exception:
+            reply = None
     if reply is None and getattr(invocation, "message", None) is not None:
-        reply = getattr(invocation.message, "reply_to_message", None) or getattr(invocation.message, "reply", None)
+        msg = invocation.message
+        reply = getattr(msg, "reply_to_message", None) or (msg.get("reply_to_message") if isinstance(msg, dict) else None)
     if reply is None and getattr(invocation, "chat_id", None) and getattr(invocation, "reply_to_msg_id", None):
         try:
             reply = await ctx.msg(invocation.chat_id, invocation.reply_to_msg_id)
         except Exception:
             reply = None
+    if callable(reply):
+        reply = None
     return reply
 
 
@@ -125,6 +133,10 @@ async def command_translate(ctx: Any, invocation: Any) -> Any:
 
     reply = await _extract_reply_source(ctx, invocation)
     source_msg = reply if reply is not None else getattr(invocation, "message", None)
+    if callable(source_msg):
+        source_msg = None
+    if callable(source_msg):
+        source_msg = None
 
     if not target_text and source_msg is not None:
         doc = getattr(source_msg, "document", None) or (source_msg.get("document") if isinstance(source_msg, dict) else None)
@@ -143,11 +155,17 @@ async def command_translate(ctx: Any, invocation: Any) -> Any:
                 tmp_path.unlink(missing_ok=True)
 
     if not target_text and reply is not None:
-        target_text = getattr(reply, "text", None) or getattr(reply, "caption", None)
-        if isinstance(target_text, dict):
-            target_text = target_text.get("text", "")
+        target_text = ctx.tools.message_text(reply) if hasattr(ctx, "tools") else None
+        if not target_text:
+            for attr in ("text", "caption", "message", "raw_text"):
+                val = getattr(reply, attr, None) or (reply.get(attr) if isinstance(reply, dict) else None)
+                if isinstance(val, dict):
+                    val = val.get("text") or val.get("message")
+                if isinstance(val, str) and val.strip():
+                    target_text = val
+                    break
 
-    if not target_text and getattr(invocation, "message", None) is not None:
+    if not target_text and getattr(invocation, "message", None) is not None and not callable(invocation.message):
         target_text = getattr(invocation.message, "caption", None)
         if isinstance(target_text, dict):
             target_text = target_text.get("text", "")
@@ -159,11 +177,21 @@ async def command_translate(ctx: Any, invocation: Any) -> Any:
     try:
         translated = await ctx.translate(target_text, to_lang=to_lang)
     except Exception as exc:
-        err = html.escape(str(exc), quote=False)
-        await ctx.respond(f'<tg-emoji emoji-id="5778527486270770928">❌</tg-emoji> <b>Ошибка перевода:</b>\n<blockquote>{err}</blockquote>', parse_mode="HTML")
+        log.error("translation error: %s", exc, exc_info=True)
+        raw_err = str(exc)
+        if "requires non-empty text" in raw_err:
+            msg = "Текст для перевода пуст"
+        elif "exceeds" in raw_err:
+            msg = "Текст слишком большой для одного запроса"
+        else:
+            msg = f"Не удалось перевести текст ({raw_err})"
+        await ctx.respond(f'<tg-emoji emoji-id="5778527486270770928">❌</tg-emoji> <b>Ошибка перевода:</b>\n<blockquote>{html.escape(msg, quote=False)}</blockquote>', parse_mode="HTML")
         return
 
-    res = f'<tg-emoji emoji-id="5260512129240276089">📚</tg-emoji> <b>{to_lang.upper()}</b>:\n{html.escape(translated, quote=False)}'
+    from relay.toolkit import escape_smart
+    formatted = escape_smart(translated)
+    expandable = " expandable" if (len(formatted) > 200 or "\n" in formatted) else ""
+    res = f'<tg-emoji emoji-id="5260512129240276089">📚</tg-emoji> <b>{to_lang.upper()}</b>:\n<blockquote{expandable}>{formatted}</blockquote>'
     await ctx.paginate(res)
 
 
@@ -175,6 +203,8 @@ async def command_loadlex(ctx: Any, invocation: Any) -> Any:
 
     reply = await _extract_reply_source(ctx, invocation)
     source_msg = reply if reply is not None else getattr(invocation, "message", None)
+    if callable(source_msg):
+        source_msg = None
     doc = None
     if source_msg is not None:
         doc = getattr(source_msg, "document", None) or getattr(source_msg, "media", None)
@@ -250,17 +280,20 @@ async def command_loadlex(ctx: Any, invocation: Any) -> Any:
         log_lines.append(f"-----> Loaded language pack: {name} [{code}]")
         await ctx.respond(f"<pre>{chr(10).join(log_lines)}</pre>", parse_mode="HTML", output="edit")
     except Exception as exc:
+        if runtime.observatory is not None:
+            runtime.observatory.emit("lexicon", "load_error", error=exc)
+        log.error("lexicon load error: %s", exc, exc_info=True)
         err_raw = str(exc)
-        if "file_missing" in err_raw:
+        if "file_missing" in err_raw or "not found" in err_raw.lower() or "не найден" in err_raw:
             err_msg = "Файл словаря не найден: прикрепите .json или сделайте реплай"
-        elif "file_document" in err_raw:
+        elif "file_document" in err_raw or "должно содержать" in err_raw:
             err_msg = "Сообщение должно содержать JSON-файл (.json)"
         elif isinstance(exc, json.JSONDecodeError):
             err_msg = f"Некорректный синтаксис JSON: {exc.msg} (строка {exc.lineno})"
         elif isinstance(exc, (ValueError, TypeError)):
-            err_msg = f"Ошибка формата словаря: {err_raw}"
+            err_msg = f"Ошибка структуры словаря: {err_raw}"
         else:
-            err_msg = f"{type(exc).__name__}: {err_raw}"
+            err_msg = f"Не удалось загрузить словарь: {err_raw}"
         log_lines.append(f" !     {html.escape(err_msg, quote=False)}")
         await ctx.respond(f"<pre>{chr(10).join(log_lines)}</pre>", parse_mode="HTML", output="edit")
     finally:

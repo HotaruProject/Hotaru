@@ -11,9 +11,13 @@ import logging
 import re
 import secrets
 import struct
+import tempfile
 import time
 import traceback
+import urllib.parse
+import urllib.request
 from dataclasses import dataclass, field
+from pathlib import Path
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any, Awaitable, Callable, Optional, cast
 
@@ -44,6 +48,73 @@ _tap = re.compile(r'<tg-button(\s[^>]*?)\sdata-hs="([A-Za-z0-9_-]+)"([^>]*)>')
 _rich = re.compile(r"<(?:table|tg-button|tg-button-row|details|h[1-6]|hr|footer|ul|ol|aside|tg-time|tg-math|mark|sup|sub|img|video)\b", re.IGNORECASE)
 
 _PAGE_CACHE: dict[str, dict[str, Any]] = {}
+
+_assets = Path(__file__).resolve().parent / "assets"
+_banner_cache: dict[tuple[int, str], tuple[float, dict[str, Any]]] = {}
+_banner_lock = asyncio.Lock()
+
+
+def _resolve_asset(name: str) -> tuple[str, str, Path] | None:
+    clean = re.sub(r"[^a-zA-Z0-9_-]", "", name).strip().lower()
+    if not clean:
+        clean = "brand"
+    media_id = f"hotaru-{clean}"
+    if clean in ("brand", "banner", "logo"):
+        filename = "banner.png" if clean != "logo" else "logo.png"
+        path = _assets / filename
+        return (media_id, "photo", path) if path.exists() else None
+    for ext, kind in ((".mp4", "video"), (".png", "photo"), (".jpg", "photo"), (".webp", "photo")):
+        path = _assets / f"{clean}{ext}"
+        if path.exists():
+            return (media_id, kind, path)
+    if (_assets / "banner.png").exists():
+        return (media_id, "photo", _assets / "banner.png")
+    return None
+
+
+async def _upload_asset(app: Any, media_id: str, kind: str, file_path: Path) -> dict[str, Any]:
+    from relay.files import document, put
+    up = await put(app, str(file_path), file_name=file_path.name)
+    upload = document(up, mime="video/mp4" if kind == "video" else "image/png", force_file=False)
+    if kind == "photo":
+        media = {"_": "inputMediaUploadedPhoto", "file": upload["file"]}
+    else:
+        media = upload
+        media["attributes"].extend([
+            {"_": "documentAttributeAnimated"},
+            {"_": "documentAttributeVideo", "duration": 4.0, "w": 1920, "h": 1080, "supports_streaming": True},
+        ])
+    with trusted_scope():
+        result = await app.mt_messages_upload_media(peer={"_": "inputPeerSelf"}, media=media)
+    if not isinstance(result, dict):
+        result = result.to_dict() if hasattr(result, "to_dict") else {}
+    if kind == "photo":
+        photo = result.get("photo", {})
+        if hasattr(photo, "to_dict"):
+            photo = photo.to_dict()
+        return {
+            "_": "inputRichMessageFilePhoto",
+            "id": media_id,
+            "photo": {
+                "_": "inputPhoto",
+                "id": photo["id"],
+                "access_hash": photo["access_hash"],
+                "file_reference": photo["file_reference"],
+            },
+        }
+    doc = result.get("document", {})
+    if hasattr(doc, "to_dict"):
+        doc = doc.to_dict()
+    return {
+        "_": "inputRichMessageFileDocument",
+        "id": media_id,
+        "document": {
+            "_": "inputDocument",
+            "id": doc["id"],
+            "access_hash": doc["access_hash"],
+            "file_reference": doc["file_reference"],
+        },
+    }
 
 _ICONS: dict[str, str] = {
     "back": '<tg-emoji emoji-id="5258236805890710909">⬅️</tg-emoji>',
@@ -284,10 +355,23 @@ class Kit:
 
     @staticmethod
     def banner(name: str = "brand") -> str:
-        return ""
+        if not name:
+            name = "brand"
+        clean_name = str(name).strip()
+        if clean_name.startswith("https://") or clean_name.startswith("http://"):
+            tag = "video" if clean_name.lower().split("?")[0].endswith(".mp4") else "img"
+            return f'<{tag} src="{clean_name}"/>'
+        entry = _resolve_asset(clean_name)
+        if entry is None:
+            return ""
+        media_id, kind, _ = entry
+        tag = "video" if kind == "video" else "img"
+        return f'<{tag} src="tg://{kind}?id={media_id}"/>'
 
     @staticmethod
     def screen(text: str, rows: Optional[list[list[dict[str, Any]]]] = None, **options: Any) -> Screen:
+        if options.get("banner"):
+            options.setdefault("rich", True)
         return Screen(text, [row for row in (rows or []) if row], **options)
 
     @staticmethod
@@ -479,6 +563,10 @@ class ScreenEngine:
         self._locks: dict[int, _ReentrantLock] = {}
         self._ready = False
         self.register("paginate", self._kernel_paginate)
+
+    @property
+    def kit(self) -> Kit:
+        return Kit(self, getattr(self, "runtime", None))
 
     def _kernel_paginate(self, nav: Nav) -> Any:
         key = nav.arg("k")
@@ -735,7 +823,87 @@ class ScreenEngine:
         return app
 
     async def _rich(self, text: str) -> dict[str, Any]:
-        return {"_": "inputRichMessageHTML", **to_rich(text)}
+        payload: dict[str, Any] = {"_": "inputRichMessageHTML", **to_rich(text)}
+        matches = re.findall(r'tg://(photo|video)\?id=(hotaru-[a-zA-Z0-9_-]+)', text)
+        web_matches = re.findall(r'<(img|video)\s+src="(https?://[^"\'>]+)"\s*/?>', text)
+        needed: list[tuple[str, str, Any, bool]] = []
+        for kind, mid in matches:
+            if mid.startswith("hotaru-web-"):
+                continue
+            asset_name = mid.removeprefix("hotaru-")
+            entry = _resolve_asset(asset_name)
+            if entry is not None and not any(item[0] == mid for item in needed):
+                needed.append((entry[0], entry[1], entry[2], False))
+        for tag, url in web_matches:
+            kind = "video" if (tag == "video" or url.lower().split("?")[0].endswith(".mp4")) else "photo"
+            h = hashlib.sha256(url.encode("utf-8")).hexdigest()[:12]
+            mid = f"hotaru-web-{h}"
+            if not any(item[0] == mid for item in needed):
+                needed.append((mid, kind, url, True))
+        if not needed:
+            if "html" in payload:
+                payload["html"] = re.sub(r'<(?:img|video)\s+src="https?://[^"]*"\s*/?>', "", payload["html"])
+            return payload
+        try:
+            app = self._bot_app()
+        except Exception:
+            app = getattr(self.runtime, "app", None)
+        if app is None:
+            return payload
+        files: list[dict[str, Any]] = []
+        async with _banner_lock:
+            for media_id, kind, path_or_url, is_web in needed:
+                key = (id(app), media_id)
+                cached = _banner_cache.get(key)
+                if cached is not None and time.monotonic() - cached[0] < 1800:
+                    files.append(cached[1])
+                    if is_web:
+                        tag = "video" if kind == "video" else "img"
+                        payload["html"] = re.sub(
+                            rf'<(?:img|video)\s+src="{re.escape(str(path_or_url))}"\s*/?>',
+                            f'<{tag} src="tg://{kind}?id={media_id}"/>',
+                            payload.get("html", "")
+                        )
+                    continue
+                temp_p: Path | None = None
+                try:
+                    if is_web:
+                        req = urllib.request.Request(str(path_or_url), headers={"User-Agent": "Hotaru/1.0"})
+                        with urllib.request.urlopen(req, timeout=6.0) as resp:
+                            content = resp.read()
+                        ext = ".mp4" if kind == "video" else ".png"
+                        with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as handle:
+                            temp_p = Path(handle.name)
+                            temp_p.write_bytes(content)
+                        actual_path = temp_p
+                    else:
+                        actual_path = cast('Path', path_or_url)
+                    entry = await _upload_asset(app, media_id, kind, actual_path)
+                    _banner_cache[key] = (time.monotonic(), entry)
+                    files.append(entry)
+                    if is_web:
+                        tag = "video" if kind == "video" else "img"
+                        payload["html"] = re.sub(
+                            rf'<(?:img|video)\s+src="{re.escape(str(path_or_url))}"\s*/?>',
+                            f'<{tag} src="tg://{kind}?id={media_id}"/>',
+                            payload.get("html", "")
+                        )
+                except Exception as exc:
+                    tag = "video" if kind == "video" else "img"
+                    if "html" in payload:
+                        payload["html"] = payload["html"].replace(f'<{tag} src="tg://{kind}?id={media_id}"/>', "")
+                        if is_web:
+                            payload["html"] = re.sub(rf'<(?:img|video)\s+src="{re.escape(str(path_or_url))}"\s*/?>', "", payload["html"])
+                    if self.runtime.observatory is not None:
+                        self.runtime.observatory.emit("screens", "banner_failed", asset=media_id, error=type(exc).__name__)
+                finally:
+                    if temp_p is not None:
+                        temp_p.unlink(missing_ok=True)
+        if files:
+            payload["files"] = files
+        if "html" in payload:
+            payload["html"] = re.sub(r'<(?:img|video)\s+src="https?://[^"]*"\s*/?>', "", payload["html"])
+        return payload
 
     async def show(self, ctx: Any, screen: Screen, *, reply_to: Optional[int] = None, fallback: bool = True) -> Optional[Form]:
         source = getattr(ctx, "_delivery_source", None) or getattr(ctx, "message", None)
@@ -749,6 +917,8 @@ class ScreenEngine:
         if getattr(source, "src", None) == "bot":
             return await self.send(module_id, getattr(source, "chat_id", None), screen, actor=self._actor_of(source), command=self._command_of(source))
         form = self._create(module_id, self._actor_of(source), self._command_of(source), getattr(source, "chat_id", None), bot=False)
+        if screen.banner:
+            screen.rich = True
         text, rows, actions, gen = self._compile(form, screen)
         try:
             try:
@@ -848,6 +1018,8 @@ class ScreenEngine:
         return form
 
     async def render(self, form: Form, screen: Screen) -> None:
+        if screen.banner:
+            screen.rich = True
         text, rows, actions, gen = self._compile(form, screen)
         try:
             await self._edit(form, text, rows, screen.rich)

@@ -19,7 +19,7 @@ from urllib.parse import urlparse
 _BOOT_TS = time.perf_counter()
 
 _TAG_RE = re.compile(r"</?([a-zA-Z][a-zA-Z0-9\-]*)(?:\s[^<>]*)?>")
-_TG_TAGS = frozenset({"b", "strong", "i", "em", "u", "ins", "s", "strike", "del", "code", "pre", "a", "blockquote", "tg-spoiler", "tg-emoji", "tg-button", "tg-button-row", "tg-time", "tg-math", "br", "p", "details", "summary", "h1", "h2", "h3", "ul", "ol", "li"})
+_TG_TAGS = frozenset({"b", "strong", "i", "em", "u", "ins", "s", "strike", "del", "code", "pre", "a", "blockquote", "tg-spoiler", "tg-emoji", "tg-button", "tg-button-row", "tg-time", "tg-math", "br", "p", "details", "summary", "h1", "h2", "h3", "h4", "h5", "h6", "ul", "ol", "li", "table", "tbody", "thead", "tfoot", "tr", "td", "th", "hr", "img", "video", "tg-thinking", "caption", "figcaption", "figure", "cite", "aside", "footer"})
 _URL_RE = re.compile(r"https?://[^\s<>\"']+")
 _EMOJI_RE = re.compile(
     "["
@@ -1010,6 +1010,8 @@ class _MessageTextParser(HTMLParser):
 def message_text(message: object) -> str:
     if isinstance(message, str):
         return message
+    if callable(message):
+        return ""
     raw = _ent_get(message, "raw", message)
     rich = _ent_get(raw, "rich_message") or _ent_get(raw, "richMessage")
     if rich is None and _ent_get(raw, "_") in {"richMessage", "inputRichMessage", "inputRichMessageHTML"}:

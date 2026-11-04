@@ -1143,7 +1143,14 @@ class Runtime:
         nonce = secrets.token_urlsafe(12)
         if self._inline_forms is None:
             self._inline_forms = {}
-        self._inline_forms[nonce] = (text, rows, rich)
+        rich_payload = None
+        if rich:
+            if self.screens is not None:
+                rich_payload = await self.screens._rich(text)
+            else:
+                from relay.emoji import to_rich
+                rich_payload = {"_": "inputRichMessageHTML", **to_rich(text)}
+        self._inline_forms[nonce] = (text, rows, rich_payload if rich_payload is not None else rich)
         try:
             sent_result, _ = await self._send_inline_result(chat_id, nonce, reply_to, topic_id, message_id)
         except BaseException:
@@ -1248,7 +1255,8 @@ class Runtime:
             if not answered:
                 result = InlineObj.article("hotaru-form", self.t("inline.form"), form_text, parse_mode="HTML")
                 if rich:
-                    result["input_message_content"] = {"rich_message": {"_": "inputRichMessageHTML", **to_rich(form_text)}}
+                    rich_content = rich if isinstance(rich, dict) else {"_": "inputRichMessageHTML", **to_rich(form_text)}
+                    result["input_message_content"] = {"rich_message": rich_content}
                 if buttons:
                     result["reply_markup"] = {"inline_keyboard": buttons}
                 await answer_tl(query, results=[result], cache_time=0, is_personal=True)
@@ -1974,18 +1982,21 @@ class Runtime:
             return self.stager.stage_url(source, target)
 
     async def _download_module_message(self, message: Any, destination: Path) -> None:
-        source = message
-        if not (source.get("document") or source.get("media")):
-            candidate = message.get("reply_to_message") or message.get("reply")
-            source = candidate if candidate is not None and (candidate.get("document") or candidate.get("media")) else None
-        if source is None or not hasattr(source, "get"):
+        if callable(message):
+            message = None
+        source = message if message is not None and hasattr(message, "get") else None
+        if source is not None and not (source.get("document") or source.get("media")):
+            candidate = source.get("reply_to_message") or source.get("reply")
+            source = candidate if candidate is not None and hasattr(candidate, "get") and (candidate.get("document") or candidate.get("media")) else None
+        if (source is None or not hasattr(source, "get")) and message is not None and hasattr(message, "get"):
             reply_to = message.get("reply_to")
             reply_id = cast('dict[str, Any]', reply_to).get("reply_to_msg_id") if isinstance(reply_to, dict) else None
             if isinstance(reply_id, int) and getattr(message, "src", None) != "bot":
                 cap_host = getattr(self, "cap_host", None)
                 if cap_host is not None:
                     with trusted_scope():
-                        source = await cap_host.call("loader", "fetch", {"op": "message", "peer": message.chat_id, "id": reply_id})
+                        peer = getattr(message, "chat_id", None) or message.get("chat_id")
+                        source = await cap_host.call("loader", "fetch", {"op": "message", "peer": peer, "id": reply_id})
         if source is None or not hasattr(source, "get"):
             raise ValueError(self.t('runtime.file_missing'))
         media = source.get("document") if isinstance(source.get("document"), dict) else source.get("media")

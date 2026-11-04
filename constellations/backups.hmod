@@ -35,7 +35,7 @@ def home(ctx: Any, nav: Any = None) -> Any:
         [k.button(ctx.t("kernel.backups.send_now"), send_now)],
         [k.button(ctx.t("kernel.backups.disable" if enabled else "kernel.backups.enable"), toggle)],
         k.footer(),
-    ])
+    ], banner=k.banner("backups"))
 
 
 def toggle(ctx: Any, nav: Any) -> Any:
