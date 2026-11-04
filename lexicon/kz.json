@@ -212,7 +212,19 @@
       "manager_unavailable": "<b>Модуль менеджері қолжетімсіз</b>",
       "usage": "<b>Қолдану:</b> <code>{prefix}hlp</code> немесе <code>{prefix}hlp &lt;модуль&gt;</code>",
       "disabled": "<b>Модуль өшірілген:</b> <code>{module}</code><br><i>Қате: {error}</i>",
-      "missing": "<b>Модуль табылмады:</b> <code>{module}</code>"
+      "missing": "<b>Модуль табылмады:</b> <code>{module}</code>",
+      "title": "Hotaru · анықтама",
+      "summary": "Модульдер: {count} · префикс <code>{prefix}</code>",
+      "pick": "Командаларын көру үшін модульді басыңыз.",
+      "kernel_badge": "ядро",
+      "user_badge": "орнатылған",
+      "no_commands": "Командалар жоқ",
+      "settings": "⚙️ Баптаулар",
+      "search_prompt": "модуль не команда",
+      "results": "«{query}» нәтижелері",
+      "aliases": "Бүркеншік атаулар",
+      "count": "модуль: {count}",
+      "prefix": "префикс {prefix}"
     },
     "accounts": {
       "description": "Аккаунттарды басқару",
@@ -360,7 +372,11 @@
         "no_user": "Кіру кезінде пайдаланушы алынбады.",
         "wrong_account": "Аккаунт қате; {uid} пайдаланушысы қажет.",
         "unknown": "Әрекетті орындау мүмкін болмады."
-      }
+      },
+      "field": {
+        "autostart": "Автоіске қосу"
+      },
+      "title": "Аккаунттар"
     },
     "acl": {
       "description": "Құқықтарды басқару",
@@ -371,11 +387,47 @@
         },
         "perm": {
           "description": "Құқық беру немесе қайтару",
-          "usage": "[ID|@username|command/атау] [рөл] [remove]"
+          "usage": "[ID|@username|command/name] <role> [remove]"
         },
         "whois": {
           "description": "Пайдаланушы құқықтары",
-          "usage": "[ID|@username] [команда]"
+          "usage": "[ID|@username] [command]"
+        },
+        "owadd": {
+          "description": "Ие қосу"
+        },
+        "owrm": {
+          "description": "Иені жою"
+        },
+        "owls": {
+          "description": "Иелер тізімі"
+        },
+        "sgnew": {
+          "description": "Құқық тобын құру"
+        },
+        "sgls": {
+          "description": "Топтар тізімі"
+        },
+        "sg": {
+          "description": "Топ мүшелері мен ережелері"
+        },
+        "sgdel": {
+          "description": "Топты жою"
+        },
+        "sgadd": {
+          "description": "Қатысушы қосу"
+        },
+        "sgrm": {
+          "description": "Қатысушыны жою"
+        },
+        "rule": {
+          "description": "Рұқсат ережесін қосу"
+        },
+        "rulerm": {
+          "description": "Ережені жою"
+        },
+        "ruleclr": {
+          "description": "Ережелерді тазарту"
         }
       },
       "bad_group": "Топ атауы: тек әріптер мен цифрлар, 32 таңбаға дейін.",
@@ -383,7 +435,10 @@
       "bad_rule": "Ереже: command/атау немесе module/атау.",
       "self_owner": "Бұл пайдаланушы аккаунт иесі болып табылады.",
       "empty": "Берілген құқықтар жоқ. !perm <user_id> <role> қолданыңыз.",
-      "bad_label": "Белгісіз құқық: {label}."
+      "bad_label": "Белгісіз құқық: {label}.",
+      "usage": "колданылуы:\n!owadd <user_id|reply> — owner беру\n!owrm <user_id|reply> — owner алу\n!owls — иелер\n!sgnew <name> — құқықтар тобын құру\n!sgls — топтар тізімі\n!sg <name> — топ қатысушылары мен ережелері\n!sgdel <name> — топты жою\n!sgadd <name> <user_id|reply> — топқа қосу\n!sgrm <name> <user_id|reply> — топтан шығару\n!rule <user|chat|sgroup> <target> <command|module>/<name> [мерзім] — ереже беру\n!rulerm — ережені жою\n!ruleclr — барлық ережелерді тазарту\n!perm <user_id> <admin|trusted|everyone> [remove] — құқық беру/алу\n!perms — құқықтар тізімі\n!whois <user_id> — пайдаланушы құқықтары",
+      "no_groups": "Құқықтар топтары жоқ. Құр: !sgnew <name>",
+      "no_owner_grant": "Owner !owadd арқылы беріледі."
     },
     "lg": "лог төменгі бөлігі:\n{lines}",
     "commands": {
@@ -411,7 +466,7 @@
       "module_missing_error": "<b>Қате:</b> <code>{module}</code> модулі табылмады.",
       "no_settings": "<b>Қате:</b> <code>{module}</code> модулінің баптаулары жоқ.",
       "parameter_missing_error": "<b>Қате:</b> <code>{parameter}</code> параметрі табылмады.",
-      "empty": "(бос)",
+      "empty": "Әзірге ешбір модульде баптау жоқ.",
       "parameter_details": "• Мәні: <code>{value}</code>\n• Түрі: <code>{type}</code>\n• Әдепкі мәні: <code>{default}</code>\n",
       "parameter_description": "• Сипаттамасы: <i>{description}</i>\n",
       "template_unavailable": "Үлгі өрісі қолжетімсіз немесе экспортталмаған: {name}",
@@ -421,14 +476,32 @@
       "minimum": "Ең аз мән: {value}",
       "maximum": "Ең көп мән: {value}",
       "enter": "[e] Енгізу",
-      "new_value": "{parameter} параметрінің жаңа мәні",
+      "new_value": "{name} үшін жаңа мән",
       "reset": "[~] Қалпына келтіру",
       "module_missing": "<code>{module}</code> модулі табылмады.",
       "parameter_missing": "<code>{parameter}</code> параметрі табылмады.",
-      "error_html": "Қате: <code>{error}</code>"
+      "error_html": "Қате: <code>{error}</code>",
+      "title": "⚙️ Баптаулар",
+      "title_short": "баптаулар",
+      "pick": "Модульді таңдаңыз:",
+      "missing": "<code>{module}</code> модулінде баптау жоқ не ол жүктелмеген.",
+      "param_missing": "<code>{name}</code> параметрі табылмады.",
+      "reset_all": "↺ Барлығын қалпына келтіру",
+      "reset_confirm": "<b>{module}</b> барлық параметрлерін әдепкі мәнге қайтару керек пе?",
+      "reset_yes": "Қалпына келтіру",
+      "reset_done": "Әдепкі мәндер қалпына келтірілді",
+      "value": "Мәні",
+      "default": "Әдепкі",
+      "type": "Түрі",
+      "restart": "Қайта іске қосқаннан кейін қолданылады.",
+      "copy": "⧉ Көшіру",
+      "field_unavailable": "Үлгі өрісі қолжетімсіз не экспортталмаған: {name}",
+      "param": "Параметр",
+      "about": "Параметрлердің мағынасы",
+      "changed": "өзгертілді: {count}"
     },
     "settings": {
-      "description": "Бүркеншік аттар мен префиксті басқару",
+      "description": "Модульдер, префикс және бүркеншік аттар баптаулары",
       "commands": {
         "alias": {
           "description": "Командаға бүркеншік ат беру",
@@ -444,6 +517,15 @@
         "prefix": {
           "description": "Команда префиксін өзгерту",
           "usage": "[префикс]"
+        },
+        "settings": {
+          "description": "Параметрлерді ашу"
+        },
+        "conf": {
+          "description": "Параметрлерді ашу"
+        },
+        "config": {
+          "description": "Параметрлерді ашу"
         }
       }
     },
@@ -467,7 +549,7 @@
       "mirror_off": "Логтарды көшіру өшірілді",
       "level_set": "Көшіру деңгейі: {level}",
       "status": "Тақырып: {topic} • қателер: {failed}",
-      "status_error": "• соңғысы: {error}",
+      "status_error": " • соңғысы: {error}",
       "no_observatory": "Обсерватория қолжетімсіз",
       "no_entries": "Бұл деңгейде жазбалар жоқ",
       "topic_unavailable": "Тақырып қолжетімсіз: {error}",
@@ -496,9 +578,9 @@
       "exit_code": "Аяқталу коды: {returncode}",
       "running": "Орындалуда…",
       "usage_sh": "<b>Қолдану:</b> <code>{prefix}sh &lt;команда&gt;</code>",
-      "usage_py": "<b>Қолдану:</b> <code>{prefix}py &lt;код&gt;</code> немесе кодқа жауап; -so - нәтижені көрсетпеу",
+      "usage_py": "<b>Қолдану:</b> <code>{prefix}py &lt;код&gt;</code> немесе кодқа жауап; -so — нәтижені көрсетпеу",
       "cancelled": "Орындау тоқтатылды",
-      "done": "Дайын [x]",
+      "done": "Дайын ✓",
       "kill_reply": "<b>Процесті тоқтату үшін орындалып жатқан py/sh хабарламасына жауап бер.</b>",
       "killed": "<b>Процесс тоқтатылды.</b>",
       "no_process": "<b>Бұл хабарламаның белсенді процесі жоқ.</b>",
@@ -562,7 +644,7 @@
       "inline": "инлайн-боттарға сұрау жіберу және олармен әрекеттесу",
       "modules": "модульдерді жүктеу, тоқтату, қайта жүктеу және олардың тізімін, хештерін, сипаттамаларын қарау",
       "assets": "жасырын тіркемелер қоймасына қатынас",
-      "shell": "модульдің workspace-інде shell командаларын жүргізеді; shell әрқашан оқшауланған құмсалғышта жұмыс істейді, онда тек workspace, оның құралдары және бөлек /tmp көрінеді; желі тек net capability болғанда, хост файлдарына қол жетімділік тек files болғанда ашылады, екеуі де құмсалғыштан шықпайды; таймаут және шығыс шектеулері сақталады",
+      "shell": "Hotaru процесінің ОЖ құқықтарымен қабықшаға толық қолжетімділік: хост файлдары, тіркелгі деректері және желі; модульдің жұмыс қалтасымен ШЕКТЕЛМЕЙДІ. Команданың уақыт шегі мен қайтарылатын шығыс көлемінің шегі сақталады",
       "logs": "құрылымды оқиғаларды журналға жазу; әрқашан рұқсат етілген",
       "fetch": "хабарламаларды, пайдаланушылар мен чаттар деректерін және жауаптарды оқу; әрқашан рұқсат етілген"
     },
@@ -579,7 +661,10 @@
         "uptime": "Юзерботтың жұмыс уақыты, тек нөлден үлкен бірліктер",
         "uptime_seconds": "Юзерботтың жұмыс уақыты, секундпен"
       },
-      "example_uptime": "2 сағат 3 минут"
+      "example_uptime": "2 сағат 3 минут",
+      "config_fields": {
+        "template": "ping жауабының мәтіні"
+      }
     },
     "info": {
       "description": "Юзербот ақпарат картасы",
@@ -608,12 +693,38 @@
           "description": "Singularity Mini App инлайн іске қосқышты ашу"
         }
       }
+    },
+    "backups": {
+      "description": "Сақтық көшірмелерді қызметтік чатқа жіберу",
+      "commands": {
+        "backup": {
+          "description": "Сақтық көшірмені жіберу немесе автоматты жіберуді баптау"
+        }
+      },
+      "config_fields": {
+        "enabled": "Сақтық көшірмелерді автоматты түрде жіберу",
+        "interval_hours": "Сақтық көшірмелер арасындағы аралық (сағат)"
+      },
+      "heading": "{icon} <b>Сақтық көшірмелер</b>\n{status} · {hours} сағ.",
+      "enabled": "Қосулы",
+      "disabled": "Өшірулі",
+      "last_sent": "Соңғы жіберілген уақыт: {date}",
+      "destination": "Мекенжай: қызметтік чаттағы {topic} тақырыбы.",
+      "send_now": "Қазір жіберу",
+      "disable": "Өшіру",
+      "enable": "Қосу",
+      "not_ready": "Қызметтік чат әлі дайын емес",
+      "caption": "Hotaru сақтық көшірмесі",
+      "failed": "Сақтық көшірмені жіберу мүмкін болмады: {error}",
+      "sent": "Сақтық көшірме жіберілді",
+      "topic": "Backups",
+      "usage": "<code>{prefix}backup [now|on|off]</code>"
     }
   },
-  "inline_commands_hint": "Команданы таңда - кез келген чатта @<бот> және оның атын тер",
+  "inline_commands_hint": "Команданы таңда — кез келген чатта @<бот> және оның атын тер",
   "settings": {
     "runtime_unavailable": "Қызмет қолжетімсіз",
-    "usage_alias": "Қолдану: {prefix}alias <бүркеншік_ат> <команда мен аргументтері>",
+    "usage_alias": "Қолдану: {prefix}alias <бүркеншік_ат> <команда>",
     "alias_exists": "Команда бұрыннан бар: {alias}",
     "command_not_found": "Команда табылмады: {command}\nҚолжетімді: {known}",
     "alias_taken": "Бүркеншік ат қолданылуда: {alias} → {command}. Жою: {prefix}rmalias {alias}.",
@@ -624,7 +735,7 @@
     "alias_list_empty": "Бүркеншік аттар жоқ",
     "alias_list_title": "<b>Бүркеншік аттар</b>",
     "prefix_current": "Қазіргі префикс: {prefix}. Өзгерту: {prefix}prefix <таңба>",
-    "prefix_invalid": "Префикс бос орынсыз 1-8 көрінетін таңбадан тұруы керек.",
+    "prefix_invalid": "Префикс бос орынсыз 1–8 көрінетін таңбадан тұруы керек.",
     "prefix_set": "Префикс {prefix} болып өзгертілді",
     "description": "Бүркеншік аттар мен префиксті басқару",
     "commands": {
@@ -632,7 +743,8 @@
       "rmalias": "Команданың бүркеншік атын жою",
       "lsalias": "Команда бүркеншік аттарының тізімі",
       "prefix": "Команда префиксін өзгерту"
-    }
+    },
+    "alias_invalid": "Бүркеншік ат: 1–32 таңба, кез келген тілдің әріптері, цифрлар және _; цифрдан басталмауы керек."
   },
   "common": {
     "ok": "ОК",
@@ -665,7 +777,7 @@
     "module_info": "Модуль: {module}\nНұсқа: {version}\nКомандалар: {commands}\nМүмкіндіктер: {capabilities}\nСипаттама: {description}",
     "help_unavailable": "Анықтама қолжетімсіз",
     "page_unavailable": "Анықтама беті қолжетімсіз",
-    "catalog": "Каталог:",
+    "catalog": "Каталог: ",
     "next": "Келесі",
     "bot_unavailable": "Инлайн-бот қолжетімсіз",
     "bot_failed": "Инлайн-бот жасау мүмкін болмады: {error}",
@@ -744,12 +856,13 @@
     },
     "file_missing": "Модуль файлы табылмады",
     "file_document": "Модульді файл ретінде жібер",
-    "unknown_capability": "белгісіз мүмкіндік (тыйым салынған)"
+    "unknown_capability": "белгісіз мүмкіндік (тыйым салынған)",
+    "loading_module": "{module_id} жүктелуде…"
   },
   "acl": {
     "owners": "<b>Иелер</b><br>",
     "group_missing": "<code>{name}</code> тобы табылмады",
-    "group_item": "<b>{name}</b> - қатысушылар: {users}, ережелер: {rules}",
+    "group_item": "<b>{name}</b> — қатысушылар: {users}, ережелер: {rules}",
     "groups": "<b>Құқық топтары</b><br>",
     "group_rule": "<b>Ереже қосылды:</b> sgroup <code>{target}</code> → {kind}/{rule}{until}",
     "permissions": "<b>Құқықтар</b><br>",
@@ -761,11 +874,11 @@
     "grant_failed": "<b>Құқық беру орындалмады:</b> <i>{error}</i>",
     "granted": "<code>{user_id}</code> үшін <code>{label}</code> <b>құқығы берілді</b>",
     "bad_group": "Топ атауы: әріптер мен сандар, 32 таңбаға дейін.",
-    "bad_duration": "1m, 1h, 1d, 1w немесе forever енгіз. Ең көбі - 100 жыл.",
+    "bad_duration": "1m, 1h, 1d, 1w немесе forever енгіз. Ең көбі — 100 жыл.",
     "bad_rule": "Ереже: command/атау немесе module/атау.",
     "empty": "Берілген құқықтар жоқ. {prefix}perm <user_id> <рөл> командасын қолдан.",
     "bad_label": "Белгісіз құқық: {label}",
-    "no_owner_grant": "Ие құқығы {prefix}perms арқылы беріледі.",
+    "no_owner_grant": "Ие құқығы {prefix}owadd арқылы беріледі.",
     "owner_confirm": "<code>{user_id}</code> пайдаланушысына толық рұқсат берілсін бе?",
     "confirm": "Растау",
     "clear_confirm": "<code>{scope}</code> ережелері тазартылсын ба?",
@@ -826,9 +939,45 @@
     "syntax": {
       "perms": "<code>{prefix}perms [ID|@username]</code>",
       "whois": "<code>{prefix}whois [ID|@username] [command]</code>",
-      "perm": "<code>{prefix}perm [ID|@username|command/name] &lt;role&gt; [remove]</code>"
+      "perm": "<code>{prefix}perm [ID|@username|command/name] &lt;role&gt; [remove]</code>",
+      "owadd": "<code>{prefix}owadd [ID|@username]</code>",
+      "owrm": "<code>{prefix}owrm [ID|@username]</code>",
+      "owls": "<code>{prefix}owls</code>",
+      "sgnew": "<code>{prefix}sgnew &lt;name&gt;</code>",
+      "sgdel": "<code>{prefix}sgdel &lt;name&gt;</code>",
+      "sgls": "<code>{prefix}sgls</code>",
+      "sg": "<code>{prefix}sg &lt;name&gt;</code>",
+      "sgadd": "<code>{prefix}sgadd &lt;name&gt; [ID|@username]</code>",
+      "sgrm": "<code>{prefix}sgrm &lt;name&gt; [ID|@username]</code>",
+      "rule": "<code>{prefix}rule &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;command/name|module/name&gt; [1h|forever]</code>",
+      "rulerm": "<code>{prefix}rulerm &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;command/name|module/name|*&gt;</code>",
+      "ruleclr": "<code>{prefix}ruleclr &lt;user|chat|sgroup&gt; [target]</code>"
     },
-    "all_chats": "Барлық чатта барлығына қолжетімді."
+    "all_chats": "Барлық чатта барлығына қолжетімді.",
+    "account": " · аккаунт",
+    "protected": " · қорғалған",
+    "failed": "<b>Қате:</b> <i>{error}</i>",
+    "owner_added": "<code>{user_id}</code> <b>иелер қатарына қосылды</b>",
+    "owner_exists": "<code>{user_id}</code> әлдеқашан иесі",
+    "owner_removed": "<code>{user_id}</code> <b>ие құқығынан айырылды</b>",
+    "owner_missing": "<code>{user_id}</code> ие болып тағайындалмаған",
+    "group_created": "<code>{name}</code> <b>тобы құрылды</b>",
+    "group_deleted": "<code>{name}</code> <b>тобы жойылды</b>",
+    "group_detail": "<b>{name} тобы</b><br><b>Қатысушылар</b><br>{users}<br><b>Ережелер</b><br>{rules}",
+    "member_exists": "<code>{user_id}</code> әлдеқашан <code>{name}</code> тобында",
+    "member_missing": "<code>{user_id}</code> <code>{name}</code> тобында жоқ",
+    "member_added": "<code>{user_id}</code> <code>{name}</code> <b>тобына қосылды</b>",
+    "member_removed": "<code>{user_id}</code> <code>{name}</code> <b>тобынан шығарылды</b>",
+    "duration": " {duration} мерзімге",
+    "rule_added": "<b>Ереже қосылды:</b> {kind} <code>{target}</code> → {type}/{rule}{until}",
+    "rule_removed": "<b>Ереже жойылды</b>",
+    "nothing_remove": "Жоятын ештеңе жоқ",
+    "rules_cleared": "<b>Ережелер тазартылды</b>",
+    "nothing_clear": "Тазартатын ештеңе жоқ",
+    "self_owner": "Бұл пайдаланушы аккаунттың иесі.",
+    "no_groups": "Топтар жоқ.",
+    "usage": "<code>{prefix}owadd &lt;user_id|reply&gt;</code> — Ие қосу\n<code>{prefix}owrm &lt;user_id|reply&gt;</code> — Иені жою\n<code>{prefix}owls</code> — Иелер тізімі\n<code>{prefix}sgnew &lt;name&gt;</code> — Құқық тобын құру\n<code>{prefix}sgls</code> — Топтар тізімі\n<code>{prefix}sg &lt;name&gt;</code> — Топ мүшелері мен ережелері\n<code>{prefix}sgdel &lt;name&gt;</code> — Топты жою\n<code>{prefix}sgadd &lt;name&gt; &lt;user_id|reply&gt;</code> — Қатысушы қосу\n<code>{prefix}sgrm &lt;name&gt; &lt;user_id|reply&gt;</code> — Қатысушыны жою\n<code>{prefix}rule &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;command|module&gt;/&lt;name&gt; [expiry]</code> — Рұқсат ережесін қосу\n<code>{prefix}rulerm &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;rule&gt;</code> — Ережені жою\n<code>{prefix}ruleclr &lt;user|chat|sgroup&gt; [target]</code> — Ережелерді тазарту\n<code>{prefix}perm &lt;user_id&gt; &lt;admin|trusted|everyone&gt; [remove]</code> — Құқық беру немесе қайтару\n<code>{prefix}perms</code> — Құқықтар тізімі\n<code>{prefix}whois &lt;user_id&gt;</code> — Пайдаланушы құқықтары",
+    "account_owner": "Аккаунт иесін жоюға болмайды."
   },
   "inline": {
     "command_open": "{command} ашу",
@@ -841,5 +990,26 @@
       "404": "Табылмады",
       "500": "Ішкі қате"
     }
+  },
+  "ui": {
+    "close": "✕ Жабу",
+    "back": "‹ Артқа",
+    "expired": "Мәзірдің мерзімі өтті. Команданы қайта шақырыңыз.",
+    "stale": "Мәзір жаңа ғана жаңарды, қайта басыңыз.",
+    "denied": "Бұл батырма сіз үшін емес.",
+    "failed": "Бірдеңе дұрыс болмады: {error}",
+    "flood": "Telegram {seconds} с күтуді сұрайды.",
+    "slow_down": "Тым жылдам, бір секунд күтіңіз.",
+    "inline_unavailable": "<i>Бұл чатта инлайн-мәзір қолжетімсіз, сондықтан мұнда қарапайым мәтін.</i>",
+    "input_send_secret": "Жіберу (таңба: {count}, жасырын)",
+    "search": "🔍 Іздеу",
+    "edit": "✎ Өзгерту",
+    "reset": "↺ Әдепкі",
+    "on": "Қосу",
+    "off": "Өшіру",
+    "error": "⚠️ {error}",
+    "saved": "Сақталды",
+    "empty": "бос",
+    "nothing_found": "«{query}» бойынша ештеңе табылмады."
   }
 }

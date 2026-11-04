@@ -13,7 +13,7 @@ from .firewall import trusted_scope
 from goygram.sugar import extract_sent_message
 from . import emoji
 from .emoji import to_entities, to_rich
-from goygram.types.kbd import kbd_to_tl
+from hotaru.markup import kbd_to_tl
 
 
 def _data(value: object) -> dict[str, Any] | None:
@@ -931,6 +931,9 @@ class ForumHelper:
             await self._promote_bot(chat_id)
             await self._hide_general(chat_id)
             await self._sync_channel_to_bot(chat_id)
+            branding = getattr(self._runtime, "branding", None)
+            if branding is not None:
+                await branding.apply_avatars(self, chat_id)
             self._applied.add(chat_id)
         except Exception as exc:
             self._emit("apply_failed", error=type(exc).__name__, detail=str(exc)[:160])

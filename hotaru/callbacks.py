@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import base64
 import hashlib
 import inspect
 import json
@@ -14,10 +13,10 @@ if TYPE_CHECKING:
     from .runtime import Runtime
 
 from goygram.errors import EntityBoundsInvalidError
-from goygram import ext
+from .callback_codec import open_callback, seal_callback
 from relay.firewall import module_scope
 from relay.emoji import to_entities, to_rich
-from goygram.types.kbd import kbd_to_tl
+from .markup import kbd_to_tl
 from relay.rpc import delete_chat_msg
 from .observatory import rotate_file
 
@@ -103,7 +102,7 @@ class CallbackContext:
         return self.get_prefix()
 
     @staticmethod
-    async def _edit_inline(app: Any, id_field: dict[str, Any], message: str, data: dict[str, Any]) -> Any:
+    async def edit_inline(app: Any, id_field: dict[str, Any], message: str, data: dict[str, Any]) -> Any:
         from relay.firewall import trusted_scope
 
         if data.get('reply_markup') == {'_': 'replyInlineMarkup', 'rows': []}:
@@ -215,7 +214,7 @@ class CallbackContext:
                     data["rich_message"] = {"_": "inputRichMessageHTML", **to_rich(text)}
                 from relay.firewall import trusted_scope
                 with trusted_scope():
-                    return await self._edit_inline(target_app, inline_id, "" if use_rich else plain, data)
+                    return await self.edit_inline(target_app, inline_id, "" if use_rich else plain, data)
             log["branch"] = "editMessage"
             log["bot"] = False
             _cb_log(log)
@@ -253,7 +252,7 @@ class CallbackContext:
                     data["rich_message"] = {"_": "inputRichMessageHTML", **to_rich(text)}
                 from relay.firewall import trusted_scope
                 with trusted_scope():
-                    return await self._edit_inline(target_app, bot_inline_id, "" if use_rich else plain, data)
+                    return await self.edit_inline(target_app, bot_inline_id, "" if use_rich else plain, data)
         if isinstance(chat_id, int) and isinstance(msg_id, int):
             user_app = app or getattr(runtime, "app", None)
             if user_app is not None:
@@ -374,20 +373,10 @@ class CallbackStore:
         self.connection.commit()
 
     def _seal(self) -> str:
-        nonce = secrets.token_bytes(12)
-        marker = secrets.token_bytes(16)
-        blob = ext.aes_gcm_encrypt(self._key, nonce, marker, b"hotaru-cb")
-        return base64.urlsafe_b64encode(nonce + blob).decode("ascii").rstrip("=")
+        return seal_callback(self._key, secrets.token_bytes(16))
 
     def _unseal(self, handle: str) -> bytes | None:
-        try:
-            padded = handle + "=" * (-len(handle) % 4)
-            blob = base64.urlsafe_b64decode(padded.encode("ascii"))
-            if len(blob) <= 12 or len(blob) < 12 + 16:
-                return None
-            return ext.aes_gcm_decrypt(self._key, blob[:12], blob[12:], b"hotaru-cb")
-        except BaseException:
-            return None
+        return open_callback(self._key, handle)
 
     def issue(self, binding: CallbackBinding, value: dict[str, Any], handle: str | None = None) -> str:
         if handle is not None:

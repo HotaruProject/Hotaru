@@ -40,7 +40,7 @@
       "module_missing_error": "<b>Error:</b> Module <code>{module}</code> not found.",
       "no_settings": "<b>Error:</b> Module <code>{module}</code> has no settings.",
       "parameter_missing_error": "<b>Error:</b> Parameter <code>{parameter}</code> not found.",
-      "empty": "(empty)",
+      "empty": "No module has settings yet.",
       "parameter_details": "• Value: <code>{value}</code>\n• Type: <code>{type}</code>\n• Default: <code>{default}</code>\n",
       "parameter_description": "• Description: <i>{description}</i>\n",
       "template_unavailable": "Template field unavailable or not exported: {name}",
@@ -50,11 +50,29 @@
       "minimum": "Minimum: {value}",
       "maximum": "Maximum: {value}",
       "enter": "[e] Enter",
-      "new_value": "New value for {parameter}",
+      "new_value": "new value for {name}",
       "reset": "[~] Reset",
       "module_missing": "Module <code>{module}</code> not found.",
       "parameter_missing": "Parameter <code>{parameter}</code> not found.",
-      "error_html": "Error: <code>{error}</code>"
+      "error_html": "Error: <code>{error}</code>",
+      "title": "⚙️ Settings",
+      "title_short": "settings",
+      "pick": "Pick a module:",
+      "missing": "Module <code>{module}</code> has no settings or is not loaded.",
+      "param_missing": "Parameter <code>{name}</code> not found.",
+      "reset_all": "↺ Reset all",
+      "reset_confirm": "Reset every parameter of <b>{module}</b> to its default?",
+      "reset_yes": "Reset",
+      "reset_done": "Defaults restored",
+      "value": "Value",
+      "default": "Default",
+      "type": "Type",
+      "restart": "Takes effect after a restart.",
+      "copy": "⧉ Copy",
+      "field_unavailable": "Template field unavailable or not exported: {name}",
+      "param": "Parameter",
+      "about": "What the parameters mean",
+      "changed": "changed: {count}"
     },
     "power": {
       "already_stopped": "Userbot is already stopped.",
@@ -140,7 +158,7 @@
       "logs": "Logs"
     },
     "hotaru-kernel": {
-      "description": "Hotaru kernel - system commands",
+      "description": "Hotaru kernel — system commands",
       "commands": {
         "ver": {
           "description": "Show the running commit"
@@ -253,7 +271,19 @@
       "manager_unavailable": "<b>Module manager unavailable</b>",
       "usage": "<b>Usage:</b> <code>{prefix}hlp</code> or <code>{prefix}hlp &lt;module&gt;</code>",
       "disabled": "<b>Module disabled:</b> <code>{module}</code><br><i>Error: {error}</i>",
-      "missing": "<b>Module not found:</b> <code>{module}</code>"
+      "missing": "<b>Module not found:</b> <code>{module}</code>",
+      "title": "Hotaru · help",
+      "summary": "{count} modules · prefix <code>{prefix}</code>",
+      "pick": "Tap a module to see its commands.",
+      "kernel_badge": "core",
+      "user_badge": "installed",
+      "no_commands": "No commands",
+      "settings": "⚙️ Settings",
+      "search_prompt": "module or command",
+      "results": "Results for «{query}»",
+      "aliases": "Aliases",
+      "count": "{count} modules",
+      "prefix": "prefix {prefix}"
     },
     "accounts": {
       "description": "Account management",
@@ -401,7 +431,11 @@
         "no_user": "Login returned no user.",
         "wrong_account": "Wrong account; expected user {uid}.",
         "unknown": "Could not complete this action."
-      }
+      },
+      "field": {
+        "autostart": "Autostart"
+      },
+      "title": "Accounts"
     },
     "acl": {
       "description": "Access control",
@@ -412,11 +446,47 @@
         },
         "perm": {
           "description": "Grant or revoke permission",
-          "usage": "[ID|@username|command/name] [role] [remove]"
+          "usage": "[ID|@username|command/name] <role> [remove]"
         },
         "whois": {
           "description": "Show user permissions",
           "usage": "[ID|@username] [command]"
+        },
+        "owadd": {
+          "description": "Add owner"
+        },
+        "owrm": {
+          "description": "Remove owner"
+        },
+        "owls": {
+          "description": "List owners"
+        },
+        "sgnew": {
+          "description": "Create permission group"
+        },
+        "sgls": {
+          "description": "List groups"
+        },
+        "sg": {
+          "description": "Show group members and rules"
+        },
+        "sgdel": {
+          "description": "Delete group"
+        },
+        "sgadd": {
+          "description": "Add group member"
+        },
+        "sgrm": {
+          "description": "Remove group member"
+        },
+        "rule": {
+          "description": "Add access rule"
+        },
+        "rulerm": {
+          "description": "Remove rule"
+        },
+        "ruleclr": {
+          "description": "Clear rules"
         }
       },
       "bad_group": "Group name: letters and digits only, up to 32 characters.",
@@ -424,14 +494,17 @@
       "bad_rule": "Rule: command/name or module/name.",
       "self_owner": "This user is already the account owner.",
       "empty": "No permissions granted. Use !perm <user_id> <role>.",
-      "bad_label": "Unknown permission: {label}."
+      "bad_label": "Unknown permission: {label}.",
+      "usage": "usage:\n!owadd <user_id|reply> — grant owner\n!owrm <user_id|reply> — revoke owner\n!owls — list owners\n!sgnew <name> — create a security group\n!sgls — list groups\n!sg <name> — show group users and rules\n!sgdel <name> — delete a group\n!sgadd <name> <user_id|reply> — add a user to a group\n!sgrm <name> <user_id|reply> — remove a user from a group\n!rule <user|chat|sgroup> <target> <command|module>/<name> [expiry] — add a rule\n!rulerm — remove a rule\n!ruleclr — clear rules for a target\n!perm <user_id> <admin|trusted|everyone> [remove] — grant/revoke a permission\n!perms — list permissions\n!whois <user_id> — user permissions",
+      "no_groups": "No security groups. Create one: !sgnew <name>",
+      "no_owner_grant": "Owner is granted via !owadd."
     },
     "lg": "log tail:\n{lines}",
     "commands": {
       "lg": "Show recent log entries"
     },
     "settings": {
-      "description": "Alias and prefix management",
+      "description": "Module settings, prefix and aliases",
       "commands": {
         "alias": {
           "description": "Create a command alias",
@@ -447,6 +520,15 @@
         "prefix": {
           "description": "Change command prefix",
           "usage": "[prefix]"
+        },
+        "settings": {
+          "description": "Open settings"
+        },
+        "conf": {
+          "description": "Open settings"
+        },
+        "config": {
+          "description": "Open settings"
         }
       }
     },
@@ -461,7 +543,7 @@
       "mirror_off": "Log mirroring disabled",
       "level_set": "Mirror level: {level}",
       "status": "Topic: {topic} • errors: {failed}",
-      "status_error": "• last: {error}",
+      "status_error": " • last: {error}",
       "no_observatory": "Observatory unavailable",
       "no_entries": "No entries at this level",
       "topic_unavailable": "Topic unavailable: {error}",
@@ -492,7 +574,7 @@
       "usage_sh": "<b>Usage:</b> <code>{prefix}sh &lt;command&gt;</code>",
       "usage_py": "<b>Usage:</b> <code>{prefix}py &lt;code&gt;</code> or reply to code; -so hides output",
       "cancelled": "Execution cancelled",
-      "done": "Done [x]",
+      "done": "Done ✓",
       "kill_reply": "<b>Reply to a running py/sh output message to kill it.</b>",
       "killed": "<b>Process killed!</b>",
       "no_process": "<b>No active process found for this message.</b>",
@@ -556,7 +638,7 @@
       "inline": "query and interact with inline bots",
       "modules": "load, unload, reload, list, and inspect installed modules; hashes and manifest info",
       "assets": "access to hidden assets storage",
-      "shell": "run shell commands in the module workspace; the shell always runs in an isolated sandbox that sees only the workspace, its own tools, and an isolated /tmp; network works only with the net capability and host filesystem access only with the files capability, both still inside the sandbox; command timeout and returned output limits still apply",
+      "shell": "full shell access with the Hotaru process OS permissions, including host files, credentials and network; NOT confined to the module workspace. Command timeout and returned output limits still apply",
       "logs": "write structured entries to the observatory log; always granted",
       "fetch": "read-only access to messages, entities and reply resolution; always granted"
     },
@@ -573,7 +655,10 @@
         "uptime": "Userbot runtime, nonzero units only",
         "uptime_seconds": "Userbot runtime in seconds"
       },
-      "example_uptime": "2 hours 3 minutes"
+      "example_uptime": "2 hours 3 minutes",
+      "config_fields": {
+        "template": "Text of the ping reply"
+      }
     },
     "info": {
       "description": "Userbot info card",
@@ -605,6 +690,32 @@
           "description": "Open inline launcher for the Singularity Mini App"
         }
       }
+    },
+    "backups": {
+      "description": "Send backups to the service forum",
+      "commands": {
+        "backup": {
+          "description": "Send a backup or manage automatic backups"
+        }
+      },
+      "config_fields": {
+        "enabled": "Send automatic backups",
+        "interval_hours": "Hours between backups"
+      },
+      "heading": "{icon} <b>Backups</b>\n{status} · {hours} hours",
+      "enabled": "Enabled",
+      "disabled": "Disabled",
+      "last_sent": "Last sent: {date}",
+      "destination": "Destination: {topic} topic in the service chat.",
+      "send_now": "Send now",
+      "disable": "Disable",
+      "enable": "Enable",
+      "not_ready": "Service chat is not ready",
+      "caption": "Hotaru backup",
+      "failed": "Backup failed: {error}",
+      "sent": "Backup sent",
+      "topic": "Backups",
+      "usage": "<code>{prefix}backup [now|on|off]</code>"
     }
   },
   "commands": {
@@ -635,10 +746,10 @@
     "ja": "Japanese",
     "zh": "Chinese"
   },
-  "inline_commands_hint": "Pick a command - type @<bot> and its name in any chat",
+  "inline_commands_hint": "Pick a command — type @<bot> and its name in any chat",
   "settings": {
     "runtime_unavailable": "Runtime unavailable",
-    "usage_alias": "Usage: {prefix}alias <alias> <command with arguments>",
+    "usage_alias": "Usage: {prefix}alias <alias> <command>",
     "alias_exists": "Command already exists: {alias}",
     "command_not_found": "Command not found: {command}\nAvailable: {known}",
     "alias_taken": "Alias is taken: {alias} → {command}. Remove it with {prefix}rmalias {alias}.",
@@ -657,7 +768,8 @@
       "rmalias": "Remove a command alias",
       "lsalias": "List command aliases",
       "prefix": "Change command prefix"
-    }
+    },
+    "alias_invalid": "Alias: 1–32 characters, Unicode letters, digits and _; cannot start with a digit."
   },
   "runtime": {
     "modules_unavailable": "modules: unavailable",
@@ -668,7 +780,7 @@
     "module_info": "module: {module}\nversion: {version}\ncommands: {commands}\ncapabilities: {capabilities}\ndescription: {description}",
     "help_unavailable": "help unavailable",
     "page_unavailable": "help page unavailable",
-    "catalog": "catalog:",
+    "catalog": "catalog: ",
     "next": "Next",
     "bot_unavailable": "inline bot: unavailable",
     "bot_failed": "inline bot provisioning failed: {error}",
@@ -747,12 +859,13 @@
     },
     "file_missing": "module file is missing",
     "file_document": "module file must be a document",
-    "unknown_capability": "unknown capability (denied)"
+    "unknown_capability": "unknown capability (denied)",
+    "loading_module": "Loading {module_id}…"
   },
   "acl": {
     "owners": "<b>Owners</b><br>",
     "group_missing": "Group <code>{name}</code> not found",
-    "group_item": "<b>{name}</b> - {users} users, {rules} rules",
+    "group_item": "<b>{name}</b> — {users} users, {rules} rules",
     "groups": "<b>Security groups</b><br>",
     "group_rule": "<b>Rule added:</b> sgroup <code>{target}</code> → {kind}/{rule}{until}",
     "permissions": "<b>Permissions</b><br>",
@@ -768,7 +881,7 @@
     "bad_rule": "Rule: command/name or module/name.",
     "empty": "No granted permissions. Use {prefix}perm <user_id> <role>.",
     "bad_label": "Unknown permission: {label}",
-    "no_owner_grant": "Use {prefix}perms to grant owner access.",
+    "no_owner_grant": "Use {prefix}owadd to grant owner access.",
     "owner_confirm": "Grant <code>{user_id}</code> full access?",
     "confirm": "Confirm",
     "clear_confirm": "Clear rules for <code>{scope}</code>?",
@@ -829,9 +942,45 @@
     "syntax": {
       "perms": "<code>{prefix}perms [ID|@username]</code>",
       "whois": "<code>{prefix}whois [ID|@username] [command]</code>",
-      "perm": "<code>{prefix}perm [ID|@username|command/name] &lt;role&gt; [remove]</code>"
+      "perm": "<code>{prefix}perm [ID|@username|command/name] &lt;role&gt; [remove]</code>",
+      "owadd": "<code>{prefix}owadd [ID|@username]</code>",
+      "owrm": "<code>{prefix}owrm [ID|@username]</code>",
+      "owls": "<code>{prefix}owls</code>",
+      "sgnew": "<code>{prefix}sgnew &lt;name&gt;</code>",
+      "sgdel": "<code>{prefix}sgdel &lt;name&gt;</code>",
+      "sgls": "<code>{prefix}sgls</code>",
+      "sg": "<code>{prefix}sg &lt;name&gt;</code>",
+      "sgadd": "<code>{prefix}sgadd &lt;name&gt; [ID|@username]</code>",
+      "sgrm": "<code>{prefix}sgrm &lt;name&gt; [ID|@username]</code>",
+      "rule": "<code>{prefix}rule &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;command/name|module/name&gt; [1h|forever]</code>",
+      "rulerm": "<code>{prefix}rulerm &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;command/name|module/name|*&gt;</code>",
+      "ruleclr": "<code>{prefix}ruleclr &lt;user|chat|sgroup&gt; [target]</code>"
     },
-    "all_chats": "Available to everyone in all chats."
+    "all_chats": "Available to everyone in all chats.",
+    "account": " · account",
+    "protected": " · protected",
+    "failed": "<b>Failed:</b> <i>{error}</i>",
+    "owner_added": "<b>Granted</b> owner to <code>{user_id}</code>",
+    "owner_exists": "<code>{user_id}</code> is already an owner",
+    "owner_removed": "<b>Revoked</b> owner from <code>{user_id}</code>",
+    "owner_missing": "<code>{user_id}</code> is not an extra owner",
+    "group_created": "<b>Created group</b> <code>{name}</code>",
+    "group_deleted": "<b>Deleted group</b> <code>{name}</code>",
+    "group_detail": "<b>Group {name}</b><br><b>Users</b><br>{users}<br><b>Rules</b><br>{rules}",
+    "member_exists": "<code>{user_id}</code> is already in <code>{name}</code>",
+    "member_missing": "<code>{user_id}</code> is not in <code>{name}</code>",
+    "member_added": "<b>Added</b> <code>{user_id}</code> to <code>{name}</code>",
+    "member_removed": "<b>Removed</b> <code>{user_id}</code> from <code>{name}</code>",
+    "duration": " for {duration}",
+    "rule_added": "<b>Rule added:</b> {kind} <code>{target}</code> → {type}/{rule}{until}",
+    "rule_removed": "<b>Rule removed</b>",
+    "nothing_remove": "nothing to remove",
+    "rules_cleared": "<b>Rules cleared</b>",
+    "nothing_clear": "nothing to clear",
+    "self_owner": "This user already owns the account.",
+    "no_groups": "No groups.",
+    "usage": "<code>{prefix}owadd &lt;user_id|reply&gt;</code> — Add owner\n<code>{prefix}owrm &lt;user_id|reply&gt;</code> — Remove owner\n<code>{prefix}owls</code> — List owners\n<code>{prefix}sgnew &lt;name&gt;</code> — Create permission group\n<code>{prefix}sgls</code> — List groups\n<code>{prefix}sg &lt;name&gt;</code> — Show group members and rules\n<code>{prefix}sgdel &lt;name&gt;</code> — Delete group\n<code>{prefix}sgadd &lt;name&gt; &lt;user_id|reply&gt;</code> — Add group member\n<code>{prefix}sgrm &lt;name&gt; &lt;user_id|reply&gt;</code> — Remove group member\n<code>{prefix}rule &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;command|module&gt;/&lt;name&gt; [expiry]</code> — Add access rule\n<code>{prefix}rulerm &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;rule&gt;</code> — Remove rule\n<code>{prefix}ruleclr &lt;user|chat|sgroup&gt; [target]</code> — Clear rules\n<code>{prefix}perm &lt;user_id&gt; &lt;admin|trusted|everyone&gt; [remove]</code> — Grant or revoke permission\n<code>{prefix}perms</code> — List permissions\n<code>{prefix}whois &lt;user_id&gt;</code> — Show user permissions",
+    "account_owner": "The account owner cannot be removed."
   },
   "inline": {
     "command_open": "Open {command}",
@@ -844,5 +993,26 @@
       "404": "Not found",
       "500": "Internal error"
     }
+  },
+  "ui": {
+    "close": "✕ Close",
+    "back": "‹ Back",
+    "expired": "This menu has expired. Run the command again.",
+    "stale": "The menu has just changed, press again.",
+    "denied": "This button is not for you.",
+    "failed": "Something went wrong: {error}",
+    "flood": "Telegram asks to wait {seconds} s.",
+    "slow_down": "Too fast, wait a second.",
+    "inline_unavailable": "<i>The inline menu is unavailable in this chat, so this is plain text.</i>",
+    "input_send_secret": "Send ({count} characters, hidden)",
+    "search": "🔍 Search",
+    "edit": "✎ Edit",
+    "reset": "↺ Default",
+    "on": "On",
+    "off": "Off",
+    "error": "⚠️ {error}",
+    "saved": "Saved",
+    "empty": "empty",
+    "nothing_found": "Nothing found for «{query}»."
   }
 }
