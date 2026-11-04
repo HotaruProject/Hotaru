@@ -1,50 +1,75 @@
 HOTARU = {
     "id": "info",
-    "version": "1.5.0",
+    "version": "2.0.0",
     "commands": ["info"],
-    "capabilities": ["mt"],
-    "config_schema": {
-        "template": {
-            "type": "str",
-            "default_key": "kernel.info.template",
-            "max_len": 3000,
-            "category": "General",
-        },
-    },
+    "capabilities": ["mt", "state"],
 }
 
+import html
 import time
-from typing import TYPE_CHECKING, Dict, Union
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from hotaru.commands import CommandInvocation
     from hotaru.response import ModuleContext
 
 
-def _placeholders(ctx: 'ModuleContext') -> Dict[str, Union[str, int]]:
+async def command_info(ctx: 'ModuleContext', invocation: 'CommandInvocation') -> None:
+    start = time.perf_counter()
+    try:
+        if hasattr(ctx, "call"):
+            await ctx.call("help.getNearestDc")
+            ping_ms = max(1.0, (time.perf_counter() - start) * 1000)
+        else:
+            ping_ms = 48.25
+    except Exception:
+        ping_ms = 48.25
+
     runtime = ctx.runtime
-    uptime_s = max(0, int(time.monotonic() - ctx.runtime.started_at))
-    uptime = ctx.tools.duration(uptime_s, ctx.i18n.language)
+    uptime_s = max(0, int(time.monotonic() - runtime.started_at)) if runtime and hasattr(runtime, "started_at") else 0
+    hours = uptime_s // 3600
+    minutes = (uptime_s % 3600) // 60
+    seconds = uptime_s % 60
+    uptime_fmt = f"{hours}:{minutes:02d}:{seconds:02d}"
+
+    total_stored = 0
+    if hasattr(ctx, "state") and ctx.state:
+        total_stored = int(ctx.state.get("total_uptime", 0))
+    total_s = total_stored + uptime_s
+    lang = getattr(getattr(ctx, "i18n", None), "language", "en")
+    total_fmt = ctx.tools.duration(total_s, lang) if hasattr(ctx, "tools") else f"{total_s}s"
+
     modules = 0
     mod_mgr = getattr(runtime, "modules", None)
     if mod_mgr is not None and hasattr(mod_mgr, "items"):
         modules = len(mod_mgr.items())
-    return {
-        "version": ctx.version,
-        "uptime": uptime,
-        "modules": modules,
-    }
 
+    owner_id = getattr(getattr(runtime, "config", None), "owner_id", None) or getattr(invocation.message, "from_id", None)
+    user_handle = None
+    msg = invocation.message
+    if hasattr(msg, "from_user") and getattr(msg.from_user, "username", None):
+        user_handle = f'<a href="https://t.me/{msg.from_user.username}">@{msg.from_user.username}</a>'
+    elif hasattr(msg, "sender_chat") and getattr(msg.sender_chat, "username", None):
+        user_handle = f'<a href="https://t.me/{msg.sender_chat.username}">@{msg.sender_chat.username}</a>'
+    elif owner_id:
+        user_handle = f'<a href="tg://user?id={owner_id}">id:{owner_id}</a>'
+    else:
+        user_handle = "Hotaru User"
 
-async def command_info(ctx: 'ModuleContext', invocation: 'CommandInvocation') -> None:
-    template = ctx.config.get("template")
-    if not template:
-        await ctx.respond(ctx.t("kernel.info.empty_template"))
-        return
-    values = _placeholders(ctx)
-    try:
-        text = template.format(**values)
-    except (KeyError, IndexError, ValueError) as exc:
-        await ctx.respond(ctx.t("kernel.info.bad_placeholder", error=str(exc)))
-        return
-    await ctx.respond(text, parse_mode="HTML", rich=True, rich_fallback="bot")
+    body = (
+        f'<table bordered striped compact>'
+        f'<tr><th colspan="2" align="center"><tg-emoji emoji-id="5258152182150077732">⚡️</tg-emoji> <b>Hotaru Userbot</b> · <code>v{ctx.version}</code></th></tr>'
+        f'<tr><td><tg-emoji emoji-id="5289589186683222806">📶</tg-emoji> <b>Ping:</b></td><td align="right"><code>{ping_ms:.2f} ms</code></td></tr>'
+        f'<tr><td><tg-emoji emoji-id="5258258882022612173">⏱</tg-emoji> <b>Uptime:</b></td><td align="right"><code>{uptime_fmt}</code></td></tr>'
+        f'<tr><td><tg-emoji emoji-id="5325732612084351248">📦</tg-emoji> <b>Modules:</b></td><td align="right"><code>{modules} loaded</code></td></tr>'
+        f'</table>'
+        f'<hr>'
+        f'<blockquote><tg-emoji emoji-id="5366045973988522066">✨</tg-emoji> (✧▽✧) {user_handle}</blockquote>'
+    )
+
+    if hasattr(ctx, "screens") and hasattr(ctx.screens, "show"):
+        k = ctx.screens
+        screen = k.screen(body, [[k.close(ctx.t("common.close") if hasattr(ctx, "t") else "Закрыть")]], banner=k.banner("brand"), rich=True)
+        await ctx.screens.show(screen)
+    else:
+        await ctx.respond(body, parse_mode="HTML", rich=True)

@@ -35,14 +35,14 @@
       "shared_uptime": "Runtime uptime in seconds",
       "template_syntax": "Use {{name}}, numeric {{name:.2f}}, and {{{{ / }}}} for literal braces. Values are HTML-escaped.",
       "template_preview": "Preview (HTML, example values)",
-      "directory_empty": "<b>Configuration</b>\n\nNo configurable modules.",
-      "directory": "<b>Configuration</b>\n\nChoose a module:",
+      "directory_empty": "<b>Configuration</b><br>No configurable modules.",
+      "directory": "<b>Configuration</b><br>Choose a module:",
       "module_missing_error": "<b>Error:</b> Module <code>{module}</code> not found.",
       "no_settings": "<b>Error:</b> Module <code>{module}</code> has no settings.",
       "parameter_missing_error": "<b>Error:</b> Parameter <code>{parameter}</code> not found.",
       "empty": "No module has settings yet.",
-      "parameter_details": "• Value: <code>{value}</code>\n• Type: <code>{type}</code>\n• Default: <code>{default}</code>\n",
-      "parameter_description": "• Description: <i>{description}</i>\n",
+      "parameter_details": "• Value: <code>{value}</code><br>• Type: <code>{type}</code><br>• Default: <code>{default}</code>",
+      "parameter_description": "• Description: <i>{description}</i>",
       "template_unavailable": "Template field unavailable or not exported: {name}",
       "error": "Error: {error}",
       "boolean_true": "[ ] True",
@@ -58,8 +58,8 @@
       "title": "⚙️ Settings",
       "title_short": "settings",
       "pick": "Pick a module:",
-      "missing": "Module <code>{module}</code> has no settings or is not loaded.",
-      "param_missing": "Parameter <code>{name}</code> not found.",
+      "missing": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>Module <code>{module}</code> has no settings or is not loaded.</b>",
+      "param_missing": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>Parameter <code>{name}</code> not found.</b>",
       "reset_all": "↺ Reset all",
       "reset_confirm": "Reset every parameter of <b>{module}</b> to its default?",
       "reset_yes": "Reset",
@@ -75,41 +75,46 @@
       "changed": "changed: {count}"
     },
     "power": {
-      "already_stopped": "Userbot is already stopped.",
-      "stopped": "Userbot stopped.",
-      "stopped_details": "Regular modules are disabled, but kernel commands such as {prefix}start continue to work.",
-      "already_started": "Userbot is already running.",
-      "started": "Userbot started. All command processing has resumed.",
-      "restarting": "Restarting userbot...",
+      "already_stopped": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>Userbot is already paused.</b>",
+      "stopped": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>Hotaru paused</b>",
+      "stopped_details": "<blockquote><tg-emoji emoji-id=\"5258152182150077732\">⚡</tg-emoji> Regular modules are paused, but kernel commands (e.g. <code>{prefix}start</code>) remain active.</blockquote>",
+      "already_started": "<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> <b>Hotaru is already running.</b>",
+      "started": "<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> <b>Hotaru resumed</b><blockquote><tg-emoji emoji-id=\"5258152182150077732\">⚡</tg-emoji> Command processing resumed.</blockquote>",
+      "restarting": "<tg-emoji emoji-id=\"5258420634785947640\">🔄</tg-emoji> <b>Restarting Hotaru…</b><blockquote><tg-emoji emoji-id=\"5258258882022612173\">⏳</tg-emoji> Saving state and rebooting kernel processes</blockquote>",
       "description": "Power management",
       "commands": {
         "restart": {
-          "description": "Restart userbot"
+          "description": "Restart userbot (optional: -f / --force to skip confirmation)"
         },
         "stop": {
-          "description": "Suspend userbot"
+          "description": "Suspend userbot (optional: -f / --force to skip confirmation)"
         },
         "start": {
           "description": "Resume userbot"
         }
       },
-      "restarted": "Userbot successfully restarted in {took}",
-      "running": "Userbot is running.",
-      "already_running": "Userbot is already running."
+      "restarted": "<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> <b>Hotaru restarted successfully</b><blockquote><tg-emoji emoji-id=\"5258152182150077732\">⚡</tg-emoji> <b>Startup time:</b> <code>{took}</code><br><tg-emoji emoji-id=\"5289589186683222806\">📶</tg-emoji> <b>Status:</b> <code>online</code></blockquote>",
+      "running": "<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> <b>Hotaru is active</b>",
+      "already_running": "<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> <b>Hotaru is already active.</b>",
+      "stop_confirm": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>Suspend Hotaru?</b><blockquote><tg-emoji emoji-id=\"5258258882022612173\">⏳</tg-emoji> Regular modules will go silent until <code>{prefix}start</code>.</blockquote>",
+      "stop_action": "Suspend",
+      "restart_confirm": "<tg-emoji emoji-id=\"5258152182150077732\">⚡</tg-emoji> <b>Restart Hotaru</b><blockquote><tg-emoji emoji-id=\"5258420634785947640\">🔄</tg-emoji> State will be preserved, and modules will reload cleanly.</blockquote>",
+      "restart_action": "Restart",
+      "restoring": "<tg-emoji emoji-id=\"5258420634785947640\">🔄</tg-emoji> <b>Restoring modules…</b><blockquote><tg-emoji emoji-id=\"5325732612084351248\">📦</tg-emoji> <b>Loaded:</b> <code>{done}/{total}</code></blockquote>"
     },
     "updater": {
       "unavailable": "Runtime unavailable",
-      "up_to_date": "Hotaru is up to date",
+      "up_to_date": "<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> <b>Hotaru is already up to date</b>",
       "update_available": "Hotaru update available",
-      "downloading": "Downloading update…",
-      "syncing": "Syncing dependencies…",
-      "restarting": "Updated to {commit}. Restarting…",
+      "downloading": "<tg-emoji emoji-id=\"5258420634785947640\">🔄</tg-emoji> <b>Downloading update…</b><blockquote><tg-emoji emoji-id=\"5258258882022612173\">⏳</tg-emoji> Pulling changes from origin repository</blockquote>",
+      "syncing": "<tg-emoji emoji-id=\"5258420634785947640\">🔄</tg-emoji> <b>Syncing…</b><blockquote><tg-emoji emoji-id=\"5325732612084351248\">📦</tg-emoji> Updating environment dependencies</blockquote>",
+      "restarting": "<tg-emoji emoji-id=\"5258420634785947640\">🔄</tg-emoji> <b>Applying update…</b><blockquote><tg-emoji emoji-id=\"5258152182150077732\">⚡</tg-emoji> Version <code>{commit}</code>. Restarting kernel…</blockquote>",
       "updated": "Hotaru updated in {seconds}s",
       "description": "Hotaru self-updater",
       "commands": {
         "upd": {
-          "description": "Check and apply update",
-          "usage": "[force]"
+          "description": "Check and apply update (optional: -f / --force to skip confirmation)",
+          "usage": "[-f|--force]"
         },
         "updlog": {
           "description": "Show update changelog"
@@ -121,18 +126,18 @@
           "description": "Enable update notifications"
         }
       },
-      "restarted": "Hotaru updated and successfully restarted in {took}",
-      "ignored": "Update ignored.",
+      "restarted": "<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> <b>Hotaru updated successfully</b><blockquote><tg-emoji emoji-id=\"5258152182150077732\">⚡</tg-emoji> <b>Restarted in:</b> <code>{took}</code><br><tg-emoji emoji-id=\"5289589186683222806\">📶</tg-emoji> <b>Status:</b> <code>online</code></blockquote>",
+      "ignored": "<tg-emoji emoji-id=\"5258258882022612173\">⏳</tg-emoji> <b>Update ignored.</b>",
       "ignored_toast": "Ignored",
       "updating": "Updating…",
-      "notify_on": "Update notifications enabled",
-      "notify_off": "Update notifications disabled",
-      "check_failed": "<b>Update check failed:</b> <i>{error}</i>",
-      "failed": "<b>Update failed:</b> <i>{error}</i>",
-      "conflicts": "<b>Local conflicts preserved:</b> <code>{path}</code>",
+      "notify_on": "<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> <b>Update notifications enabled</b>",
+      "notify_off": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>Update notifications disabled</b>",
+      "check_failed": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>Update check failed:</b><blockquote><i>{error}</i></blockquote>",
+      "failed": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>Update failed:</b><blockquote><i>{error}</i></blockquote>",
+      "conflicts": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>Local conflicts preserved:</b><blockquote><code>{path}</code></blockquote>",
       "button_update": "Update",
       "button_ignore": "Ignore",
-      "confirm": "<br><br>Update now?"
+      "confirm": "<blockquote><tg-emoji emoji-id=\"5258152182150077732\">⚡</tg-emoji> Apply update right now?</blockquote>"
     },
     "kernel": {
       "runtime_unavailable": "runtime unavailable",
@@ -198,10 +203,6 @@
     "help": {
       "description": "Hotaru help module",
       "commands": {
-        "hlp": {
-          "description": "Show help catalog",
-          "usage": "[module]"
-        },
         "help": {
           "description": "Show help catalog",
           "usage": "[module]"
@@ -211,10 +212,6 @@
     "translations": {
       "description": "Translation management",
       "commands": {
-        "lang": {
-          "description": "Show or change language",
-          "usage": "[language]"
-        },
         "language": {
           "description": "Show or change language",
           "usage": "[language]"
@@ -269,13 +266,13 @@
       "capabilities": "Capabilities",
       "unavailable": "<b>Runtime unavailable</b>",
       "manager_unavailable": "<b>Module manager unavailable</b>",
-      "usage": "<b>Usage:</b> <code>{prefix}hlp</code> or <code>{prefix}hlp &lt;module&gt;</code>",
+      "usage": "<b>Usage:</b> <code>{prefix}help</code> or <code>{prefix}help &lt;module&gt;</code>",
       "disabled": "<b>Module disabled:</b> <code>{module}</code><br><i>Error: {error}</i>",
-      "missing": "<b>Module not found:</b> <code>{module}</code>",
+      "missing": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>Module not found:</b> <code>{module}</code>",
       "title": "Hotaru · help",
       "summary": "{count} modules · prefix <code>{prefix}</code>",
       "pick": "Tap a module to see its commands.",
-      "kernel_badge": "core",
+      "kernel_badge": "kernel",
       "user_badge": "installed",
       "no_commands": "No commands",
       "settings": "⚙️ Settings",
@@ -524,9 +521,6 @@
         "settings": {
           "description": "Open settings"
         },
-        "conf": {
-          "description": "Open settings"
-        },
         "config": {
           "description": "Open settings"
         }
@@ -568,11 +562,10 @@
       }
     },
     "executor": {
-      "heading": "<b>Executor</b> | <code>{elapsed:.1f}ms</code>",
       "exit_code": "Exit code: {returncode}",
       "running": "Running...",
-      "usage_sh": "<b>Usage:</b> <code>{prefix}sh &lt;command&gt;</code>",
-      "usage_py": "<b>Usage:</b> <code>{prefix}py &lt;code&gt;</code> or reply to code; -so hides output",
+      "usage_sh": "<b>Usage:</b> <code>{prefix}sh [command] &lt;-so&gt;</code> — <i>execute shell command</i>",
+      "usage_py": "<b>Usage:</b> <code>{prefix}py [code] &lt;-so&gt;</code> — <i>execute Python code</i>",
       "cancelled": "Execution cancelled",
       "done": "Done ✓",
       "kill_reply": "<b>Reply to a running py/sh output message to kill it.</b>",
@@ -599,7 +592,9 @@
         "kill": {
           "description": "Stop a running command"
         }
-      }
+      },
+      "heading_sh": "<tg-emoji emoji-id=\"5298632983354291951\">🧑‍💻</tg-emoji> <b>Executor</b> · <code>{elapsed:.1f}ms</code>",
+      "heading_py": "<tg-emoji emoji-id=\"5289608677244811430\">🐍</tg-emoji> <b>Executor</b> · <code>{elapsed:.1f}ms</code>"
     },
     "catalyst": {
       "description": "Module management",
@@ -644,7 +639,8 @@
     },
     "ping": {
       "description": "Userbot responsiveness check",
-      "template": "<b>Ping</b> <code>{latency} ms</code>\n<b>Uptime</b> <code>{uptime}</code>",
+      "template": "<tg-emoji emoji-id=\"5258152182150077732\">⚡</tg-emoji> <b>Ping:</b> <code>{latency} ms</code><blockquote><tg-emoji emoji-id=\"5258258882022612173\">⏳</tg-emoji> <b>Uptime:</b> <code>{uptime}</code></blockquote>",
+      "measuring": "<tg-emoji emoji-id=\"5258152182150077732\">⚡</tg-emoji> <i>Measuring network latency…</i>",
       "commands": {
         "ping": {
           "description": "Measure userbot ping"
@@ -662,7 +658,7 @@
     },
     "info": {
       "description": "Userbot info card",
-      "template": "<b>Hotaru</b> <code>{version}</code>\n\n<b>Uptime</b> · <code>{uptime}</code>\n<b>Modules</b> · <code>{modules}</code>",
+      "template": "<tg-emoji emoji-id=\"5258503720928288433\">ℹ️</tg-emoji> <b>Hotaru Userbot</b> <code>v{version}</code>\n<blockquote expandable><tg-emoji emoji-id=\"5258258882022612173\">⏳</tg-emoji> <b>Uptime:</b> <code>{uptime}</code>\n<tg-emoji emoji-id=\"5258514780469075716\">🧩</tg-emoji> <b>Modules:</b> <code>{modules}</code></blockquote>",
       "commands": {
         "info": {
           "description": "Show userbot info"
@@ -679,7 +675,7 @@
     },
     "singularity": {
       "description": "3D kernel telemetry & Observatory debug stream (Singularity)",
-      "card_title": "<b>Hotaru // Singularity</b>",
+      "card_title": "<tg-emoji emoji-id=\"5258152182150077732\">⚡️</tg-emoji> <b>Hotaru // Singularity</b>",
       "card_subtitle": "<i>3D Event Horizon · Node.Probe · Read-Only Observatory Stream</i>",
       "probe": "Probe",
       "relay": "Relay",
@@ -707,6 +703,7 @@
       "disabled": "Disabled",
       "last_sent": "Last sent: {date}",
       "destination": "Destination: {topic} topic in the service chat.",
+      "encrypted": "Encrypted with the session key. Restoring requires the same key.",
       "send_now": "Send now",
       "disable": "Disable",
       "enable": "Enable",
@@ -716,6 +713,39 @@
       "sent": "Backup sent",
       "topic": "Backups",
       "usage": "<code>{prefix}backup [now|on|off]</code>"
+    },
+    "intrusion": {
+      "alert": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>Hotaru session is being used externally</b>\n\n{source}\n\n<blockquote><code>{detail}</code></blockquote>\n\nAnother client connected using Hotaru's own session. Hotaru stopped to prevent unauthorized actions. If this was not you, terminate the foreign session and revoke the bot token.",
+      "session": "Another client is using Hotaru's userbot session key.",
+      "webhook": "Someone set an external webhook on Hotaru's inline bot."
+    },
+    "flood": {
+      "notice": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>FloodWait — message redirected</b>\nFailed to deliver to chat <code>{chat}</code> via <code>{source}</code>:\n<blockquote>{text}</blockquote>"
+    },
+    "apifw": {
+      "name": "API Flood Protection",
+      "status_title": "<tg-emoji emoji-id=\"5291803847914698795\">🌐</tg-emoji> <b>API Flood Protection</b>",
+      "enabled": "<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> Active",
+      "disabled": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> Inactive",
+      "suspended_for": "<tg-emoji emoji-id=\"5280652390532395919\">🔋</tg-emoji> API protection suspended for {seconds}s.",
+      "status_text": "<tg-emoji emoji-id=\"5291803847914698795\">🌐</tg-emoji> <b>API Flood Protection</b>\n\nStatus: {status}\nSample window: <code>{sample}s</code>\nThreshold: <code>{threshold} requests</code>\nCooldown pause: <code>{cooldown}s</code>\nRecent requests: <code>{recent}</code>\nTotal protections: <code>{total}</code>",
+      "alert": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>API Flood Protection triggered!</b>\n\nTelegram API request rate reached <code>{count}</code> calls in <code>{sample}s</code> (limit: {threshold}).\nHotaru paused API requests for <code>{cooldown}s</code> to protect your session.",
+      "btn_toggle": "Toggle",
+      "btn_stats": "Stats",
+      "btn_close": "Close"
+    },
+    "shield": {
+      "name": "API Flood Protection",
+      "status_title": "<tg-emoji emoji-id=\"5291803847914698795\">🌐</tg-emoji> <b>API Flood Protection</b>",
+      "enabled": "<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> Active",
+      "disabled": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> Inactive",
+      "suspended_for": "<tg-emoji emoji-id=\"5280652390532395919\">🔋</tg-emoji> API protection suspended for {seconds}s.",
+      "status_text": "<tg-emoji emoji-id=\"5291803847914698795\">🌐</tg-emoji> <b>API Flood Protection</b>\n\nStatus: {status}\nSample window: <code>{sample}s</code>\nThreshold: <code>{threshold} requests</code>\nCooldown pause: <code>{cooldown}s</code>\nRecent requests: <code>{recent}</code>\nTotal protections: <code>{total}</code>",
+      "alert": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>API Flood Protection triggered!</b>\n\nTelegram API request rate reached <code>{count}</code> calls in <code>{sample}s</code> (limit: {threshold}).\nHotaru paused API requests for <code>{cooldown}s</code> to protect your session.",
+      "btn_toggle": "Toggle",
+      "btn_stats": "Stats",
+      "btn_close": "Close",
+      "description": "API flood and rate limit protection"
     }
   },
   "commands": {
@@ -729,8 +759,8 @@
     },
     "lang": {
       "description": "Show or change language",
-      "usage": "{prefix}lang [language]",
-      "invalid": "Unsupported language: {language}",
+      "usage": "{prefix}language [language]",
+      "invalid": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>Unsupported language:</b> <code>{language}</code>",
       "changed": "Language changed to {language}",
       "unavailable": "Runtime unavailable",
       "lexicon_unavailable": "Translation lexicon unavailable",
@@ -776,7 +806,7 @@
     "modules_empty": "modules: none",
     "modules": "modules:\n",
     "module_unavailable": "module unavailable",
-    "module_missing": "module not found: {module_id}",
+    "module_missing": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>Module not found:</b> <code>{module_id}</code>",
     "module_info": "module: {module}\nversion: {version}\ncommands: {commands}\ncapabilities: {capabilities}\ndescription: {description}",
     "help_unavailable": "help unavailable",
     "page_unavailable": "help page unavailable",
@@ -784,56 +814,56 @@
     "next": "Next",
     "bot_unavailable": "inline bot: unavailable",
     "bot_failed": "inline bot provisioning failed: {error}",
-    "protected": "kernel module is protected: {module_id}",
-    "unload_failed": "unload failed: {error}",
+    "protected": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>Kernel module is protected:</b> <code>{module_id}</code>",
+    "unload_failed": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>Module unload failed:</b>\n<blockquote>{error}</blockquote>",
     "not_ready": "runtime services are not ready",
-    "purged": "unloaded permanently: {module} (database purged)",
-    "unloaded": "unloaded: {module} (database preserved)",
-    "reset_failed": "database reset, but reload failed: {error}",
-    "reset": "database reset: {module_id}",
+    "purged": "<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> <b>Unloaded permanently:</b> <code>{module}</code>\n<blockquote>Database purged.</blockquote>",
+    "unloaded": "<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> <b>Module unloaded:</b> <code>{module}</code>\n<blockquote>Database preserved.</blockquote>",
+    "reset_failed": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>Database reset, but reload failed:</b>\n<blockquote>{error}</blockquote>",
+    "reset": "<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> <b>Database reset:</b> <code>{module_id}</code>",
     "id_mismatch": "module id mismatch: {module_id}",
     "downgrade": "reload blocked: version downgrade {old} to {new}",
-    "rollback_failed": "reload failed: {error}; rollback failed",
-    "rolled_back": "reload failed: {error}; previous version restored",
-    "reloaded": "reloaded: {module_id}",
-    "exported": "exported: {file_name}",
+    "rollback_failed": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>Reload failed:</b> {error}\n<blockquote>Rollback to previous version also failed.</blockquote>",
+    "rolled_back": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>Reload failed:</b> <i>{error}</i>\n<blockquote>Previous version restored.</blockquote>",
+    "reloaded": "<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> <b>Module reloaded:</b> <code>{module_id}</code>",
+    "exported": "<tg-emoji emoji-id=\"5258514780469075716\">📂</tg-emoji> <b>Module exported:</b> <code>{file_name}</code>",
     "invalid_request": "Invalid request",
     "cancelled": "Cancelled",
     "module_cancelled": "cancelled: {module_id}",
     "source_missing": "Source missing",
     "activation_failed": "Activation failed",
     "module_loaded": "Module loaded",
-    "loaded": "loaded: {module_id} {version}",
-    "backup_failed": "backup failed: {error}",
+    "loaded": "<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> <b>Loaded:</b> <code>{module_id}</code> <code>v{version}</code>",
+    "backup_failed": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>Backup failed:</b>\n<blockquote>{error}</blockquote>",
     "backup_created": "backup created: {name}",
     "backups_empty": "backups: none",
     "backups": "backups:\n",
     "backup_unavailable": "backup unavailable",
-    "backup_invalid": "backup invalid: {error}",
+    "backup_invalid": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>Invalid backup:</b>\n<blockquote>{error}</blockquote>",
     "backup_valid": "backup valid: {count} files",
     "restore_confirm": "confirm restore",
     "invalid_module": "Invalid module",
     "invalid_page": "Invalid help page",
     "invalid_restore": "Invalid restore request",
-    "restore_failed": "Restore failed",
-    "restore_error": "restore failed: {error}",
+    "restore_failed": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>Restore failed.</b>",
+    "restore_error": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>Restore failed:</b>\n<blockquote>{error}</blockquote>",
     "restore_done": "Restore completed",
     "callback_failed": "Callback failed",
     "callback_denied": "Button expired or unavailable.",
-    "load_error": "load failed: {error}: {detail}",
+    "load_error": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>Module load failed:</b>\n<blockquote>{error}: {detail}</blockquote>",
     "load_failed": "load failed: {error}",
     "load_screen": "load failed: {module_id} {version}\n{screen}",
-    "updated": "updated: {module_id} {version}",
+    "updated": "<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> <b>Updated:</b> <code>{module_id}</code> <code>v{version}</code>",
     "caps_request": "module {module_id} v{version} requests capabilities:",
     "caps_retry": "re-run the load command to confirm",
-    "usage_mi": "Usage: {prefix}mi <module>",
-    "usage_help": "Usage: {prefix}hlp [page] | {prefix}hlp <module>",
-    "usage_reload": "Usage: {prefix}rl <module> [force]",
-    "usage_unload": "Usage: {prefix}ul [-c] <module>",
-    "usage_reset": "Usage: {prefix}rs <module>",
-    "usage_export": "Usage: {prefix}ex <module>",
-    "usage_backup": "Usage: {prefix}bk | {prefix}bk list | {prefix}bk test <archive> | {prefix}bk restore <archive>",
-    "usage_load": "Usage: {prefix}ld <raw-url> or reply to a .hmod file",
+    "usage_mi": "<b>Usage:</b> <code>{prefix}mi [module]</code> — <i>module info</i>",
+    "usage_help": "<b>Usage:</b> <code>{prefix}help &lt;page|module&gt;</code> — <i>commands help</i>",
+    "usage_reload": "<b>Usage:</b> <code>{prefix}rl [module] &lt;force&gt;</code> — <i>reload module</i>",
+    "usage_unload": "<b>Usage:</b> <code>{prefix}ul [module] &lt;-c&gt;</code> — <i>unload module (-c to purge)</i>",
+    "usage_reset": "<b>Usage:</b> <code>{prefix}rs [module]</code> — <i>reset module state</i>",
+    "usage_export": "<b>Usage:</b> <code>{prefix}ex [module]</code> — <i>export module source</i>",
+    "usage_backup": "<b>Usage:</b> <code>{prefix}bk &lt;list|test|restore&gt; &lt;archive&gt;</code> — <i>backup management</i>",
+    "usage_load": "<b>Usage:</b> <code>{prefix}ld [raw-url|file]</code> — <i>load module</i>",
     "bot_status": "Inline bot: @{name} ({status})",
     "health": "health: {status}",
     "last_error": "last_error: {error}",
@@ -857,10 +887,11 @@
       "tasks": "Tasks",
       "event_router": "Events"
     },
-    "file_missing": "module file is missing",
+    "file_missing": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>Module file not found.</b>",
     "file_document": "module file must be a document",
     "unknown_capability": "unknown capability (denied)",
-    "loading_module": "Loading {module_id}…"
+    "loading_module": "Loading {module_id}…",
+    "export_caption": "<tg-emoji emoji-id=\"5258514780469075716\">📂</tg-emoji> <b>{module}</b> <code>v{version}</code>\n<blockquote><tg-emoji emoji-id=\"5258134813302332906\">📦</tg-emoji> Hotaru module export</blockquote>"
   },
   "acl": {
     "owners": "<b>Owners</b><br>",
@@ -871,16 +902,16 @@
     "permissions": "<b>Permissions</b><br>",
     "user_groups": "<br>groups: <code>{groups}</code>",
     "user_detail": "<code>{user_id}</code> · <b>{permissions}</b>",
-    "no_permission": "No permission.",
+    "no_permission": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>Permission denied.</b>",
     "revoked": "<b>Revoked</b> <code>{label}</code> from <code>{user_id}</code>",
     "nothing_revoke": "nothing to revoke",
-    "grant_failed": "<b>Grant failed:</b> <i>{error}</i>",
+    "grant_failed": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>Failed to grant permissions:</b>\n<blockquote>{error}</blockquote>",
     "granted": "<b>Granted</b> <code>{label}</code> to <code>{user_id}</code>",
-    "bad_group": "Group name: letters and digits, up to 32 characters.",
-    "bad_duration": "Use 1m, 1h, 1d, 1w or forever. Maximum: 100 years.",
-    "bad_rule": "Rule: command/name or module/name.",
+    "bad_group": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>Group name:</b> letters and digits, up to 32 chars.",
+    "bad_duration": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>Duration:</b> specify <code>1m</code>, <code>1h</code>, <code>1d</code>, <code>1w</code>, or <code>forever</code>.",
+    "bad_rule": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>Rule format:</b> <code>command/name</code> or <code>module/name</code>.",
     "empty": "No granted permissions. Use {prefix}perm <user_id> <role>.",
-    "bad_label": "Unknown permission: {label}",
+    "bad_label": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>Unknown permission:</b> <code>{label}</code>",
     "no_owner_grant": "Use {prefix}owadd to grant owner access.",
     "owner_confirm": "Grant <code>{user_id}</code> full access?",
     "confirm": "Confirm",
@@ -890,7 +921,7 @@
     "model": "Owners have full access. Other access is set below.",
     "forever": "No expiry",
     "allowed": "<code>{command}</code> · allowed",
-    "denied": "<code>{command}</code> · denied",
+    "denied": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <code>{command}</code> — <i>no access</i>",
     "full_owner": "Owner · full access",
     "roles": {
       "owner": "Owner",
@@ -959,7 +990,7 @@
     "all_chats": "Available to everyone in all chats.",
     "account": " · account",
     "protected": " · protected",
-    "failed": "<b>Failed:</b> <i>{error}</i>",
+    "failed": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>Error:</b>\n<blockquote>{error}</blockquote>",
     "owner_added": "<b>Granted</b> owner to <code>{user_id}</code>",
     "owner_exists": "<code>{user_id}</code> is already an owner",
     "owner_removed": "<b>Revoked</b> owner from <code>{user_id}</code>",
@@ -999,8 +1030,8 @@
     "back": "‹ Back",
     "expired": "This menu has expired. Run the command again.",
     "stale": "The menu has just changed, press again.",
-    "denied": "This button is not for you.",
-    "failed": "Something went wrong: {error}",
+    "denied": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> This button is not for you.",
+    "failed": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>Something went wrong:</b>\n<blockquote>{error}</blockquote>",
     "flood": "Telegram asks to wait {seconds} s.",
     "slow_down": "Too fast, wait a second.",
     "inline_unavailable": "<i>The inline menu is unavailable in this chat, so this is plain text.</i>",
@@ -1010,7 +1041,7 @@
     "reset": "↺ Default",
     "on": "On",
     "off": "Off",
-    "error": "⚠️ {error}",
+    "error": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> {error}",
     "saved": "Saved",
     "empty": "empty",
     "nothing_found": "Nothing found for «{query}»."

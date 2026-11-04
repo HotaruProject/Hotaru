@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import glob
 import http.client
 import json
 import logging
@@ -42,6 +43,29 @@ log = logging.getLogger("hotaru.singularity.kernel")
 SINGULARITY_DIR = Path(__file__).resolve().parent
 BACKEND_DIR = SINGULARITY_DIR / "backend"
 FRONTEND_DIR = SINGULARITY_DIR / "frontend"
+
+
+def _resolve_binary(name: str) -> str | None:
+    found = shutil.which(name)
+    if found:
+        return found
+    candidates: list[str] = [
+        f"/usr/local/bin/{name}",
+        f"/usr/bin/{name}",
+        f"/bin/{name}",
+        os.path.expanduser(f"~/.local/bin/{name}"),
+    ]
+    for pattern in (
+        os.path.expanduser(f"~/.nvm/versions/node/*/bin/{name}"),
+        os.path.expanduser(f"~/.fnm/current/bin/{name}"),
+        os.path.expanduser(f"~/.asdf/shims/{name}"),
+        f"/root/.nvm/versions/node/*/bin/{name}",
+    ):
+        candidates.extend(sorted(glob.glob(pattern), reverse=True))
+    for path in candidates:
+        if os.path.isfile(path) and os.access(path, os.X_OK):
+            return path
+    return None
 
 
 def _parse_bool(val: Any, default: bool) -> bool:
@@ -264,6 +288,7 @@ class SingularityKernel:
         self.sync_retry_cooldown = sync_retry_cooldown
         self._ipc_key = secrets.token_hex(24)
         self._provision_lock = asyncio.Lock()
+        self._start_lock = asyncio.Lock()
 
         self._node_proc: asyncio.subprocess.Process | None = None
         self._metrics_task: asyncio.Task[None] | None = None
@@ -356,13 +381,19 @@ class SingularityKernel:
 
     async def _run_npm_step(self, cwd: Path, *args: str) -> None:
         with trusted_scope():
-            npm_bin = shutil.which("npm")
+            npm_bin = _resolve_binary("npm")
             if not npm_bin:
                 raise RuntimeError("`npm` is not installed in PATH")
+            proc_env = os.environ.copy()
+            npm_dir = str(Path(npm_bin).parent)
+            curr_p = proc_env.get("PATH", "")
+            if npm_dir not in curr_p.split(os.pathsep):
+                proc_env["PATH"] = f"{npm_dir}{os.pathsep}{curr_p}"
             proc = await asyncio.create_subprocess_exec(
                 npm_bin,
                 *args,
                 cwd=str(cwd),
+                env=proc_env,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.STDOUT,
                 close_fds=True,
@@ -488,7 +519,7 @@ class SingularityKernel:
 
     async def _spawn_backend(self) -> bool:
         with trusted_scope():
-            node_bin = shutil.which("node")
+            node_bin = _resolve_binary("node")
             if not node_bin:
                 log.warning("Singularity skipped: `node` binary not found in PATH")
                 return False
@@ -507,6 +538,10 @@ class SingularityKernel:
                     self.config.owner_id = fresh.owner_id
 
             child_env = os.environ.copy()
+            node_dir = str(Path(node_bin).parent)
+            curr_p = child_env.get("PATH", "")
+            if node_dir not in curr_p.split(os.pathsep):
+                child_env["PATH"] = f"{node_dir}{os.pathsep}{curr_p}"
             child_env.update(
                 {
                     "NODE_ENV": "production",
@@ -567,39 +602,40 @@ class SingularityKernel:
             return False
 
     async def start(self) -> bool:
-        with trusted_scope():
-            if not self.config.enabled:
-                log.info("Singularity kernel is disabled in config")
-                return False
-            if self.is_running:
-                return True
+        async with self._start_lock:
+            with trusted_scope():
+                if not self.config.enabled:
+                    log.info("Singularity kernel is disabled in config")
+                    return False
+                if self.is_running:
+                    return True
 
-            try:
-                await self.ensure_built()
-            except Exception as exc:
-                log.warning("Singularity build failed: %s", exc)
-                return False
+                try:
+                    await self.ensure_built()
+                except Exception as exc:
+                    log.warning("Singularity build failed: %s", exc)
+                    return False
 
-            self._running = True
-            ok = await self._spawn_backend()
-            if not ok:
-                self._running = False
-                await self._stop_backend_proc()
-                return False
+                self._running = True
+                ok = await self._spawn_backend()
+                if not ok:
+                    self._running = False
+                    await self._stop_backend_proc()
+                    return False
 
-            await self._push_metrics_once()
-            self._metrics_task = asyncio.create_task(
-                self._metrics_and_watchdog_loop(), name="singularity:observatory-loop"
-            )
-
-            if self.config.tunnel_enabled:
-                self._last_tunnel_restart_ts = time.monotonic()
-                self._tunnel_task = asyncio.create_task(
-                    self._start_tunnel_and_provision(), name="singularity:horizon-boot"
+                await self._push_metrics_once()
+                self._metrics_task = asyncio.create_task(
+                    self._metrics_and_watchdog_loop(), name="singularity:observatory-loop"
                 )
 
-            log.info("Singularity probe active on %s", self.local_url)
-            return True
+                if self.config.tunnel_enabled:
+                    self._last_tunnel_restart_ts = time.monotonic()
+                    self._tunnel_task = asyncio.create_task(
+                        self._start_tunnel_and_provision(), name="singularity:horizon-boot"
+                    )
+
+                log.info("Singularity probe active on %s", self.local_url)
+                return True
 
     async def _push_metrics_once(self) -> None:
         if not self._running:
@@ -731,6 +767,7 @@ class SingularityKernel:
 
                 bot_user = buser or self._resolve_bot_username()
                 if not bot_user:
+                    log.warning("Singularity provisioning skipped: inline bot username is missing")
                     return RelaySyncReport(ok=False, detail="inline_bot_missing")
 
                 if not self.config.auto_botfather:
@@ -746,6 +783,7 @@ class SingularityKernel:
                         detail="auto_botfather_disabled",
                     )
 
+                log.info("Singularity starting BotFather WebApp sync for @%s with %s", bot_user, url)
                 res = await configure_botfather_webapp(
                     self.runtime,
                     bot_user,
@@ -753,6 +791,12 @@ class SingularityKernel:
                     bot_id=self.config.bot_id,
                     short_name=self.config.short_name,
                     title="Hotaru",
+                )
+                log.info(
+                    "Singularity BotFather WebApp sync finished: ok=%s detail=%s link=%s",
+                    res.ok,
+                    res.detail,
+                    res.app_link,
                 )
                 if res.ok:
                     self.webapp_registered = True

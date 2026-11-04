@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Literal, cast
 from collections.abc import Awaitable
 
-from goygram.errors import MessageNotModifiedError, MessageIdInvalidError, MessageNotFoundError, RPCError
+from goygram.errors import FloodWaitError, MessageNotModifiedError, MessageIdInvalidError, MessageNotFoundError, RPCError
 
 from .state import StateNamespace
 from .plainfmt import rich_to_plain
@@ -215,6 +215,7 @@ def reply_peer(message: Any) -> Any:
 class ResponseService:
     def __init__(self, rich_sender: Callable[..., Any] | None = None) -> None:
         self.rich_sender = rich_sender
+        self.flood: Any = None
 
     async def respond(
         self,
@@ -268,6 +269,8 @@ class ResponseService:
                     break
         if topic_id is not None:
             payload["topic_id"] = topic_id
+        raw_html = text
+        flood_exc: Exception | None = None
         if text is not None and str(payload.get("parse_mode", "")).lower() == "html":
             if getattr(msg, "src", "mt") == "bot":
                 payload["parse_mode"] = "HTML"
@@ -283,6 +286,8 @@ class ResponseService:
                 result = await msg.edit(text or "", **payload)
             except MessageNotModifiedError:
                 return Response(True, "edit", getattr(msg, "src", None), msg)
+            except FloodWaitError as exc:
+                flood_exc = exc
             except (MessageIdInvalidError, MessageNotFoundError, RPCError, Exception):
                 pass
             else:
@@ -291,6 +296,8 @@ class ResponseService:
             try:
                 result = await msg.reply(text or "", **payload)
                 return Response(True, "reply", getattr(msg, "src", None), result)
+            except FloodWaitError as exc:
+                flood_exc = exc
             except (MessageIdInvalidError, MessageNotFoundError, RPCError, Exception):
                 pass
         chat_id = msg_field(msg, "chat_id")
@@ -302,6 +309,8 @@ class ResponseService:
             try:
                 result = await msg.respond(text or "", **send_payload)
                 return Response(True, "reply", getattr(msg, "src", None), result)
+            except FloodWaitError as exc:
+                flood_exc = exc
             except Exception:
                 pass
         if chat_id is not None and app is not None and hasattr(app, "send_msg"):
@@ -309,8 +318,21 @@ class ResponseService:
                 via = msg_field(msg, "src")
                 result = await app.send_msg(chat_id, text or "", via=via, **send_payload)
                 return Response(True, "reply", getattr(msg, "src", None), result)
+            except FloodWaitError as exc:
+                flood_exc = exc
             except Exception:
                 pass
+        if self.flood is not None and chat_id is not None and (raw_html or text):
+            target_text = raw_html if raw_html else text
+            fallback_res = await self.flood.send(
+                chat_id,
+                target_text or "",
+                src=getattr(msg, "src", None),
+                reply_to=reply_to or getattr(msg, "id", None),
+                topic_id=topic_id,
+            )
+            if fallback_res is not None:
+                return Response(True, "reply", "bot" if getattr(msg, "src", None) != "bot" else "userbot", fallback_res)
         return Response(False, "none", None)
 
     async def smart(

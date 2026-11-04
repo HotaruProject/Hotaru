@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import inspect
+import re
 import time
 from pathlib import Path
 from typing import Any, cast
@@ -14,28 +16,33 @@ from relay.firewall import trusted_scope
 
 _assets = Path(__file__).parent / "assets"
 _banners = {
+    "brand": ("hotaru-brand", "photo", "banner.png"),
+    "banner": ("hotaru-banner", "photo", "banner.png"),
+    "logo": ("hotaru-logo", "photo", "banner.png"),
     "help": ("hotaru-help", "video", "help.mp4"),
-    "brand": ("hotaru-brand", "photo", "logo.png"),
-    "accounts": ("hotaru-accounts", "video", "accounts.mp4"),
-    "acl": ("hotaru-acl", "video", "acl.mp4"),
+    "info": ("hotaru-info", "video", "info.mp4"),
+    "settings": ("hotaru-settings", "video", "settings.mp4"),
     "backups": ("hotaru-backups", "video", "backups.mp4"),
     "catalyst": ("hotaru-catalyst", "video", "catalyst.mp4"),
     "executor": ("hotaru-executor", "video", "executor.mp4"),
-    "info": ("hotaru-info", "video", "info.mp4"),
     "logger": ("hotaru-logger", "video", "logger.mp4"),
     "ping": ("hotaru-ping", "video", "ping.mp4"),
     "power": ("hotaru-power", "video", "power.mp4"),
-    "settings": ("hotaru-settings", "video", "settings.mp4"),
     "singularity": ("hotaru-singularity", "video", "singularity.mp4"),
     "translations": ("hotaru-translations", "video", "translations.mp4"),
     "updater": ("hotaru-updater", "video", "updater.mp4"),
+    "accounts": ("hotaru-accounts", "video", "accounts.mp4"),
+    "acl": ("hotaru-acl", "video", "acl.mp4"),
 }
 
 
 def banner(name: str = "brand") -> str:
-    media_id, kind, _ = _banners[name]
+    entry = _banners.get(name)
+    if entry is None:
+        return ""
+    media_id, kind, filename = entry
     tag = "video" if kind == "video" else "img"
-    return f'<{tag} src="tg://{kind}?id={media_id}"/>\n'
+    return f'<{tag} src="tg://{kind}?id={media_id}"/>'
 
 
 class Branding:
@@ -48,6 +55,8 @@ class Branding:
         payload: dict[str, Any] = {"_": "inputRichMessageHTML", **to_rich(text)}
         needed = [(mid, kind, name) for mid, kind, name in _banners.values() if f"tg://{kind}?id={mid}" in text]
         if not needed:
+            if "html" in payload:
+                payload["html"] = re.sub(r'<(?:img|video)\s+src="https?://[^"]*"\s*/?>', "", payload["html"])
             return payload
         app = self.runtime.inline.bot_app
         files: list[dict[str, Any]] = []
@@ -70,6 +79,8 @@ class Branding:
                 files.append(entry)
         if files:
             payload["files"] = files
+        if "html" in payload:
+            payload["html"] = re.sub(r'<(?:img|video)\s+src="https?://[^"]*"\s*/?>', "", payload["html"])
         return payload
 
     async def _upload(self, app: Any, media_id: str, kind: str, filename: str) -> dict[str, Any]:
@@ -99,7 +110,7 @@ class Branding:
     async def apply_avatars(self, forum: Any, chat_id: int) -> None:
         state = self.runtime.state
         app = self.runtime.app
-        path = _assets / "avatar.png"
+        path = _assets / "logo.png"
         digest = hashlib.sha256(path.read_bytes()).hexdigest()
         info = getattr(self.runtime.inline, "info", None)
         targets = [("forum", chat_id)]
@@ -107,7 +118,21 @@ class Branding:
             targets.append(("bot", info.bot_id))
         for kind, target in targets:
             key = f"brand-avatar-{kind}-{target}"
-            if state.get_setting(key) == digest:
+            should_update = state.get_setting(key) != digest
+            if not should_update and kind == "forum":
+                try:
+                    peer = forum._user_channel(chat_id)
+                    if peer is not None:
+                        full = await app.mt_req("channels.getFullChannel", channel=peer)
+                        chats = full.get("chats", []) if isinstance(full, dict) else getattr(full, "chats", [])
+                        if chats:
+                            chat_obj = chats[0] if isinstance(chats[0], dict) else chats[0].to_dict() if hasattr(chats[0], "to_dict") else {}
+                            photo = chat_obj.get("photo")
+                            if not photo or (isinstance(photo, dict) and photo.get("_") == "chatPhotoEmpty"):
+                                should_update = True
+                except Exception:
+                    pass
+            if not should_update:
                 continue
             try:
                 if kind == "forum":
@@ -130,13 +155,33 @@ class Branding:
             except Exception as exc:
                 if self.runtime.observatory is not None:
                     self.runtime.observatory.emit("branding", "avatar_failed", target=kind, error=type(exc).__name__)
+        try:
+            peer = forum._user_channel(chat_id)
+            if peer is not None:
+                prem = False
+                if hasattr(self.runtime, "is_premium"):
+                    val = self.runtime.is_premium()
+                    prem = await val if inspect.isawaitable(val) else bool(val)
+                if prem:
+                    from relay.proxies import topic_emoji_id
+                    res = await app.mt_req("messages.getForumTopics", peer=peer, offset_date=0, offset_id=0, offset_topic=0, limit=100)
+                    topics = res.get("topics", []) if isinstance(res, dict) else getattr(res, "topics", [])
+                    for item in topics:
+                        top = item if isinstance(item, dict) else item.to_dict() if hasattr(item, "to_dict") else {}
+                        if isinstance(top.get("id"), int) and not top.get("icon_emoji_id"):
+                            eid = topic_emoji_id(str(top.get("title") or ""))
+                            if eid:
+                                await app.mt_req("messages.editForumTopic", peer=peer, topic_id=int(top["id"]), icon_emoji_id=eid)
+        except Exception as exc:
+            if self.runtime.observatory is not None:
+                self.runtime.observatory.emit("branding", "topic_emoji_sync_failed", error=type(exc).__name__)
 
     async def apply_bot_avatar(self, info: Any) -> None:
         state = self.runtime.state
         app = self.runtime.app
         key = f"brand-avatar-bot-{info.bot_id}"
         try:
-            path = _assets / "avatar.png"
+            path = _assets / "logo.png"
             digest = hashlib.sha256(path.read_bytes()).hexdigest()
             if state.get_setting(key) == digest:
                 return

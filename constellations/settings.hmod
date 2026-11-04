@@ -1,7 +1,7 @@
 HOTARU = {
     "id": "settings",
     "version": "3.1.0",
-    "commands": ["settings", "conf", "config", "alias", "rmalias", "lsalias", "prefix"],
+    "commands": ["config", "alias", "rmalias", "lsalias", "prefix"],
     "capabilities": ["mt", "state"],
 }
 
@@ -183,16 +183,16 @@ def _missing(ctx: Any, module_id: str) -> Any:
 def home(ctx: Any, nav: Any = None) -> Any:
     k = ctx.screens
     modules = _modules(ctx)
-    lines = [k.banner() + f"<b>{_escape(ctx.t('kernel.config.title'))}</b>" + (f"  {k.badge(str(len(modules)), 'primary')}" if modules else "")]
+    lines = [f"<b>{_escape(ctx.t('kernel.config.title'))}</b>" + (f"  {k.badge(str(len(modules)), 'primary')}" if modules else "")]
     lines.append(f"<code>{_escape(ctx.runtime.config.prefix)}prefix</code> · <code>{_escape(ctx.runtime.config.prefix)}alias</code> · <code>{_escape(ctx.runtime.config.prefix)}lsalias</code>")
     if not modules:
         lines.append(f"<i>{_escape(ctx.t('kernel.config.empty'))}</i>")
-        return k.screen("\n".join(lines), [k.footer()])
+        return k.screen("\n".join(lines), [k.footer()], banner=k.banner("brand"), rich=True)
     for module_id, manifest, schema in modules:
         description = str(manifest.localized(ctx.runtime.language(), manifest.description).get("description", "") or "")
         line = f"{k.icon(icons.module(module_id))} {k.tap(module_id, module, id=module_id)} {k.badge(str(len(schema)))}"
         lines.append(line + (f" <i>{_escape(ctx.tools.truncate(description, 48))}</i>" if description else ""))
-    return k.screen("\n".join(lines), [k.footer()])
+    return k.screen("\n".join(lines), [k.footer()], banner=k.banner("brand"), rich=True)
 
 
 def _module_screen(ctx: Any, module_id: str, origin: Optional[str]) -> Any:
@@ -217,7 +217,7 @@ def _module_screen(ctx: Any, module_id: str, origin: Optional[str]) -> Any:
         head += " " + k.badge(ctx.t("kernel.config.changed", count=changed), "primary")
     text = head + "\n" + "\n".join(entries)
     if notes:
-        text += k.details(f"{k.icon('info')} {_escape(ctx.t('kernel.config.about'))}", "\n".join(notes))
+        text += k.details(f"{k.icon('info')} {_escape(ctx.t('kernel.config.about'))}", "<br>".join(notes))
     rows: List[List[Any]] = []
     if changed:
         rows.append([k.button(ctx.t("kernel.config.reset_all"), confirm_reset, id=module_id, origin=origin)])
@@ -270,11 +270,12 @@ def _template_block(ctx: Any, module_id: str, field: ConfigField, value: Any, pa
         if meta.get("description_key"):
             description = ctx.t(meta["description_key"], str(description) or name)
         example = ctx.tools.truncate(ctx.tools.template_render("{" + name + "}", {name: meta}), 60)
-        entries.append(f"<code>{{{_escape(name)}}}</code> · {_escape(meta['type'])} — {_escape(ctx.tools.truncate(str(description), 100))}\n→ <code>{_escape(example)}</code>")
+        entries.append(f"<code>{{{_escape(name)}}}</code> · {_escape(meta['type'])} — {_escape(ctx.tools.truncate(str(description), 100))} → <code>{_escape(example)}</code>")
     title = ctx.t("kernel.config.template_fields")
     counter = f" · {page + 1}/{pages}" if pages > 1 else ""
     syntax = _escape(ctx.t("kernel.config.template_syntax"))
-    block = f"<blockquote expandable><b>{_escape(title)}</b>{counter}\n" + "\n".join(entries) + f"\n<i>{syntax}</i></blockquote>"
+    entries_body = "<br>".join(entries)
+    block = f"<blockquote expandable><b>{_escape(title)}</b>{counter}<br>{entries_body}<br><i>{syntax}</i></blockquote>"
     try:
         used = ctx.tools.template_names(value, legacy_braces=field.legacy_braces)
         for name in used:
@@ -284,7 +285,7 @@ def _template_block(ctx: Any, module_id: str, field: ConfigField, value: Any, pa
     except ValueError as exc:
         preview = str(exc)
     label = _escape(ctx.t("kernel.config.template_preview"))
-    block += f"\n<b>{label}</b>\n<blockquote expandable>{_preview_html(ctx.tools.truncate(preview, 600))}</blockquote>"
+    block += f"<b>{label}</b><blockquote expandable>{_preview_html(ctx.tools.truncate(preview, 600))}</blockquote>"
     return block, page, pages
 
 
@@ -327,7 +328,7 @@ def _param_screen(ctx: Any, module_id: str, key: str, origin: Optional[str], pag
     if facts:
         lines.append(k.table(facts, keys=True))
     if long_value and not field.secret:
-        lines.append(f"{_escape(ctx.t('kernel.config.value'))}\n<blockquote expandable>{_escape(field.format_value(value)) or '—'}</blockquote>")
+        lines.append(f"<b>{_escape(ctx.t('kernel.config.value'))}:</b><blockquote expandable>{_escape(field.format_value(value)) or '—'}</blockquote>")
     if field.requires_restart:
         lines.append(f"<i>{_escape(ctx.t('kernel.config.restart'))}</i>")
     rows: List[List[Any]] = []
@@ -482,5 +483,4 @@ async def command_conf(ctx: Any, invocation: Any) -> Any:
     await ctx.screens.show(screen or _param_screen(ctx, module_id, key, None))
 
 
-command_settings = command_conf
 command_config = command_conf

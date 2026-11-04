@@ -141,6 +141,7 @@ class OutputUpdater:
         self._lock = asyncio.Lock()
         self._pages: list[str] = []
         self._page = 0
+        self.heading_key = 'kernel.executor.heading_py' if is_py else 'kernel.executor.heading_sh'
         self.master_fd: Any = None
         self.process: Any = None
 
@@ -158,19 +159,30 @@ class OutputUpdater:
         return '\n'.join(res)
 
     def _fmt_entry(self, title: str, content: Any, is_code: bool, lang: str | None = None) -> str:
-        esc = _escape(_censor(str(content), self.ctx))
-        title = self.ctx.t("kernel.executor.section." + title, title)
+        esc = _escape(_censor(str(content), self.ctx)).strip("\n")
+        title_text = self.ctx.t("kernel.executor.section." + title, title)
+        icon_map = {
+            "return": '<tg-emoji emoji-id="5260450573768990626">➡️</tg-emoji>',
+            "output": '<tg-emoji emoji-id="5257965174979042426">📝</tg-emoji>',
+            "traceback": '<tg-emoji emoji-id="5778527486270770928">❌</tg-emoji>',
+            "error": '<tg-emoji emoji-id="5778527486270770928">❌</tg-emoji>',
+            "code": '<tg-emoji emoji-id="5289608677244811430">🐍</tg-emoji>',
+            "command": '<tg-emoji emoji-id="5298632983354291951">🧑‍💻</tg-emoji>',
+            "result": '<tg-emoji emoji-id="5260726538302660868">✅</tg-emoji>',
+        }
+        icon = icon_map.get(title, "")
+        prefix = f"{icon} " if icon else ""
         if is_code:
             block = f'<pre class="language-{_escape(lang)}">{esc}</pre>' if lang else f"<pre>{esc}</pre>"
-            return f"<b>{_escape(title)}:</b>\n{block}"
-        return f"<code>{_escape(title)}:</code> {esc}"
+            return f"<b>{prefix}{_escape(title_text)}:</b>\n{block}"
+        return f"<b>{prefix}{_escape(title_text)}:</b> <code>{esc}</code>"
 
     def _pages_from(self, sections: list[Any], returncode: int | None) -> list[str]:
         elapsed = (time.perf_counter() - self.start_time) * 1000
-        head = self.ctx.t('kernel.executor.heading', elapsed=elapsed)
+        head = self.ctx.t(self.heading_key, elapsed=elapsed)
         limit = 4096
         entries = list(sections)
-        if returncode is not None:
+        if returncode is not None and returncode != 0:
             entries.append(("result", self.ctx.t('kernel.executor.exit_code', returncode=returncode), False))
         pages: list[str] = []
         cur: list[str] = [head]
@@ -208,7 +220,7 @@ class OutputUpdater:
                 await self.ctx.screens.show(_output_screen(self.ctx, _keep_pages(self.ctx, self._pages), self._pages, 0), fallback=False)
                 return
             except Exception as exc:
-                logging.getLogger(__name__).error("executor screen delivery failed: %s", type(exc).__name__)
+                logging.getLogger(__name__).error("executor screen delivery failed: %s: %s", type(exc).__name__, exc)
                 return
         kwargs: dict[str, Any] = {"parse_mode": "HTML", "rich": False}
         if self.msg:
@@ -219,14 +231,14 @@ class OutputUpdater:
                 raise RuntimeError("response was not delivered: %s" % getattr(result, "action", "?"))
             self.msg = result
         except Exception as exc:
-            logging.getLogger(__name__).error("executor response failed: %s", type(exc).__name__, exc_info=True)
+            logging.getLogger(__name__).error("executor response failed: %s: %s", type(exc).__name__, exc, exc_info=True)
             if not final:
                 return
             kwargs.pop("output", None)
             try:
                 self.msg = await self.ctx.respond(text, **kwargs)
             except Exception as exc2:
-                logging.getLogger(__name__).error("executor final fallback failed: %s", type(exc2).__name__, exc_info=True)
+                logging.getLogger(__name__).error("executor final fallback failed: %s: %s", type(exc2).__name__, exc2, exc_info=True)
 
     async def _send(self, sections: list[Any] | None = None, returncode: int | None = None, final: bool = False) -> None:
         async with self._lock:
@@ -234,7 +246,7 @@ class OutputUpdater:
                 return
             buffer_str = self.strip_ansi(self.buffer).strip()
             if sections is None:
-                sections = [("code" if self.is_py else "command", self.cmd, True)]
+                sections = [("code" if self.is_py else "command", self.cmd, True, "python" if self.is_py else "bash")]
                 if buffer_str:
                     sections.append(("output", buffer_str[-2800:], True))
                 else:
@@ -247,7 +259,7 @@ class OutputUpdater:
                 text = self._pages[0]
             else:
                 elapsed = (time.perf_counter() - self.start_time) * 1000
-                parts = [self.ctx.t('kernel.executor.heading', elapsed=elapsed)]
+                parts = [self.ctx.t(self.heading_key, elapsed=elapsed)]
                 for entry in sections:
                     title, content, is_code = entry[0], entry[1], entry[2]
                     lang = entry[3] if len(entry) > 3 else None
@@ -277,8 +289,8 @@ class OutputUpdater:
                 self.last_update = time.time()
                 try:
                     await self._send()
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logging.getLogger(__name__).error("executor periodic send failed: %s: %s\n%s", type(exc).__name__, exc, traceback.format_exc())
                 if self._pending and not self.closed:
                     await asyncio.sleep(2.0)
         finally:
@@ -393,7 +405,8 @@ async def _get_reply(ctx: Any, invocation: Any) -> Any:
     if callable(fetch):
         try:
             reply = await cast(Any, fetch())
-        except Exception:
+        except Exception as exc:
+            logging.getLogger(__name__).error("executor reply fetch failed: %s: %s", type(exc).__name__, exc)
             reply = None
     if reply is None:
         for obj in (invocation, ctx):
@@ -557,7 +570,8 @@ class _MsgProxy:
             return ""
         try:
             return render(raw)
-        except Exception:
+        except Exception as exc:
+            logging.getLogger(__name__).error("executor rich render failed: %s: %s", type(exc).__name__, exc)
             return ""
 
 
@@ -1366,7 +1380,8 @@ def _build_py_helpers(ctx: Any, invocation: Any, reply: Any) -> dict[str, Any]:
                 channel={"_": "inputChannel", "channel_id": cid, "access_hash": 0},
             )
             return res.get("full_chat", {}).get("participants_count")
-        except Exception:
+        except Exception as exc:
+            logging.getLogger(__name__).error("executor peers count failed: %s: %s", type(exc).__name__, exc)
             return None
 
 
@@ -1489,8 +1504,8 @@ async def _fail(ctx: Any, exc: BaseException) -> None:
             f"<b>{_escape(str(title))}</b>\n<pre>{_escape(text)}</pre>",
             parse_mode="HTML", rich=False,
         )
-    except Exception:
-        pass
+    except Exception as exc:
+        logging.getLogger(__name__).error("executor failure report failed: %s: %s", type(exc).__name__, exc)
 
 
 async def command_sh(ctx: Any, invocation: Any) -> Any:
@@ -1592,8 +1607,8 @@ async def _sh_run(ctx: Any, invocation: Any) -> Any:
         await process.wait()
         try:
             await asyncio.wait_for(reader_task, timeout=1.0)
-        except asyncio.TimeoutError:
-            pass
+        except asyncio.TimeoutError as exc:
+            logging.getLogger(__name__).error("executor pty output drain timed out: %s: %s", type(exc).__name__, exc)
     except asyncio.CancelledError:
         _kill_group(process)
         await process.wait()
@@ -1612,11 +1627,15 @@ async def _sh_run(ctx: Any, invocation: Any) -> Any:
         return
 
     buffer_str = updater.strip_ansi(updater.buffer).strip()
-    sections = [("command", cmd, True)]
+    sections = [("command", cmd, True, "bash")]
     if buffer_str:
         sections.append(("output", buffer_str, True))
-    
-    await updater.finish(sections, returncode=process.returncode)
+    if process.returncode != 0:
+        sections.append(("result", ctx.t('kernel.executor.exit_code', returncode=process.returncode), False))
+    elif not buffer_str:
+        sections.append(("result", ctx.t('kernel.executor.done'), False))
+
+    await updater.finish(sections)
 
 
 async def command_py(ctx: Any, invocation: Any) -> Any:
@@ -1734,15 +1753,21 @@ async def _py_run(ctx: Any, invocation: Any) -> Any:
     if skip_output:
         return
 
-    sections: list[Any] = [("code", raw_code, True)]
+    sections: list[Any] = [("code", raw_code, True, "python")]
     buffer_str = updater.strip_ansi(updater.buffer).strip()
-    if buffer_str:
-        sections.append(("output", buffer_str, True))
-    if result_val is not _SENTINEL:
-        rendered = result_val if isinstance(result_val, str) else _dump(result_val)
-        sections.append(("return", rendered if rendered else "''", True, "python"))
     if error_trace:
         sections.append(("traceback", error_trace, True, "python"))
+    elif buffer_str and (result_val is _SENTINEL or result_val is None):
+        sections.append(("output", buffer_str, True))
+    elif result_val is not _SENTINEL and not buffer_str:
+        rendered = result_val if isinstance(result_val, str) else _dump(result_val)
+        sections.append(("return", rendered if rendered else "''", True, "python"))
+    else:
+        if buffer_str:
+            sections.append(("output", buffer_str, True))
+        if result_val is not _SENTINEL and result_val is not None:
+            rendered = result_val if isinstance(result_val, str) else _dump(result_val)
+            sections.append(("return", rendered if rendered else "''", True, "python"))
     if len(sections) == 1:
         sections.append(("result", ctx.t('kernel.executor.done'), False))
 
@@ -1774,8 +1799,8 @@ async def command_kill(ctx: Any, invocation: Any) -> Any:
     if kernel is not None and getattr(reply, "chat_id", None) is not None:
         try:
             killed = kernel.cancel(getattr(reply, "chat_id", None), target_id) or killed
-        except Exception:
-            pass
+        except Exception as exc:
+            logging.getLogger(__name__).error("executor kill cancel failed: %s: %s", type(exc).__name__, exc)
 
     if killed:
         await ctx.respond(ctx.t('kernel.executor.killed'), parse_mode="HTML")

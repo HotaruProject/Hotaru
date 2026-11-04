@@ -54,11 +54,19 @@ class _Converter(HTMLParser):
             self._emit("[map]")
         elif tag == "tg-math":
             self._emit("<code>")
+        elif tag == "hr":
+            self._emit("\n──────────────\n")
+        elif tag == "mark":
+            self._emit("<u>")
+        elif tag in ("sup", "sub"):
+            self._emit("<b>")
         elif tag == "table":
-            self._emit("<pre>")
+            self._emit("\n")
         elif tag == "tr":
             self._emit("\n")
-        elif tag in ("td", "th"):
+        elif tag == "th":
+            self._emit("• <b>")
+        elif tag == "td":
             self._emit(" ")
 
     def handle_endtag(self, tag: str) -> None:
@@ -88,8 +96,14 @@ class _Converter(HTMLParser):
             self._emit("</blockquote>")
         elif tag == "tg-math":
             self._emit("</code>")
+        elif tag == "mark":
+            self._emit("</u>")
+        elif tag in ("sup", "sub"):
+            self._emit("</b>")
+        elif tag == "th":
+            self._emit("</b>")
         elif tag == "table":
-            self._emit("</pre>")
+            self._emit("\n")
         elif tag in ("tg-collage", "tg-slideshow"):
             pass
 

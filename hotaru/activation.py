@@ -614,3 +614,12 @@ class ModuleManager:
 
     def items(self) -> tuple[ActiveModule, ...]:
         return tuple(self._active.values())
+
+    def keys(self) -> tuple[str, ...]:
+        return tuple(self._active.keys())
+
+    def __iter__(self) -> Any:
+        return iter(self._active.keys())
+
+    def __contains__(self, module_id: str) -> bool:
+        return module_id in self._active
