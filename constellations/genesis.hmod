@@ -2,11 +2,17 @@ HOTARU = {
     "id": "genesis",
     "version": "1.0.0",
     "commands": ["start", "setup", "genesis", "quickstart"],
+    "bot_commands": ["start", "setup"],
     "capabilities": ["mt", "state"],
     "banner": "https://raw.githubusercontent.com/HotaruProject/Hotaru/develop/hotaru/assets/genesis.mp4",
+    "rise": "on_rise",
 }
 
+import asyncio
 import html
+import json
+import urllib.parse
+import urllib.request
 from typing import Any, List, Optional
 
 
@@ -241,3 +247,73 @@ async def command_start(ctx: Any, invocation: Any) -> Any:
 command_setup = command_start
 command_genesis = command_start
 command_quickstart = command_start
+
+
+async def on_rise(ctx: Any) -> None:
+    asyncio.create_task(_rise_tasks(ctx))
+
+
+async def _rise_tasks(ctx: Any) -> None:
+    try:
+        await asyncio.sleep(2)
+        await _sync_bot_commands(ctx)
+    except Exception:
+        pass
+    try:
+        if not ctx.state.get("onboarded"):
+            ctx.state.set("onboarded", True)
+            if hasattr(ctx, "screens") and hasattr(ctx.screens, "send"):
+                await ctx.screens.send("me", home(ctx))
+    except Exception:
+        pass
+
+
+async def _sync_bot_commands(ctx: Any) -> None:
+    runtime = getattr(ctx, "runtime", None)
+    if runtime is None:
+        return
+    token = None
+    inline = getattr(runtime, "inline", None)
+    if inline and getattr(inline, "info", None) and getattr(inline.info, "token", None):
+        token = inline.info.token
+    if not token and getattr(runtime, "state", None):
+        token = runtime.state.get_setting("inline-bot-token")
+    if not token and getattr(runtime, "config", None):
+        token = getattr(runtime.config, "bot_token", None)
+    if not token:
+        return
+
+    scope_json = json.dumps({"type": "all_private_chats"})
+    scope_enc = urllib.parse.quote(scope_json)
+    get_url = f"https://api.telegram.org/bot{token}/getMyCommands?scope={scope_enc}"
+    needs_set = False
+    try:
+        req = urllib.request.Request(get_url, headers={"User-Agent": "Hotaru/1.0"})
+        with urllib.request.urlopen(req, timeout=8.0) as resp:
+            data = json.loads(resp.read().decode())
+            existing = data.get("result", [])
+            existing_cmds = {cmd.get("command") for cmd in existing if isinstance(cmd, dict)}
+            if "start" not in existing_cmds or "setup" not in existing_cmds:
+                needs_set = True
+    except Exception:
+        needs_set = True
+
+    if needs_set:
+        payload = {
+            "commands": [
+                {"command": "start", "description": "Quickstart & Setup Wizard"},
+                {"command": "setup", "description": "Configuration Wizard"},
+                {"command": "help", "description": "Userbot Help & Modules"},
+                {"command": "config", "description": "Module Settings"},
+                {"command": "dash", "description": "Singularity WebApp Dashboard"},
+            ],
+            "scope": {"type": "all_private_chats"},
+        }
+        post_url = f"https://api.telegram.org/bot{token}/setMyCommands"
+        req = urllib.request.Request(
+            post_url,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json", "User-Agent": "Hotaru/1.0"},
+        )
+        with urllib.request.urlopen(req, timeout=8.0) as resp:
+            pass

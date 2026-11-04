@@ -790,6 +790,7 @@ class RuntimeConfig:
     singularity_tunnel: bool = True
     singularity_auto_botfather: bool = True
     singularity_short_name: str = "dashboard"
+    weboff: bool = False
 
     @classmethod
     def from_database(cls, path: str | Path | None = None, *, discover: bool = True) -> "RuntimeConfig":

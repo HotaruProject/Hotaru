@@ -60,7 +60,7 @@
       "parameter_missing": "未找到参数 <code>{parameter}</code>。",
       "error_html": "错误：<code>{error}</code>",
       "missing": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>模块 <code>{module}</code> 无设置或未加载。</b>",
-      "param_missing": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>未找到参数 <code>{name}</code>。</b>",
+      "param_missing": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>未找到参数 <code>{name}</code>。</b>",
       "title": "⚙️ 设置",
       "title_short": "设置",
       "pick": "选择模块：",
@@ -88,13 +88,16 @@
       "description": "电源管理",
       "commands": {
         "restart": {
-          "description": "重启用户机器人"
+          "description": "重启用户机器人",
+          "usage": "[-f|--force]"
         },
         "stop": {
-          "description": "暂停用户机器人"
+          "description": "暂停用户机器人",
+          "usage": "[-f|--force]"
         },
         "start": {
-          "description": "恢复用户机器人"
+          "description": "恢复用户机器人",
+          "usage": ""
         },
         "resume": {
           "description": "恢复用户机器人运行",
@@ -139,9 +142,9 @@
       "ignored_toast": "已忽略",
       "updating": "正在更新...",
       "notify_on": "<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> <b>更新通知已启用</b>",
-      "notify_off": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>更新通知已禁用</b>",
-      "check_failed": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>检查更新失败：</b>\n<blockquote><i>{error}</i></blockquote>",
-      "failed": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>更新失败：</b>\n<blockquote><i>{error}</i></blockquote>",
+      "notify_off": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>更新通知已禁用</b>",
+      "check_failed": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>检查更新失败：</b>\n<blockquote><i>{error}</i></blockquote>",
+      "failed": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>更新失败：</b>\n<blockquote><i>{error}</i></blockquote>",
       "conflicts": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>本地冲突已保存：</b>\n<blockquote><code>{path}</code></blockquote>",
       "button_update": "更新",
       "button_ignore": "忽略",
@@ -226,11 +229,11 @@
         },
         "translate": {
           "description": "翻译文本",
-          "usage": "[语言代码] <文本/回复>"
+          "usage": "[language] <text|reply>"
         },
         "loadlex": {
           "description": "加载语言包",
-          "usage": "[链接/路径/文件]"
+          "usage": "<url|path|file>"
         },
         "rmlex": {
           "description": "删除自定义语言包",
@@ -301,7 +304,7 @@
       "manager_unavailable": "<b>模块管理器不可用</b>",
       "usage": "<b>用法：</b><code>{prefix}help</code> 或 <code>{prefix}help &lt;module&gt;</code>",
       "disabled": "<b>模块已停用：</b><code>{module}</code><br><i>错误：{error}</i>",
-      "missing": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>未找到模块：</b> <code>{module}</code>",
+      "missing": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>未找到模块：</b> <code>{module}</code>",
       "aliases": "别名",
       "kernel_badge": "kernel",
       "title": "Hotaru · 帮助",
@@ -320,11 +323,11 @@
       "commands": {
         "acc": {
           "description": "管理账号",
-          "usage": "[number] [start|stop|restart|on|off|del]"
+          "usage": "[number] [start|stop|restart|del]"
         },
         "acca": {
           "description": "添加或登录账号",
-          "usage": "[ID|cancel|password] [password]"
+          "usage": "[number|cancel]"
         },
         "accs": {
           "description": "打开账号面板",
@@ -476,47 +479,59 @@
         },
         "perm": {
           "description": "授予或撤销权限",
-          "usage": "[ID|@username|command/name] [role] [remove]"
+          "usage": "<ID|@username> <admin|trusted|everyone> [remove]"
         },
         "whois": {
           "description": "显示用户权限",
-          "usage": "[ID|@username] [command]"
+          "usage": "<ID|@username> [command]"
         },
         "owadd": {
-          "description": "添加所有者"
+          "description": "添加所有者",
+          "usage": "<ID|@username|reply>"
         },
         "owrm": {
-          "description": "移除所有者"
+          "description": "移除所有者",
+          "usage": "<ID|@username|reply>"
         },
         "owls": {
-          "description": "所有者列表"
+          "description": "所有者列表",
+          "usage": ""
         },
         "sgnew": {
-          "description": "创建权限组"
+          "description": "创建权限组",
+          "usage": "<name>"
         },
         "sgls": {
-          "description": "权限组列表"
+          "description": "权限组列表",
+          "usage": ""
         },
         "sg": {
-          "description": "显示组成员和规则"
+          "description": "显示组成员和规则",
+          "usage": "<name>"
         },
         "sgdel": {
-          "description": "删除权限组"
+          "description": "删除权限组",
+          "usage": "<name>"
         },
         "sgadd": {
-          "description": "添加组成员"
+          "description": "添加组成员",
+          "usage": "<name> <ID|@username|reply>"
         },
         "sgrm": {
-          "description": "移除组成员"
+          "description": "移除组成员",
+          "usage": "<name> <ID|@username|reply>"
         },
         "rule": {
-          "description": "添加访问规则"
+          "description": "添加访问规则",
+          "usage": "<user|chat|sgroup> <target> <command|module> [1h|forever]"
         },
         "rulerm": {
-          "description": "移除规则"
+          "description": "移除规则",
+          "usage": "<user|chat|sgroup> <target> <rule>"
         },
         "ruleclr": {
-          "description": "清除规则"
+          "description": "清除规则",
+          "usage": "<user|chat|sgroup> [target]"
         }
       },
       "bad_group": "组名：仅限字母和数字，最多 32 个字符。",
@@ -538,24 +553,27 @@
       "commands": {
         "alias": {
           "description": "创建命令别名",
-          "usage": "[alias] [command]"
+          "usage": "<alias> <command>"
         },
         "rmalias": {
           "description": "删除命令别名",
-          "usage": "[alias]"
+          "usage": "<alias>"
         },
         "lsalias": {
-          "description": "列出命令别名"
+          "description": "列出命令别名",
+          "usage": ""
         },
         "prefix": {
           "description": "更改命令前缀",
-          "usage": "[prefix]"
+          "usage": "<prefix>"
         },
         "settings": {
-          "description": "打开统一设置"
+          "description": "打开统一设置",
+          "usage": "[module]"
         },
         "config": {
-          "description": "配置模块参数"
+          "description": "配置模块参数",
+          "usage": "[module]"
         }
       }
     },
@@ -579,7 +597,7 @@
       "commands": {
         "logs": {
           "description": "带文件的用户机器人日志",
-          "usage": "[on|off|status|level] [count] [component]"
+          "usage": "[on|off|status|level] [count]"
         },
         "loglevel": {
           "description": "更改或选择日志级别",
@@ -626,14 +644,15 @@
       "commands": {
         "py": {
           "description": "运行 Python 代码",
-          "usage": "[-so] [code]"
+          "usage": "[-so] <code>"
         },
         "sh": {
           "description": "运行 Shell 命令",
-          "usage": "[-so] [command]"
+          "usage": "[-so] <command>"
         },
         "kill": {
-          "description": "停止正在运行的命令"
+          "description": "停止正在运行的命令",
+          "usage": ""
         }
       },
       "heading_sh": "<tg-emoji emoji-id=\"5298632983354291951\">🧑‍💻</tg-emoji> <b>执行器</b> · <code>{elapsed:.1f}ms</code>",
@@ -644,11 +663,11 @@
       "commands": {
         "ld": {
           "description": "加载模块",
-          "usage": "[url|path]"
+          "usage": "<url|path|reply>"
         },
         "ul": {
           "description": "卸载模块",
-          "usage": "[module] [-p]"
+          "usage": "<module> [-p]"
         },
         "rl": {
           "description": "重新加载模块",
@@ -656,11 +675,11 @@
         },
         "ex": {
           "description": "导出模块",
-          "usage": "[module]"
+          "usage": "<module>"
         },
         "resetdb": {
           "description": "重置模块数据",
-          "usage": "[module]"
+          "usage": "<module>"
         }
       }
     },
@@ -706,7 +725,11 @@
       "template": "<tg-emoji emoji-id=\"5258503720928288433\">ℹ️</tg-emoji> <b>Hotaru Userbot</b> <code>v{version}</code>\n<blockquote expandable><tg-emoji emoji-id=\"5258258882022612173\">⏳</tg-emoji> <b>运行时间:</b> <code>{uptime}</code>\n<tg-emoji emoji-id=\"5258514780469075716\">🧩</tg-emoji> <b>模块:</b> <code>{modules}</code></blockquote>",
       "commands": {
         "info": {
-          "description": "显示用户机器人信息"
+          "description": "显示用户机器人信息",
+          "usage": ""
+        },
+        "ping": {
+          "usage": ""
         }
       },
       "empty_template": "信息模板为空",
@@ -749,7 +772,7 @@
       "name": "API Flood Protection",
       "status_title": "<tg-emoji emoji-id=\"5291803847914698795\">🌐</tg-emoji> <b>API Flood Protection</b>",
       "enabled": "<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> 已启用",
-      "disabled": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> 已禁用",
+      "disabled": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> 已禁用",
       "suspended_for": "<tg-emoji emoji-id=\"5280652390532395919\">🔋</tg-emoji> API 保护已暂停 {seconds} 秒。",
       "status_text": "<tg-emoji emoji-id=\"5291803847914698795\">🌐</tg-emoji> <b>API Flood Protection</b>\n\n状态: {status}\n采样窗口: <code>{sample}秒</code>\n阈值: <code>{threshold} 次请求</code>\n冷却暂停: <code>{cooldown}秒</code>\n最近请求数: <code>{recent}</code>\n保护触发次数: <code>{total}</code>",
       "alert": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>API Flood Protection 已触发！</b>\n\nTelegram API 请求频率在 <code>{sample}秒</code> 内达到 <code>{count}</code> 次（阈值: {threshold}）。\nHotaru 已暂停 API 请求 <code>{cooldown}秒</code> 以保护您的会话。",
@@ -761,20 +784,32 @@
       "name": "API Flood Protection",
       "status_title": "<tg-emoji emoji-id=\"5291803847914698795\">🌐</tg-emoji> <b>API Flood Protection</b>",
       "enabled": "<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> 已启用",
-      "disabled": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> 已禁用",
+      "disabled": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> 已禁用",
       "suspended_for": "<tg-emoji emoji-id=\"5280652390532395919\">🔋</tg-emoji> API 保护已暂停 {seconds} 秒。",
       "status_text": "<tg-emoji emoji-id=\"5291803847914698795\">🌐</tg-emoji> <b>API Flood Protection</b>\n\n状态: {status}\n采样窗口: <code>{sample}秒</code>\n阈值: <code>{threshold} 次请求</code>\n冷却暂停: <code>{cooldown}秒</code>\n最近请求数: <code>{recent}</code>\n保护触发次数: <code>{total}</code>",
       "alert": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>API Flood Protection 已触发！</b>\n\nTelegram API 请求频率在 <code>{sample}秒</code> 内达到 <code>{count}</code> 次（阈值: {threshold}）。\nHotaru 已暂停 API 请求 <code>{cooldown}秒</code> 以保护您的会话。",
       "btn_toggle": "切换",
       "btn_stats": "统计",
       "btn_close": "关闭",
-      "description": "Telegram API 泛洪与速率限制保护"
+      "description": "Telegram API 泛洪与速率限制保护",
+      "commands": {
+        "shield": {
+          "usage": ""
+        },
+        "suspend_api": {
+          "usage": "<seconds>"
+        }
+      }
     },
     "backups": {
       "description": "将备份发送至服务论坛",
       "commands": {
         "backup": {
-          "description": "发送备份或管理自动备份"
+          "description": "发送备份或管理自动备份",
+          "usage": "[send|now]"
+        },
+        "restore": {
+          "usage": "<archive>"
         }
       },
       "config_fields": {
@@ -911,7 +946,7 @@
     "modules_empty": "模块：无",
     "modules": "模块：\n",
     "module_unavailable": "模块不可用",
-    "module_missing": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>未找到模块：</b> <code>{module_id}</code>",
+    "module_missing": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>未找到模块：</b> <code>{module_id}</code>",
     "module_info": "模块：{module}\n版本：{version}\n命令：{commands}\n能力：{capabilities}\n说明：{description}",
     "help_unavailable": "帮助不可用",
     "page_unavailable": "帮助页面不可用",
@@ -920,7 +955,7 @@
     "bot_unavailable": "内联机器人：不可用",
     "bot_failed": "内联机器人配置失败：{error}",
     "protected": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>系统模块受保护：</b> <code>{module_id}</code>",
-    "unload_failed": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>卸载失败：</b>\n<blockquote>{error}</blockquote>",
+    "unload_failed": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>卸载失败：</b>\n<blockquote>{error}</blockquote>",
     "not_ready": "运行时服务尚未就绪",
     "purged": "<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> <b>模块已删除：</b> <code>{module}</code>\n<blockquote>数据已彻底清除。</blockquote>",
     "unloaded": "<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> <b>模块已卸载：</b> <code>{module}</code>\n<blockquote>数据已保留。</blockquote>",
@@ -939,7 +974,7 @@
     "activation_failed": "激活失败",
     "module_loaded": "模块已加载",
     "loaded": "<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> <b>已加载：</b> <code>{module_id}</code> <code>v{version}</code>",
-    "backup_failed": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>备份失败：</b>\n<blockquote>{error}</blockquote>",
+    "backup_failed": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>备份失败：</b>\n<blockquote>{error}</blockquote>",
     "backup_created": "备份已创建：{name}",
     "backups_empty": "备份：无",
     "backups": "备份：\n",
@@ -951,11 +986,11 @@
     "invalid_page": "无效帮助页",
     "invalid_restore": "无效恢复请求",
     "restore_failed": "恢复失败",
-    "restore_error": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>恢复失败：</b>\n<blockquote>{error}</blockquote>",
+    "restore_error": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>恢复失败：</b>\n<blockquote>{error}</blockquote>",
     "restore_done": "恢复完成",
     "callback_failed": "回调失败",
     "callback_denied": "按钮已过期或不可用。",
-    "load_error": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>模块加载失败：</b>\n<blockquote>{error}: {detail}</blockquote>",
+    "load_error": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>模块加载失败：</b>\n<blockquote>{error}: {detail}</blockquote>",
     "load_failed": "加载失败：{error}",
     "load_screen": "加载失败：{module_id} {version}\n{screen}",
     "updated": "<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> <b>已更新：</b> <code>{module_id}</code> <code>v{version}</code>",
@@ -964,7 +999,7 @@
     "usage_mi": "<b>用法：</b> <code>{prefix}mi [module]</code> — <i>模块信息</i>",
     "usage_help": "<b>用法：</b> <code>{prefix}help &lt;page|module&gt;</code> — <i>帮助信息</i>",
     "usage_reload": "<b>用法：</b> <code>{prefix}rl [module] &lt;force&gt;</code> — <i>重载模块</i>",
-    "usage_unload": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>请指定模块：</b> <code>{prefix}ul &lt;模块&gt;</code>",
+    "usage_unload": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>请指定模块：</b> <code>{prefix}ul &lt;模块&gt;</code>",
     "usage_reset": "<b>用法：</b> <code>{prefix}rs [module]</code> — <i>重置状态</i>",
     "usage_export": "<b>用法：</b> <code>{prefix}ex [module]</code> — <i>导出源代码</i>",
     "usage_backup": "<b>用法：</b> <code>{prefix}bk &lt;list|test|restore&gt; &lt;archive&gt;</code> — <i>备份管理</i>",
@@ -997,9 +1032,9 @@
     "unknown_capability": "未知能力（已拒绝）",
     "export_caption": "<tg-emoji emoji-id=\"5258514780469075716\">📂</tg-emoji> <b>{module}</b> <code>v{version}</code>\n<blockquote><tg-emoji emoji-id=\"5258134813302332906\">📦</tg-emoji> Hotaru 模块导出</blockquote>",
     "loading_module": "正在加载 {module_id}…",
-    "usage_load_source": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>请指定链接、路径或回复模块文件 (.hmod)</b>",
+    "usage_load_source": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>请指定链接、路径或回复模块文件 (.hmod)</b>",
     "unloading": "<tg-emoji emoji-id=\"5258130763148172425\">🗑</tg-emoji> <i>正在卸载 <code>{module}</code>...</i>",
-    "invalid_path": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>未找到指定的文件或路径。</b>"
+    "invalid_path": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>未找到指定的文件或路径。</b>"
   },
   "acl": {
     "owners": "<b>所有者</b><br>",
@@ -1098,7 +1133,7 @@
     "all_chats": "对所有聊天中的所有人开放。",
     "account": " · 账户",
     "protected": " · 受保护",
-    "failed": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>错误：</b>\n<blockquote>{error}</blockquote>",
+    "failed": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>错误：</b>\n<blockquote>{error}</blockquote>",
     "owner_added": "已授予 <code>{user_id}</code> 所有者权限",
     "owner_exists": "<code>{user_id}</code> 已经是所有者",
     "owner_removed": "已撤销 <code>{user_id}</code> 的所有者权限",
@@ -1135,8 +1170,8 @@
   },
   "ui": {
     "error": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> {error}",
-    "failed": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>发生错误：</b>\n<blockquote>{error}</blockquote>",
-    "denied": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> 该按钮不可用。",
+    "failed": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>发生错误：</b>\n<blockquote>{error}</blockquote>",
+    "denied": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> 该按钮不可用。",
     "close": "✕ Close",
     "back": "‹ 返回",
     "expired": "菜单已过期，请重新运行命令。",

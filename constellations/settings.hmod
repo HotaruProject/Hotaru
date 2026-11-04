@@ -13,10 +13,10 @@ from dataclasses import replace
 async def command_alias(ctx: Any, invocation: Any) -> Any:
     runtime = ctx.runtime
     if runtime is None:
-        await ctx.respond(ctx.t('settings.runtime_unavailable'))
+        await ctx.respond(f'<tg-emoji emoji-id="5260342697075416641">❌</tg-emoji> {ctx.t("settings.runtime_unavailable")}', parse_mode="HTML", output="edit")
         return
     if len(invocation.args) < 2:
-        await ctx.respond(ctx.t('settings.usage_alias', prefix=runtime.config.prefix))
+        await ctx.respond(f'<tg-emoji emoji-id="5260342697075416641">❌</tg-emoji> <b>{ctx.t("settings.usage_alias", prefix=runtime.config.prefix)}</b>', parse_mode="HTML", output="edit")
         return
     alias = invocation.args[0].casefold()
     words = list(invocation.args[1:])

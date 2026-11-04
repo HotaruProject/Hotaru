@@ -132,7 +132,7 @@ async def _upload_asset(app: Any, media_id: str, kind: str, file_path: Path) -> 
 
 _ICONS: dict[str, str] = {
     "back": '<tg-emoji emoji-id="5258236805890710909">⬅️</tg-emoji>',
-    "close": '<tg-emoji emoji-id="5778527486270770928">❌</tg-emoji>',
+    "close": '<tg-emoji emoji-id="5260342697075416641">❌</tg-emoji>',
     "search": '<tg-emoji emoji-id="5429571366384842791">🔎</tg-emoji>',
     "settings": '<tg-emoji emoji-id="5258096772776991776">⚙️</tg-emoji>',
     "edit": '<tg-emoji emoji-id="5258331647358540449">✍️</tg-emoji>',

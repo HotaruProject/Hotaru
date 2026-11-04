@@ -10,7 +10,7 @@
     "lang": {
       "description": "Показати або змінити мову",
       "usage": "{prefix}language [мова]",
-      "invalid": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>Непідтримувана мова:</b> <code>{language}</code>",
+      "invalid": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>Непідтримувана мова:</b> <code>{language}</code>",
       "changed": "Мову змінено на {language}",
       "unavailable": "Сервіс недоступний",
       "lexicon_unavailable": "Словник перекладів недоступний",
@@ -84,7 +84,7 @@
       "commands": {
         "help": {
           "description": "Каталог допомоги",
-          "usage": "[модуль]"
+          "usage": "[module]"
         }
       }
     },
@@ -92,13 +92,16 @@
       "description": "Керування юзерботом",
       "commands": {
         "restart": {
-          "description": "Перезапуск юзербота"
+          "description": "Перезапуск юзербота",
+          "usage": "[-f|--force]"
         },
         "stop": {
-          "description": "Призупинити юзербота"
+          "description": "Призупинити юзербота",
+          "usage": "[-f|--force]"
         },
         "start": {
-          "description": "Відновити юзербота"
+          "description": "Відновити юзербота",
+          "usage": ""
         },
         "resume": {
           "description": "Відновити роботу юзербота",
@@ -144,14 +147,14 @@
       "ignored_toast": "Проігноровано",
       "updating": "Оновлюю…",
       "notify_on": "<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> <b>Сповіщення про оновлення увімкнено</b>",
-      "notify_off": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>Сповіщення про оновлення вимкнено</b>",
+      "notify_off": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>Сповіщення про оновлення вимкнено</b>",
       "unavailable": "Середовище виконання недоступне",
       "up_to_date": "<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> <b>Hotaru вже оновлено до останньої версії</b>",
       "update_available": "Доступне оновлення Hotaru",
       "downloading": "<tg-emoji emoji-id=\"5258420634785947640\">🔄</tg-emoji> <b>Завантажую оновлення…</b>",
       "syncing": "<tg-emoji emoji-id=\"5258420634785947640\">🔄</tg-emoji> <b>Оновлюю залежності…</b>",
-      "check_failed": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>Не вдалося перевірити оновлення:</b>\n<blockquote><i>{error}</i></blockquote>",
-      "failed": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>Не вдалося оновити:</b>\n<blockquote><i>{error}</i></blockquote>",
+      "check_failed": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>Не вдалося перевірити оновлення:</b>\n<blockquote><i>{error}</i></blockquote>",
+      "failed": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>Не вдалося оновити:</b>\n<blockquote><i>{error}</i></blockquote>",
       "conflicts": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>Конфлікти збережено:</b>\n<blockquote><code>{path}</code></blockquote>",
       "button_update": "Оновити",
       "button_ignore": "Пропустити",
@@ -162,7 +165,7 @@
       "commands": {
         "language": {
           "description": "Показати або змінити мову",
-          "usage": "[мова]"
+          "usage": "[language]"
         },
         "rmlex": {
           "description": "Видалити кастомний мовний пакет",
@@ -170,11 +173,11 @@
         },
         "loadlex": {
           "description": "Завантажити мовний пакет",
-          "usage": "[посилання/шлях/файл]"
+          "usage": "<url|path|file>"
         },
         "translate": {
           "description": "Перекласти текст",
-          "usage": "[мова] <текст/відповідь>"
+          "usage": "[language] <text|reply>"
         }
       },
       "native": {
@@ -241,7 +244,7 @@
       "manager_unavailable": "<b>Менеджер модулів недоступний</b>",
       "usage": "<b>Використання:</b> <code>{prefix}help</code> або <code>{prefix}help &lt;модуль&gt;</code>",
       "disabled": "<b>Модуль вимкнено:</b> <code>{module}</code><br><i>Помилка: {error}</i>",
-      "missing": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>Модуль не знайдено:</b> <code>{module}</code>",
+      "missing": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>Модуль не знайдено:</b> <code>{module}</code>",
       "title": "Hotaru · довідка",
       "summary": "Модулів: {count} · префікс <code>{prefix}</code>",
       "pick": "Натисніть на модуль, щоб побачити його команди.",
@@ -260,15 +263,15 @@
       "commands": {
         "acc": {
           "description": "Керування акаунтом",
-          "usage": "[номер] [start|stop|restart|on|off|del]"
+          "usage": "[number] [start|stop|restart|del]"
         },
         "acca": {
           "description": "Додати акаунт або увійти",
-          "usage": "[ID|cancel|password] [пароль]"
+          "usage": "[number|cancel]"
         },
         "accs": {
           "description": "Відкрити панель акаунтів",
-          "usage": "[номер]"
+          "usage": "[number]"
         }
       },
       "usage": "<b>Акаунти</b>\n<code>{prefix}acca [user_id]</code> · додати за QR / номером\n<code>{prefix}acca cancel</code> · скасувати вхід\n<code>{prefix}accs [#]</code> · панель акаунтів\n<code>{prefix}acc [#]</code> · панель акаунтів\n<code>{prefix}acc 2 start|stop|restart|on|off|del</code>",
@@ -416,47 +419,59 @@
         },
         "perm": {
           "description": "Надати або відкликати права",
-          "usage": "[ID|@username|command/name] <role> [remove]"
+          "usage": "<ID|@username> <admin|trusted|everyone> [remove]"
         },
         "whois": {
           "description": "Права користувача",
-          "usage": "[ID|@username] [command]"
+          "usage": "<ID|@username> [command]"
         },
         "owadd": {
-          "description": "Додати власника"
+          "description": "Додати власника",
+          "usage": "<ID|@username|reply>"
         },
         "owrm": {
-          "description": "Видалити власника"
+          "description": "Видалити власника",
+          "usage": "<ID|@username|reply>"
         },
         "owls": {
-          "description": "Список власників"
+          "description": "Список власників",
+          "usage": ""
         },
         "sgnew": {
-          "description": "Створити групу прав"
+          "description": "Створити групу прав",
+          "usage": "<name>"
         },
         "sgls": {
-          "description": "Список груп"
+          "description": "Список груп",
+          "usage": ""
         },
         "sg": {
-          "description": "Учасники та правила групи"
+          "description": "Учасники та правила групи",
+          "usage": "<name>"
         },
         "sgdel": {
-          "description": "Видалити групу"
+          "description": "Видалити групу",
+          "usage": "<name>"
         },
         "sgadd": {
-          "description": "Додати учасника"
+          "description": "Додати учасника",
+          "usage": "<name> <ID|@username|reply>"
         },
         "sgrm": {
-          "description": "Видалити учасника"
+          "description": "Видалити учасника",
+          "usage": "<name> <ID|@username|reply>"
         },
         "rule": {
-          "description": "Додати правило доступу"
+          "description": "Додати правило доступу",
+          "usage": "<user|chat|sgroup> <target> <command|module> [1h|forever]"
         },
         "rulerm": {
-          "description": "Видалити правило"
+          "description": "Видалити правило",
+          "usage": "<user|chat|sgroup> <target> <rule>"
         },
         "ruleclr": {
-          "description": "Очистити правила"
+          "description": "Очистити правила",
+          "usage": "<user|chat|sgroup> [target]"
         }
       },
       "bad_group": "Назва групи: лише літери та цифри, до 32 символів.",
@@ -514,7 +529,7 @@
       "title_short": "налаштування",
       "pick": "Оберіть модуль:",
       "missing": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>У модуля <code>{module}</code> немає налаштувань або його не завантажено.</b>",
-      "param_missing": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>Параметр <code>{name}</code> не знайдено.</b>",
+      "param_missing": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>Параметр <code>{name}</code> не знайдено.</b>",
       "reset_all": "↺ Скинути все",
       "reset_confirm": "Скинути всі параметри <b>{module}</b> до типових значень?",
       "reset_yes": "Скинути",
@@ -534,24 +549,27 @@
       "commands": {
         "alias": {
           "description": "Створити аліас команди",
-          "usage": "[аліас] [команда]"
+          "usage": "<alias> <command>"
         },
         "rmalias": {
           "description": "Видалити аліас команди",
-          "usage": "[аліас]"
+          "usage": "<alias>"
         },
         "lsalias": {
-          "description": "Показати аліаси команд"
+          "description": "Показати аліаси команд",
+          "usage": ""
         },
         "prefix": {
           "description": "Змінити префікс команд",
-          "usage": "[префікс]"
+          "usage": "<prefix>"
         },
         "settings": {
-          "description": "Відкрити налаштування"
+          "description": "Відкрити налаштування",
+          "usage": "[module]"
         },
         "config": {
-          "description": "Відкрити налаштування"
+          "description": "Відкрити налаштування",
+          "usage": "[module]"
         }
       }
     },
@@ -584,7 +602,7 @@
       "commands": {
         "logs": {
           "description": "Логи юзербота з файлом",
-          "usage": "[on|off|status|рівень] [кількість] [компонент]"
+          "usage": "[on|off|status|level] [count]"
         },
         "loglevel": {
           "description": "Змінити або вибрати рівень логування",
@@ -631,14 +649,15 @@
       "commands": {
         "py": {
           "description": "Виконати код Python",
-          "usage": "[-so] [код]"
+          "usage": "[-so] <code>"
         },
         "sh": {
           "description": "Виконати команду оболонки",
-          "usage": "[-so] [команда]"
+          "usage": "[-so] <command>"
         },
         "kill": {
-          "description": "Зупинити активну команду"
+          "description": "Зупинити активну команду",
+          "usage": ""
         }
       },
       "heading_sh": "<tg-emoji emoji-id=\"5298632983354291951\">🧑‍💻</tg-emoji> <b>Виконавець</b> · <code>{elapsed:.1f} мс</code>",
@@ -649,23 +668,23 @@
       "commands": {
         "ld": {
           "description": "Завантажити модуль",
-          "usage": "[посилання|шлях]"
+          "usage": "<url|path|reply>"
         },
         "ul": {
           "description": "Вивантажити модуль",
-          "usage": "[модуль] [-p]"
+          "usage": "<module> [-p]"
         },
         "rl": {
           "description": "Перезавантажити модуль",
-          "usage": "[модуль] [force]"
+          "usage": "[module] [force]"
         },
         "ex": {
           "description": "Експортувати модуль",
-          "usage": "[модуль]"
+          "usage": "<module>"
         },
         "resetdb": {
           "description": "Очистити дані модуля",
-          "usage": "[модуль]"
+          "usage": "<module>"
         }
       }
     },
@@ -710,7 +729,11 @@
       "template": "<tg-emoji emoji-id=\"5258503720928288433\">ℹ️</tg-emoji> <b>Hotaru Userbot</b> <code>v{version}</code>\n<blockquote expandable><tg-emoji emoji-id=\"5258258882022612173\">⏳</tg-emoji> <b>Аптайм:</b> <code>{uptime}</code>\n<tg-emoji emoji-id=\"5258514780469075716\">🧩</tg-emoji> <b>Модулі:</b> <code>{modules}</code></blockquote>",
       "commands": {
         "info": {
-          "description": "Інформація про юзербота"
+          "description": "Інформація про юзербота",
+          "usage": ""
+        },
+        "ping": {
+          "usage": ""
         }
       },
       "empty_template": "Шаблон інформації порожній",
@@ -742,7 +765,11 @@
       "description": "Надсилання резервних копій до службового чату",
       "commands": {
         "backup": {
-          "description": "Надіслати резервну копію або налаштувати автоматичне надсилання"
+          "description": "Надіслати резервну копію або налаштувати автоматичне надсилання",
+          "usage": "[send|now]"
+        },
+        "restore": {
+          "usage": "<archive>"
         }
       },
       "config_fields": {
@@ -778,7 +805,7 @@
       "name": "API Flood Protection",
       "status_title": "<tg-emoji emoji-id=\"5291803847914698795\">🌐</tg-emoji> <b>API Flood Protection</b>",
       "enabled": "<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> Увімкнена",
-      "disabled": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> Вимкнена",
+      "disabled": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> Вимкнена",
       "suspended_for": "<tg-emoji emoji-id=\"5280652390532395919\">🔋</tg-emoji> Захист API призупинено на {seconds} сек.",
       "status_text": "<tg-emoji emoji-id=\"5291803847914698795\">🌐</tg-emoji> <b>API Flood Protection</b>\n\nСтатус: {status}\nВікно виміру: <code>{sample}с</code>\nЛіміт: <code>{threshold} запитів</code>\nПауза при флуді: <code>{cooldown}с</code>\nЗапитів у вікні: <code>{recent}</code>\nСпрацьовувань захисту: <code>{total}</code>",
       "alert": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>Спрацював захист від FloodWait!</b>\n\nЧастота запитів до Telegram API досягла <code>{count}</code> за <code>{sample}с</code> (ліміт: {threshold}).\nHotaru тимчасово призупинив відправку API-запитів на <code>{cooldown}с</code> для запобігання бану/флудвейту сесії.",
@@ -790,14 +817,22 @@
       "name": "API Flood Protection",
       "status_title": "<tg-emoji emoji-id=\"5291803847914698795\">🌐</tg-emoji> <b>API Flood Protection</b>",
       "enabled": "<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> Увімкнена",
-      "disabled": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> Вимкнена",
+      "disabled": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> Вимкнена",
       "suspended_for": "<tg-emoji emoji-id=\"5280652390532395919\">🔋</tg-emoji> Захист API призупинено на {seconds} сек.",
       "status_text": "<tg-emoji emoji-id=\"5291803847914698795\">🌐</tg-emoji> <b>API Flood Protection</b>\n\nСтатус: {status}\nВікно виміру: <code>{sample}с</code>\nЛіміт: <code>{threshold} запитів</code>\nПауза при флуді: <code>{cooldown}с</code>\nЗапитів у вікні: <code>{recent}</code>\nСпрацьовувань захисту: <code>{total}</code>",
       "alert": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>Спрацював захист від FloodWait!</b>\n\nЧастота запитів до Telegram API досягла <code>{count}</code> за <code>{sample}с</code> (ліміт: {threshold}).\nHotaru тимчасово призупинив відправку API-запитів на <code>{cooldown}с</code> для запобігання бану/флудвейту сесії.",
       "btn_toggle": "Перемкнути",
       "btn_stats": "Статистика",
       "btn_close": "Закрити",
-      "description": "Захист від флудвейту та перевантаження Telegram API"
+      "description": "Захист від флудвейту та перевантаження Telegram API",
+      "commands": {
+        "shield": {
+          "usage": ""
+        },
+        "suspend_api": {
+          "usage": "<seconds>"
+        }
+      }
     },
     "genesis": {
       "title": "Швидке налаштування",
@@ -907,7 +942,7 @@
     "modules_empty": "Модулів немає",
     "modules": "Модулі:\n",
     "module_unavailable": "Модуль недоступний",
-    "module_missing": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>Модуль не знайдено:</b> <code>{module_id}</code>",
+    "module_missing": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>Модуль не знайдено:</b> <code>{module_id}</code>",
     "module_info": "Модуль: {module}\nВерсія: {version}\nКоманди: {commands}\nМожливості: {capabilities}\nОпис: {description}",
     "help_unavailable": "Довідка недоступна",
     "page_unavailable": "Сторінка довідки недоступна",
@@ -916,7 +951,7 @@
     "bot_unavailable": "Інлайн-бот недоступний",
     "bot_failed": "Не вдалося створити інлайн-бота: {error}",
     "protected": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>Системний модуль захищено:</b> <code>{module_id}</code>",
-    "unload_failed": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>Не вдалося вивантажити модуль:</b>\n<blockquote>{error}</blockquote>",
+    "unload_failed": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>Не вдалося вивантажити модуль:</b>\n<blockquote>{error}</blockquote>",
     "not_ready": "Сервіси ще не готові",
     "purged": "<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> <b>Модуль видалено:</b> <code>{module}</code>\n<blockquote>Дані очищено.</blockquote>",
     "unloaded": "<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> <b>Модуль вивантажено:</b> <code>{module}</code>\n<blockquote>Дані збережено.</blockquote>",
@@ -924,7 +959,7 @@
     "reset": "<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> <b>Дані модуля очищено:</b> <code>{module_id}</code>",
     "id_mismatch": "Ідентифікатор модуля не збігається: {module_id}",
     "downgrade": "Зниження версії заборонено: {old} → {new}",
-    "rollback_failed": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>Перезапуск не вдався:</b> {error}\n<blockquote>Відкат до попередньої версії також не вдався.</blockquote>",
+    "rollback_failed": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>Перезапуск не вдався:</b> {error}\n<blockquote>Відкат до попередньої версії також не вдався.</blockquote>",
     "rolled_back": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>Перезапуск не вдався:</b> <i>{error}</i>\n<blockquote>Попередня версія модуля відновлена.</blockquote>",
     "reloaded": "<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> <b>Модуль перезавантажено:</b> <code>{module_id}</code>",
     "exported": "<tg-emoji emoji-id=\"5258514780469075716\">📂</tg-emoji> <b>Модуль експортовано:</b> <code>{file_name}</code>",
@@ -935,23 +970,23 @@
     "activation_failed": "Не вдалося завантажити модуль",
     "module_loaded": "Модуль завантажено",
     "loaded": "<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> <b>Завантажено:</b> <code>{module_id}</code> <code>v{version}</code>",
-    "backup_failed": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>Не вдалося створити копію:</b>\n<blockquote>{error}</blockquote>",
+    "backup_failed": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>Не вдалося створити копію:</b>\n<blockquote>{error}</blockquote>",
     "backup_created": "Копію створено: {name}",
     "backups_empty": "Резервних копій немає",
     "backups": "Резервні копії:\n",
     "backup_unavailable": "Резервна копія недоступна",
-    "backup_invalid": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>Некоректна резервна копія:</b>\n<blockquote>{error}</blockquote>",
+    "backup_invalid": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>Некоректна резервна копія:</b>\n<blockquote>{error}</blockquote>",
     "backup_valid": "Копія справна. Файлів: {count}",
     "restore_confirm": "Підтвердити відновлення?",
     "invalid_module": "Некоректний модуль",
     "invalid_page": "Некоректна сторінка довідки",
     "invalid_restore": "Некоректний запит на відновлення",
-    "restore_failed": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>Не вдалося відновити дані.</b>",
-    "restore_error": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>Не вдалося відновити копію:</b>\n<blockquote>{error}</blockquote>",
+    "restore_failed": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>Не вдалося відновити дані.</b>",
+    "restore_error": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>Не вдалося відновити копію:</b>\n<blockquote>{error}</blockquote>",
     "restore_done": "Відновлено",
     "callback_failed": "Не вдалося виконати дію",
     "callback_denied": "Кнопка застаріла або недоступна.",
-    "load_error": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>Помилка завантаження модуля:</b>\n<blockquote>{error}: {detail}</blockquote>",
+    "load_error": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>Помилка завантаження модуля:</b>\n<blockquote>{error}: {detail}</blockquote>",
     "load_failed": "Не вдалося завантажити: {error}",
     "load_screen": "Не вдалося завантажити: {module_id} {version}\n{screen}",
     "updated": "<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> <b>Оновлено:</b> <code>{module_id}</code> <code>v{version}</code>",
@@ -960,7 +995,7 @@
     "usage_mi": "<b>Використання:</b> <code>{prefix}mi [module]</code> — <i>інформація про модуль</i>",
     "usage_help": "<b>Використання:</b> <code>{prefix}help &lt;page|module&gt;</code> — <i>довідка по командах</i>",
     "usage_reload": "<b>Використання:</b> <code>{prefix}rl [module] &lt;force&gt;</code> — <i>перезавантажити модуль</i>",
-    "usage_unload": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>Вкажіть модуль:</b> <code>{prefix}ul &lt;модуль&gt;</code>",
+    "usage_unload": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>Вкажіть модуль:</b> <code>{prefix}ul &lt;модуль&gt;</code>",
     "usage_reset": "<b>Використання:</b> <code>{prefix}rs [module]</code> — <i>скинути стан модуля</i>",
     "usage_export": "<b>Використання:</b> <code>{prefix}ex [module]</code> — <i>експортувати вихідний код модуля</i>",
     "usage_backup": "<b>Використання:</b> <code>{prefix}bk &lt;list|test|restore&gt; &lt;archive&gt;</code> — <i>керування резервними копіями</i>",
@@ -988,14 +1023,14 @@
       "tasks": "Завдання",
       "event_router": "Події"
     },
-    "file_missing": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>Файл модуля не знайдено.</b>",
+    "file_missing": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>Файл модуля не знайдено.</b>",
     "file_document": "Надішли модуль файлом",
     "unknown_capability": "невідома можливість (заборонена)",
     "loading_module": "Завантажую {module_id}…",
     "export_caption": "<tg-emoji emoji-id=\"5258514780469075716\">📂</tg-emoji> <b>{module}</b> <code>v{version}</code>\n<blockquote><tg-emoji emoji-id=\"5258134813302332906\">📦</tg-emoji> Експорт модуля Hotaru</blockquote>",
-    "usage_load_source": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>Вкажіть посилання, шлях або зробіть реплай на файл модуля (.hmod)</b>",
+    "usage_load_source": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>Вкажіть посилання, шлях або зробіть реплай на файл модуля (.hmod)</b>",
     "unloading": "<tg-emoji emoji-id=\"5258130763148172425\">🗑</tg-emoji> <i>Вивантажую <code>{module}</code>...</i>",
-    "invalid_path": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>Вказаний файл або шлях не знайдено.</b>"
+    "invalid_path": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>Вказаний файл або шлях не знайдено.</b>"
   },
   "acl": {
     "owners": "<b>Власники</b><br>",
@@ -1006,10 +1041,10 @@
     "permissions": "<b>Права</b><br>",
     "user_groups": "<br>Групи: <code>{groups}</code>",
     "user_detail": "<code>{user_id}</code> · <b>{permissions}</b>",
-    "no_permission": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>Недостатньо прав.</b>",
+    "no_permission": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>Недостатньо прав.</b>",
     "revoked": "У <code>{user_id}</code> <b>відкликано</b> <code>{label}</code>",
     "nothing_revoke": "Відкликати нічого",
-    "grant_failed": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>Не вдалося надати права:</b>\n<blockquote>{error}</blockquote>",
+    "grant_failed": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>Не вдалося надати права:</b>\n<blockquote>{error}</blockquote>",
     "granted": "<code>{user_id}</code> <b>надано</b> <code>{label}</code>",
     "bad_group": "Назва групи: літери й цифри, до 32 символів.",
     "bad_duration": "Вкажи 1m, 1h, 1d, 1w або forever. Максимум — 100 років.",
@@ -1025,7 +1060,7 @@
     "model": "Власники мають повний доступ. Інші права налаштовуються окремо.",
     "forever": "Безстроково",
     "allowed": "<code>{command}</code> · доступно",
-    "denied": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <code>{command}</code> — <i>немає доступу</i>",
+    "denied": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <code>{command}</code> — <i>немає доступу</i>",
     "full_owner": "Власник · повний доступ",
     "roles": {
       "owner": "Власник",
@@ -1094,7 +1129,7 @@
     "all_chats": "Доступно всім у всіх чатах.",
     "account": " · акаунт",
     "protected": " · захищено",
-    "failed": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>Помилка:</b>\n<blockquote>{error}</blockquote>",
+    "failed": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>Помилка:</b>\n<blockquote>{error}</blockquote>",
     "owner_added": "<code>{user_id}</code> <b>додано до власників</b>",
     "owner_exists": "<code>{user_id}</code> уже власник",
     "owner_removed": "У <code>{user_id}</code> <b>знято права власника</b>",
@@ -1134,8 +1169,8 @@
     "back": "‹ Назад",
     "expired": "Меню застаріло. Викличте команду ще раз.",
     "stale": "Меню щойно оновилося, натисніть ще раз.",
-    "denied": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> Ця кнопка призначена не для вас.",
-    "failed": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>Сталася помилка:</b>\n<blockquote>{error}</blockquote>",
+    "denied": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> Ця кнопка призначена не для вас.",
+    "failed": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>Сталася помилка:</b>\n<blockquote>{error}</blockquote>",
     "flood": "Telegram просить зачекати {seconds} с.",
     "slow_down": "Занадто швидко, зачекайте секунду.",
     "inline_unavailable": "<i>Інлайн-меню в цьому чаті недоступне, тому тут звичайний текст.</i>",

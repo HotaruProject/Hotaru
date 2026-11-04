@@ -63,7 +63,7 @@
       "title_short": "settings",
       "pick": "Pick a module:",
       "missing": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>Module <code>{module}</code> has no settings or is not loaded.</b>",
-      "param_missing": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>Parameter <code>{name}</code> not found.</b>",
+      "param_missing": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>Parameter <code>{name}</code> not found.</b>",
       "reset_all": "↺ Reset all",
       "reset_confirm": "Reset every parameter of <b>{module}</b> to its default?",
       "reset_yes": "Reset",
@@ -88,13 +88,16 @@
       "description": "Power management",
       "commands": {
         "restart": {
-          "description": "Restart userbot (optional: -f / --force to skip confirmation)"
+          "description": "Restart userbot (optional: -f / --force to skip confirmation)",
+          "usage": "[-f|--force]"
         },
         "stop": {
-          "description": "Suspend userbot (optional: -f / --force to skip confirmation)"
+          "description": "Suspend userbot (optional: -f / --force to skip confirmation)",
+          "usage": "[-f|--force]"
         },
         "start": {
-          "description": "Resume userbot"
+          "description": "Resume userbot",
+          "usage": ""
         },
         "resume": {
           "description": "Resume userbot execution",
@@ -139,9 +142,9 @@
       "ignored_toast": "Ignored",
       "updating": "Updating…",
       "notify_on": "<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> <b>Update notifications enabled</b>",
-      "notify_off": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>Update notifications disabled</b>",
-      "check_failed": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>Update check failed:</b><blockquote><i>{error}</i></blockquote>",
-      "failed": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>Update failed:</b><blockquote><i>{error}</i></blockquote>",
+      "notify_off": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>Update notifications disabled</b>",
+      "check_failed": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>Update check failed:</b><blockquote><i>{error}</i></blockquote>",
+      "failed": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>Update failed:</b><blockquote><i>{error}</i></blockquote>",
       "conflicts": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>Local conflicts preserved:</b><blockquote><code>{path}</code></blockquote>",
       "button_update": "Update",
       "button_ignore": "Ignore",
@@ -227,11 +230,11 @@
         },
         "translate": {
           "description": "Translate text",
-          "usage": "[language] <text/reply>"
+          "usage": "[language] <text|reply>"
         },
         "loadlex": {
           "description": "Load language pack",
-          "usage": "[url/path/file]"
+          "usage": "<url|path|file>"
         },
         "rmlex": {
           "description": "Remove custom language pack",
@@ -301,7 +304,7 @@
       "manager_unavailable": "<b>Module manager unavailable</b>",
       "usage": "<b>Usage:</b> <code>{prefix}help</code> or <code>{prefix}help &lt;module&gt;</code>",
       "disabled": "<b>Module disabled:</b> <code>{module}</code><br><i>Error: {error}</i>",
-      "missing": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>Module not found:</b> <code>{module}</code>",
+      "missing": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>Module not found:</b> <code>{module}</code>",
       "title": "Hotaru · help",
       "summary": "{count} modules · prefix <code>{prefix}</code>",
       "pick": "Tap a module to see its commands.",
@@ -320,11 +323,11 @@
       "commands": {
         "acc": {
           "description": "Manage an account",
-          "usage": "[number] [start|stop|restart|on|off|del]"
+          "usage": "[number] [start|stop|restart|del]"
         },
         "acca": {
           "description": "Add or log in to an account",
-          "usage": "[ID|cancel|password] [password]"
+          "usage": "[number|cancel]"
         },
         "accs": {
           "description": "Open account panel",
@@ -476,47 +479,59 @@
         },
         "perm": {
           "description": "Grant or revoke permission",
-          "usage": "[ID|@username|command/name] <role> [remove]"
+          "usage": "<ID|@username> <admin|trusted|everyone> [remove]"
         },
         "whois": {
           "description": "Show user permissions",
-          "usage": "[ID|@username] [command]"
+          "usage": "<ID|@username> [command]"
         },
         "owadd": {
-          "description": "Add owner"
+          "description": "Add owner",
+          "usage": "<ID|@username|reply>"
         },
         "owrm": {
-          "description": "Remove owner"
+          "description": "Remove owner",
+          "usage": "<ID|@username|reply>"
         },
         "owls": {
-          "description": "List owners"
+          "description": "List owners",
+          "usage": ""
         },
         "sgnew": {
-          "description": "Create permission group"
+          "description": "Create permission group",
+          "usage": "<name>"
         },
         "sgls": {
-          "description": "List groups"
+          "description": "List groups",
+          "usage": ""
         },
         "sg": {
-          "description": "Show group members and rules"
+          "description": "Show group members and rules",
+          "usage": "<name>"
         },
         "sgdel": {
-          "description": "Delete group"
+          "description": "Delete group",
+          "usage": "<name>"
         },
         "sgadd": {
-          "description": "Add group member"
+          "description": "Add group member",
+          "usage": "<name> <ID|@username|reply>"
         },
         "sgrm": {
-          "description": "Remove group member"
+          "description": "Remove group member",
+          "usage": "<name> <ID|@username|reply>"
         },
         "rule": {
-          "description": "Add access rule"
+          "description": "Add access rule",
+          "usage": "<user|chat|sgroup> <target> <command|module> [1h|forever]"
         },
         "rulerm": {
-          "description": "Remove rule"
+          "description": "Remove rule",
+          "usage": "<user|chat|sgroup> <target> <rule>"
         },
         "ruleclr": {
-          "description": "Clear rules"
+          "description": "Clear rules",
+          "usage": "<user|chat|sgroup> [target]"
         }
       },
       "bad_group": "Group name: letters and digits only, up to 32 characters.",
@@ -538,24 +553,27 @@
       "commands": {
         "alias": {
           "description": "Create a command alias",
-          "usage": "[alias] [command]"
+          "usage": "<alias> <command>"
         },
         "rmalias": {
           "description": "Remove a command alias",
-          "usage": "[alias]"
+          "usage": "<alias>"
         },
         "lsalias": {
-          "description": "List command aliases"
+          "description": "List command aliases",
+          "usage": ""
         },
         "prefix": {
           "description": "Change command prefix",
-          "usage": "[prefix]"
+          "usage": "<prefix>"
         },
         "settings": {
-          "description": "Open settings"
+          "description": "Open settings",
+          "usage": "[module]"
         },
         "config": {
-          "description": "Open settings"
+          "description": "Open settings",
+          "usage": "[module]"
         }
       }
     },
@@ -579,7 +597,7 @@
       "commands": {
         "logs": {
           "description": "Userbot logs with a file",
-          "usage": "[on|off|status|level] [count] [component]"
+          "usage": "[on|off|status|level] [count]"
         },
         "loglevel": {
           "description": "Change or select logging level",
@@ -626,14 +644,15 @@
       "commands": {
         "py": {
           "description": "Run Python code",
-          "usage": "[-so] [code]"
+          "usage": "[-so] <code>"
         },
         "sh": {
           "description": "Run a shell command",
-          "usage": "[-so] [command]"
+          "usage": "[-so] <command>"
         },
         "kill": {
-          "description": "Stop a running command"
+          "description": "Stop a running command",
+          "usage": ""
         }
       },
       "heading_sh": "<tg-emoji emoji-id=\"5298632983354291951\">🧑‍💻</tg-emoji> <b>Executor</b> · <code>{elapsed:.1f}ms</code>",
@@ -644,11 +663,11 @@
       "commands": {
         "ld": {
           "description": "Load a module",
-          "usage": "[url|path]"
+          "usage": "<url|path|reply>"
         },
         "ul": {
           "description": "Unload a module",
-          "usage": "[module] [-p]"
+          "usage": "<module> [-p]"
         },
         "rl": {
           "description": "Reload a module",
@@ -656,11 +675,11 @@
         },
         "ex": {
           "description": "Export a module",
-          "usage": "[module]"
+          "usage": "<module>"
         },
         "resetdb": {
           "description": "Reset module data",
-          "usage": "[module]"
+          "usage": "<module>"
         }
       }
     },
@@ -705,7 +724,11 @@
       "template": "<tg-emoji emoji-id=\"5258503720928288433\">ℹ️</tg-emoji> <b>Hotaru Userbot</b> <code>v{version}</code>\n<blockquote expandable><tg-emoji emoji-id=\"5258258882022612173\">⏳</tg-emoji> <b>Uptime:</b> <code>{uptime}</code>\n<tg-emoji emoji-id=\"5258514780469075716\">🧩</tg-emoji> <b>Modules:</b> <code>{modules}</code></blockquote>",
       "commands": {
         "info": {
-          "description": "Show userbot info"
+          "description": "Show userbot info",
+          "usage": ""
+        },
+        "ping": {
+          "usage": ""
         }
       },
       "empty_template": "The info template is empty",
@@ -737,7 +760,11 @@
       "description": "Send backups to the service forum",
       "commands": {
         "backup": {
-          "description": "Send a backup or manage automatic backups"
+          "description": "Send a backup or manage automatic backups",
+          "usage": "[send|now]"
+        },
+        "restore": {
+          "usage": "<archive>"
         }
       },
       "config_fields": {
@@ -773,7 +800,7 @@
       "name": "API Flood Protection",
       "status_title": "<tg-emoji emoji-id=\"5291803847914698795\">🌐</tg-emoji> <b>API Flood Protection</b>",
       "enabled": "<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> Active",
-      "disabled": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> Inactive",
+      "disabled": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> Inactive",
       "suspended_for": "<tg-emoji emoji-id=\"5280652390532395919\">🔋</tg-emoji> API protection suspended for {seconds}s.",
       "status_text": "<tg-emoji emoji-id=\"5291803847914698795\">🌐</tg-emoji> <b>API Flood Protection</b>\n\nStatus: {status}\nSample window: <code>{sample}s</code>\nThreshold: <code>{threshold} requests</code>\nCooldown pause: <code>{cooldown}s</code>\nRecent requests: <code>{recent}</code>\nTotal protections: <code>{total}</code>",
       "alert": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>API Flood Protection triggered!</b>\n\nTelegram API request rate reached <code>{count}</code> calls in <code>{sample}s</code> (limit: {threshold}).\nHotaru paused API requests for <code>{cooldown}s</code> to protect your session.",
@@ -785,14 +812,22 @@
       "name": "API Flood Protection",
       "status_title": "<tg-emoji emoji-id=\"5291803847914698795\">🌐</tg-emoji> <b>API Flood Protection</b>",
       "enabled": "<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> Active",
-      "disabled": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> Inactive",
+      "disabled": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> Inactive",
       "suspended_for": "<tg-emoji emoji-id=\"5280652390532395919\">🔋</tg-emoji> API protection suspended for {seconds}s.",
       "status_text": "<tg-emoji emoji-id=\"5291803847914698795\">🌐</tg-emoji> <b>API Flood Protection</b>\n\nStatus: {status}\nSample window: <code>{sample}s</code>\nThreshold: <code>{threshold} requests</code>\nCooldown pause: <code>{cooldown}s</code>\nRecent requests: <code>{recent}</code>\nTotal protections: <code>{total}</code>",
       "alert": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>API Flood Protection triggered!</b>\n\nTelegram API request rate reached <code>{count}</code> calls in <code>{sample}s</code> (limit: {threshold}).\nHotaru paused API requests for <code>{cooldown}s</code> to protect your session.",
       "btn_toggle": "Toggle",
       "btn_stats": "Stats",
       "btn_close": "Close",
-      "description": "API flood and rate limit protection"
+      "description": "API flood and rate limit protection",
+      "commands": {
+        "shield": {
+          "usage": ""
+        },
+        "suspend_api": {
+          "usage": "<seconds>"
+        }
+      }
     },
     "genesis": {
       "title": "Genesis Setup",
@@ -861,7 +896,7 @@
     "lang": {
       "description": "Interface language",
       "usage": "{prefix}language [language]",
-      "invalid": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>Unsupported language:</b> <code>{language}</code>",
+      "invalid": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>Unsupported language:</b> <code>{language}</code>",
       "changed": "Language changed to {language}",
       "unavailable": "Runtime unavailable",
       "lexicon_unavailable": "Translation lexicon unavailable",
@@ -907,7 +942,7 @@
     "modules_empty": "modules: none",
     "modules": "modules:\n",
     "module_unavailable": "module unavailable",
-    "module_missing": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>Module not found:</b> <code>{module_id}</code>",
+    "module_missing": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>Module not found:</b> <code>{module_id}</code>",
     "module_info": "module: {module}\nversion: {version}\ncommands: {commands}\ncapabilities: {capabilities}\ndescription: {description}",
     "help_unavailable": "help unavailable",
     "page_unavailable": "help page unavailable",
@@ -916,7 +951,7 @@
     "bot_unavailable": "inline bot: unavailable",
     "bot_failed": "inline bot provisioning failed: {error}",
     "protected": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>Kernel module is protected:</b> <code>{module_id}</code>",
-    "unload_failed": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>Module unload failed:</b>\n<blockquote>{error}</blockquote>",
+    "unload_failed": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>Module unload failed:</b>\n<blockquote>{error}</blockquote>",
     "not_ready": "runtime services are not ready",
     "purged": "<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> <b>Unloaded permanently:</b> <code>{module}</code>\n<blockquote>Database purged.</blockquote>",
     "unloaded": "<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> <b>Module unloaded:</b> <code>{module}</code>\n<blockquote>Database preserved.</blockquote>",
@@ -924,7 +959,7 @@
     "reset": "<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> <b>Database reset:</b> <code>{module_id}</code>",
     "id_mismatch": "module id mismatch: {module_id}",
     "downgrade": "reload blocked: version downgrade {old} to {new}",
-    "rollback_failed": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>Reload failed:</b> {error}\n<blockquote>Rollback to previous version also failed.</blockquote>",
+    "rollback_failed": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>Reload failed:</b> {error}\n<blockquote>Rollback to previous version also failed.</blockquote>",
     "rolled_back": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>Reload failed:</b> <i>{error}</i>\n<blockquote>Previous version restored.</blockquote>",
     "reloaded": "<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> <b>Module reloaded:</b> <code>{module_id}</code>",
     "exported": "<tg-emoji emoji-id=\"5258514780469075716\">📂</tg-emoji> <b>Module exported:</b> <code>{file_name}</code>",
@@ -935,23 +970,23 @@
     "activation_failed": "Activation failed",
     "module_loaded": "Module loaded",
     "loaded": "<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> <b>Loaded:</b> <code>{module_id}</code> <code>v{version}</code>",
-    "backup_failed": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>Backup failed:</b>\n<blockquote>{error}</blockquote>",
+    "backup_failed": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>Backup failed:</b>\n<blockquote>{error}</blockquote>",
     "backup_created": "backup created: {name}",
     "backups_empty": "backups: none",
     "backups": "backups:\n",
     "backup_unavailable": "backup unavailable",
-    "backup_invalid": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>Invalid backup:</b>\n<blockquote>{error}</blockquote>",
+    "backup_invalid": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>Invalid backup:</b>\n<blockquote>{error}</blockquote>",
     "backup_valid": "backup valid: {count} files",
     "restore_confirm": "confirm restore",
     "invalid_module": "Invalid module",
     "invalid_page": "Invalid help page",
     "invalid_restore": "Invalid restore request",
-    "restore_failed": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>Restore failed.</b>",
-    "restore_error": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>Restore failed:</b>\n<blockquote>{error}</blockquote>",
+    "restore_failed": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>Restore failed.</b>",
+    "restore_error": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>Restore failed:</b>\n<blockquote>{error}</blockquote>",
     "restore_done": "Restore completed",
     "callback_failed": "Callback failed",
     "callback_denied": "Button expired or unavailable.",
-    "load_error": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>Module load failed:</b>\n<blockquote>{error}: {detail}</blockquote>",
+    "load_error": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>Module load failed:</b>\n<blockquote>{error}: {detail}</blockquote>",
     "load_failed": "load failed: {error}",
     "load_screen": "load failed: {module_id} {version}\n{screen}",
     "updated": "<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> <b>Updated:</b> <code>{module_id}</code> <code>v{version}</code>",
@@ -960,7 +995,7 @@
     "usage_mi": "<b>Usage:</b> <code>{prefix}mi [module]</code> — <i>module info</i>",
     "usage_help": "<b>Usage:</b> <code>{prefix}help &lt;page|module&gt;</code> — <i>commands help</i>",
     "usage_reload": "<b>Usage:</b> <code>{prefix}rl [module] &lt;force&gt;</code> — <i>reload module</i>",
-    "usage_unload": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>Specify a module:</b> <code>{prefix}ul &lt;module&gt;</code>",
+    "usage_unload": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>Specify a module:</b> <code>{prefix}ul &lt;module&gt;</code>",
     "usage_reset": "<b>Usage:</b> <code>{prefix}rs [module]</code> — <i>reset module state</i>",
     "usage_export": "<b>Usage:</b> <code>{prefix}ex [module]</code> — <i>export module source</i>",
     "usage_backup": "<b>Usage:</b> <code>{prefix}bk &lt;list|test|restore&gt; &lt;archive&gt;</code> — <i>backup management</i>",
@@ -988,14 +1023,14 @@
       "tasks": "Tasks",
       "event_router": "Events"
     },
-    "file_missing": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>Module file not found.</b>",
+    "file_missing": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>Module file not found.</b>",
     "file_document": "module file must be a document",
     "unknown_capability": "unknown capability (denied)",
     "loading_module": "Loading {module_id}…",
     "export_caption": "<tg-emoji emoji-id=\"5258514780469075716\">📂</tg-emoji> <b>{module}</b> <code>v{version}</code>\n<blockquote><tg-emoji emoji-id=\"5258134813302332906\">📦</tg-emoji> Hotaru module export</blockquote>",
-    "usage_load_source": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>Specify a link, file path, or reply to a module file (.hmod)</b>",
+    "usage_load_source": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>Specify a link, file path, or reply to a module file (.hmod)</b>",
     "unloading": "<tg-emoji emoji-id=\"5258130763148172425\">🗑</tg-emoji> <i>Unloading <code>{module}</code>...</i>",
-    "invalid_path": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>Specified file or path not found.</b>"
+    "invalid_path": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>Specified file or path not found.</b>"
   },
   "acl": {
     "owners": "<b>Owners</b><br>",
@@ -1006,10 +1041,10 @@
     "permissions": "<b>Permissions</b><br>",
     "user_groups": "<br>groups: <code>{groups}</code>",
     "user_detail": "<code>{user_id}</code> · <b>{permissions}</b>",
-    "no_permission": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>Permission denied.</b>",
+    "no_permission": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>Permission denied.</b>",
     "revoked": "<b>Revoked</b> <code>{label}</code> from <code>{user_id}</code>",
     "nothing_revoke": "nothing to revoke",
-    "grant_failed": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>Failed to grant permissions:</b>\n<blockquote>{error}</blockquote>",
+    "grant_failed": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>Failed to grant permissions:</b>\n<blockquote>{error}</blockquote>",
     "granted": "<b>Granted</b> <code>{label}</code> to <code>{user_id}</code>",
     "bad_group": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>Group name:</b> letters and digits, up to 32 chars.",
     "bad_duration": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>Duration:</b> specify <code>1m</code>, <code>1h</code>, <code>1d</code>, <code>1w</code>, or <code>forever</code>.",
@@ -1025,7 +1060,7 @@
     "model": "Owners have full access. Other access is set below.",
     "forever": "No expiry",
     "allowed": "<code>{command}</code> · allowed",
-    "denied": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <code>{command}</code> — <i>no access</i>",
+    "denied": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <code>{command}</code> — <i>no access</i>",
     "full_owner": "Owner · full access",
     "roles": {
       "owner": "Owner",
@@ -1094,7 +1129,7 @@
     "all_chats": "Available to everyone in all chats.",
     "account": " · account",
     "protected": " · protected",
-    "failed": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>Error:</b>\n<blockquote>{error}</blockquote>",
+    "failed": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>Error:</b>\n<blockquote>{error}</blockquote>",
     "owner_added": "<b>Granted</b> owner to <code>{user_id}</code>",
     "owner_exists": "<code>{user_id}</code> is already an owner",
     "owner_removed": "<b>Revoked</b> owner from <code>{user_id}</code>",
@@ -1134,8 +1169,8 @@
     "back": "‹ Back",
     "expired": "This menu has expired. Run the command again.",
     "stale": "The menu has just changed, press again.",
-    "denied": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> This button is not for you.",
-    "failed": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>Something went wrong:</b>\n<blockquote>{error}</blockquote>",
+    "denied": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> This button is not for you.",
+    "failed": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>Something went wrong:</b>\n<blockquote>{error}</blockquote>",
     "flood": "Telegram asks to wait {seconds} s.",
     "slow_down": "Too fast, wait a second.",
     "inline_unavailable": "<i>The inline menu is unavailable in this chat, so this is plain text.</i>",

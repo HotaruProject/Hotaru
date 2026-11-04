@@ -84,7 +84,7 @@
       "commands": {
         "help": {
           "description": "ヘルプカタログ",
-          "usage": "[モジュール]"
+          "usage": "[module]"
         }
       }
     },
@@ -92,13 +92,16 @@
       "description": "電源管理",
       "commands": {
         "restart": {
-          "description": "ユーザーボット再起動"
+          "description": "ユーザーボット再起動",
+          "usage": "[-f|--force]"
         },
         "stop": {
-          "description": "ユーザーボット停止"
+          "description": "ユーザーボット停止",
+          "usage": "[-f|--force]"
         },
         "start": {
-          "description": "ユーザーボット再開"
+          "description": "ユーザーボット再開",
+          "usage": ""
         },
         "resume": {
           "description": "ユーザーボットの実行を再開",
@@ -144,14 +147,14 @@
       "ignored_toast": "無視しました",
       "updating": "更新中…",
       "notify_on": "<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> <b>更新通知を有効にしました</b>",
-      "notify_off": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>更新通知を無効にしました</b>",
+      "notify_off": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>更新通知を無効にしました</b>",
       "unavailable": "実行環境を利用できません",
       "up_to_date": "<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> <b>Hotaruは既に最新です</b>",
       "update_available": "Hotaru の更新があります",
       "downloading": "<tg-emoji emoji-id=\"5258420634785947640\">🔄</tg-emoji> <b>更新をダウンロード中…</b>",
       "syncing": "<tg-emoji emoji-id=\"5258420634785947640\">🔄</tg-emoji> <b>依存関係を同期中…</b>",
-      "check_failed": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>アップデートの確認に失敗しました:</b>\n<blockquote><i>{error}</i></blockquote>",
-      "failed": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>アップデートに失敗しました:</b>\n<blockquote><i>{error}</i></blockquote>",
+      "check_failed": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>アップデートの確認に失敗しました:</b>\n<blockquote><i>{error}</i></blockquote>",
+      "failed": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>アップデートに失敗しました:</b>\n<blockquote><i>{error}</i></blockquote>",
       "conflicts": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>競合が保存されました:</b>\n<blockquote><code>{path}</code></blockquote>",
       "button_update": "更新",
       "button_ignore": "スキップ",
@@ -162,7 +165,7 @@
       "commands": {
         "language": {
           "description": "言語を表示または変更",
-          "usage": "[言語]"
+          "usage": "[language]"
         },
         "rmlex": {
           "description": "カスタム言語パックを削除",
@@ -170,11 +173,11 @@
         },
         "loadlex": {
           "description": "言語パックを読み込む",
-          "usage": "[URL/パス/ファイル]"
+          "usage": "<url|path|file>"
         },
         "translate": {
           "description": "テキストを翻訳",
-          "usage": "[言語] <テキスト/返信>"
+          "usage": "[language] <text|reply>"
         }
       },
       "native": {
@@ -241,7 +244,7 @@
       "manager_unavailable": "<b>モジュール管理を利用できません</b>",
       "usage": "<b>使い方:</b> <code>{prefix}help</code> または <code>{prefix}help &lt;モジュール&gt;</code>",
       "disabled": "<b>モジュールは無効です:</b> <code>{module}</code><br><i>エラー: {error}</i>",
-      "missing": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>モジュールが見つかりません:</b> <code>{module}</code>",
+      "missing": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>モジュールが見つかりません:</b> <code>{module}</code>",
       "title": "Hotaru · ヘルプ",
       "summary": "モジュール {count} 件 · プレフィックス <code>{prefix}</code>",
       "pick": "モジュールをタップするとコマンドを表示します。",
@@ -260,15 +263,15 @@
       "commands": {
         "acc": {
           "description": "アカウントの管理",
-          "usage": "[番号] [start|stop|restart|on|off|del]"
+          "usage": "[number] [start|stop|restart|del]"
         },
         "acca": {
           "description": "アカウントの追加・ログイン",
-          "usage": "[ID|cancel|password] [パスワード]"
+          "usage": "[number|cancel]"
         },
         "accs": {
           "description": "アカウント一覧を開く",
-          "usage": "[番号]"
+          "usage": "[number]"
         }
       },
       "usage": "<b>アカウント</b>\n<code>{prefix}acca [user_id]</code> · QR / 電話番号で追加\n<code>{prefix}acca cancel</code> · ログインをキャンセル\n<code>{prefix}accs [#]</code> · アカウントパネル\n<code>{prefix}acc [#]</code> · アカウントパネル\n<code>{prefix}acc 2 start|stop|restart|on|off|del</code>",
@@ -416,47 +419,59 @@
         },
         "perm": {
           "description": "権限を付与・取り消し",
-          "usage": "[ID|@username|command/name] <role> [remove]"
+          "usage": "<ID|@username> <admin|trusted|everyone> [remove]"
         },
         "whois": {
           "description": "ユーザーの権限",
-          "usage": "[ID|@username] [command]"
+          "usage": "<ID|@username> [command]"
         },
         "owadd": {
-          "description": "オーナーを追加"
+          "description": "オーナーを追加",
+          "usage": "<ID|@username|reply>"
         },
         "owrm": {
-          "description": "オーナーを削除"
+          "description": "オーナーを削除",
+          "usage": "<ID|@username|reply>"
         },
         "owls": {
-          "description": "オーナー一覧"
+          "description": "オーナー一覧",
+          "usage": ""
         },
         "sgnew": {
-          "description": "権限グループを作成"
+          "description": "権限グループを作成",
+          "usage": "<name>"
         },
         "sgls": {
-          "description": "グループ一覧"
+          "description": "グループ一覧",
+          "usage": ""
         },
         "sg": {
-          "description": "グループのメンバーとルール"
+          "description": "グループのメンバーとルール",
+          "usage": "<name>"
         },
         "sgdel": {
-          "description": "グループを削除"
+          "description": "グループを削除",
+          "usage": "<name>"
         },
         "sgadd": {
-          "description": "メンバーを追加"
+          "description": "メンバーを追加",
+          "usage": "<name> <ID|@username|reply>"
         },
         "sgrm": {
-          "description": "メンバーを削除"
+          "description": "メンバーを削除",
+          "usage": "<name> <ID|@username|reply>"
         },
         "rule": {
-          "description": "アクセスルールを追加"
+          "description": "アクセスルールを追加",
+          "usage": "<user|chat|sgroup> <target> <command|module> [1h|forever]"
         },
         "rulerm": {
-          "description": "ルールを削除"
+          "description": "ルールを削除",
+          "usage": "<user|chat|sgroup> <target> <rule>"
         },
         "ruleclr": {
-          "description": "ルールを消去"
+          "description": "ルールを消去",
+          "usage": "<user|chat|sgroup> [target]"
         }
       },
       "bad_group": "グループ名: 英数字のみ、32文字まで。",
@@ -514,7 +529,7 @@
       "title_short": "設定",
       "pick": "モジュールを選択:",
       "missing": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>モジュール <code>{module}</code> には設定がないか、読み込まれていません。</b>",
-      "param_missing": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>パラメータ <code>{name}</code> が見つかりません。</b>",
+      "param_missing": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>パラメータ <code>{name}</code> が見つかりません。</b>",
       "reset_all": "↺ すべてリセット",
       "reset_confirm": "<b>{module}</b> のすべてのパラメーターを既定値に戻しますか？",
       "reset_yes": "リセット",
@@ -534,24 +549,27 @@
       "commands": {
         "alias": {
           "description": "コマンドの別名を作成",
-          "usage": "[エイリアス] [コマンド]"
+          "usage": "<alias> <command>"
         },
         "rmalias": {
           "description": "コマンドの別名を削除",
-          "usage": "[エイリアス]"
+          "usage": "<alias>"
         },
         "lsalias": {
-          "description": "コマンドエイリアスの一覧を表示"
+          "description": "コマンドエイリアスの一覧を表示",
+          "usage": ""
         },
         "prefix": {
           "description": "コマンドのプレフィックスを変更",
-          "usage": "[プレフィックス]"
+          "usage": "<prefix>"
         },
         "settings": {
-          "description": "設定を開く"
+          "description": "設定を開く",
+          "usage": "[module]"
         },
         "config": {
-          "description": "設定を開く"
+          "description": "設定を開く",
+          "usage": "[module]"
         }
       }
     },
@@ -584,7 +602,7 @@
       "commands": {
         "logs": {
           "description": "ユーザーボットのログとファイル",
-          "usage": "[on|off|status|レベル] [件数] [コンポーネント]"
+          "usage": "[on|off|status|level] [count]"
         },
         "loglevel": {
           "description": "ログレベルの変更または選択",
@@ -631,14 +649,15 @@
       "commands": {
         "py": {
           "description": "Pythonコードを実行",
-          "usage": "[-so] [コード]"
+          "usage": "[-so] <code>"
         },
         "sh": {
           "description": "シェルコマンドを実行",
-          "usage": "[-so] [コマンド]"
+          "usage": "[-so] <command>"
         },
         "kill": {
-          "description": "実行中のコマンドを停止"
+          "description": "実行中のコマンドを停止",
+          "usage": ""
         }
       },
       "heading_sh": "<tg-emoji emoji-id=\"5298632983354291951\">🧑‍💻</tg-emoji> <b>実行</b> · <code>{elapsed:.1f} мс</code>",
@@ -649,23 +668,23 @@
       "commands": {
         "ld": {
           "description": "モジュールを読み込む",
-          "usage": "[URL|パス]"
+          "usage": "<url|path|reply>"
         },
         "ul": {
           "description": "モジュールを停止",
-          "usage": "[モジュール] [-p]"
+          "usage": "<module> [-p]"
         },
         "rl": {
           "description": "モジュールを再読み込み",
-          "usage": "[モジュール] [force]"
+          "usage": "[module] [force]"
         },
         "ex": {
           "description": "モジュールをエクスポート",
-          "usage": "[モジュール]"
+          "usage": "<module>"
         },
         "resetdb": {
           "description": "モジュールのデータをリセット",
-          "usage": "[モジュール]"
+          "usage": "<module>"
         }
       }
     },
@@ -710,7 +729,11 @@
       "template": "<tg-emoji emoji-id=\"5258503720928288433\">ℹ️</tg-emoji> <b>Hotaru Userbot</b> <code>v{version}</code>\n<blockquote expandable><tg-emoji emoji-id=\"5258258882022612173\">⏳</tg-emoji> <b>稼働時間:</b> <code>{uptime}</code>\n<tg-emoji emoji-id=\"5258514780469075716\">🧩</tg-emoji> <b>モジュール:</b> <code>{modules}</code></blockquote>",
       "commands": {
         "info": {
-          "description": "ユーザーボットの情報"
+          "description": "ユーザーボットの情報",
+          "usage": ""
+        },
+        "ping": {
+          "usage": ""
         }
       },
       "empty_template": "情報テンプレートが空です",
@@ -742,7 +765,11 @@
       "description": "サービス用フォーラムにバックアップを送信",
       "commands": {
         "backup": {
-          "description": "バックアップを送信、または自動送信を設定"
+          "description": "バックアップを送信、または自動送信を設定",
+          "usage": "[send|now]"
+        },
+        "restore": {
+          "usage": "<archive>"
         }
       },
       "config_fields": {
@@ -778,7 +805,7 @@
       "name": "API Flood Protection",
       "status_title": "<tg-emoji emoji-id=\"5291803847914698795\">🌐</tg-emoji> <b>API Flood Protection</b>",
       "enabled": "<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> 有効",
-      "disabled": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> 無効",
+      "disabled": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> 無効",
       "suspended_for": "<tg-emoji emoji-id=\"5280652390532395919\">🔋</tg-emoji> API保護が {seconds} 秒間一時停止されました。",
       "status_text": "<tg-emoji emoji-id=\"5291803847914698795\">🌐</tg-emoji> <b>API Flood Protection</b>\n\nステータス: {status}\n計測ウィンドウ: <code>{sample}秒</code>\nしきい値: <code>{threshold} リクエスト</code>\nクールダウン一時停止: <code>{cooldown}秒</code>\n最近のリクエスト: <code>{recent}</code>\n保護発動回数: <code>{total}</code>",
       "alert": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>API Flood Protectionが発動しました！</b>\n\nTelegram APIリクエスト数が <code>{sample}秒</code> 間に <code>{count}</code> 回に達しました（制限: {threshold}）。\nセッションの保護のため、APIリクエストを <code>{cooldown}秒</code> 間一時停止しました。",
@@ -790,14 +817,22 @@
       "name": "API Flood Protection",
       "status_title": "<tg-emoji emoji-id=\"5291803847914698795\">🌐</tg-emoji> <b>API Flood Protection</b>",
       "enabled": "<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> 有効",
-      "disabled": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> 無効",
+      "disabled": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> 無効",
       "suspended_for": "<tg-emoji emoji-id=\"5280652390532395919\">🔋</tg-emoji> API保護が {seconds} 秒間一時停止されました。",
       "status_text": "<tg-emoji emoji-id=\"5291803847914698795\">🌐</tg-emoji> <b>API Flood Protection</b>\n\nステータス: {status}\n計測ウィンドウ: <code>{sample}秒</code>\nしきい値: <code>{threshold} リクエスト</code>\nクールダウン一時停止: <code>{cooldown}秒</code>\n最近のリクエスト: <code>{recent}</code>\n保護発動回数: <code>{total}</code>",
       "alert": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>API Flood Protectionが発動しました！</b>\n\nTelegram APIリクエスト数が <code>{sample}秒</code> 間に <code>{count}</code> 回に達しました（制限: {threshold}）。\nセッションの保護のため、APIリクエストを <code>{cooldown}秒</code> 間一時停止しました。",
       "btn_toggle": "切り替え",
       "btn_stats": "統計",
       "btn_close": "閉じる",
-      "description": "Telegram APIフラッドおよびレート制限からの保護"
+      "description": "Telegram APIフラッドおよびレート制限からの保護",
+      "commands": {
+        "shield": {
+          "usage": ""
+        },
+        "suspend_api": {
+          "usage": "<seconds>"
+        }
+      }
     },
     "genesis": {
       "title": "初期セットアップ",
@@ -907,7 +942,7 @@
     "modules_empty": "モジュールがありません",
     "modules": "モジュール:\n",
     "module_unavailable": "モジュールを利用できません",
-    "module_missing": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>モジュールが見つかりません:</b> <code>{module_id}</code>",
+    "module_missing": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>モジュールが見つかりません:</b> <code>{module_id}</code>",
     "module_info": "モジュール: {module}\nバージョン: {version}\nコマンド: {commands}\n機能: {capabilities}\n説明: {description}",
     "help_unavailable": "ヘルプを利用できません",
     "page_unavailable": "ヘルプページを利用できません",
@@ -916,7 +951,7 @@
     "bot_unavailable": "インラインボットを利用できません",
     "bot_failed": "インラインボットの作成に失敗しました: {error}",
     "protected": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>システムモジュールは保護されています:</b> <code>{module_id}</code>",
-    "unload_failed": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>アンロードに失敗しました:</b>\n<blockquote>{error}</blockquote>",
+    "unload_failed": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>アンロードに失敗しました:</b>\n<blockquote>{error}</blockquote>",
     "not_ready": "サービスの準備ができていません",
     "purged": "<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> <b>モジュールを削除しました:</b> <code>{module}</code>\n<blockquote>データは完全に消去されました。</blockquote>",
     "unloaded": "<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> <b>モジュールをアンロードしました:</b> <code>{module}</code>\n<blockquote>データは保持されました。</blockquote>",
@@ -935,7 +970,7 @@
     "activation_failed": "モジュールの読み込みに失敗しました",
     "module_loaded": "モジュールを読み込みました",
     "loaded": "<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> <b>読み込み完了:</b> <code>{module_id}</code> <code>v{version}</code>",
-    "backup_failed": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>バックアップに失敗しました:</b>\n<blockquote>{error}</blockquote>",
+    "backup_failed": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>バックアップに失敗しました:</b>\n<blockquote>{error}</blockquote>",
     "backup_created": "バックアップを作成しました: {name}",
     "backups_empty": "バックアップがありません",
     "backups": "バックアップ:\n",
@@ -947,11 +982,11 @@
     "invalid_page": "無効なヘルプページです",
     "invalid_restore": "無効な復元リクエストです",
     "restore_failed": "復元に失敗しました",
-    "restore_error": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>復元に失敗しました:</b>\n<blockquote>{error}</blockquote>",
+    "restore_error": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>復元に失敗しました:</b>\n<blockquote>{error}</blockquote>",
     "restore_done": "復元しました",
     "callback_failed": "操作に失敗しました",
     "callback_denied": "ボタンの有効期限が切れているか、利用できません。",
-    "load_error": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>モジュールの読み込みに失敗しました:</b>\n<blockquote>{error}: {detail}</blockquote>",
+    "load_error": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>モジュールの読み込みに失敗しました:</b>\n<blockquote>{error}: {detail}</blockquote>",
     "load_failed": "読み込みに失敗しました: {error}",
     "load_screen": "読み込みに失敗しました: {module_id} {version}\n{screen}",
     "updated": "<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> <b>更新完了:</b> <code>{module_id}</code> <code>v{version}</code>",
@@ -960,7 +995,7 @@
     "usage_mi": "<b>使い方:</b> <code>{prefix}mi [module]</code> — <i>モジュール情報</i>",
     "usage_help": "<b>使い方:</b> <code>{prefix}help &lt;page|module&gt;</code> — <i>ヘルプ表示</i>",
     "usage_reload": "<b>使い方:</b> <code>{prefix}rl [module] &lt;force&gt;</code> — <i>モジュール再読み込み</i>",
-    "usage_unload": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>モジュールを指定してください:</b> <code>{prefix}ul &lt;モジュール&gt;</code>",
+    "usage_unload": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>モジュールを指定してください:</b> <code>{prefix}ul &lt;モジュール&gt;</code>",
     "usage_reset": "<b>使い方:</b> <code>{prefix}rs [module]</code> — <i>状態リセット</i>",
     "usage_export": "<b>使い方:</b> <code>{prefix}ex [module]</code> — <i>エクスポート</i>",
     "usage_backup": "<b>使い方:</b> <code>{prefix}bk &lt;list|test|restore&gt; &lt;archive&gt;</code> — <i>バックアップ管理</i>",
@@ -993,9 +1028,9 @@
     "unknown_capability": "不明な機能（拒否）",
     "loading_module": "{module_id} を読み込み中…",
     "export_caption": "<tg-emoji emoji-id=\"5258514780469075716\">📂</tg-emoji> <b>{module}</b> <code>v{version}</code>\n<blockquote><tg-emoji emoji-id=\"5258134813302332906\">📦</tg-emoji> Hotaruモジュールエクスポート</blockquote>",
-    "usage_load_source": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>リンク、パスを指定するか、モジュールファイル (.hmod) に返信してください</b>",
+    "usage_load_source": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>リンク、パスを指定するか、モジュールファイル (.hmod) に返信してください</b>",
     "unloading": "<tg-emoji emoji-id=\"5258130763148172425\">🗑</tg-emoji> <i><code>{module}</code> をアンロード中...</i>",
-    "invalid_path": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>指定されたファイルまたはパスが見つかりません。</b>"
+    "invalid_path": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>指定されたファイルまたはパスが見つかりません。</b>"
   },
   "acl": {
     "owners": "<b>オーナー</b><br>",
@@ -1134,8 +1169,8 @@
     "back": "‹ 戻る",
     "expired": "このメニューは期限切れです。コマンドをもう一度実行してください。",
     "stale": "メニューが更新されました。もう一度押してください。",
-    "denied": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> このボタンは操作できません。",
-    "failed": "<tg-emoji emoji-id=\"5778527486270770928\">❌</tg-emoji> <b>エラーが発生しました:</b>\n<blockquote>{error}</blockquote>",
+    "denied": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> このボタンは操作できません。",
+    "failed": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>エラーが発生しました:</b>\n<blockquote>{error}</blockquote>",
     "flood": "Telegram から {seconds} 秒待つよう求められました。",
     "slow_down": "操作が速すぎます。少し待ってください。",
     "inline_unavailable": "<i>このチャットではインラインメニューを使えないため、テキストで表示しています。</i>",

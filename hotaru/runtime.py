@@ -3059,7 +3059,7 @@ class Runtime:
                                   note="module code does not yield and cannot be interrupted mid-call")
 
     async def _start_singularity(self) -> None:
-        if os.environ.get("HOTARU_ACCOUNT_SESSION"):
+        if os.environ.get("HOTARU_ACCOUNT_SESSION") or not getattr(self.config, "singularity_enabled", True) or getattr(self.config, "weboff", False):
             return
         if self._singularity_lock is None:
             self._singularity_lock = asyncio.Lock()
@@ -3075,6 +3075,8 @@ class Runtime:
                 log.warning("Singularity startup skipped: %s", exc)
 
     async def sync_web_app(self, clean_bot: str | None = None, force: bool = False) -> dict[str, Any]:
+        if not getattr(self.config, "singularity_enabled", True) or getattr(self.config, "weboff", False):
+            return {}
         svc = getattr(self, "singularity", None)
         if svc is None and hasattr(self, "_start_singularity"):
             await self._start_singularity()
