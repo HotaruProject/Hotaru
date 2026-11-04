@@ -102,6 +102,7 @@ class Screen:
     alert: bool = False
     rich: bool = False
     notice: Optional[str] = None
+    banner: str = ""
 
     def with_notice(self, text: str) -> "Screen":
         self.notice = text
@@ -155,9 +156,9 @@ class Nav:
             return
         self._answered = True
         try:
-            await self.call.respond(_clip(text), alert=alert)
-        except Exception:
-            pass
+            await self.call.answer(_clip(text), alert=alert)
+        except Exception as exc:
+            log.error("screen answer failed: %s: %s", type(exc).__name__, exc)
 
     async def toast(self, text: str) -> None:
         await self.answer(text)
@@ -349,13 +350,47 @@ class Kit:
         return await self.engine.send(str(getattr(self.ctx, "module_id", "") or ""), chat_id, screen, **options)
 
 
+class _ReentrantLock:
+    def __init__(self) -> None:
+        self._lock = asyncio.Lock()
+        self._owner: asyncio.Task[Any] | None = None
+        self._count = 0
+
+    async def acquire(self) -> None:
+        current = asyncio.current_task()
+        if self._owner is current:
+            self._count += 1
+            return
+        await self._lock.acquire()
+        self._owner = current
+        self._count = 1
+
+    def release(self) -> None:
+        current = asyncio.current_task()
+        if self._owner is not current:
+            raise RuntimeError("cannot release un-acquired lock")
+        self._count -= 1
+        if self._count == 0:
+            self._owner = None
+            self._lock.release()
+
+    async def __aenter__(self) -> None:
+        await self.acquire()
+
+    async def __aexit__(self, exc_type: Any, exc: Any, tb: Any) -> None:
+        self.release()
+
+    def locked(self) -> bool:
+        return self._lock.locked()
+
+
 class ScreenEngine:
     def __init__(self, runtime: "Runtime", secret: str) -> None:
         self.runtime = runtime
         self._key = hashlib.sha256(("hotaru-screens:" + secret).encode()).digest()
         self._kernel: dict[str, Callable[..., Any]] = {}
         self._cache: dict[int, Form] = {}
-        self._locks: dict[int, asyncio.Lock] = {}
+        self._locks: dict[int, _ReentrantLock] = {}
         self._ready = False
 
     _columns = "id,module,actor,command,chat,message_id,inline_id,bot,gen,actions,text,rich,touched,ttl,language"
@@ -555,7 +590,9 @@ class ScreenEngine:
                 current.append(button)
             if current:
                 rows.append(current)
-        text = f"{screen.notice}\n{screen.text}" if screen.notice else screen.text
+        screen_text = screen.text.lstrip("\n") if screen.banner else screen.text
+        text = f"{screen.banner}{screen_text}" if screen.banner else screen.text
+        text = f"{screen.notice}\n{text}" if screen.notice else text
 
         def swap(match: "re.Match[str]") -> str:
             raw = match.group(2)
@@ -617,12 +654,23 @@ class ScreenEngine:
         form = self._create(module_id, self._actor_of(source), self._command_of(source), getattr(source, "chat_id", None), bot=False)
         text, rows, actions, gen = self._compile(form, screen)
         try:
-            sent, nonce = await runtime.deliver_inline(source, text, rows, rich=screen.rich, reply_to=reply_to)
+            try:
+                sent, nonce = await runtime.deliver_inline(source, text, rows, rich=screen.rich, reply_to=reply_to)
+            except Exception as exc:
+                if not screen.banner:
+                    raise
+                log.error("screen banner failed for module %s: %s: %s", module_id, type(exc).__name__, exc)
+                if runtime.observatory is not None:
+                    runtime.observatory.emit("screens", "banner_failed", module=module_id, error=type(exc).__name__, detail=str(exc))
+                screen.banner = ""
+                screen.rich = False
+                text, rows, actions, gen = self._compile(form, screen)
+                sent, nonce = await runtime.deliver_inline(source, text, rows, rich=screen.rich, reply_to=reply_to)
         except Exception as exc:
             self.drop(form)
-            log.error("screen delivery failed: %s", type(exc).__name__)
+            log.error("screen delivery failed for module %s: %s: %s", module_id, type(exc).__name__, exc)
             if runtime.observatory is not None:
-                runtime.observatory.emit("screens", "delivery_failed", module=module_id, error=type(exc).__name__, detail=str(exc)[:200])
+                runtime.observatory.emit("screens", "delivery_failed", module=module_id, error=type(exc).__name__, detail=str(exc))
             raise
         form.message_id = sent.get("id") if isinstance(sent, dict) and isinstance(sent.get("id"), int) else None
         self._commit(form, text, actions, gen, screen)
@@ -642,36 +690,60 @@ class ScreenEngine:
                 try:
                     await self._edit(form, form.text, rows, form.rich)
                 except Exception as exc:
-                    log.debug("screen repaint failed: %s", type(exc).__name__)
+                    log.error("screen repaint failed: %s: %s\n%s", type(exc).__name__, exc, traceback.format_exc())
 
     async def send(self, module_id: str, chat_id: Any, screen: Screen, *, actor: Optional[int] = None, command: Optional[str] = None) -> Form:
         app = self._bot_app()
         owner = getattr(getattr(self.runtime, "kernel", None), "owner_id", None)
         form = self._create(module_id, int(actor or owner or 0), command, chat_id, bot=True)
         text, rows, actions, gen = self._compile(form, screen)
-        data: dict[str, Any] = {"peer": chat_id, "random_id": secrets.randbits(63), "no_webpage": True}
-        if screen.rich:
-            data.update(message="", rich_message=await self._rich(text))
-        else:
+        async def _send() -> Any:
+            data: dict[str, Any] = {"peer": chat_id, "random_id": secrets.randbits(63), "no_webpage": True}
             plain, entities = to_entities(text)
             data["message"] = plain
             if entities:
                 data["entities"] = entities
-        markup = kbd_to_tl({"inline_keyboard": rows})
-        if markup is not None and markup.get("rows"):
-            data["reply_markup"] = markup
-        try:
+            if screen.rich:
+                data["rich_message"] = await self._rich(text)
+            markup = kbd_to_tl({"inline_keyboard": rows})
+            if markup is not None and markup.get("rows"):
+                data["reply_markup"] = markup
             with trusted_scope():
                 try:
-                    result = await app.mt_messages_send_message(**data)
+                    return await app.mt_messages_send_message(**data)
                 except Exception as exc:
                     reopen = getattr(getattr(self.runtime, "inline", None), "reopen_owner_chat", None)
                     blocked = any(item in str(exc).lower() for item in ("chat not found", "blocked", "peer_id_invalid", "input_user_deactivated"))
                     if not blocked or not callable(reopen) or not await cast('Awaitable[bool]', reopen(chat_id)):
                         raise
-                    result = await app.mt_messages_send_message(**data)
-        except Exception:
+                    return await app.mt_messages_send_message(**data)
+        try:
+            try:
+                try:
+                    result = await _send()
+                except Exception as exc:
+                    if not screen.rich:
+                        raise
+                    log.error("screen rich delivery failed for module %s: %s: %s", module_id, type(exc).__name__, exc)
+                    if self.runtime.observatory is not None:
+                        self.runtime.observatory.emit("screens", "rich_failed", module=module_id, error=type(exc).__name__, detail=str(exc))
+                    screen.rich = False
+                    result = await _send()
+            except Exception as exc:
+                if not screen.banner:
+                    raise
+                log.error("screen banner failed for module %s: %s: %s", module_id, type(exc).__name__, exc)
+                if self.runtime.observatory is not None:
+                    self.runtime.observatory.emit("screens", "banner_failed", module=module_id, error=type(exc).__name__, detail=str(exc))
+                screen.banner = ""
+                screen.rich = False
+                text, rows, actions, gen = self._compile(form, screen)
+                result = await _send()
+        except Exception as exc:
             self.drop(form)
+            log.error("screen delivery failed for module %s: %s: %s", module_id, type(exc).__name__, exc)
+            if self.runtime.observatory is not None:
+                self.runtime.observatory.emit("screens", "delivery_failed", module=module_id, error=type(exc).__name__, detail=str(exc))
             raise
         sent = extract_sent_message(result)
         form.message_id = sent.get("id") if isinstance(sent, dict) and isinstance(sent.get("id"), int) else None
@@ -680,7 +752,18 @@ class ScreenEngine:
 
     async def render(self, form: Form, screen: Screen) -> None:
         text, rows, actions, gen = self._compile(form, screen)
-        await self._edit(form, text, rows, screen.rich)
+        try:
+            await self._edit(form, text, rows, screen.rich)
+        except Exception as exc:
+            if not screen.banner:
+                raise
+            log.error("screen banner failed for module %s: %s: %s", form.module, type(exc).__name__, exc)
+            if self.runtime.observatory is not None:
+                self.runtime.observatory.emit("screens", "banner_failed", module=form.module, error=type(exc).__name__, detail=str(exc))
+            screen.banner = ""
+            screen.rich = False
+            text, rows, actions, gen = self._compile(form, screen)
+            await self._edit(form, text, rows, screen.rich)
         self._commit(form, text, actions, gen, screen)
 
     async def _edit(self, form: Form, text: str, rows: list[list[dict[str, Any]]], rich: bool) -> None:
@@ -692,15 +775,13 @@ class ScreenEngine:
             data["reply_markup"] = markup
         elif form.inline_id is None:
             data["reply_markup"] = {"_": "replyInlineMarkup", "rows": []}
-        plain = ""
+        plain, entities = to_entities(text)
+        if entities:
+            data["entities"] = entities
         if rich:
             data["rich_message"] = await self._rich(text)
-        else:
-            plain, entities = to_entities(text)
-            if entities:
-                data["entities"] = entities
         app = self._bot_app()
-        for attempt in range(2):
+        for attempt in range(3):
             try:
                 if form.inline_id is not None:
                     await CallbackContext.edit_inline(app, form.inline_id, plain, data)
@@ -716,6 +797,13 @@ class ScreenEngine:
                 if attempt or exc.seconds > 8:
                     raise
                 await asyncio.sleep(exc.seconds + 0.5)
+            except Exception as exc:
+                if "rich_message" not in data:
+                    raise
+                log.error("screen rich edit failed for module %s: %s: %s", form.module, type(exc).__name__, exc)
+                if self.runtime.observatory is not None:
+                    self.runtime.observatory.emit("screens", "rich_failed", module=form.module, error=type(exc).__name__, detail=str(exc))
+                data.pop("rich_message", None)
 
     async def close(self, form: Form) -> None:
         async with self.lock(form):
@@ -728,20 +816,21 @@ class ScreenEngine:
                 raise ScreenError("form has no message")
             with trusted_scope():
                 await delete_chat_msg(app, form.chat, form.message_id)
-        except Exception:
+        except Exception as exc:
+            log.error("screen delete failed for module %s: %s: %s", form.module, type(exc).__name__, exc)
             try:
                 await self._edit(form, form.text, [], form.rich)
-            except Exception:
-                pass
+            except Exception as inner:
+                log.error("screen cleanup failed for module %s: %s: %s", form.module, type(inner).__name__, inner)
         self.drop(form)
 
-    def lock(self, form: Form) -> asyncio.Lock:
+    def lock(self, form: Form) -> _ReentrantLock:
         lock = self._locks.get(form.id)
         if lock is None:
             if len(self._locks) > 1024:
                 for key in [key for key, item in self._locks.items() if not item.locked()]:
                     self._locks.pop(key, None)
-            lock = self._locks[form.id] = asyncio.Lock()
+            lock = self._locks[form.id] = _ReentrantLock()
         return lock
 
     def _allowed(self, form: Form, actor: Any, action: dict[str, Any]) -> bool:
@@ -792,7 +881,18 @@ class ScreenEngine:
         denied = self._t("ui.denied", "This button is not for you.")
         decoded = self.decode(getattr(callback, "data", None))
         form = self.load(decoded[0]) if decoded is not None else None
+        log.info(
+            "screen dispatch data=%r decoded=%s form=%s inline_id=%s chat=%s msg=%s actor=%s",
+            getattr(callback, "data", None),
+            decoded,
+            form.id if form is not None else None,
+            str(getattr(callback, "inline_message_id", None))[:120],
+            getattr(callback, "chat_id", None),
+            str(getattr(callback, "msg_id", None))[:120],
+            getattr(callback, "from_id", None),
+        )
         if decoded is None or form is None:
+            log.info("screen dispatch expired: decoded=%s form=%s", decoded, form is not None)
             await self._answer(callback, expired, alert=True)
             if form is not None:
                 await self._strip(form, callback)
@@ -801,6 +901,7 @@ class ScreenEngine:
         async with self.lock(form):
             form = self.load(form.id) or form
             if form.gen != gen or index >= len(form.actions):
+                log.info("screen dispatch stale: form=%s gen=%s/%s index=%s actions=%s", form.id, gen, form.gen, index, len(form.actions))
                 await self._answer(callback, self._t("ui.stale", "The menu has changed, try again."))
                 return
             inline_id: Any = getattr(callback, "inline_message_id", None)
@@ -809,37 +910,46 @@ class ScreenEngine:
             if inline_id is not None:
                 if form.inline_id is None:
                     form.inline_id = cast('dict[str, Any]', inline_id)
+                    self._save(form)
                 elif _inline_key(form.inline_id) != _inline_key(inline_id):
+                    log.info("screen dispatch inline mismatch: form=%s expected=%s got=%s", form.id, _inline_key(form.inline_id), _inline_key(inline_id))
                     await self._answer(callback, denied, alert=True)
                     return
             elif form.bot and (str(getattr(callback, "chat_id", None)) != str(form.chat) or getattr(callback, "msg_id", None) != form.message_id):
+                log.info("screen dispatch bot message mismatch: form=%s chat=%s/%s msg=%s/%s", form.id, getattr(callback, "chat_id", None), form.chat, getattr(callback, "msg_id", None), form.message_id)
                 await self._answer(callback, denied, alert=True)
                 return
             action = form.actions[index]
             actor = getattr(callback, "from_id", None)
             if not self._allowed(form, actor, action):
+                log.info("screen dispatch actor denied: form=%s actor=%s module=%s command=%s", form.id, actor, form.module, form.command)
                 await self._answer(callback, denied, alert=True)
                 return
             security = getattr(self.runtime, "security", None)
             if security is not None:
                 from .security import AccessVerdict
                 if security.check(callback, transport="mt", module_id=form.module, authorized=True) is not AccessVerdict.ALLOW:
+                    log.info("screen dispatch rate limited: form=%s actor=%s", form.id, actor)
                     await self._answer(callback, self._t("ui.slow_down", "Too fast, wait a second."))
                     return
             if action.get("k") == "close":
+                log.info("screen dispatch close: form=%s", form.id)
                 await self._answer(callback)
                 await self._close(form)
                 return
+            log.info("screen dispatch action: form=%s handler=%s.%s kind=%s", form.id, action.get("m") or form.module, action.get("f"), action.get("k"))
             nav = Nav(self, form, action, call=callback, actor=cast(int, actor))
             try:
                 result = await self._invoke(form, action, callback, nav)
-            except ScreenError:
+            except ScreenError as exc:
+                log.error("screen dispatch handler unavailable: %s", exc)
                 await nav.answer(expired, alert=True)
                 return
             except Exception as exc:
                 self._report(form, action, exc)
                 await nav.answer(self._t("ui.failed", "Something went wrong: {error}", error=type(exc).__name__), alert=True)
                 return
+            log.info("screen dispatch result: form=%s handler=%s type=%s", form.id, action.get("f"), type(result).__name__)
             await self._finish(form, action, nav, result)
 
     async def _finish(self, form: Form, action: dict[str, Any], nav: Nav, result: Any) -> None:
@@ -867,21 +977,28 @@ class ScreenEngine:
     @staticmethod
     async def _answer(callback: Any, text: Optional[str] = None, *, alert: bool = False) -> None:
         try:
-            await callback.respond(_clip(text), alert=alert)
-        except Exception:
-            pass
+            await callback.answer(_clip(text), alert=alert)
+        except Exception as exc:
+            log.error("screen callback answer failed: %s: %s", type(exc).__name__, exc)
 
     async def _strip(self, form: Form, callback: Any) -> None:
         if form.inline_id is None and isinstance(getattr(callback, "msg_id", None), dict):
             form.inline_id = callback.msg_id
         try:
             await self._edit(form, form.text, [], form.rich)
-        except Exception:
-            pass
+        except Exception as exc:
+            log.error("screen strip failed for module %s: %s: %s", form.module, type(exc).__name__, exc)
         self.drop(form)
 
     def _report(self, form: Form, action: dict[str, Any], exc: BaseException) -> None:
-        log.error("screen handler %s.%s failed: %s", action.get("m") or form.module, action.get("f"), type(exc).__name__)
+        log.error(
+            "screen handler %s.%s failed: %s: %s\n%s",
+            action.get("m") or form.module,
+            action.get("f"),
+            type(exc).__name__,
+            exc,
+            traceback.format_exc(),
+        )
         if self.runtime.observatory is not None:
             self.runtime.observatory.emit("screens", "handler_failed", level="error", module=form.module, handler=str(action.get("f")), error=type(exc).__name__, detail=str(exc)[:240], tb=traceback.format_exc()[-4000:])
 

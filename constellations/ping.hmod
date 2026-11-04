@@ -30,7 +30,7 @@ if TYPE_CHECKING:
 
 async def command_ping(ctx: "ModuleContext", invocation: "CommandInvocation") -> None:
     start = time.perf_counter_ns()
-    await ctx.respond("...")
+    await ctx.respond(ctx.t("kernel.ping.measuring"), parse_mode="HTML")
     ping_ms = (time.perf_counter_ns() - start) / 10**6
     uptime_s = ctx.uptime
     uptime = ctx.tools.duration(uptime_s, ctx.i18n.language)

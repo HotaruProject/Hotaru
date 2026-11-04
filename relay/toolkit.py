@@ -862,6 +862,14 @@ def _rich_block(block: object) -> str:
         open_attr = " open" if block.get("open") else ""
         return f"<details{open_attr}><summary>{title}</summary>{inner}</details>"
     if kind == "pageBlockTable":
+        attrs = ""
+        if block.get("bordered"):
+            attrs += " bordered"
+        if block.get("striped"):
+            attrs += " striped"
+        if block.get("compact"):
+            attrs += " compact"
+        title_tag = f"<caption>{_rich_text(block.get('title'))}</caption>" if block.get("title") is not None else ""
         rows: list[str] = []
         for row in cast('list[Any]', block.get("rows") or []):
             if not isinstance(row, dict):
@@ -873,10 +881,23 @@ def _rich_block(block: object) -> str:
                     continue
                 cell = cast('dict[str, Any]', cell)
                 tag = "th" if cell.get("header") else "td"
-                cells.append(f"<{tag}>{_rich_text(cell.get('text'))}</{tag}>")
+                c_attrs = ""
+                if cell.get("align_center"):
+                    c_attrs += ' align="center"'
+                elif cell.get("align_right"):
+                    c_attrs += ' align="right"'
+                if cell.get("valign_middle"):
+                    c_attrs += ' valign="middle"'
+                elif cell.get("valign_bottom"):
+                    c_attrs += ' valign="bottom"'
+                if cell.get("colspan"):
+                    c_attrs += f' colspan="{cell["colspan"]}"'
+                if cell.get("rowspan"):
+                    c_attrs += f' rowspan="{cell["rowspan"]}"'
+                cells.append(f"<{tag}{c_attrs}>{_rich_text(cell.get('text'))}</{tag}>")
             if cells:
                 rows.append(f"<tr>{''.join(cells)}</tr>")
-        return f"<table>{''.join(rows)}</table>" if rows else ""
+        return f"<table{attrs}>{title_tag}{''.join(rows)}</table>" if (rows or title_tag) else ""
     return text
 
 

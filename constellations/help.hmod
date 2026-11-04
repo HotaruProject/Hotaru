@@ -1,21 +1,33 @@
 HOTARU = {
     "id": "help",
     "version": "2.0.0",
-    "commands": ["hlp", "help"],
+    "commands": ["help"],
     "capabilities": ["mt"],
 }
 
+import re
 from typing import Any, Callable, List, Tuple
 
 from hotaru import icons
 
-_page_size = 15
+_page_size = 70
 _open_limit = 8
 
 
 def _escape(value: Any) -> str:
     import html
     return html.escape(str(value), quote=False)
+
+
+def _banner(manifest: Any) -> str:
+    import html
+    value = str(getattr(manifest, "banner", "") or "").strip()
+    if not value:
+        return ""
+    if re.fullmatch(r"https?://[^\s<>\"]+", value):
+        tag = "video" if value.lower().endswith(".mp4") else "img"
+        return f'<{tag} src="{html.escape(value, quote=True)}"/>'
+    return value
 
 
 def _description(runtime: Any, manifest: Any) -> str:
@@ -25,6 +37,19 @@ def _description(runtime: Any, manifest: Any) -> str:
 def _is_kernel(runtime: Any, module_id: str) -> bool:
     bindings = getattr(runtime.modules, "_bindings", {})
     return module_id in bindings and bool(bindings[module_id][2])
+
+
+def _aliases(runtime: Any, command: str) -> List[str]:
+    prefix = runtime.config.prefix
+    registry = getattr(getattr(runtime, "kernel", None), "registry", None)
+    found: List[str] = []
+    for alias, target in sorted(registry.alias_map().items() if registry is not None else ()):
+        words = str(target).split()
+        if not words or words[0].casefold() != command.casefold() or alias.casefold() == command.casefold():
+            continue
+        shown = prefix + alias + (" " + " ".join(words[1:]) if len(words) > 1 else "")
+        found.append(_escape(shown))
+    return found
 
 
 def _catalog(runtime: Any) -> List[Tuple[str, Any, bool]]:
@@ -37,7 +62,7 @@ def _entry(ctx: Any, module_id: str, manifest: Any, fn: Any, **args: Any) -> str
     k = ctx.screens
     description = _description(ctx.runtime, manifest)
     line = k.icon(icons.module(module_id)) + " " + k.tap(module_id, fn, id=module_id, **args)
-    return line + (f" <i>{_escape(ctx.tools.truncate(description, 48))}</i>" if description else "")
+    return line + (f"  <i>{_escape(ctx.tools.truncate(description, 48))}</i>" if description else "")
 
 
 def home(ctx: Any, nav: Any = None) -> Any:
@@ -83,11 +108,23 @@ def _card(ctx: Any, module_id: str, actor: Any, back: Any, **back_args: Any) -> 
     commands: List[str] = []
     for command in manifest.commands:
         details = manifest.command_details(command, runtime.language())
-        usage = details.get("usage", "")
-        shown = usage if usage and usage != f"{prefix}{command}" else f"{prefix}{command}"
+        usage = str(details.get("usage", "") or "").strip()
+        if usage:
+            if usage.startswith(prefix):
+                shown = usage
+            elif usage.startswith(command):
+                shown = f"{prefix}{usage}"
+            else:
+                shown = f"{prefix}{command} {usage}"
+        else:
+            shown = f"{prefix}{command}"
         line = f"<code>{_escape(shown)}</code> " + k.tap_copy("", f"{prefix}{command}")
-        if details.get("description"):
-            line += f" <i>{_escape(details['description'])}</i>"
+        desc = details.get("description", "")
+        if desc:
+            line += f" — <i>{_escape(desc)}</i>"
+        aliases = _aliases(runtime, command)
+        if aliases:
+            line += "\n   " + _escape(ctx.t("kernel.help_ui.aliases")) + ": " + " · ".join(f"<code>{alias}</code>" for alias in aliases)
         commands.append(line)
     title = f"{k.icon('text')} <b>{_escape(ctx.t('kernel.help_ui.commands'))}</b> · {len(commands)}"
     body = "\n".join(commands) or f"<i>{_escape(ctx.t('kernel.help_ui.no_commands'))}</i>"
@@ -102,7 +139,7 @@ def _card(ctx: Any, module_id: str, actor: Any, back: Any, **back_args: Any) -> 
     if getattr(manifest, "config_schema", None) and runtime.modules.get("settings") is not None and runtime.access.is_owner(actor):
         rows.append([k.link(ctx.t("kernel.help_ui.settings"), "settings", "module", style="primary", id=module_id, origin="help")])
     rows.append(k.footer(back, **back_args))
-    return k.screen("\n".join(lines), rows)
+    return k.screen("\n".join(lines), rows, banner=_banner(manifest))
 
 
 def module(ctx: Any, nav: Any) -> Any:
@@ -157,10 +194,6 @@ async def _show_help(ctx: Any, invocation: Any) -> Any:
         await ctx.respond(ctx.t('kernel.help_ui.disabled', module=_escape(query), error=_escape(last_error)), parse_mode="HTML")
         return
     await ctx.respond(ctx.t('kernel.help_ui.missing', module=_escape(query)), parse_mode="HTML")
-
-
-async def command_hlp(ctx: Any, invocation: Any) -> Any:
-    await _show_help(ctx, invocation)
 
 
 async def command_help(ctx: Any, invocation: Any) -> Any:

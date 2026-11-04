@@ -112,10 +112,33 @@ def _emoji_links(html: str) -> str:
     return "".join(parts)
 
 
+def _format_rich_html(html: str) -> str:
+    pres: list[str] = []
+    def save_pre(m: re.Match[str]) -> str:
+        pres.append(m.group(0))
+        return f"\x00PRE{len(pres)-1}\x00"
+
+    text = re.sub(r"<pre\b[^>]*>.*?</pre>", save_pre, html, flags=re.DOTALL | re.IGNORECASE)
+
+    def clean_table(m: re.Match[str]) -> str:
+        return re.sub(r">\s+<", "><", m.group(0))
+
+    text = re.sub(r"<table\b[^>]*>.*?</table>", clean_table, text, flags=re.DOTALL | re.IGNORECASE)
+    text = re.sub(r"(</?(?:table|tbody|thead|tfoot|tr|td|th|blockquote|hr|details|summary|tg-button-row)>|<(?:img|video)\b[^>]*\/?>)\s*\n+", r"\1", text, flags=re.IGNORECASE)
+    text = re.sub(r"\n+\s*(</?(?:table|tbody|thead|tfoot|tr|td|th|blockquote|hr|details|summary|tg-button-row)>|<(?:img|video)\b[^>]*\/?>)", r"\1", text, flags=re.IGNORECASE)
+    text = re.sub(r"(\x00PRE\d+\x00)\s*\n+", r"\1", text)
+    text = re.sub(r"\n+\s*(\x00PRE\d+\x00)", r"\1", text)
+
+    text = re.sub(r"\n(?![^<]*>)", "<br>", text)
+
+    for i, pre_content in enumerate(pres):
+        text = text.replace(f"\x00PRE{i}\x00", pre_content)
+
+    return text
+
+
 def to_rich(html: str) -> dict[str, str]:
-    built = rich_html(str(html))
-    value = built.get("html")
-    if _premium or not isinstance(value, str):
-        return built
-    built["html"] = _emoji_links(value)
-    return built
+    formatted = _format_rich_html(str(html))
+    if not _premium:
+        formatted = _emoji_links(formatted)
+    return {"html": formatted}

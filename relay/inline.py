@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import random
 import re
 import secrets
 import string
 import time
+import traceback
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, cast
 
@@ -13,11 +15,17 @@ from goygram import Session
 from goygram.errors import UnauthorizedError
 from relay.firewall import trusted_scope
 
+log = logging.getLogger(__name__)
+
 BOTFATHER = "@BotFather"
 BOTFATHER_ID = 93372553
 TOKEN_RE = re.compile(r"\d{6,}:[A-Za-z0-9_-]{35}")
 USERNAME_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9_]{2,31}bot$", re.IGNORECASE)
 WARM_DEADLINE_SECONDS = 120.0
+
+
+_ROOTS = ("nova", "luna", "aero", "flux", "zeno", "pulse", "echo", "spark", "sol", "iris", "drift", "blaze", "star", "glow", "prism", "cyber", "silk", "mist", "frost", "hyper", "neon", "nexus", "orbit", "quantum", "stellar", "umbra", "astral", "zenith")
+_STEMS = ("ray", "flow", "dash", "link", "arc", "wave", "sync", "byte", "mesh", "gate", "run", "sky", "core", "node", "shift", "beam")
 
 
 class InlineError(RuntimeError):
@@ -86,6 +94,7 @@ class BotFatherConversation:
         self._peer: Any = None
         self._last_id: int = 0
         self._self_id = getattr(getattr(app, "mt", None), "self_id", None) or getattr(app, "self_id", None) or 0
+        self._tracked_ids: set[int] = set()
 
     async def __aenter__(self) -> "BotFatherConversation":
         self._peer = await self.app.mt.resolve_peer(BOTFATHER)
@@ -106,6 +115,9 @@ class BotFatherConversation:
         return self
 
     async def __aexit__(self, *exc: Any) -> None:
+        if self._tracked_ids:
+            await self._delete(*self._tracked_ids)
+            self._tracked_ids.clear()
         return None
 
     async def say(self, text: str) -> int:
@@ -114,7 +126,10 @@ class BotFatherConversation:
             message=text,
             random_id=secrets.randbits(63),
         )
-        return self._extract_sent_id(result)
+        sent_id = self._extract_sent_id(result)
+        if sent_id:
+            self._tracked_ids.add(sent_id)
+        return sent_id
 
     def _extract_sent_id(self, result: Any) -> int:
         body = _result_body(result)
@@ -185,6 +200,7 @@ class BotFatherConversation:
                 if self._is_mine(message_dict) or message_id in found:
                     continue
                 found[message_id] = message_dict
+                self._tracked_ids.add(message_id)
                 quiet_at = time.monotonic() + settle
             if found and quiet_at is not None and time.monotonic() >= quiet_at:
                 break
@@ -227,11 +243,47 @@ class BotFatherConversation:
             reply = await self.response()
         except InlineError:
             await self._delete(mine_id)
+            self._tracked_ids.discard(mine_id)
             raise
         parts = reply.get("parts")
         ids = [cast('dict[str, Any]', item).get("id", 0) for item in cast('list[Any]', parts)] if isinstance(parts, list) else [reply.get("id", 0)]
         await self._delete(mine_id, *ids)
+        self._tracked_ids.discard(mine_id)
+        for i in ids:
+            self._tracked_ids.discard(i)
         return reply
+
+    async def click_button(self, reply: dict[str, Any], *needles: str) -> dict[str, Any] | None:
+        markup = reply.get("reply_markup")
+        if not isinstance(markup, dict):
+            return None
+        rows = markup.get("rows")
+        if not isinstance(rows, list):
+            return None
+        floor = reply.get("id", self._last_id)
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            buttons = row.get("buttons")
+            if not isinstance(buttons, list):
+                continue
+            for btn in buttons:
+                if not isinstance(btn, dict):
+                    continue
+                btn_text = str(btn.get("text") or "")
+                data = btn.get("data")
+                matches = not needles or any(n.casefold() in btn_text.casefold() for n in needles)
+                if matches and isinstance(data, (bytes, bytearray)):
+                    try:
+                        await self.app.mt_messages_get_bot_callback_answer(
+                            peer=self._peer,
+                            msg_id=reply["id"],
+                            data=bytes(data),
+                        )
+                        return await self.response(since=floor)
+                    except Exception:
+                        pass
+        return None
 
 class BotFatherGuard:
     def __init__(self, app: Any) -> None:
@@ -436,6 +488,8 @@ class InlineManager:
                 if self.runtime.observatory is not None:
                     self.runtime.observatory.emit("inline", "configure_failed", username=info.username)
         asyncio.create_task(self._start_bot_chat(info.username), name="hotaru:bot-chat")
+        if hasattr(self.runtime, "sync_web_app"):
+            asyncio.create_task(self.runtime.sync_web_app(clean_bot=info.username), name="hotaru:sync-webapp")
         return info
 
     async def _tune_bot(self, info: InlineBotInfo) -> None:
@@ -444,11 +498,13 @@ class InlineManager:
         app = GoyGram(bot_token=info.token, default_transport="api")
         try:
             await app.get_me()
+            await self._inspect_webhook(app)
+            banner_url = "https://raw.githubusercontent.com/HotaruProject/Hotaru/develop/hotaru/assets/banner.png"
             for method, payload in (
                 ("deleteWebhook", {"drop_pending_updates": True}),
-                ("setMyName", {"name": self.bot_name[:64]}),
-                ("setMyShortDescription", {"short_description": "Hotaru"}),
-                ("setMyDescription", {"description": "Hotaru userbot"}),
+                ("setMyName", {"name": "Hotaru Userbot"}),
+                ("setMyShortDescription", {"short_description": "Hotaru Userbot"}),
+                ("setMyDescription", {"description": f"Hotaru Userbot\n\n{banner_url}"}),
             ):
                 try:
                     fn = getattr(app, method, None)
@@ -659,6 +715,18 @@ class InlineManager:
             if not name.lower().endswith("bot"):
                 name += "_bot"
             wanted.append(name)
+
+        shuffled_roots = list(_ROOTS)
+        shuffled_stems = list(_STEMS)
+        random.shuffle(shuffled_roots)
+        random.shuffle(shuffled_stems)
+
+        for r, s in zip(shuffled_roots, shuffled_stems):
+            wanted.append(f"{r}{s}bot")
+            wanted.append(f"{r}_{s}_bot")
+            wanted.append(f"{r}{secrets.randbelow(90) + 10}bot")
+            wanted.append(f"{r}_{s}_{secrets.token_hex(2)}_bot")
+
         for _ in range(8):
             suffix = "".join(random.choices(string.ascii_lowercase + string.digits, k=6))
             wanted.append(f"hotaru_{suffix}_bot")
@@ -684,29 +752,35 @@ class InlineManager:
 
     async def _configure(self, conv: BotFatherConversation, username: str) -> None:
         at = f"@{username}"
-        for step in (
-            ("/setinline", at, self.inline_placeholder),
-            ("/setinlinefeedback", at, "Enabled"),
-        ):
-            retried = False
-            for message in step:
-                try:
-                    response = await conv.ask(message)
-                except InlineError:
-                    if retried:
-                        return
-                    retried = True
-                    if self.runtime.observatory is not None:
-                        self.runtime.observatory.emit("inline", "configure_retry", step=step[0], message=message)
-                    continue
-                text = response.get("message", "").lower()
-                if "invalid bot selected" in text and not retried:
-                    retried = True
-                    await conv.ask(message)
-                if "invalid bot selected" in text and retried:
-                    if self.runtime.observatory is not None:
-                        self.runtime.observatory.emit("inline", "configure_desync", step=step[0])
-                    return
+        try:
+            r_inl = await conv.ask("/setinline")
+            clicked = await conv.click_button(r_inl, at, username)
+            if not clicked:
+                await conv.ask(at)
+            await conv.ask(self.inline_placeholder)
+        except Exception:
+            pass
+
+        try:
+            r_fb = await conv.ask("/setinlinefeedback")
+            clicked = await conv.click_button(r_fb, at, username)
+            if not clicked:
+                r_fb = await conv.ask(at)
+            c_en = await conv.click_button(r_fb, "Enabled")
+            if not c_en:
+                await conv.ask("Enabled")
+        except Exception:
+            pass
+
+        try:
+            r_about = await conv.ask("/setabouttext")
+            clicked = await conv.click_button(r_about, at, username)
+            if not clicked:
+                await conv.ask(at)
+            banner_url = "https://raw.githubusercontent.com/HotaruProject/Hotaru/develop/hotaru/assets/banner.png"
+            await conv.ask(f"Hotaru Userbot\n{banner_url}")
+        except Exception:
+            pass
 
     async def start(self) -> None:
         async with self._start_lock:
@@ -811,6 +885,7 @@ class InlineManager:
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
+                log.error("inline poll failed: %s: %s\n%s", type(exc).__name__, exc, traceback.format_exc())
                 if self._is_auth_failure(exc):
                     self._forget_bot()
                 if self.runtime.observatory is not None:
@@ -822,6 +897,7 @@ class InlineManager:
                     try:
                         await app.close()
                     except Exception as exc:
+                        log.error("inline app close failed: %s: %s", type(exc).__name__, exc)
                         if self.runtime.observatory is not None:
                             self.runtime.observatory.emit("inline", "close_error", error=exc)
                 self.bot_app = None
@@ -845,7 +921,13 @@ class InlineManager:
             if reader is None:
                 raise InlineError("inline bot reader did not start")
             tasks.append(reader)
-            recovery = ConnectionRecovery(app.mt, self.runtime.observatory, "inline", ready=self.ready)
+            recovery = ConnectionRecovery(
+                app.mt,
+                self.runtime.observatory,
+                "inline",
+                ready=self.ready,
+                on_fatal=self.runtime.intrusion.inspect if self.runtime.intrusion is not None else None,
+            )
             await self._probe(app)
             if any(task.done() for task in tasks):
                 raise InlineError("inline bot stopped during startup")
@@ -879,6 +961,21 @@ class InlineManager:
 
     async def _check_bot(self, app: Any) -> None:
         await app.mt_users_get_users(id=[{"_": "inputUserSelf"}], retry=0)
+        await self._inspect_webhook(app)
+
+    async def _inspect_webhook(self, app: Any) -> None:
+        try:
+            info = await app.getWebhookInfo()
+        except Exception as exc:
+            log.warning("inline webhook check failed: %s: %s", type(exc).__name__, exc)
+            if self.runtime.observatory is not None:
+                self.runtime.observatory.emit(
+                    "inline", "webhook_check_failed", "error", error=type(exc).__name__, detail=str(exc)[:240]
+                )
+            return
+        guard = getattr(self.runtime, "intrusion", None)
+        if guard is not None:
+            guard.webhook(_result_body(info).get("url"))
 
     async def _watch_bot(self, app: Any) -> None:
         while not self._stop.is_set():
@@ -999,12 +1096,13 @@ class InlineManager:
             try:
                 await handler(query)
             except Exception as exc:
+                log.error("inline query handler failed: %s: %s\n%s", type(exc).__name__, exc, traceback.format_exc())
                 if self.runtime.observatory is not None:
                     self.runtime.observatory.emit("inline", "handler_error", error=type(exc).__name__, detail=str(exc)[:240])
                 try:
                     await query.answer(results=[], cache_time=0, is_personal=True)
-                except Exception:
-                    pass
+                except Exception as inner:
+                    log.error("inline query answer failed: %s: %s", type(inner).__name__, inner)
 
     @staticmethod
     def _form_article(text: str, buttons: list[dict[str, str]]) -> dict[str, Any]:
@@ -1015,12 +1113,21 @@ class InlineManager:
         return result
 
     async def _dispatch_callback(self, callback: Any) -> None:
+        data = getattr(callback, "data", None)
+        log.info(
+            "inline callback data=%r inline_id=%s msg_id=%s from=%s",
+            data,
+            str(getattr(callback, "inline_message_id", None))[:120],
+            str(getattr(callback, "msg_id", None))[:120],
+            getattr(callback, "from_id", None),
+        )
         for handler in tuple(self._cb_handlers):
             try:
                 await handler(callback)
             except Exception as exc:
+                log.error("inline callback handler failed: %s: %s\n%s", type(exc).__name__, exc, traceback.format_exc())
                 if self.runtime.observatory is not None:
-                    self.runtime.observatory.emit("inline", "callback_error", error=type(exc).__name__, detail=str(exc)[:240])
+                    self.runtime.observatory.emit("inline", "callback_error", error=type(exc).__name__, detail=str(exc)[:240], tb=traceback.format_exc()[-4000:])
 
     async def _dispatch_chosen(self, update: Any) -> None:
         if getattr(update, "update_type", None) != "updateBotInlineSend":
@@ -1045,6 +1152,7 @@ class InlineManager:
                 try:
                     await handler(update)
                 except Exception as exc:
+                    log.error("inline chosen handler failed: %s: %s\n%s", type(exc).__name__, exc, traceback.format_exc())
                     if self.runtime.observatory is not None:
                         self.runtime.observatory.emit("inline", "chosen_error", error=exc)
         finally:
@@ -1066,6 +1174,7 @@ class InlineManager:
             try:
                 await handler(message)
             except Exception as exc:
+                log.error("inline pm handler failed: %s: %s\n%s", type(exc).__name__, exc, traceback.format_exc())
                 if self.runtime.observatory is not None:
                     self.runtime.observatory.emit("inline", "pm_handler_error", error=exc)
 

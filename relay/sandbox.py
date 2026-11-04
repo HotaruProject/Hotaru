@@ -5,6 +5,7 @@ import asyncio
 import base64
 import itertools
 import json
+import logging
 import os
 import subprocess
 import sys
@@ -12,6 +13,7 @@ import sysconfig
 import tempfile
 import threading
 import time
+import traceback
 from pathlib import Path
 from typing import Any, Sequence, cast
 
@@ -29,6 +31,8 @@ _DENYLIST_SOURCE = Path(_denylist.__file__).read_text(encoding="utf-8")
 _TOOLKIT_SOURCE = Path(_toolkit.__file__).read_text(encoding="utf-8")
 
 _PROTO_BYTES_KEY = "$bytes"
+
+log = logging.getLogger(__name__)
 
 
 def _proto_default(value: Any) -> Any:
@@ -771,6 +775,10 @@ class SandboxContext(ContextOperations):
     def ui(self):
         return _UiProxy(self.t)
 
+    @property
+    def screens(self):
+        return _ScreensProxy()
+
     async def _ctx_media_rpc(self, method, **kwargs):
         return _respond_call({"media_rpc": {"method": method, "kwargs": kwargs}})
 
@@ -854,6 +862,77 @@ class _RichProxy:
 
     async def respond(self, html, **kwargs):
         return await self.send(html, **kwargs)
+
+
+class _ScreensProxy:
+    @staticmethod
+    def screen(text, rows=None, **options):
+        data = {"text": text, "rows": rows or []}
+        for key in ("toast", "alert", "rich", "notice"):
+            if key in options:
+                data[key] = options[key]
+        return data
+
+    @staticmethod
+    async def show(screen, **options):
+        if isinstance(screen, str):
+            screen = _ScreensProxy.screen(screen)
+        if not isinstance(screen, dict):
+            raise TypeError("screen must be a mapping or text")
+        return _respond_call({"screen": screen, "screen_options": options})
+
+    @staticmethod
+    async def send(screen, **options):
+        return await _ScreensProxy.show(screen, **options)
+
+    @staticmethod
+    def button(text, action_id, *, style=None, icon=None, **args):
+        return _UiProxy.button(text, action_id, payload=args if args else None, style=style)
+
+    @staticmethod
+    def primary(text, callback, **args):
+        return _ScreensProxy.button(text, callback, style="primary", **args)
+
+    @staticmethod
+    def danger(text, callback, **args):
+        return _ScreensProxy.button(text, callback, style="danger", **args)
+
+    @staticmethod
+    def success(text, callback, **args):
+        return _ScreensProxy.button(text, callback, style="success", **args)
+
+    @staticmethod
+    def close(text="Закрыть"):
+        return _UiProxy.button(text or "Закрыть", "close")
+
+    @staticmethod
+    def footer(back=None, **args):
+        row = []
+        if back:
+            row.append(_ScreensProxy.button("« Назад", back, **args))
+        row.append(_ScreensProxy.close())
+        return [row]
+
+    @staticmethod
+    def icon(name):
+        icons = {
+            "search": "🔎", "settings": "⚙️", "info": "ℹ️", "help": "📖",
+            "back": "«", "close": "✖️", "check": "✅", "cross": "❌",
+            "module": "🧩", "text": "📝", "lock": "🔒", "shield": "🛡",
+        }
+        return icons.get(name, "")
+
+    @staticmethod
+    def badge(text, style=None, *, icon=None):
+        return f"<code>{text}</code>"
+
+    @staticmethod
+    def tap_copy(text, value, *, icon="copy"):
+        return f"<code>{value}</code>"
+
+    @staticmethod
+    def details(summary, body, *, open=False):
+        return f"\n<blockquote expandable><b>{summary}</b>\n{body}</blockquote>"
 
 
 class _UiProxy:
@@ -1929,14 +2008,18 @@ class ModuleSandbox:
             self._respond_sources.pop((module_id, rid), None)
         if not isinstance(result, dict) or not result.get("ok"):
             detail = result.get("error", "malformed") if isinstance(result, dict) else "malformed"
-            raise SandboxError(f"sandbox call failed: {detail}", (result.get("trace") or "") if isinstance(result, dict) else "")
+            trace = (result.get("trace") or "") if isinstance(result, dict) else ""
+            log.error("sandbox call error module=%s cmd=%s error=%s trace=%s", module_id, command, detail, trace)
+            raise SandboxError(f"sandbox call failed: {detail}", trace)
         return result.get("result")
 
     async def cap_call(self, module_id: str, capability: str, payload: dict[str, Any]) -> Any:
         result = await self._roundtrip(module_id, {"command": "$cap." + capability, "args": [], "payload": payload})
         if not isinstance(result, dict) or not result.get("ok"):
             detail = result.get("error", "malformed") if isinstance(result, dict) else "malformed"
-            raise SandboxError(f"sandbox capability failed: {detail}", (result.get("trace") or "") if isinstance(result, dict) else "")
+            trace = (result.get("trace") or "") if isinstance(result, dict) else ""
+            log.error("sandbox cap error module=%s cap=%s error=%s trace=%s", module_id, capability, detail, trace)
+            raise SandboxError(f"sandbox capability failed: {detail}", trace)
         return result.get("result")
 
     async def roundtrip(self, module_id: str, request: dict[str, Any], rid: int | None = None) -> dict[str, Any] | None:
@@ -2028,8 +2111,8 @@ class ModuleSandbox:
                     waiter.set_result(message)
         except asyncio.CancelledError:
             raise
-        except Exception:
-            pass
+        except Exception as exc:
+            log.error("sandbox pump failed (module=%s): %s: %s\n%s", module_id, type(exc).__name__, exc, traceback.format_exc())
         finally:
             if self._queues.get(module_id) is queue:
                 self._kill_worker(module_id, SandboxError(f"sandbox worker stopped: {module_id}"))
@@ -2038,7 +2121,15 @@ class ModuleSandbox:
         task: asyncio.Task[Any] = asyncio.create_task(coro)
         self._pump_tasks.add(task)
         task.add_done_callback(self._pump_tasks.discard)
-        task.add_done_callback(lambda done: done.cancelled() or done.exception())
+        task.add_done_callback(self._pump_task_done)
+
+    @staticmethod
+    def _pump_task_done(done: asyncio.Task[Any]) -> None:
+        if done.cancelled():
+            return
+        exc = done.exception()
+        if exc is not None:
+            log.error("sandbox serving task failed: %s: %s\n%s", type(exc).__name__, exc, "".join(traceback.format_exception(type(exc), exc, exc.__traceback__)))
 
     def _fail_waiters(self, module_id: str, error: Exception) -> None:
         for waiter in self._waiters.pop(module_id, {}).values():
@@ -2069,7 +2160,10 @@ class ModuleSandbox:
             while True:
                 done, _ = await asyncio.wait({waiter}, timeout=0.2)
                 if done:
-                    return waiter.result()
+                    res = waiter.result()
+                    if isinstance(res, dict) and not res.get("ok", True):
+                        log.error("sandbox roundtrip failed module=%s rid=%s req=%s resp=%s", module_id, rid, request.get("command"), res)
+                    return res
                 last = self._activity.get(module_id, started)
                 window = self.idle_timeout if last > started else self.spawn_timeout
                 if time.monotonic() - last >= window:
@@ -2131,7 +2225,8 @@ class ModuleSandbox:
                         result = await cap_host.call(module_id, name, payload)
                     reply = {"kind": "cap_result", "cid": message.get("cid"), "ok": True, "result": result}
                 except Exception as exc:
-                    reply = {"kind": "cap_result", "cid": message.get("cid"), "ok": False, "error_type": type(exc).__name__, "error": f"{type(exc).__name__}: {exc}"[:200]}
+                    reply = {"kind": "cap_result", "cid": message.get("cid"), "ok": False, "error_type": type(exc).__name__, "error": f"{type(exc).__name__}: {exc}"}
+                    log.error("sandbox capability failed (module=%s request=%r): %s: %s\n%s", module_id, message, type(exc).__name__, exc, traceback.format_exc())
             if process is self._workers.get(module_id) and process is not None and process.poll() is None and process.stdin is not None:
                 await self._write_reply(process, reply)
 
@@ -2152,7 +2247,8 @@ class ModuleSandbox:
                         result = await cap_host._mt_call(module_id, {"method": method, "kwargs": kwargs}, {})
                     reply = {"kind": "op_result", "cid": message.get("cid"), "ok": True, "result": result}
                 except Exception as exc:
-                    reply = {"kind": "op_result", "cid": message.get("cid"), "ok": False, "error_type": type(exc).__name__, "error": f"{type(exc).__name__}: {exc}"[:200]}
+                    reply = {"kind": "op_result", "cid": message.get("cid"), "ok": False, "error_type": type(exc).__name__, "error": f"{type(exc).__name__}: {exc}"}
+                    log.error("sandbox op failed (module=%s request=%r): %s: %s\n%s", module_id, message, type(exc).__name__, exc, traceback.format_exc())
             if process is self._workers.get(module_id) and process is not None and process.poll() is None and process.stdin is not None:
                 await self._write_reply(process, reply)
 
@@ -2164,10 +2260,11 @@ class ModuleSandbox:
             source = self._respond_sources.get((module_id, message.get("rid")))
             reply = {"kind": "respond_result", "cid": message.get("cid"), "ok": False, "error": "respond failed"}
             try:
-                result = await self._trusted_respond(module_id, source, payload)
+                result = await self._trusted_respond(module_id, source, payload, rid=message.get("rid"))
                 reply = {"kind": "respond_result", "cid": message.get("cid"), "ok": True, "result": result}
             except Exception as exc:
-                reply = {"kind": "respond_result", "cid": message.get("cid"), "ok": False, "error": f"{type(exc).__name__}: {exc}"[:200]}
+                reply = {"kind": "respond_result", "cid": message.get("cid"), "ok": False, "error_type": type(exc).__name__, "error": f"{type(exc).__name__}: {exc}"}
+                log.error("sandbox respond failed (module=%s request=%r): %s: %s\n%s", module_id, payload, type(exc).__name__, exc, traceback.format_exc())
             process = self._workers.get(module_id)
             if process is not None and process.poll() is None and process.stdin is not None:
                 await self._write_reply(process, reply)
@@ -2211,11 +2308,12 @@ class ModuleSandbox:
                     raise PermissionError("unknown callback action")
                 result = {"ok": True, "result": value}
             except Exception as exc:
-                result = {"ok": False, "error": f"{type(exc).__name__}: {exc}"[:200]}
+                result = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+                log.error("sandbox callback failed (module=%s request=%r): %s: %s\n%s", module_id, message, type(exc).__name__, exc, traceback.format_exc())
             if process is not None and process.poll() is None and process.stdin is not None:
                 await self._write_reply(process, {"cb_respond_result": result, "cid": message.get("cid")})
 
-    async def _trusted_respond(self, module_id: str, source: Any, payload: dict[str, Any]) -> Any:
+    async def _trusted_respond(self, module_id: str, source: Any, payload: dict[str, Any], rid: int | None = None) -> Any:
         from hotaru.response import FormHandle, Response
         from types import SimpleNamespace
         if "prepare" in payload:
@@ -2252,11 +2350,35 @@ class ModuleSandbox:
             return True
         if source is None:
             raise PermissionError("no message source is bound to this call")
-        context = self._respond_contexts.get(module_id)
+        context = self._respond_contexts.get((module_id, rid))
         if context is None:
             context = self.runtime.context_factory.create(module_id, source)
-            self._respond_contexts[module_id] = context
+            self._respond_contexts[(module_id, rid)] = context
         context.retarget(source)
+        if "screen" in payload:
+            spec = payload["screen"]
+            if not isinstance(spec, dict):
+                raise ValueError("screen requires a mapping")
+            spec = cast('dict[str, Any]', spec)
+            text = spec.get("text")
+            if not isinstance(text, str) or not text:
+                raise ValueError("screen requires non-empty text")
+            rows = self._sandbox_buttons(module_id, spec.get("rows") or [], getattr(source, "chat_id", None), getattr(source, "from_id", None))
+            options = payload.get("screen_options")
+            if options is not None and not isinstance(options, dict):
+                raise ValueError("screen options require a mapping")
+            options = cast('dict[str, Any]', options or {})
+            from hotaru.screens import Screen
+            screen = Screen(
+                text=text,
+                rows=rows or [],
+                toast=spec.get("toast") if isinstance(spec.get("toast"), str) else None,
+                alert=bool(spec.get("alert", False)),
+                rich=bool(spec.get("rich", False)),
+                notice=spec.get("notice") if isinstance(spec.get("notice"), str) else None,
+            )
+            form = await self.runtime.screens.show(context, screen, reply_to=options.get("reply_to"), fallback=bool(options.get("fallback", True)))
+            return form.message_id if form is not None else None
         if "media_rpc" in payload:
             media_rpc = payload["media_rpc"]
             if not isinstance(media_rpc, dict):
@@ -2384,8 +2506,7 @@ class ModuleSandbox:
                     process.kill()
                     process.wait(timeout=5)
                 except Exception as exc:
-                    import logging
-                    logging.getLogger(__name__).error("sandbox stop failed: %s", type(exc).__name__, exc_info=exc)
+                    log.error("sandbox stop failed for module %s: %s: %s", module_id, type(exc).__name__, exc)
                     return False
         self._module_defs.pop(module_id, None)
         self._module_deps.pop(module_id, None)

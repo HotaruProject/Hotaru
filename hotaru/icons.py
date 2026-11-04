@@ -6,7 +6,7 @@ from typing import Dict, Optional, Tuple
 
 _icons: Dict[str, Tuple[int, str, str]] = {
     "back": (5258236805890710909, "‹", "⬅️"),
-    "close": (5260342697075416641, "✕", "❌"),
+    "close": (5778527486270770928, "✕", "❌"),
     "search": (5429571366384842791, "🔍", "🔎"),
     "settings": (5258096772776991776, "⚙️", "⚙"),
     "edit": (5258331647358540449, "✏️", "✍️"),
@@ -66,7 +66,7 @@ _icons: Dict[str, Tuple[int, str, str]] = {
     "hotaru_ho": (5886680238867357294, "HO", "⚡️"),
     "hotaru_ta": (5884059780535821183, "TA", "⚡️"),
     "hotaru_ru": (5884240418270356231, "RU", "⚡️"),
-    "terminal": (5884429800558305287, "⌨️", "⚡️"),
+    "terminal": (5289601856836745198, "💻", "💻"),
 }
 
 _modules: Dict[str, str] = {
@@ -84,6 +84,8 @@ _modules: Dict[str, str] = {
     "settings": "settings",
     "backups": "folder",
     "catalyst": "download",
+    "singularity": "bolt",
+    "shield": "lock",
 }
 
 

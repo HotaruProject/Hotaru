@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import html
 import inspect
 import logging
+import traceback
 from collections import OrderedDict
 from relay.denylist import is_blocked_peer, is_readonly_peer
 from relay.firewall import module_scope
@@ -195,11 +197,14 @@ class Kernel:
         except asyncio.CancelledError:
             return None
         except (Exception, SystemExit) as exc:
-            log.error("command failed: %s", type(exc).__name__, exc_info=exc)
+            trace = getattr(exc, "worker_trace", "") or "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
+            log.error("command failed [%s] %s: %s\n%s", getattr(spec, "module_id", None), getattr(spec, "name", None), exc, trace)
             if self.response_service is not None:
                 try:
-                    text = f"{type(exc).__name__}: {exc}"[:300]
-                    return await context.respond(text) if context is not None else await self.response_service.respond(message, text=text, output="auto")
+                    raw_err = getattr(exc, "args", [str(exc)])[0] if getattr(exc, "args", None) else str(exc)
+                    err_msg = html.escape(str(raw_err), quote=False)[:3000]
+                    text = f'<tg-emoji emoji-id="5778527486270770928">❌</tg-emoji> <b>{type(exc).__name__}:</b>\n<blockquote>{err_msg}</blockquote>'
+                    return await context.respond(text, rich=False) if context is not None else await self.response_service.respond(message, text=text, output="auto")
                 except Exception as response_exc:
                     log.error("command error response failed: %s", type(response_exc).__name__, exc_info=response_exc)
                     return None

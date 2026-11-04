@@ -619,6 +619,15 @@ class BotGateway:
         return method
 
 
+def topic_emoji_id(title: str) -> int | None:
+    t = str(title).casefold()
+    if any(k in t for k in ("log", "журнал")):
+        return 5257965174979042426
+    if any(k in t for k in ("backup", "бэкап", "бекап")):
+        return 5258514780469075716
+    return None
+
+
 class ForumHelper:
     def __init__(self, runtime: Any) -> None:
         self._runtime = runtime
@@ -1105,7 +1114,19 @@ class ForumHelper:
         if now - last < 60.0:
             return None
         self._topic_tries[title] = now
-        created = await self._user_call("messages.createForumTopic", peer=chat_id, title=title, random_id=secrets.randbits(63))
+        topic_kwargs: dict[str, Any] = {"peer": chat_id, "title": title, "random_id": secrets.randbits(63)}
+        try:
+            prem = False
+            if hasattr(self._runtime, "is_premium"):
+                val = self._runtime.is_premium()
+                prem = await val if inspect.isawaitable(val) else bool(val)
+            if prem:
+                eid = topic_emoji_id(title)
+                if eid:
+                    topic_kwargs["icon_emoji_id"] = eid
+        except Exception:
+            pass
+        created = await self._user_call("messages.createForumTopic", **topic_kwargs)
         body = self._body(created)
         self._ingest_user(created)
         for item in _items(body.get("updates")):

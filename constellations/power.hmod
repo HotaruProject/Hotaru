@@ -1,34 +1,87 @@
 HOTARU = {
     "id": "power",
-    "version": "1.4.0",
+    "version": "1.5.0",
     "commands": ["restart", "stop", "start"],
     "capabilities": ["mt"],
-    "rise": "sunrise",
     "fade": "sundown",
 }
 
-from typing import Any, Mapping, cast
+from typing import Any
 
 
 import asyncio
+import logging
 import time
 
 
+log = logging.getLogger(__name__)
+
+
 def _text_running(ctx: Any) -> Any:
-    return f"<b>{ctx.t('kernel.power.running')}</b>"
+    return ctx.t('kernel.power.running')
 
 def _text_stopped(ctx: Any) -> Any:
-    return f"<b>{ctx.t('kernel.power.stopped')}</b>"
+    return ctx.t('kernel.power.stopped')
+
+def _text_stopped_details(ctx: Any) -> Any:
+    return f"{_text_stopped(ctx)}\n{ctx.t('kernel.power.stopped_details', prefix=ctx.runtime.config.prefix)}"
+
+def _serialize_inline(value: Any) -> Any:
+    if not isinstance(value, dict):
+        return None
+    out: dict[str, Any] = {"_": value.get("_") if isinstance(value.get("_"), str) else "inputBotInlineMessageID"}
+    for key in ("dc_id", "id", "access_hash", "owner_id"):
+        if isinstance(value.get(key), int):
+            out[key] = int(value[key])
+    return out if isinstance(out.get("id"), int) else None
+
+def _callback_inline(value: Any) -> Any:
+    inline = getattr(value, "inline_message_id", None)
+    if inline is None:
+        candidate = getattr(value, "msg_id", None)
+        inline = candidate if isinstance(candidate, dict) else None
+    return _serialize_inline(inline)
+
+async def _peer_hex(runtime: Any, chat_id: Any) -> Any:
+    if not isinstance(chat_id, int):
+        return None
+    app = getattr(runtime, "app", None)
+    mt = getattr(app, "mt", None) if app is not None else None
+    if mt is None or not hasattr(mt, "resolve_peer"):
+        return None
+    try:
+        return (await mt.resolve_peer(chat_id)).hex()
+    except (Exception, asyncio.CancelledError) as exc:
+        log.error("power peer resolve failed for %s: %s: %s", chat_id, type(exc).__name__, exc)
+        return None
 
 async def command_stop(ctx: Any, invocation: Any) -> Any:
     runtime = ctx.runtime
     if runtime.kernel.suspended:
         await ctx.respond(ctx.t('kernel.power.already_stopped'))
         return
+    args = [str(a).casefold() for a in getattr(invocation, "args", [])]
+    if "-f" in args or "--force" in args:
+        runtime.kernel.suspended = True
+        if runtime.state is not None:
+            runtime.state.set_setting("suspended", "1")
+        await ctx.respond(_text_stopped_details(ctx), parse_mode="HTML")
+        return
+    k = ctx.screens
+    screen = k.screen(
+        ctx.t('kernel.power.stop_confirm', prefix=runtime.config.prefix),
+        [[k.danger(ctx.t('kernel.power.stop_action'), confirm_stop), k.close(ctx.t('common.cancel'))]],
+        rich=True,
+    )
+    await ctx.screens.show(screen)
+
+async def confirm_stop(ctx: Any, nav: Any) -> Any:
+    runtime = ctx.runtime
     runtime.kernel.suspended = True
     if runtime.state is not None:
         runtime.state.set_setting("suspended", "1")
-    await ctx.respond(_text_stopped(ctx), parse_mode="HTML")
+    k = ctx.screens
+    return k.screen(_text_stopped_details(ctx), [k.footer()], rich=True)
 
 async def command_start(ctx: Any, invocation: Any) -> Any:
     runtime = ctx.runtime
@@ -41,59 +94,53 @@ async def command_start(ctx: Any, invocation: Any) -> Any:
     await ctx.respond(_text_running(ctx), parse_mode="HTML")
 
 async def command_restart(ctx: Any, invocation: Any) -> Any:
-    chat_id = getattr(ctx.message, "chat_id", None)
-    message_id = getattr(ctx.message, "id", None)
-    peer_hex = None
-    if isinstance(chat_id, int):
-        try:
-            app = getattr(ctx.runtime, "app", None)
-            mt = getattr(app, "mt", None) if app is not None else None
-            if mt is not None and hasattr(mt, "resolve_peer"):
-                peer_hex = (await mt.resolve_peer(chat_id)).hex()
-        except Exception:
-            peer_hex = None
-    await ctx.respond(ctx.t('kernel.power.restarting'), parse_mode="HTML")
-    target_id = ctx.response_message_id
-    if isinstance(target_id, int):
-        message_id = target_id
+    args = [str(a).casefold() for a in getattr(invocation, "args", [])]
+    if "-f" in args or "--force" in args:
+        runtime = ctx.runtime
+        chat_id = getattr(ctx, "chat_id", None)
+        message_id = getattr(ctx, "message_id", None)
+        peer_hex = await _peer_hex(runtime, chat_id)
+        if isinstance(chat_id, int) and isinstance(message_id, int):
+            ctx.state.set("restart_pending", {"chat_id": chat_id, "message_id": message_id, "peer": peer_hex, "inline_id": None, "bot": False, "ts": time.time()})
+        runtime.request_restart()
+        await ctx.respond(ctx.t("kernel.power.restarting"), parse_mode="HTML")
+        async def _do_shutdown() -> None:
+            await asyncio.sleep(0.3)
+            try:
+                if runtime.app is not None:
+                    await asyncio.wait_for(runtime.app.close(), timeout=1.5)
+            except Exception:
+                pass
+        asyncio.create_task(_do_shutdown(), name="hotaru:forced-restart")
+        return
+    k = ctx.screens
+    screen = k.screen(
+        ctx.t('kernel.power.restart_confirm'),
+        [[k.danger(ctx.t('kernel.power.restart_action'), confirm_restart), k.close(ctx.t('common.cancel'))]],
+        rich=True,
+    )
+    await ctx.screens.show(screen)
+
+async def confirm_restart(ctx: Any, nav: Any) -> Any:
+    runtime = ctx.runtime
+    chat_id = nav.form.chat
+    message_id = nav.form.message_id
+    inline_id = _callback_inline(nav.call) or _serialize_inline(getattr(nav.form, "inline_id", None))
+    peer_hex = await _peer_hex(runtime, chat_id)
     if isinstance(chat_id, int) and isinstance(message_id, int):
-        ctx.state.set("restart_pending", {"chat_id": chat_id, "message_id": message_id, "peer": peer_hex, "ts": time.time()})
+        ctx.state.set("restart_pending", {"chat_id": chat_id, "message_id": message_id, "peer": peer_hex, "inline_id": inline_id, "bot": bool(nav.form.bot), "ts": time.time()})
+    runtime.request_restart()
 
-    ctx.runtime.request_restart()
-    try:
-        if ctx.runtime.app:
-            await asyncio.wait_for(ctx.runtime.app.close(), timeout=1.0)
-    except Exception:
-        pass
-
-async def sunrise(ctx: Any) -> Any:
-    pending = ctx.state.get("restart_pending")
-    if not isinstance(pending, dict):
-        return
-    pending = cast(Mapping[str, object], pending)
-    ctx.state.delete("restart_pending")
-    ts = pending.get("ts")
-    chat_id = pending.get("chat_id")
-    message_id = pending.get("message_id")
-    peer = pending.get("peer")
-    peer_hex = peer if isinstance(peer, str) else None
-    if not (isinstance(chat_id, int) and isinstance(message_id, int)):
-        return
-    took = max(1, round(time.time() - float(ts))) if isinstance(ts, (int, float)) else None
-    took = ctx.t("common.seconds", n=took) if took is not None else ctx.t("common.unknown")
-    text = ctx.t('kernel.power.restarted', took=took)
-    html = f"<b>{text}</b>"
-    rich = {"_": "inputRichMessageHTML", "html": html}
-    try:
-        if peer_hex:
-            await ctx.tg.call("messages.editMessage", {"id": message_id, "rich_message": rich, "peer": bytes.fromhex(peer_hex)})
-        else:
-            await ctx.tg.edit_rich(message_id, html, peer=chat_id)
-    except (Exception, asyncio.CancelledError):
+    async def _do_shutdown() -> None:
+        await asyncio.sleep(0.3)
         try:
-            await ctx.tg.edit_rich(message_id, html, peer=chat_id)
-        except (Exception, asyncio.CancelledError):
-            pass
+            if runtime.app:
+                await asyncio.wait_for(runtime.app.close(), timeout=1.5)
+        except (Exception, asyncio.CancelledError) as exc:
+            log.error("restart shutdown failed: %s: %s", type(exc).__name__, exc)
+
+    asyncio.create_task(_do_shutdown())
+    return ctx.screens.screen(ctx.t('kernel.power.restarting'), rich=True)
 
 async def sundown(ctx: Any) -> Any:
     return None
