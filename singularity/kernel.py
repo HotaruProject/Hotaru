@@ -489,33 +489,48 @@ class SingularityKernel:
         return pids
 
     def _release_stale_backend(self, port: int) -> None:
-        for pid in self._stale_backend_pids(port):
-            try:
-                cmdline = Path(f"/proc/{pid}/cmdline").read_bytes().decode(
-                    "utf-8", errors="replace"
-                )
-            except OSError:
-                continue
-            if "server.js" not in cmdline:
-                continue
-            log.warning(
-                "Stopping a stale Singularity backend (pid %s) that still holds port %s",
-                pid,
-                port,
-            )
-            try:
-                os.kill(pid, signal.SIGTERM)
-            except OSError:
-                continue
-            for _ in range(30):
-                if not Path(f"/proc/{pid}").exists():
-                    break
-                time.sleep(0.1)
-            else:
+        import socket
+        for _ in range(5):
+            pids = self._stale_backend_pids(port)
+            if not pids:
+                break
+            for pid in pids:
                 try:
-                    os.kill(pid, signal.SIGKILL)
+                    cmdline = Path(f"/proc/{pid}/cmdline").read_bytes().decode(
+                        "utf-8", errors="replace"
+                    )
                 except OSError:
-                    pass
+                    continue
+                if "server.js" not in cmdline:
+                    continue
+                log.warning(
+                    "Stopping a stale Singularity backend (pid %s) that still holds port %s",
+                    pid,
+                    port,
+                )
+                try:
+                    os.kill(pid, signal.SIGTERM)
+                except OSError:
+                    continue
+                for _ in range(30):
+                    if not Path(f"/proc/{pid}").exists():
+                        break
+                    time.sleep(0.1)
+                else:
+                    try:
+                        os.kill(pid, signal.SIGKILL)
+                    except OSError:
+                        pass
+            time.sleep(0.1)
+        for _ in range(20):
+            try:
+                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                    s.settimeout(0.1)
+                    if s.connect_ex(("127.0.0.1", port)) != 0:
+                        break
+            except Exception:
+                break
+            time.sleep(0.1)
 
     async def _spawn_backend(self) -> bool:
         with trusted_scope():
@@ -908,6 +923,7 @@ class SingularityKernel:
                     pass
             except Exception:
                 pass
+        self._release_stale_backend(self.config.port)
 
     async def stop(self) -> None:
         self._running = False
