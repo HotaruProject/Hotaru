@@ -1294,17 +1294,14 @@ class ScreenEngine:
                     self._save(form)
                 elif _inline_key(form.inline_id) != _inline_key(inline_id):
                     log.info("screen dispatch inline mismatch: form=%s expected=%s got=%s", form.id, _inline_key(form.inline_id), _inline_key(inline_id))
-                    await self._answer(callback, denied, alert=True)
                     return
             elif form.bot and (str(getattr(callback, "chat_id", None)) != str(form.chat) or getattr(callback, "msg_id", None) != form.message_id):
                 log.info("screen dispatch bot message mismatch: form=%s chat=%s/%s msg=%s/%s", form.id, getattr(callback, "chat_id", None), form.chat, getattr(callback, "msg_id", None), form.message_id)
-                await self._answer(callback, denied, alert=True)
                 return
             action = form.actions[index]
             actor = getattr(callback, "from_id", None)
             if not self._allowed(form, actor, action):
                 log.info("screen dispatch actor denied: form=%s actor=%s module=%s command=%s", form.id, actor, form.module, form.command)
-                await self._answer(callback, denied, alert=True)
                 return
             security = getattr(self.runtime, "security", None)
             if security is not None:

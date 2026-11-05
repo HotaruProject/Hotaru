@@ -475,10 +475,6 @@ class Runtime:
         try:
             return await self.callbacks.dispatch(callback)
         except CallbackDenied:
-            try:
-                await callback.answer(self.t("runtime.callback_denied"), alert=True)
-            except Exception as exc:
-                log.error("callback deny notify failed: %s: %s", type(exc).__name__, exc)
             return None
         except Exception as exc:
             log.error("callback handler failed: %s: %s\n%s", type(exc).__name__, exc, traceback.format_exc())
@@ -1784,10 +1780,6 @@ class Runtime:
         try:
             return await self.callbacks.dispatch(callback)
         except CallbackDenied as exc:
-            try:
-                await callback.answer(self.t("runtime.callback_denied"), alert=True)
-            except Exception as inner:
-                log.error("inline callback deny notify failed: %s: %s", type(inner).__name__, inner)
             if self.observatory is not None:
                 self.observatory.emit("inline", "callback_error", error=type(exc).__name__, detail=str(exc)[:240], tb=traceback.format_exc()[-4000:])
             return None
