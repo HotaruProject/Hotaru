@@ -8,6 +8,7 @@
 <br />
 [![Sandbox][sandbox-badge]][sandbox-url]
 [![Website][website-badge]][website-url]
+[![Telegram][telegram-badge]][telegram-url]
 [![Stars][stars-badge]][stars-url]
 
   <p>A Telegram userbot built on GoyGram with Linux namespace sandboxing.</p>
@@ -146,6 +147,8 @@ This project is licensed under the GNU Affero General Public License v3.0 (AGPL-
 [sandbox-url]: #linux-namespace-isolation
 [website-badge]: https://img.shields.io/badge/Website-HotaruWeb-000000.svg?style=for-the-badge&logo=githubpages&logoColor=white
 [website-url]: https://hotaruproject.github.io/
+[telegram-badge]: https://img.shields.io/badge/Telegram-Community-2CA5E0.svg?style=for-the-badge&logo=telegram&logoColor=white
+[telegram-url]: https://t.me/hotaru_ub
 [docker-badge]: https://img.shields.io/badge/Docker-Ready-2496ED.svg?style=for-the-badge&logo=docker&logoColor=white
 [docker-url]: #installation
 [stars-badge]: https://img.shields.io/github/stars/HotaruProject/Hotaru?style=for-the-badge&logo=github&color=181717
