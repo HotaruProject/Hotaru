@@ -855,8 +855,8 @@ class RuntimeConfig:
                 values["sandbox"] = "auto"
 
             if values.get("api-id") is None and values.get("bot-token") is None:
-                if sys.stdin.isatty() and sys.stdout.isatty():
-                    from .login import collect_settings
+                from .login import attach_interactive_tty, collect_settings
+                if attach_interactive_tty():
                     collect_settings(state)
                     values["api-id"] = state.get_setting("api-id")
                     values["api-hash"] = state.get_setting("api-hash")
@@ -865,7 +865,7 @@ class RuntimeConfig:
                     values["session-dir"] = state.get_setting("session-dir") or "sanctuary"
                     values["backup-keep"] = state.get_setting("backup-keep") or 7
                 else:
-                    raise ConfigError("Missing Telegram credentials. Set API_ID and API_HASH (or BOT_TOKEN) in environment / Heroku Config Vars.")
+                    raise ConfigError("Missing Telegram credentials. Run Hotaru in an interactive terminal to configure, or set API_ID and API_HASH (or BOT_TOKEN) in environment variables.")
 
             return cls(
                 api_id=int(values["api-id"]) if values["api-id"] is not None else None,

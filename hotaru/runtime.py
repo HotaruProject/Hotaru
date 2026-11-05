@@ -2932,7 +2932,8 @@ class Runtime:
                 from .login import check_session
                 missing = not await check_session(self.app)
             if missing:
-                if not sys.stdin.isatty() or not sys.stdout.isatty():
+                from .login import attach_interactive_tty
+                if not attach_interactive_tty():
                     if os.environ.get("HOTARU_ACCOUNT_SESSION"):
                         from .accounts import parse_user_id
                         uid = parse_user_id(self.config.session_name)
