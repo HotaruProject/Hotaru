@@ -265,7 +265,13 @@
       "err_file_doc": "Message must contain a JSON file (.json)",
       "err_json_syntax": "Invalid JSON syntax: {err} (line {line})",
       "err_structure": "Dictionary structure error: {err}",
-      "err_load_failed": "Failed to load dictionary: {err}"
+      "err_load_failed": "Failed to load dictionary: {err}",
+      "translating": "Translating…",
+      "empty_text": "Text for translation is empty",
+      "text_too_large": "Text is too large for a single request",
+      "failed": "Failed to translate text",
+      "error_title": "Translation error",
+      "usage_file": "Provide a link, path, or reply to a JSON file (.json)"
     },
     "test-features": {
       "description": "Hotaru proxy and capability test module",
