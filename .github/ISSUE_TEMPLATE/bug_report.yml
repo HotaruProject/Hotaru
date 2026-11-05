@@ -1,0 +1,65 @@
+name: Bug report
+description: Report a reproducible problem or unexpected error in Hotaru
+labels: ["type:bug", "status:needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before submitting, search existing issues to confirm this has not already been reported.
+        Do not post credentials, session strings, or master keys in logs.
+  - type: dropdown
+    id: deployment
+    attributes:
+      label: Deployment environment
+      description: How is Hotaru running on your machine?
+      options:
+        - Host systemd or direct process
+        - Docker Compose
+        - Proxmox VE LXC
+        - Other Linux container
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Hotaru version or git commit
+      description: Run `git rev-parse --short HEAD` or check the info command output.
+      placeholder: "e.g. 849ec73 or develop"
+    validations:
+      required: true
+  - type: input
+    id: os_python
+    attributes:
+      label: Operating system and Python version
+      placeholder: "e.g. Ubuntu 24.04 LTS, Python 3.13.2"
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: Describe the bug
+      description: Explain what happened clearly and concisely.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: List the exact steps to trigger the issue.
+      placeholder: |
+        1. Start the bot with ...
+        2. Send command ...
+        3. Observe error ...
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs and tracebacks
+      description: Paste relevant logs from `sanctuary/logs/` or console output. Remove any sensitive tokens first.
+      render: shell
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What should have happened instead?

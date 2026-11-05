@@ -1,0 +1,42 @@
+name: Feature request
+description: Suggest an idea or architectural improvement for Hotaru
+labels: ["type:enhancement", "status:needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Suggest features that align with Hotaru's security-first design.
+  - type: dropdown
+    id: component
+    attributes:
+      label: Target component
+      description: Which part of the project would this feature touch?
+      options:
+        - Kernel and task supervisor
+        - Relay firewall and capabilities
+        - Constellations module system (.hmod)
+        - Interactive screens and inline UI
+        - Singularity web dashboard
+        - Deployment and setup scripts
+        - Internationalization (lexicon)
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem statement
+      description: What limitation or use case does this request address?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Describe how the feature should work from the user's perspective.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Have you considered any workarounds or alternative designs?

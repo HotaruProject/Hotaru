@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security Vulnerability
+    url: https://github.com/HotaruProject/Hotaru/security/advisories/new
+    about: Report potential security vulnerabilities privately to project maintainers.
+  - name: Community Discussions
+    url: https://github.com/HotaruProject/Hotaru/discussions
+    about: Ask questions, share module ideas, or discuss configuration.
