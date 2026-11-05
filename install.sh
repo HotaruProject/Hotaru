@@ -1,6 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+export PYTHONUTF8=1
+if locale -a 2>/dev/null | grep -qi "C.UTF-8"; then
+    export LC_ALL=C.UTF-8
+    export LANG=C.UTF-8
+elif locale -a 2>/dev/null | grep -qi "en_US.UTF-8"; then
+    export LC_ALL=en_US.UTF-8
+    export LANG=en_US.UTF-8
+else
+    export LC_ALL=C.UTF-8
+    export LANG=C.UTF-8
+fi
+
 C_RESET='\033[0m'
 C_BOLD='\033[1m'
 C_DIM='\033[2m'
@@ -57,20 +69,77 @@ outro() {
     echo -e "${C_GRAY}${S_END}  ${C_GREEN}${1}${C_RESET}\n"
 }
 
+clean_input() {
+    local str="$1"
+    str="$(printf '%s' "$str" | tr -d '\r\n')"
+    str="$(printf '%s' "$str" | sed -E $'s/\x1b\\[[0-9;]*[a-zA-Z]//g' 2>/dev/null)" || true
+    str="$(printf '%s' "$str" | tr -d '\001-\037\177' 2>/dev/null)" || true
+    if command -v iconv &>/dev/null; then
+        local ic
+        ic="$(printf '%s' "$str" | iconv -f UTF-8 -t UTF-8 -c 2>/dev/null)" || true
+        if [ -n "$ic" ]; then
+            str="$ic"
+        fi
+    fi
+    str="$(printf '%s' "$str" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+    printf '%s' "$str"
+}
+
+resolve_clean_path() {
+    local target="$1"
+    local default_target="$2"
+    target="$(clean_input "$target")"
+    target="${target:-$default_target}"
+    target="${target/#\~/$HOME}"
+
+    if command -v python3 &>/dev/null; then
+        local p_res
+        p_res=$(python3 - "$target" "$default_target" << 'PYEOF'
+import sys, os, pathlib
+val = sys.argv[1] if len(sys.argv) > 1 else ""
+def_val = sys.argv[2] if len(sys.argv) > 2 else ""
+try:
+    raw = val.encode("utf-8", "surrogateescape")
+    filtered = bytes(b for b in raw if b >= 32 or b == 9)
+    cleaned = filtered.decode("utf-8", "ignore").strip()
+    if not cleaned:
+        cleaned = def_val
+    path = pathlib.Path(os.path.expanduser(cleaned)).resolve()
+    res = str(path)
+    res.encode("utf-8")
+    print(res, end="")
+except Exception:
+    print(def_val, end="")
+PYEOF
+        ) || true
+        if [ -n "$p_res" ]; then
+            target="$p_res"
+        fi
+    fi
+    printf '%s' "$target"
+}
+
 ask_input() {
     local prompt="$1"
     local default_val="$2"
     local var_name="$3"
     local val=""
 
+    if [ -n "${!var_name:-}" ]; then
+        return 0
+    fi
+
     echo -ne "$prompt"
     if [ -t 0 ]; then
         read -r val || true
+    elif [ "${CI:-}" = "true" ] || [ "${DEBIAN_FRONTEND:-}" = "noninteractive" ]; then
+        read -r val 2>/dev/null || val=""
     elif [ -r /dev/tty ] && [ -w /dev/tty ]; then
         read -r val </dev/tty || true
     else
-        val=""
+        read -r val 2>/dev/null || val=""
     fi
+    val="$(clean_input "$val")"
     val="${val:-$default_val}"
     printf -v "$var_name" '%s' "$val"
 }
@@ -458,33 +527,42 @@ main() {
         default_install_path="$HOME/Hotaru"
     fi
 
-    local user_path=""
-    step_info "Where would you like to install Hotaru?"
-    ask_input "${C_GRAY}${S_BAR}     ${C_DIM}Path [${default_install_path}]: ${C_RESET}" "$default_install_path" user_path
-    local install_dir="${user_path:-$default_install_path}"
-    install_dir="${install_dir/#\~/$HOME}"
+    local user_path="${HOTARU_DIR:-${HOTARU_INSTALL_DIR:-}}"
+    if [ -z "$user_path" ]; then
+        step_info "Where would you like to install Hotaru?"
+        ask_input "${C_GRAY}${S_BAR}     ${C_DIM}Path [${default_install_path}]: ${C_RESET}" "$default_install_path" user_path
+    fi
+    local install_dir
+    install_dir="$(resolve_clean_path "${user_path:-$default_install_path}" "$default_install_path")"
     step_done "Target directory: ${C_CYAN}${install_dir}${C_RESET}"
 
-    local deploy_mode="1"
-    step_info "Select deployment environment:"
-    if is_termux; then
-        echo -e "${C_GRAY}${S_BAR}     ${C_CYAN}1)${C_RESET} Standard Host (Termux) ${C_DIM}[Recommended]${C_RESET}"
-        echo -e "${C_GRAY}${S_BAR}     ${C_CYAN}2)${C_RESET} Docker (Requires rooted Termux / proot)"
-        echo -e "${C_GRAY}${S_BAR}     ${C_CYAN}3)${C_RESET} LXC (Proxmox VE / Linux Containers)"
-    else
-        echo -e "${C_GRAY}${S_BAR}     ${C_CYAN}1)${C_RESET} Standard / Daemon (Host OS) ${C_DIM}[Recommended]${C_RESET}"
-        echo -e "${C_GRAY}${S_BAR}     ${C_CYAN}2)${C_RESET} Docker (Docker Compose container)"
-        echo -e "${C_GRAY}${S_BAR}     ${C_CYAN}3)${C_RESET} LXC (Proxmox VE / Linux Containers)"
+    local deploy_mode="${HOTARU_DEPLOY_MODE:-}"
+    if [ -z "$deploy_mode" ]; then
+        step_info "Select deployment environment:"
+        if is_termux; then
+            echo -e "${C_GRAY}${S_BAR}     ${C_CYAN}1)${C_RESET} Standard Host (Termux) ${C_DIM}[Recommended]${C_RESET}"
+            echo -e "${C_GRAY}${S_BAR}     ${C_CYAN}2)${C_RESET} Docker (Requires rooted Termux / proot)"
+            echo -e "${C_GRAY}${S_BAR}     ${C_CYAN}3)${C_RESET} LXC (Proxmox VE / Linux Containers)"
+        else
+            echo -e "${C_GRAY}${S_BAR}     ${C_CYAN}1)${C_RESET} Standard / Daemon (Host OS) ${C_DIM}[Recommended]${C_RESET}"
+            echo -e "${C_GRAY}${S_BAR}     ${C_CYAN}2)${C_RESET} Docker (Docker Compose container)"
+            echo -e "${C_GRAY}${S_BAR}     ${C_CYAN}3)${C_RESET} LXC (Proxmox VE / Linux Containers)"
+        fi
+        ask_input "${C_GRAY}${S_BAR}     ${C_DIM}Enter choice [1-3] (Default: 1): ${C_RESET}" "1" deploy_mode
     fi
-    ask_input "${C_GRAY}${S_BAR}     ${C_DIM}Enter choice [1-3] (Default: 1): ${C_RESET}" "1" deploy_mode
     deploy_mode="${deploy_mode:-1}"
 
     sync_repo() {
         local target_branch="develop"
+        install_dir="$(resolve_clean_path "$install_dir" "$default_install_path")"
+
         if [ ! -d "$install_dir" ]; then
             step_dim "Cloning Hotaru into ${install_dir}..."
             mkdir -p "$(dirname "$install_dir")"
-            git clone -b "$target_branch" https://github.com/HotaruProject/Hotaru.git "$install_dir"
+            if ! git clone -b "$target_branch" https://github.com/HotaruProject/Hotaru.git "$install_dir"; then
+                step_error "Failed to clone Hotaru into ${install_dir}."
+                exit 1
+            fi
         elif [ -d "$install_dir/.git" ]; then
             step_dim "Updating repository in ${install_dir}..."
             (
@@ -494,8 +572,16 @@ main() {
                 git pull origin "$target_branch" >/dev/null 2>&1 || true
             )
         elif [ "$is_hotaru_repo" = false ] && [ ! -f "$install_dir/pyproject.toml" ]; then
-            step_dim "Cloning Hotaru into ${install_dir}..."
-            git clone -b "$target_branch" https://github.com/HotaruProject/Hotaru.git "$install_dir"
+            if [ -z "$(ls -A "$install_dir" 2>/dev/null)" ]; then
+                step_dim "Cloning Hotaru into empty directory ${install_dir}..."
+                if ! git clone -b "$target_branch" https://github.com/HotaruProject/Hotaru.git "$install_dir"; then
+                    step_error "Failed to clone Hotaru into ${install_dir}."
+                    exit 1
+                fi
+            else
+                step_error "Directory ${install_dir} exists and is not empty."
+                exit 1
+            fi
         fi
 
         if [ ! -f "$install_dir/docker-compose.yml" ]; then
@@ -529,66 +615,76 @@ main() {
             sync_repo
 
             step_info "Synchronizing dependencies..."
-            uv sync || pip install -e . >/dev/null 2>&1 || true
-            step_done "Dependencies synchronized."
-
+            local sync_ok=false
             local uv_path
             uv_path="$(command -v uv || echo "$HOME/.local/bin/uv")"
-            local detected_init=""
-            local init_name=""
-            local init_cmd=""
-            local init_meta=""
 
-            init_meta="$("$uv_path" run python -c "from hotaru.daemon import detect_init_system; i = detect_init_system(); print(f'{i.id}|{i.name}|{i.status_command()}')" 2>/dev/null || true)"
-            if [ -n "$init_meta" ]; then
-                IFS='|' read -r detected_init init_name init_cmd <<< "$init_meta"
-            fi
-
-            if [ -n "$detected_init" ]; then
-                local install_service="y"
-                ask_input "${C_GRAY}${S_BAR}  ${C_CYAN}◆${C_RESET}  Install background service via ${init_name} (${detected_init})? [Y/n]: " "y" install_service
-                if [[ "$install_service" =~ ^[Yy]$ ]]; then
-                    step_dim "Registering service with ${init_name}..."
-                    local install_res=""
-                    install_res="$("$uv_path" run python -c "from hotaru.daemon import install_daemon; res = install_daemon('${detected_init}'); print(res.message)" 2>/dev/null || true)"
-                    if [ -n "$install_res" ]; then
-                        step_done "$install_res"
-                    else
-                        step_done "Daemon installed. Status command: ${init_cmd}"
+            if [ -x "$uv_path" ]; then
+                step_dim "Running uv sync..."
+                if "$uv_path" sync; then
+                    sync_ok=true
+                else
+                    step_warn "uv sync reported non-zero status. Trying uv pip install..."
+                    if [ ! -d ".venv" ]; then
+                        "$uv_path" venv .venv 2>/dev/null || python3 -m venv .venv 2>/dev/null || true
+                    fi
+                    if [ -d ".venv" ]; then
+                        if "$uv_path" pip install -e . 2>/dev/null; then
+                            sync_ok=true
+                        fi
                     fi
                 fi
-            elif command -v systemctl &>/dev/null && [ "$(id -u)" -eq 0 ]; then
-                local install_service="y"
-                ask_input "${C_GRAY}${S_BAR}  ${C_CYAN}◆${C_RESET}  Install systemd service hotaru.service? [Y/n]: " "y" install_service
-                if [[ "$install_service" =~ ^[Yy]$ ]]; then
-                    cat << EOF > /etc/systemd/system/hotaru.service
-[Unit]
-Description=Hotaru Userbot
-After=network.target
+            fi
 
-[Service]
-Type=simple
-WorkingDirectory=${install_dir}
-ExecStart=${uv_path} run python -m hotaru
-Restart=always
-RestartSec=5
-StandardOutput=journal
-StandardError=journal
-
-[Install]
-WantedBy=multi-user.target
-EOF
-                    systemctl daemon-reload
-                    systemctl enable hotaru.service >/dev/null 2>&1 || true
-                    step_done "Systemd service hotaru.service created and enabled."
+            if [ "$sync_ok" = false ]; then
+                step_dim "Setting up virtual environment via python3 -m venv..."
+                if [ ! -d ".venv" ]; then
+                    python3 -m venv .venv 2>/dev/null || true
                 fi
+                if [ -f ".venv/bin/pip" ]; then
+                    if .venv/bin/pip install --upgrade pip >/dev/null 2>&1 && .venv/bin/pip install -e . >/dev/null 2>&1; then
+                        sync_ok=true
+                    fi
+                fi
+            fi
+
+            if [ "$sync_ok" = false ]; then
+                step_dim "Trying system/user pip install..."
+                if pip install -e . --break-system-packages >/dev/null 2>&1 || pip install -e . --user >/dev/null 2>&1 || pip install -e . >/dev/null 2>&1; then
+                    sync_ok=true
+                fi
+            fi
+
+            if [ "$sync_ok" = true ]; then
+                step_done "Dependencies synchronized."
+            else
+                step_warn "Dependency sync finished with warnings. Proceeding with environment launch..."
+            fi
+
+            if [ "${HOTARU_SKIP_LAUNCH:-0}" = "1" ] || [ "${HOTARU_NO_LAUNCH:-0}" = "1" ]; then
+                outro "Hotaru installation completed successfully."
+                exit 0
             fi
 
             outro "Launching Hotaru setup..."
-            if [ -r /dev/tty ] && [ -w /dev/tty ]; then
-                exec "$uv_path" run python -m hotaru </dev/tty
+            if [ -x "$install_dir/.venv/bin/python" ]; then
+                if [ -r /dev/tty ] && [ -w /dev/tty ]; then
+                    exec "$install_dir/.venv/bin/python" -m hotaru </dev/tty
+                else
+                    exec "$install_dir/.venv/bin/python" -m hotaru
+                fi
+            elif [ -x "$uv_path" ]; then
+                if [ -r /dev/tty ] && [ -w /dev/tty ]; then
+                    exec "$uv_path" run python -m hotaru </dev/tty
+                else
+                    exec "$uv_path" run python -m hotaru
+                fi
             else
-                exec "$uv_path" run python -m hotaru
+                if [ -r /dev/tty ] && [ -w /dev/tty ]; then
+                    exec python3 -m hotaru </dev/tty
+                else
+                    exec python3 -m hotaru
+                fi
             fi
             ;;
 

@@ -522,9 +522,9 @@ def attach_interactive_tty() -> bool:
         return True
     try:
         if not sys.stdin.isatty() and os.path.exists("/dev/tty"):
-            sys.stdin = open("/dev/tty", "r")
+            sys.stdin = open("/dev/tty", "r", encoding="utf-8", errors="replace")
         if not sys.stdout.isatty() and os.path.exists("/dev/tty"):
-            sys.stdout = open("/dev/tty", "w")
+            sys.stdout = open("/dev/tty", "w", encoding="utf-8", errors="replace")
         return sys.stdin.isatty() and sys.stdout.isatty()
     except Exception:
         return False
