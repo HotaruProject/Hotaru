@@ -338,11 +338,7 @@ class Runtime:
         if isinstance(chat_id, int) and isinstance(message_id, int):
             self._restart_notice = (chat_id, message_id, peer if isinstance(peer, str) else None, inline, bool(pending.get("bot")), stamp if isinstance(stamp, (int, float)) else None)
 
-    async def _restart_notice_edit(self, html: str) -> None:
-        notice = self._restart_notice
-        app = self.app
-        if notice is None or app is None:
-            return
+    async def _restart_notice_edit_surface(self, notice: tuple[int, int, str | None, dict[str, Any] | None, bool, float | None], html: str) -> bool:
         chat_id, message_id, peer, inline_id, bot_sent, _ = notice
         plain, entities = to_entities(html)
         extra: dict[str, Any] = {"entities": entities} if entities else {}
@@ -352,80 +348,101 @@ class Runtime:
             try:
                 with trusted_scope():
                     await bot.mt_messages_edit_inline_bot_message(id=inline_id, message=plain, rich_message=rich_payload, **extra)
-                return
+                return True
             except Exception as exc:
-                log.error("restart notice rich inline edit failed: %s: %s", type(exc).__name__, exc)
+                log.debug("restart notice rich inline edit failed: %s: %s", type(exc).__name__, exc)
             try:
                 with trusted_scope():
                     await bot.mt_messages_edit_inline_bot_message(id=inline_id, message=plain, **extra)
-                return
+                return True
             except Exception as exc:
-                log.error("restart notice inline edit failed: %s: %s", type(exc).__name__, exc)
+                log.debug("restart notice inline edit failed: %s: %s", type(exc).__name__, exc)
         if bot_sent and bot is not None:
             try:
                 with trusted_scope():
                     await bot.mt_messages_edit_message(peer=chat_id, id=message_id, message=plain, rich_message=rich_payload, **extra)
-                return
+                return True
             except Exception as exc:
-                log.error("restart notice rich bot edit failed: %s: %s", type(exc).__name__, exc)
+                log.debug("restart notice rich bot edit failed: %s: %s", type(exc).__name__, exc)
             try:
                 with trusted_scope():
                     await bot.mt_messages_edit_message(peer=chat_id, id=message_id, message=plain, **extra)
-                return
+                return True
             except Exception as exc:
-                log.error("restart notice bot edit failed: %s: %s", type(exc).__name__, exc)
-        target = bytes.fromhex(peer) if peer else chat_id
-        try:
-            with trusted_scope():
-                await app.mt_messages_edit_message(peer=target, id=message_id, message=plain, rich_message=rich_payload, **extra)
-            return
-        except Exception as exc:
-            log.error("restart notice rich edit failed: %s: %s", type(exc).__name__, exc)
-        try:
-            with trusted_scope():
-                await app.mt_messages_edit_message(peer=target, id=message_id, message=plain, **extra)
-            return
-        except Exception as exc:
-            log.error("restart notice edit failed: %s: %s", type(exc).__name__, exc)
+                log.debug("restart notice bot edit failed: %s: %s", type(exc).__name__, exc)
+        app = self.app
+        if app is None:
+            return False
+        mt = getattr(app, "mt", None)
+        if mt is None or not getattr(mt, "_init_done", False):
+            return False
         if hasattr(app, "edit_rich"):
             try:
                 with trusted_scope():
                     await app.edit_rich(chat_id, message_id, html)
-                return
+                return True
             except Exception as exc:
-                log.error("restart notice edit_rich fallback failed: %s: %s", type(exc).__name__, exc)
+                log.debug("restart notice edit_rich failed: %s: %s", type(exc).__name__, exc)
+        target = bytes.fromhex(peer) if peer else None
+        if target is None and hasattr(mt, "resolve_peer"):
+            try:
+                target = await mt.resolve_peer(chat_id)
+            except Exception:
+                target = chat_id
+        if target is not None:
+            try:
+                with trusted_scope():
+                    await app.mt_messages_edit_message(peer=target, id=message_id, message=plain, rich_message=rich_payload, **extra)
+                return True
+            except Exception as exc:
+                log.debug("restart notice rich edit failed: %s: %s", type(exc).__name__, exc)
+            try:
+                with trusted_scope():
+                    await app.mt_messages_edit_message(peer=target, id=message_id, message=plain, **extra)
+                return True
+            except Exception as exc:
+                log.debug("restart notice edit failed: %s: %s", type(exc).__name__, exc)
         if hasattr(app, "edit_msg"):
             try:
                 with trusted_scope():
                     await app.edit_msg(chat_id, message_id, plain, parse_mode="html")
-                return
-            except Exception as exc:
-                log.error("restart notice edit_msg fallback failed: %s: %s", type(exc).__name__, exc)
-        if bot is not None:
-            try:
-                with trusted_scope():
-                    await bot.mt_messages_edit_message(peer=chat_id, id=message_id, message=plain, **extra)
-                return
-            except Exception as inner:
-                log.error("restart notice bot fallback edit failed: %s: %s", type(inner).__name__, inner)
+                return True
+            except Exception:
+                pass
+        return False
 
-    async def _restart_notice_progress(self, done: int, total: int) -> None:
-        await self._restart_notice_edit(self.t("kernel.power.restoring", done=done, total=total))
-
-    async def _restart_notice_finish(self) -> None:
+    async def _restart_notice_edit(self, html: str) -> None:
         notice = self._restart_notice
-        if notice is None:
-            return
-        stamp = notice[5]
+        if notice is not None:
+            await self._restart_notice_edit_surface(notice, html)
+
+    async def _deliver_restart_finish(self, notice: tuple[int, int, str | None, dict[str, Any] | None, bool, float | None]) -> None:
+        chat_id, message_id, peer, inline_id, bot_sent, stamp = notice
         if stamp is not None:
             diff = max(0.01, time.time() - stamp)
             took = f"{diff:.2f}s" if diff < 10 else f"{diff:.1f}s"
         else:
             took = self.t("common.unknown")
-        await self._restart_notice_edit(self.t('kernel.power.restarted', took=took))
-        self._restart_notice = None
+        html = self.t('kernel.power.restarted', took=took)
+        for attempt in range(15):
+            try:
+                if await self._restart_notice_edit_surface(notice, html):
+                    break
+            except Exception as exc:
+                log.debug("restart notice delivery attempt %s failed: %s: %s", attempt, type(exc).__name__, exc)
+            await asyncio.sleep(1.0)
         if self.state is not None:
             self.state.namespace("power").delete("restart_pending")
+
+    async def _restart_notice_progress(self, done: int, total: int) -> None:
+        await self._restart_notice_edit(self.t("kernel.power.restoring", done=done, total=total))
+
+    def _restart_notice_finish(self) -> None:
+        notice = self._restart_notice
+        if notice is None:
+            return
+        self._restart_notice = None
+        asyncio.create_task(self._deliver_restart_finish(notice), name="hotaru:restart-finish")
 
     async def _on_callback(self, callback: Any) -> object | None:
         if self.callbacks is None:
@@ -3209,7 +3226,7 @@ class Runtime:
         await self.restore_enabled_modules(on_progress=self._restart_notice_progress)
         if self.modules is not None and hasattr(self.modules, "end_boot"):
             await self.modules.end_boot()
-        await self._restart_notice_finish()
+        self._restart_notice_finish()
         await self._start_singularity()
         if self.supervisor is not None:
             self.supervisor.mark_ready(mt=self.app.mt is not None, bot=self.app.bot is not None)

@@ -325,7 +325,7 @@
           "description": "Управление аккаунтом",
           "usage": "[number] [start|stop|restart|del]"
         },
-        "account_add": {
+        "addaccount": {
           "description": "Добавить аккаунт или войти",
           "usage": "[number|cancel]"
         },
@@ -334,7 +334,7 @@
           "usage": "[number]"
         }
       },
-      "usage": "<b>Аккаунты</b>\n<code>{prefix}account_add [user_id]</code> · добавить по QR / номеру\n<code>{prefix}account_add cancel</code> · отменить вход\n<code>{prefix}accounts [#]</code> · панель аккаунтов\n<code>{prefix}account [#]</code> · панель аккаунтов\n<code>{prefix}account 2 start|stop|restart|on|off|del</code>",
+      "usage": "<b>Аккаунты</b>\n<code>{prefix}addaccount [user_id]</code> · добавить по QR / номеру\n<code>{prefix}addaccount cancel</code> · отменить вход\n<code>{prefix}accounts [#]</code> · панель аккаунтов\n<code>{prefix}account [#]</code> · панель аккаунтов\n<code>{prefix}account 2 start|stop|restart|on|off|del</code>",
       "empty": "Аккаунты не зарегистрированы.",
       "no_self": "Не удалось определить user id сессии.",
       "not_registered": "Аккаунт #{n} не зарегистрирован.",
@@ -781,7 +781,7 @@
       "disable": "Выключить",
       "enable": "Включить",
       "not_ready": "Служебный чат ещё не готов",
-      "caption": "Бекап Hotaru",
+      "caption": "<tg-emoji emoji-id=\"5325732612084351248\">📦</tg-emoji> <b>Резервная копия Hotaru</b>\n<blockquote><tg-emoji emoji-id=\"5258476306152038031\">🔒</tg-emoji> Зашифрованный снимок состояния, vault и сессий\n<tg-emoji emoji-id=\"5258105663359294787\">🗓</tg-emoji> <code>{name}</code></blockquote>",
       "failed": "Не удалось отправить бекап: {error}",
       "sent": "Бекап отправлен",
       "topic": "Backups",

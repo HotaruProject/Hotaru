@@ -522,6 +522,7 @@ class InlineManager:
                     await app.bot_req(method, **payload)
                 except Exception:
                     continue
+            await self._apply_bot_avatar(info)
         except Exception:
             if self.runtime.observatory is not None:
                 self.runtime.observatory.emit("inline", "tune_failed", username=info.username)
@@ -530,6 +531,38 @@ class InlineManager:
                 await app.close()
             except Exception:
                 pass
+
+    async def _apply_bot_avatar(self, info: InlineBotInfo) -> None:
+        state = getattr(self.runtime, "state", None)
+        app = getattr(self.runtime, "app", None)
+        if app is None or getattr(app, "mt", None) is None:
+            return
+        root = Path(__file__).resolve().parent.parent
+        candidates = [root / "hotaru/assets/logo.png", root / "hotaru/assets/avatar.png"]
+        logo_path = next((p for p in candidates if p.is_file()), None)
+        if logo_path is None:
+            return
+        import hashlib
+        digest = hashlib.sha256(logo_path.read_bytes()).hexdigest()
+        key = f"brand-avatar-bot-{info.bot_id}"
+        if state is not None and state.get_setting(key) == digest:
+            return
+        try:
+            with trusted_scope():
+                peer = await app.mt.resolve_peer("@" + info.username)
+                if not isinstance(peer, dict):
+                    peer = peer.to_dict() if hasattr(peer, "to_dict") else {}
+                access_hash = peer.get("access_hash") or 0
+                bot = {"_": "inputUser", "user_id": int(info.bot_id), "access_hash": int(access_hash)}
+                from relay.files import document, put
+                up = await put(app, str(logo_path), file_name=logo_path.name)
+                uploaded_file = document(up)["file"]
+                await app.mt_photos_upload_profile_photo(bot=bot, file=uploaded_file)
+            if state is not None:
+                state.set_setting(key, digest)
+        except Exception as exc:
+            if self.runtime.observatory is not None:
+                self.runtime.observatory.emit("inline", "avatar_failed", error=type(exc).__name__, detail=str(exc)[:140])
 
     async def _start_bot_chat(self, username: str, *, force: bool = False) -> bool:
         app = self.runtime.app

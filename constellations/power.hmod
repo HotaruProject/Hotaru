@@ -72,7 +72,10 @@ async def command_stop(ctx: Any, invocation: Any) -> Any:
     k = ctx.screens
     screen = k.screen(
         ctx.t('kernel.power.stop_confirm', prefix=runtime.config.prefix),
-        [[k.danger(ctx.t('kernel.power.stop_action'), confirm_stop), k.close(ctx.t('common.cancel'))]],
+        [
+            [k.danger(ctx.t('kernel.power.stop_action'), confirm_stop)],
+            [k.close()],
+        ],
         rich=True,
     )
     await ctx.screens.show(screen)
@@ -117,10 +120,10 @@ async def command_restart(ctx: Any, invocation: Any) -> Any:
             ctx.state.set("restart_pending", {"chat_id": chat_id, "message_id": target_msg_id, "peer": peer_hex, "inline_id": None, "bot": False, "ts": time.time()})
         runtime.request_restart()
         async def _do_shutdown() -> None:
-            await asyncio.sleep(0.3)
+            await asyncio.sleep(0.5)
             try:
                 if runtime.app is not None:
-                    await asyncio.wait_for(runtime.app.close(), timeout=1.5)
+                    await asyncio.wait_for(runtime.app.close(), timeout=2.0)
             except Exception:
                 pass
         asyncio.create_task(_do_shutdown(), name="hotaru:forced-restart")

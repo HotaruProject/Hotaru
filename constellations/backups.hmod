@@ -57,7 +57,8 @@ async def _send(ctx: Any, *, automatic: bool = False) -> bool:
         if topic is None:
             raise RuntimeError(ctx.t("kernel.backups.not_ready"))
         archive = ctx.runtime.create_backup()
-        await ctx.forum.send_file(topic, str(archive), ctx.t("kernel.backups.caption"), file_name=archive.name)
+        caption = ctx.t("kernel.backups.caption", name=archive.name)
+        await ctx.forum.send_file(topic, str(archive), caption, file_name=archive.name)
         ctx.state.set("last_sent", time.time())
         return True
 
