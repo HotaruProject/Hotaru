@@ -1,0 +1,39 @@
+name: Module proposal (.hmod)
+description: Propose a new builtin module or third-party constellation
+labels: ["area:module", "type:enhancement", "status:needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this template to propose a new module for Hotaru. Every module must declare minimal capabilities and respect sandbox isolation.
+  - type: input
+    id: module_id
+    attributes:
+      label: Module identifier
+      description: Lowercase alphanumeric identifier for the module (e.g. `weather`, `rss`).
+      placeholder: "e.g. notes"
+    validations:
+      required: true
+  - type: checkboxes
+    id: capabilities
+    attributes:
+      label: Required capabilities
+      description: Check only the capabilities your module strictly requires.
+      options:
+        - label: "mt (Telegram MTProto RPC access via GoyGram)"
+        - label: "state (Persistent module-scoped key-value storage)"
+        - label: "net (Outbound HTTP and socket network traffic)"
+  - type: textarea
+    id: purpose
+    attributes:
+      label: Module purpose
+      description: What commands or background jobs does this module implement?
+    validations:
+      required: true
+  - type: textarea
+    id: security_considerations
+    attributes:
+      label: Security and privacy boundary
+      description: Explain how the module handles user privacy and why declared capabilities are necessary.
+    validations:
+      required: true
