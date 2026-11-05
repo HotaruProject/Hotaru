@@ -205,7 +205,13 @@
       "err_file_doc": "メッセージにはJSONファイル（.json）が含まれている必要があります",
       "err_json_syntax": "無効なJSON構文: {err} ({line}行目)",
       "err_structure": "辞書構造エラー: {err}",
-      "err_load_failed": "辞書の読み込みに失敗しました: {err}"
+      "err_load_failed": "辞書の読み込みに失敗しました: {err}",
+      "translating": "翻訳中…",
+      "empty_text": "翻訳するテキストが空です",
+      "text_too_large": "テキストが1回のリクエストに対して大きすぎます",
+      "failed": "テキストの翻訳に失敗しました",
+      "error_title": "翻訳エラー",
+      "usage_file": "リンク、パスを指定するか、JSONファイル（.json）に返信してください"
     },
     "test-features": {
       "description": "Hotaru プロキシと機能のテストモジュール",
