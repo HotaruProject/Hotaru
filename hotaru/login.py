@@ -517,9 +517,23 @@ def _resize_pending() -> bool:
         return False
 
 
+def attach_interactive_tty() -> bool:
+    if sys.stdin.isatty() and sys.stdout.isatty():
+        return True
+    try:
+        if not sys.stdin.isatty() and os.path.exists("/dev/tty"):
+            sys.stdin = open("/dev/tty", "r")
+        if not sys.stdout.isatty() and os.path.exists("/dev/tty"):
+            sys.stdout = open("/dev/tty", "w")
+        return sys.stdin.isatty() and sys.stdout.isatty()
+    except Exception:
+        return False
+
+
 class Raw:
 
     def __init__(self) -> None:
+        attach_interactive_tty()
         self.fd = sys.stdin.fileno()
         self.saved = None
 
@@ -1160,7 +1174,7 @@ def collect_settings(state: Any) -> None:
 
 
 def _collect_settings(state: Any) -> None:
-    if not sys.stdin.isatty() or not sys.stdout.isatty():
+    if not attach_interactive_tty():
         raise ValueError("runtime settings are missing; run from an interactive TTY")
     set_prelude(_banner_text)
     print_prelude()
