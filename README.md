@@ -64,7 +64,7 @@ A single Hotaru instance can run multiple accounts concurrently. The supervisor 
 Run the interactive installer:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/HotaruProject/Hotaru/develop/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/HotaruProject/Hotaru/main/install.sh | bash
 ```
 
 > [!TIP]
