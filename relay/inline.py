@@ -519,8 +519,8 @@ class InlineManager:
             for method, payload in (
                 ("deleteWebhook", {"drop_pending_updates": True}),
                 ("setMyName", {"name": "Hotaru Userbot"}),
-                ("setMyShortDescription", {"short_description": "Hotaru Userbot — security-first modular userbot"}),
-                ("setMyDescription", {"description": "Hotaru Userbot — security-first modular Telegram userbot with capability sandboxing."}),
+                ("setMyShortDescription", {"short_description": "Hotaru Userbot - security-first modular userbot"}),
+                ("setMyDescription", {"description": "Hotaru Userbot - security-first modular Telegram userbot with capability sandboxing."}),
                 ("setMyCommands", cmd_payload),
                 ("setMyCommands", default_cmd_payload),
             ):
@@ -829,7 +829,7 @@ class InlineManager:
             clicked = await conv.click_button(r_about, at, username)
             if not clicked:
                 await conv.ask(at)
-            await conv.ask("Hotaru Userbot — security-first modular userbot")
+            await conv.ask("Hotaru Userbot - security-first modular userbot")
         except Exception:
             pass
 
@@ -838,7 +838,7 @@ class InlineManager:
             clicked = await conv.click_button(r_desc, at, username)
             if not clicked:
                 await conv.ask(at)
-            await conv.ask("Hotaru Userbot — security-first modular Telegram userbot with capability sandboxing.")
+            await conv.ask("Hotaru Userbot - security-first modular Telegram userbot with capability sandboxing.")
         except Exception:
             pass
 

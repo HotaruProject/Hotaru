@@ -551,7 +551,7 @@
       "self_owner": "该用户已是账号所有者。",
       "empty": "未授予任何权限。使用 !perm <user_id> <role>。",
       "bad_label": "未知权限：{label}。",
-      "usage": "用法：\n!owadd <user_id|reply> — 授予所有者\n!owrm <user_id|reply> — 撤销所有者\n!owls — 所有者列表\n!sgnew <name> — 创建安全组\n!sgls — 列出组\n!sg <name> — 显示组成员和规则\n!sgdel <name> — 删除组\n!sgadd <name> <user_id|reply> — 向组添加用户\n!sgrm <name> <user_id|reply> — 从组中移除用户\n!rule <user|chat|sgroup> <target> <command|module>/<name> [expiry] — 添加规则\n!rulerm — 移除规则\n!ruleclr — 清除目标规则\n!perm <user_id> <admin|trusted|everyone> [remove] — 授予/撤销权限\n!perms — 列出权限\n!whois <user_id> — 查询用户权限",
+      "usage": "用法：\n!owadd <user_id|reply> - 授予所有者\n!owrm <user_id|reply> - 撤销所有者\n!owls - 所有者列表\n!sgnew <name> - 创建安全组\n!sgls - 列出组\n!sg <name> - 显示组成员和规则\n!sgdel <name> - 删除组\n!sgadd <name> <user_id|reply> - 向组添加用户\n!sgrm <name> <user_id|reply> - 从组中移除用户\n!rule <user|chat|sgroup> <target> <command|module>/<name> [expiry] - 添加规则\n!rulerm - 移除规则\n!ruleclr - 清除目标规则\n!perm <user_id> <admin|trusted|everyone> [remove] - 授予/撤销权限\n!perms - 列出权限\n!whois <user_id> - 查询用户权限",
       "no_groups": "暂无安全组。创建：!sgnew <name>",
       "no_owner_grant": "所有者需通过 !owadd 授予。"
     },
@@ -636,8 +636,8 @@
     "executor": {
       "exit_code": "退出码：{returncode}",
       "running": "运行中...",
-      "usage_sh": "<b>用法：</b> <code>{prefix}sh [命令] &lt;-so&gt;</code> — <i>执行 shell 命令</i>",
-      "usage_py": "<b>用法：</b> <code>{prefix}py [代码] &lt;-so&gt;</code> — <i>执行 Python 代码</i>",
+      "usage_sh": "<b>用法：</b> <code>{prefix}sh [命令] &lt;-so&gt;</code> - <i>执行 shell 命令</i>",
+      "usage_py": "<b>用法：</b> <code>{prefix}py [代码] &lt;-so&gt;</code> - <i>执行 Python 代码</i>",
       "cancelled": "执行已取消",
       "done": "完成 [x]",
       "kill_reply": "<b>回复正在运行的 py/sh 输出消息即可终止它。</b>",
@@ -773,7 +773,7 @@
       "webhook": "Hotaru 的内联机器人被设置了外部 Webhook。"
     },
     "flood": {
-      "notice": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>FloodWait — 消息已重定向</b>\n无法通过 <code>{source}</code> 送达聊天 <code>{chat}</code>：\n<blockquote>{text}</blockquote>"
+      "notice": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>FloodWait - 消息已重定向</b>\n无法通过 <code>{source}</code> 送达聊天 <code>{chat}</code>：\n<blockquote>{text}</blockquote>"
     },
     "apifw": {
       "name": "API Flood Protection",
@@ -1021,14 +1021,14 @@
     "updated": "<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> <b>已更新：</b> <code>{module_id}</code> <code>v{version}</code>",
     "caps_request": "模块 {module_id} v{version} 请求以下能力：",
     "caps_retry": "再次运行加载命令以确认",
-    "usage_mi": "<b>用法：</b> <code>{prefix}mi [module]</code> — <i>模块信息</i>",
-    "usage_help": "<b>用法：</b> <code>{prefix}help &lt;page|module&gt;</code> — <i>帮助信息</i>",
-    "usage_reload": "<b>用法：</b> <code>{prefix}rl [module] &lt;force&gt;</code> — <i>重载模块</i>",
+    "usage_mi": "<b>用法：</b> <code>{prefix}mi [module]</code> - <i>模块信息</i>",
+    "usage_help": "<b>用法：</b> <code>{prefix}help &lt;page|module&gt;</code> - <i>帮助信息</i>",
+    "usage_reload": "<b>用法：</b> <code>{prefix}rl [module] &lt;force&gt;</code> - <i>重载模块</i>",
     "usage_unload": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>请指定模块：</b> <code>{prefix}ul &lt;模块&gt;</code>",
-    "usage_reset": "<b>用法：</b> <code>{prefix}rs [module]</code> — <i>重置状态</i>",
-    "usage_export": "<b>用法：</b> <code>{prefix}ex [module]</code> — <i>导出源代码</i>",
-    "usage_backup": "<b>用法：</b> <code>{prefix}bk &lt;list|test|restore&gt; &lt;archive&gt;</code> — <i>备份管理</i>",
-    "usage_load": "<b>用法：</b> <code>{prefix}ld [raw-url|文件]</code> — <i>加载模块</i>",
+    "usage_reset": "<b>用法：</b> <code>{prefix}rs [module]</code> - <i>重置状态</i>",
+    "usage_export": "<b>用法：</b> <code>{prefix}ex [module]</code> - <i>导出源代码</i>",
+    "usage_backup": "<b>用法：</b> <code>{prefix}bk &lt;list|test|restore&gt; &lt;archive&gt;</code> - <i>备份管理</i>",
+    "usage_load": "<b>用法：</b> <code>{prefix}ld [raw-url|文件]</code> - <i>加载模块</i>",
     "bot_status": "内联机器人：@{name}（{status}）",
     "health": "状态：{status}",
     "last_error": "最近错误：{error}",
@@ -1178,7 +1178,7 @@
     "nothing_clear": "无可清空的规则",
     "self_owner": "该用户已拥有此账户。",
     "no_groups": "没有安全组。创建一个：{prefix}sgnew &lt;name&gt;",
-    "usage": "<code>{prefix}owadd &lt;user_id|reply&gt;</code> — 添加所有者\n<code>{prefix}owrm &lt;user_id|reply&gt;</code> — 移除所有者\n<code>{prefix}owls</code> — 列出所有者\n<code>{prefix}sgnew &lt;name&gt;</code> — 创建权限组\n<code>{prefix}sgls</code> — 列出权限组\n<code>{prefix}sg &lt;name&gt;</code> — 查看权限组成员与规则\n<code>{prefix}sgdel &lt;name&gt;</code> — 删除权限组\n<code>{prefix}sgadd &lt;name&gt; &lt;user_id|reply&gt;</code> — 添加成员\n<code>{prefix}sgrm &lt;name&gt; &lt;user_id|reply&gt;</code> — 移除成员\n<code>{prefix}rule &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;command|module&gt;/&lt;name&gt; [expiry]</code> — 添加访问规则\n<code>{prefix}rulerm &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;rule&gt;</code> — 移除规则\n<code>{prefix}ruleclr &lt;user|chat|sgroup&gt; [target]</code> — 清空规则\n<code>{prefix}perm &lt;user_id&gt; &lt;admin|trusted|everyone&gt; [remove]</code> — 授予或撤销权限\n<code>{prefix}perms</code> — 权限列表\n<code>{prefix}whois &lt;user_id&gt;</code> — 查看用户权限",
+    "usage": "<code>{prefix}owadd &lt;user_id|reply&gt;</code> - 添加所有者\n<code>{prefix}owrm &lt;user_id|reply&gt;</code> - 移除所有者\n<code>{prefix}owls</code> - 列出所有者\n<code>{prefix}sgnew &lt;name&gt;</code> - 创建权限组\n<code>{prefix}sgls</code> - 列出权限组\n<code>{prefix}sg &lt;name&gt;</code> - 查看权限组成员与规则\n<code>{prefix}sgdel &lt;name&gt;</code> - 删除权限组\n<code>{prefix}sgadd &lt;name&gt; &lt;user_id|reply&gt;</code> - 添加成员\n<code>{prefix}sgrm &lt;name&gt; &lt;user_id|reply&gt;</code> - 移除成员\n<code>{prefix}rule &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;command|module&gt;/&lt;name&gt; [expiry]</code> - 添加访问规则\n<code>{prefix}rulerm &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;rule&gt;</code> - 移除规则\n<code>{prefix}ruleclr &lt;user|chat|sgroup&gt; [target]</code> - 清空规则\n<code>{prefix}perm &lt;user_id&gt; &lt;admin|trusted|everyone&gt; [remove]</code> - 授予或撤销权限\n<code>{prefix}perms</code> - 权限列表\n<code>{prefix}whois &lt;user_id&gt;</code> - 查看用户权限",
     "account_owner": "账户所有者不可被移除。"
   },
   "inline": {
