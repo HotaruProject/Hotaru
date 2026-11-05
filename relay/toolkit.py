@@ -14,6 +14,7 @@ import time
 from datetime import datetime, timezone
 from types import SimpleNamespace
 from typing import Any, cast
+from pathlib import Path
 from urllib.parse import urlparse
 
 _BOOT_TS = time.perf_counter()
@@ -1595,7 +1596,7 @@ def prune_logs(root: str | Path = ".", max_file_bytes: int = 8 * 1024 * 1024, ke
     return _prune(root, max_file_bytes, keep_tail_bytes)
 
 
-TOOLKIT_FUNCS = {
+TOOLKIT_FUNCS: dict[str, Any] = {
     "wordmark": wordmark,
     "paginate_chunks": paginate_chunks,
     "classify_error": classify_error,

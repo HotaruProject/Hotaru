@@ -8,7 +8,7 @@ HOTARU = {
     "fade": "sundown",
 }
 
-from typing import Any
+from typing import Any, cast
 
 
 import asyncio
@@ -31,17 +31,19 @@ def _text_stopped_details(ctx: Any) -> Any:
 def _serialize_inline(value: Any) -> Any:
     if not isinstance(value, dict):
         return None
-    out: dict[str, Any] = {"_": value.get("_") if isinstance(value.get("_"), str) else "inputBotInlineMessageID"}
+    v_dict = cast(dict[str, Any], value)
+    out: dict[str, Any] = {"_": v_dict.get("_") if isinstance(v_dict.get("_"), str) else "inputBotInlineMessageID"}
     for key in ("dc_id", "id", "access_hash", "owner_id"):
-        if isinstance(value.get(key), int):
-            out[key] = int(value[key])
+        val = v_dict.get(key)
+        if isinstance(val, int):
+            out[key] = int(val)
     return out if isinstance(out.get("id"), int) else None
 
 def _callback_inline(value: Any) -> Any:
-    inline = getattr(value, "inline_message_id", None)
+    inline: Any = getattr(value, "inline_message_id", None)
     if inline is None:
-        candidate = getattr(value, "msg_id", None)
-        inline = candidate if isinstance(candidate, dict) else None
+        candidate: Any = getattr(value, "msg_id", None)
+        inline = cast('dict[str, Any]', candidate) if isinstance(candidate, dict) else None
     return _serialize_inline(inline)
 
 async def _peer_hex(runtime: Any, chat_id: Any) -> Any:

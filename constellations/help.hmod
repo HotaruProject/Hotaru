@@ -66,7 +66,8 @@ def _aliases(runtime: Any, command: str) -> List[str]:
     prefix = runtime.config.prefix
     registry = getattr(getattr(runtime, "kernel", None), "registry", None)
     found: List[str] = []
-    for alias, target in sorted(registry.alias_map().items() if registry is not None else ()):
+    alias_dict: dict[str, str] = registry.alias_map() if registry is not None else {}
+    for alias, target in sorted(alias_dict.items()):
         words = str(target).split()
         if not words or words[0].casefold() != command.casefold() or alias.casefold() == command.casefold():
             continue

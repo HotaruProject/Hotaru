@@ -124,7 +124,7 @@ def _rich(ctx: Any, batch: List[Mapping[str, Any]]) -> dict[str, Any]:
         icon = _level_icon(lvl)
         event = str(payload.get("event") or "-")
         lines.append(f'{icon} <b>[{html.escape(time_str)}] {lvl.upper()}</b> · <code>{html.escape(source)}</code> · <b>{html.escape(event)}</b>')
-        extras = []
+        extras: list[str] = []
         if payload.get("msg") is not None:
             extras.append(str(payload["msg"]))
         for key in sorted(set(payload) - {"ts", "time", "level", "component", "module", "event", "msg"}):

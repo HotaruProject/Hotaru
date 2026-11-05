@@ -117,10 +117,6 @@ _per_page = 3
 _preview = 60
 
 
-def _escape(value: Any) -> str:
-    return html.escape(str(value), quote=False)
-
-
 def _localized_schema(ctx: Any, manifest: Any) -> ConfigSchema:
     localized = manifest.localized(ctx.i18n.language)
     descriptions = localized.get("config", {})
@@ -202,7 +198,7 @@ def home(ctx: Any, nav: Any = None) -> Any:
         banner_url = k.banner("banner")
     else:
         banner_url = k.banner(banner_url)
-    lines = [f"{k.wordmark()}  <b>{_escape(ctx.t('kernel.config.title'))}</b>" + (f"  {k.badge(str(len(modules)), 'primary')}" if modules else "")]
+    lines: list[str] = [f"{k.wordmark()}  <b>{_escape(ctx.t('kernel.config.title'))}</b>" + (f"  {k.badge(str(len(modules)), 'primary')}" if modules else "")]
     lines.append(f"<code>{_escape(ctx.runtime.config.prefix)}prefix</code> · <code>{_escape(ctx.runtime.config.prefix)}alias</code> · <code>{_escape(ctx.runtime.config.prefix)}lsalias</code>")
     if not modules:
         lines.append(f"<i>{_escape(ctx.t('kernel.config.empty'))}</i>")
@@ -210,7 +206,7 @@ def home(ctx: Any, nav: Any = None) -> Any:
     kernel_count = sum(1 for row in modules if row[3])
     user_count = len(modules) - kernel_count
     for kernel in (True, False):
-        entries = []
+        entries: list[str] = []
         for module_id, manifest, schema, is_k in modules:
             if is_k != kernel:
                 continue
@@ -471,15 +467,16 @@ def reset_value(ctx: Any, nav: Any) -> Any:
 
 async def command_conf(ctx: Any, invocation: Any) -> Any:
     args = list(invocation.args) if invocation and getattr(invocation, "args", None) else []
+    args: list[str] = [str(a) for a in invocation.args]
     if not args:
         await ctx.screens.show(home(ctx))
         return
 
     candidates = _modules(ctx)
-    module_id = args[0].casefold()
+    module_id: str = args[0].casefold()
     found_mod = next((item for item in candidates if item[0] == module_id), None)
     if found_mod is None and len(args) >= 2:
-        matches_field = []
+        matches_field: list[tuple[str, str]] = []
         for m_id, _, m_schema, *_ in candidates:
             if args[0] in m_schema:
                 matches_field.append((m_id, args[0]))
@@ -494,7 +491,7 @@ async def command_conf(ctx: Any, invocation: Any) -> Any:
         if not matches:
             await ctx.respond(ctx.t("kernel.config.missing", module=_escape(module_id)))
             return
-        module_id = matches[0]["value"][0]
+        module_id = str(matches[0]["value"][0])
 
     if len(args) == 1:
         await ctx.screens.show(_module_screen(ctx, module_id, None))
@@ -514,7 +511,7 @@ async def command_conf(ctx: Any, invocation: Any) -> Any:
         )
         return
 
-    key = args[1]
+    key: str = args[1]
     raw = getattr(invocation, "raw_args", None)
     if isinstance(raw, str):
         match = re.match(r"\s*\S+\s+\S+([\s\S]*)", raw)
@@ -530,7 +527,9 @@ async def command_conf(ctx: Any, invocation: Any) -> Any:
         if not matches:
             await ctx.respond(ctx.t("kernel.config.param_missing", name=_escape(key)))
             return
-        key, field = matches[0]["value"]
+        pair = matches[0]["value"]
+        key = str(pair[0])
+        field = pair[1]
 
     if new_val is not None:
         try:

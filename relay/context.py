@@ -846,7 +846,6 @@ class ContextOperations:
     def prefix(self) -> Prefix:
         return self.get_prefix()
 
-    @property
     def classify_error(self, exc: Any) -> dict[str, Any]:
         from relay.toolkit import classify_error
         return classify_error(exc)
@@ -1571,7 +1570,7 @@ async def _ctx_translate(target: MessageOperations, text: Any, to_lang: str | No
         parts: list[str] = []
         for item in cast('list[Any]', body):
             txt = _msg_field(item, "text") or ""
-            ents = _msg_field(item, "entities") or []
+            ents = cast('list[Any]', _msg_field(item, "entities") or [])
             if ents:
                 from relay.toolkit import entities_to_html
                 parts.append(entities_to_html(txt, ents))

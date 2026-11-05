@@ -4,12 +4,22 @@ import asyncio
 import platform
 import re
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from goygram import Session
 
 TOKEN_RE = re.compile(r"^\d{6,12}:[A-Za-z0-9_-]{30,60}$")
 PENDING_VAULT_NAME = "hotaru-bot-login.vault"
+
+
+def _extract_mid(sent: Any) -> int | None:
+    if isinstance(sent, dict):
+        raw_res = cast(dict[str, Any], sent).get("result")
+        if isinstance(raw_res, dict):
+            mid = cast(dict[str, Any], raw_res).get("id")
+            if isinstance(mid, int):
+                return mid
+    return None
 
 
 class BotLoginError(RuntimeError):
@@ -104,9 +114,8 @@ class EchoBot:
         )
         try:
             sent = await self.app.send_msg(chat, welcome_html, parse_mode="HTML")
-            result = (sent or {}).get("result") if isinstance(sent, dict) else None
-            mid = result.get("id") if isinstance(result, dict) else None
-            if isinstance(mid, int):
+            mid = _extract_mid(sent)
+            if mid is not None:
                 self._last_msg_id = mid
         except Exception:
             pass
@@ -122,9 +131,8 @@ class EchoBot:
             except Exception:
                 pass
         sent = await self.app.send_msg(self.owner, text, parse_mode="HTML")
-        result = (sent or {}).get("result") if isinstance(sent, dict) else None
-        mid = result.get("id") if isinstance(result, dict) else None
-        if isinstance(mid, int):
+        mid = _extract_mid(sent)
+        if mid is not None:
             self._last_msg_id = mid
 
     async def ask(self, prompt: str, *, timeout: float = 300.0) -> str:
@@ -168,12 +176,10 @@ class EchoBot:
                 mid = self._last_msg_id
             except Exception:
                 sent = await self.app.send_msg(self.owner, self._masked(prompt, []), kbd=self._keys(), parse_mode="HTML")
-                result = (sent or {}).get("result") if isinstance(sent, dict) else None
-                mid = result.get("id") if isinstance(result, dict) else None
+                mid = _extract_mid(sent)
         else:
             sent = await self.app.send_msg(self.owner, self._masked(prompt, []), kbd=self._keys(), parse_mode="HTML")
-            result = (sent or {}).get("result") if isinstance(sent, dict) else None
-            mid = result.get("id") if isinstance(result, dict) else None
+            mid = _extract_mid(sent)
         if not isinstance(mid, int):
             raise BotLoginError("the keypad message has no ID")
         self._last_msg_id = mid

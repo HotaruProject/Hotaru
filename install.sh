@@ -94,7 +94,10 @@ install_host_packages() {
 ensure_uv() {
     if ! command -v uv &>/dev/null; then
         step_dim "Installing uv package manager..."
-        curl -LsSf https://astral.sh/uv/install.sh | sh
+        TMP_UV=$(mktemp)
+        curl -LsSf https://astral.sh/uv/install.sh -o "$TMP_UV"
+        sh "$TMP_UV"
+        rm -f "$TMP_UV"
         export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
     fi
 }
@@ -222,7 +225,10 @@ EOF
 
             if ! command -v docker &>/dev/null; then
                 step_warn "Docker is not installed. Installing Docker..."
-                curl -fsSL https://get.docker.com | sh
+                TMP_DOCKER=$(mktemp)
+                curl -fsSL https://get.docker.com -o "$TMP_DOCKER"
+                sh "$TMP_DOCKER"
+                rm -f "$TMP_DOCKER"
             fi
 
             step_info "Building Hotaru Docker image..."

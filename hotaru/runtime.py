@@ -30,7 +30,7 @@ from .events import EventRouter
 from relay.inline import InlineManager
 from relay.inline_tl import answer_tl
 from relay.sandbox import ModuleSandbox
-from relay.caps import CapabilityHost, PROVIDERS as CAP_PROVIDERS, describe as describe_caps
+from relay.caps import CapabilityHost, PROVIDERS as CAP_PROVIDERS
 from relay.rpc import delete_chat_msg
 from relay.firewall import install as install_firewall, trusted_scope
 from relay.context import install_mt_layer
@@ -145,7 +145,7 @@ class Runtime:
     lexicon: Lexicon | None = None
     closed: bool = False
     _relaunch: bool = False
-    _inline_forms: dict[str, tuple[str, list[list[dict[str, Any]]], bool]] | None = None
+    _inline_forms: dict[str, tuple[str, list[list[dict[str, Any]]], bool | dict[str, Any]]] | None = None
     _forms: dict[str, tuple[FormHandle, SimpleNamespace, str, object, dict[str, Any]]] | None = None
     _input_requests: dict[str, tuple[Any, ...]] | None = None
     _form_expiry: dict[str, float] | None = None
@@ -329,14 +329,15 @@ class Runtime:
         pending = self.state.namespace("power").get("restart_pending")
         if not isinstance(pending, dict):
             return
-        chat_id = pending.get("chat_id")
-        message_id = pending.get("message_id")
-        peer = pending.get("peer")
-        inline_id = pending.get("inline_id")
-        inline = inline_id if isinstance(inline_id, dict) and isinstance(inline_id.get("id"), int) else None
-        stamp = pending.get("ts")
+        pending_dict = cast('dict[str, Any]', pending)
+        chat_id = pending_dict.get("chat_id")
+        message_id = pending_dict.get("message_id")
+        peer = pending_dict.get("peer")
+        inline_id = pending_dict.get("inline_id")
+        inline = cast('dict[str, Any]', inline_id) if isinstance(inline_id, dict) and isinstance(cast('dict[str, Any]', inline_id).get("id"), int) else None
+        stamp = pending_dict.get("ts")
         if isinstance(chat_id, int) and isinstance(message_id, int):
-            self._restart_notice = (chat_id, message_id, peer if isinstance(peer, str) else None, inline, bool(pending.get("bot")), stamp if isinstance(stamp, (int, float)) else None)
+            self._restart_notice = (chat_id, message_id, peer if isinstance(peer, str) else None, inline, bool(pending_dict.get("bot")), stamp if isinstance(stamp, (int, float)) else None)
 
     async def _restart_notice_edit_surface(self, notice: tuple[int, int, str | None, dict[str, Any] | None, bool, float | None], html: str) -> bool:
         chat_id, message_id, peer, inline_id, bot_sent, _ = notice
@@ -417,7 +418,7 @@ class Runtime:
             await self._restart_notice_edit_surface(notice, html)
 
     async def _deliver_restart_finish(self, notice: tuple[int, int, str | None, dict[str, Any] | None, bool, float | None]) -> None:
-        chat_id, message_id, peer, inline_id, bot_sent, stamp = notice
+        _chat_id, _message_id, _peer, _inline_id, _bot_sent, stamp = notice
         if stamp is not None:
             diff = max(0.01, time.time() - stamp)
             took = f"{diff:.2f}s" if diff < 10 else f"{diff:.1f}s"
@@ -496,15 +497,17 @@ class Runtime:
             return
         from_id = getattr(message, "from_id", None)
         if not isinstance(from_id, int) or from_id <= 0:
-            user = getattr(message, "from_user", None) or getattr(message, "sender", None)
+            user: Any = getattr(message, "from_user", None) or getattr(message, "sender", None)
             if isinstance(user, dict):
-                from_id = user.get("id")
-            elif hasattr(user, "id") and isinstance(user.id, int):
-                from_id = user.id
+                from_id = cast('dict[str, Any]', user).get("id")
+            elif user is not None and hasattr(user, "id") and isinstance(getattr(user, "id", None), int):
+                from_id = getattr(user, "id", None)
         if not isinstance(from_id, int) or from_id <= 0:
-            chat = getattr(message, "chat", None)
-            if isinstance(chat, dict) and chat.get("type") == "private":
-                from_id = chat.get("id")
+            chat: Any = getattr(message, "chat", None)
+            if isinstance(chat, dict):
+                chat_dict = cast('dict[str, Any]', chat)
+                if chat_dict.get("type") == "private":
+                    from_id = chat_dict.get("id")
             elif getattr(message, "chat_id", None) is not None:
                 cid = getattr(message, "chat_id")
                 if isinstance(cid, int) and cid > 0:
@@ -1215,7 +1218,7 @@ class Runtime:
         rich_payload = None
         if rich:
             if self.screens is not None:
-                rich_payload = await self.screens._rich(text)
+                rich_payload = await self.screens.rich(text)
             else:
                 from relay.emoji import to_rich
                 rich_payload = {"_": "inputRichMessageHTML", **to_rich(text)}
@@ -1721,7 +1724,7 @@ class Runtime:
             await query.answer(results=[], cache_time=0, is_personal=True)
             return
         body, buttons, rich = form
-        kbd_rows = buttons if (isinstance(buttons, list) and buttons and isinstance(buttons[0], list)) else [buttons]
+        kbd_rows = buttons
         photo_url = (self._form_media or {}).get(nonce)
         if isinstance(photo_url, str) and photo_url.startswith("https://"):
             photo_result: dict[str, Any] = {
@@ -1750,11 +1753,11 @@ class Runtime:
             return None
         sender_id = getattr(callback, "from_id", None)
         if not isinstance(sender_id, int) or sender_id <= 0:
-            user = getattr(callback, "from_user", None) or getattr(callback, "sender", None)
+            user: Any = getattr(callback, "from_user", None) or getattr(callback, "sender", None)
             if isinstance(user, dict):
-                sender_id = user.get("id")
-            elif hasattr(user, "id") and isinstance(user.id, int):
-                sender_id = user.id
+                sender_id = cast('dict[str, Any]', user).get("id")
+            elif user is not None and hasattr(user, "id") and isinstance(getattr(user, "id", None), int):
+                sender_id = getattr(user, "id", None)
         if isinstance(sender_id, int) and sender_id > 0:
             setattr(callback, "from_id", sender_id)
         try:
@@ -1816,10 +1819,7 @@ class Runtime:
             return None
         all_ids: set[str] = set()
         if self.modules is not None:
-            if hasattr(self.modules, "keys"):
-                all_ids.update(self.modules.keys())
-            elif hasattr(self.modules, "_active"):
-                all_ids.update(self.modules._active.keys())
+            all_ids.update(item.loaded.manifest.module_id for item in self.modules.items())
         if self.state is not None:
             all_ids.update(self.state.module_ids())
         for d in (self.constellations_dir, self.relay_dir):
@@ -1986,7 +1986,7 @@ class Runtime:
         if not isinstance(value, str):
             return "ru"
         val = value.casefold().strip()
-        if self.lexicon is not None and self.lexicon._validate_language(val):
+        if self.lexicon is not None and self.lexicon.is_valid_language(val):
             return val
         return val if val in SUPPORTED_LANGUAGES else "ru"
 
@@ -2497,15 +2497,18 @@ class Runtime:
             if self.observatory is not None:
                 self.observatory.emit("modules", "activation_error", module=module_id, error=type(exc).__name__, detail=str(exc)[:240])
             return Screen(self.t('runtime.load_error', error=type(exc).__name__, detail=str(exc)[:120]))
-        help_mod = self.modules.get("help") if self.modules is not None else None
-        card_fn = getattr(getattr(help_mod, "context", None), "namespace", {}).get("_card") if help_mod is not None else None
+        help_mod = self.modules.get("help")
+        help_ctx: Any = getattr(help_mod, "context", None)
+        ns: Any = getattr(help_ctx, "namespace", None)
+        card_fn: Any = cast('dict[str, Any]', ns).get("_card") if isinstance(ns, dict) else None
         if card_fn is not None:
             factory = getattr(self, "context_factory", None)
             if factory is not None:
                 ctx = factory.create("help", getattr(nav, "call", None))
-                screen = card_fn(ctx, module_id, nav.actor, None)
+                screen: Any = card_fn(ctx, module_id, nav.actor, None)
                 notice = self.t("runtime." + action, module_id=module_id, version=loaded.manifest.version)
-                return screen.with_notice(f"<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> {notice}")
+                screen_obj: Any = screen
+                return screen_obj.with_notice(f"<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> {notice}")
         return Screen(self.t('runtime.loaded', module_id=module_id, version=loaded.manifest.version))
 
     def create_backup(self) -> Path:
@@ -3190,8 +3193,9 @@ class Runtime:
             await self.close()
             exc_str = str(exc).upper()
             if any(err in exc_str for err in ("USER_DEACTIVATED_BAN", "ACCOUNT_RESTRICTED", "FROZEN_METHOD_NOT_AVAILABLE", "PRIVACY_RESTRICTED", "AUTH_KEY_UNREGISTERED", "SESSION_REVOKED")):
-                from hotaru.accounts import handle_account_critical_failure
-                handle_account_critical_failure(self.config.session_dir, self.config.owner_id, f"Session authorization restricted: {type(exc).__name__} ({exc})", self)
+                if self.config.owner_id is not None:
+                    from hotaru.accounts import handle_account_critical_failure
+                    handle_account_critical_failure(self.config.session_dir, self.config.owner_id, f"Session authorization restricted: {type(exc).__name__} ({exc})", self)
             raise
         if self.inline is not None:
             try:
@@ -3271,9 +3275,8 @@ class Runtime:
             stage = label
             left = deadline - asyncio.get_running_loop().time()
             try:
-                async with asyncio.timeout(max(1.0, min(budget, left))):
-                    await awaitable
-            except TimeoutError:
+                await asyncio.wait_for(awaitable, timeout=max(1.0, min(budget, left)))
+            except (TimeoutError, asyncio.TimeoutError):
                 log.error("shutdown timed out at stage=%s", label)
             except asyncio.CancelledError:
                 log.warning("shutdown cancelled at stage=%s", label)

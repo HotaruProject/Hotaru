@@ -2179,7 +2179,7 @@ class ModuleSandbox:
                 done, _ = await asyncio.wait({waiter}, timeout=0.2)
                 if done:
                     res = waiter.result()
-                    if isinstance(res, dict) and not res.get("ok", True):
+                    if not res.get("ok", True):
                         log.error("sandbox roundtrip failed module=%s rid=%s req=%s resp=%s", module_id, rid, request.get("command"), res)
                     return res
                 last = self._activity.get(module_id, started)
@@ -2394,7 +2394,7 @@ class ModuleSandbox:
                 alert=bool(spec.get("alert", False)),
                 rich=bool(spec.get("rich", False)),
                 notice=spec.get("notice") if isinstance(spec.get("notice"), str) else None,
-                banner=spec.get("banner") if isinstance(spec.get("banner"), str) else None,
+                banner=str(spec.get("banner")) if isinstance(spec.get("banner"), str) else "",
             )
             form = await self.runtime.screens.show(context, screen, reply_to=options.get("reply_to"), fallback=bool(options.get("fallback", True)))
             return form.message_id if form is not None else None

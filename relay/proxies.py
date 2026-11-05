@@ -5,6 +5,7 @@ import html
 import inspect
 import secrets
 import time
+from pathlib import Path
 from typing import Any, Awaitable, Callable, cast
 
 from .caps import MT_BLOCKED, MT_BLOCKED_PREFIXES, normalize_method
@@ -962,8 +963,8 @@ class ForumHelper:
         if app is None:
             return
         root = Path(__file__).resolve().parent.parent
-        candidates = [root / "hotaru/assets/logo.png", root / "hotaru/assets/avatar.png"]
-        logo_path = next((p for p in candidates if p.is_file()), None)
+        candidates: list[Path] = [root / "hotaru/assets/logo.png", root / "hotaru/assets/avatar.png"]
+        logo_path: Path | None = next((p for p in candidates if p.is_file()), None)
         if logo_path is None:
             return
         import hashlib
@@ -975,11 +976,12 @@ class ForumHelper:
                 peer = self._user_channel(chat_id)
                 if peer is not None:
                     full = await self._user_call("channels.getFullChannel", channel=peer)
-                    chats = self._body(full).get("chats", [])
+                    body_dict = self._body(full)
+                    chats = cast('list[Any]', body_dict.get("chats", []))
                     if chats:
-                        chat_obj = chats[0] if isinstance(chats[0], dict) else {}
+                        chat_obj = cast('dict[str, Any]', chats[0]) if isinstance(chats[0], dict) else {}
                         photo = chat_obj.get("photo")
-                        if not photo or (isinstance(photo, dict) and photo.get("_") == "chatPhotoEmpty"):
+                        if not photo or (isinstance(photo, dict) and cast('dict[str, Any]', photo).get("_") == "chatPhotoEmpty"):
                             should_update = True
             except Exception:
                 pass
@@ -990,7 +992,7 @@ class ForumHelper:
             if peer is None:
                 return
             from relay.files import document, put
-            up = await put(app, str(logo_path), file_name=logo_path.name)
+            up = await put(app, str(logo_path), file_name=str(logo_path.name))
             uploaded_file = document(up)["file"]
             await self._user_call("channels.editPhoto", channel=peer, photo={"_": "inputChatUploadedPhoto", "file": uploaded_file})
             if state is not None:

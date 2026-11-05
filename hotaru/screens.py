@@ -15,7 +15,7 @@ import tempfile
 import time
 import traceback
 import urllib.parse
-import urllib.request
+import http.client
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import SimpleNamespace
@@ -23,7 +23,7 @@ from typing import TYPE_CHECKING, Any, Awaitable, Callable, Optional, cast
 
 from goygram.errors import FloodWaitError, MessageIdInvalidError, MessageNotModifiedError
 from goygram.sugar import extract_sent_message
-from relay.emoji import has_emoji, premium, to_entities, to_rich
+from relay.emoji import has_emoji, to_entities, to_rich
 from relay.firewall import module_scope, trusted_scope
 from relay.rpc import delete_chat_msg
 
@@ -47,7 +47,8 @@ _styles = {"primary", "danger", "success", "link"}
 _tap = re.compile(r'<tg-button(\s[^>]*?)\sdata-hs="([A-Za-z0-9_-]+)"([^>]*)>')
 _rich = re.compile(r"<(?:table|tg-button|tg-button-row|details|h[1-6]|hr|footer|ul|ol|aside|tg-time|tg-math|mark|sup|sub|img|video)\b", re.IGNORECASE)
 
-_PAGE_CACHE: dict[str, dict[str, Any]] = {}
+PAGE_CACHE: dict[str, dict[str, Any]] = {}
+_PAGE_CACHE = PAGE_CACHE
 
 _assets = Path(__file__).resolve().parent / "assets"
 _banner_cache: dict[tuple[int, str], tuple[float, dict[str, Any]]] = {}
@@ -90,43 +91,61 @@ async def _upload_asset(app: Any, media_id: str, kind: str, file_path: Path) -> 
             {"_": "documentAttributeVideo", "duration": 4.0, "w": 1920, "h": 1080, "supports_streaming": True},
         ])
     with trusted_scope():
-        result = await app.mt_messages_upload_media(peer={"_": "inputPeerSelf"}, media=media)
-    if not isinstance(result, dict):
-        result = result.to_dict() if hasattr(result, "to_dict") else dict(getattr(result, "__dict__", {}))
-    if isinstance(result, dict) and "result" in result:
-        inner = result["result"]
-        if not isinstance(inner, dict):
-            inner = inner.to_dict() if hasattr(inner, "to_dict") else dict(getattr(inner, "__dict__", {}))
-        result = inner
+        raw_res = await app.mt_messages_upload_media(peer={"_": "inputPeerSelf"}, media=media)
+    res_dict: dict[str, Any]
+    if isinstance(raw_res, dict):
+        res_dict = cast('dict[str, Any]', raw_res)
+    elif hasattr(raw_res, "to_dict"):
+        to_dict_fn = cast(Callable[[], dict[str, Any]], getattr(raw_res, "to_dict"))
+        res_dict = to_dict_fn()
+    else:
+        res_dict = dict(cast('dict[str, Any]', getattr(raw_res, "__dict__", {})))
+    if "result" in res_dict:
+        inner_raw = res_dict["result"]
+        if isinstance(inner_raw, dict):
+            res_dict = cast('dict[str, Any]', inner_raw)
+        elif hasattr(inner_raw, "to_dict"):
+            to_dict_fn = cast(Callable[[], dict[str, Any]], getattr(inner_raw, "to_dict"))
+            res_dict = to_dict_fn()
+        else:
+            res_dict = dict(cast('dict[str, Any]', getattr(inner_raw, "__dict__", {})))
     if kind == "photo":
-        photo = result.get("photo") if isinstance(result, dict) else getattr(result, "photo", {})
-        if hasattr(photo, "to_dict"):
-            photo = photo.to_dict()
-        elif not isinstance(photo, dict):
-            photo = dict(getattr(photo, "__dict__", {}))
+        photo_raw = res_dict.get("photo")
+        photo_dict: dict[str, Any]
+        if isinstance(photo_raw, dict):
+            photo_dict = cast('dict[str, Any]', photo_raw)
+        elif hasattr(photo_raw, "to_dict"):
+            to_dict_fn = cast(Callable[[], dict[str, Any]], getattr(photo_raw, "to_dict"))
+            photo_dict = to_dict_fn()
+        else:
+            photo_dict = dict(cast('dict[str, Any]', getattr(photo_raw, "__dict__", {})))
         return {
             "_": "inputRichFilePhoto",
             "id": media_id,
             "photo": {
                 "_": "inputPhoto",
-                "id": int(photo["id"]),
-                "access_hash": int(photo["access_hash"]),
-                "file_reference": bytes(photo["file_reference"]),
+                "id": int(photo_dict.get("id", 0)),
+                "access_hash": int(photo_dict.get("access_hash", 0)),
+                "file_reference": bytes(photo_dict.get("file_reference", b"")),
             },
         }
-    doc = result.get("document") if isinstance(result, dict) else getattr(result, "document", {})
-    if hasattr(doc, "to_dict"):
-        doc = doc.to_dict()
-    elif not isinstance(doc, dict):
-        doc = dict(getattr(doc, "__dict__", {}))
+    doc_raw = res_dict.get("document")
+    doc_dict: dict[str, Any]
+    if isinstance(doc_raw, dict):
+        doc_dict = cast('dict[str, Any]', doc_raw)
+    elif hasattr(doc_raw, "to_dict"):
+        to_dict_fn = cast(Callable[[], dict[str, Any]], getattr(doc_raw, "to_dict"))
+        doc_dict = to_dict_fn()
+    else:
+        doc_dict = dict(cast('dict[str, Any]', getattr(doc_raw, "__dict__", {})))
     return {
         "_": "inputRichFileDocument",
         "id": media_id,
         "document": {
             "_": "inputDocument",
-            "id": int(doc["id"]),
-            "access_hash": int(doc["access_hash"]),
-            "file_reference": bytes(doc["file_reference"]),
+            "id": int(doc_dict.get("id", 0)),
+            "access_hash": int(doc_dict.get("access_hash", 0)),
+            "file_reference": bytes(doc_dict.get("file_reference", b"")),
         },
     }
 
@@ -151,7 +170,7 @@ _ICONS: dict[str, str] = {
     "upload": '<tg-emoji emoji-id="5260652420052032852">⬆️</tg-emoji>',
     "share": '<tg-emoji emoji-id="5258043150110301407">⬆️</tg-emoji>',
     "login": '<tg-emoji emoji-id="5258215850745275216">➡️</tg-emoji>',
-    "logout": '<tg-emoji emoji-id="5258084656674250503">🚪</tg-emoji>',
+    "exit": '<tg-emoji emoji-id="5258084656674250503">🚪</tg-emoji>',
     "ban": '<tg-emoji emoji-id="5258318620722733379">❌</tg-emoji>',
     "lock": '<tg-emoji emoji-id="5258476306152038031">🔒</tg-emoji>',
     "eye": '<tg-emoji emoji-id="5253959125838090076">👁</tg-emoji>',
@@ -202,7 +221,7 @@ _MODULE_ICONS: dict[str, str] = {
     "logger": "file",
     "info": "info",
     "ping": "bolt",
-    "power": "logout",
+    "power": "exit",
     "settings": "settings",
     "backups": "folder",
     "catalyst": "download",
@@ -805,8 +824,9 @@ class ScreenEngine:
             if current:
                 rows.append(current)
         if screen.banner:
-            banner_prefix = screen.banner if screen.banner.endswith("\n") else f"{screen.banner}\n"
-            text = f"{banner_prefix}{screen.text.lstrip('\n')}"
+            banner_prefix = screen.banner if screen.banner.endswith("\n") else (screen.banner + "\n")
+            stripped_text = screen.text.lstrip("\n")
+            text = f"{banner_prefix}{stripped_text}"
         else:
             text = screen.text
         text = f"{screen.notice}\n{text}" if screen.notice else text
@@ -836,14 +856,28 @@ class ScreenEngine:
         for value in (getattr(source, "_hotaru_actor_id", None), getattr(source, "from_id", None)):
             if isinstance(value, int) and value > 0:
                 return value
-        user = getattr(source, "from_user", None) or getattr(source, "sender", None)
-        if isinstance(user, dict) and isinstance(user.get("id"), int) and user["id"] > 0:
-            return user["id"]
-        if hasattr(user, "id") and isinstance(user.id, int) and user.id > 0:
-            return user.id
-        chat = getattr(source, "chat", None)
-        if isinstance(chat, dict) and chat.get("type") == "private" and isinstance(chat.get("id"), int) and chat["id"] > 0:
-            return chat["id"]
+        user = cast(Any, getattr(source, "from_user", None) or getattr(source, "sender", None))
+        if isinstance(user, dict):
+            u_dict = cast('dict[str, Any]', user)
+            uid = u_dict.get("id")
+            if isinstance(uid, int) and uid > 0:
+                return uid
+        elif user is not None:
+            uid = getattr(user, "id", None)
+            if isinstance(uid, int) and uid > 0:
+                return uid
+        chat = cast(Any, getattr(source, "chat", None))
+        if isinstance(chat, dict):
+            c_dict = cast('dict[str, Any]', chat)
+            if c_dict.get("type") == "private":
+                cid_val = c_dict.get("id")
+                if isinstance(cid_val, int) and cid_val > 0:
+                    return cid_val
+        elif chat is not None:
+            if getattr(chat, "type", None) == "private":
+                cid_val = getattr(chat, "id", None)
+                if isinstance(cid_val, int) and cid_val > 0:
+                    return cid_val
         cid = getattr(source, "chat_id", None)
         if isinstance(cid, int) and cid > 0:
             return cid
@@ -865,7 +899,12 @@ class ScreenEngine:
             raise ScreenError("inline bot is not ready")
         return app
 
-    async def _rich(self, text: str) -> dict[str, Any]:
+    async def rich(self, text: str) -> dict[str, Any]:
+        return await self._rich_impl(text)
+
+    _rich = rich
+
+    async def _rich_impl(self, text: str) -> dict[str, Any]:
         payload: dict[str, Any] = {"_": "inputRichMessageHTML", **to_rich(text)}
         matches = re.findall(r'tg://(photo|video)\?id=(hotaru-[a-zA-Z0-9_-]+)', text)
         web_matches = re.findall(r'<(img|video)\s+src="(https?://[^"\'>]+)"\s*/?>', text)
@@ -916,9 +955,28 @@ class ScreenEngine:
                         if local_asset is not None and local_asset.exists():
                             actual_path = local_asset
                         else:
-                            req = urllib.request.Request(str(path_or_url), headers={"User-Agent": "Hotaru/1.0"})
-                            with urllib.request.urlopen(req, timeout=12.0) as resp:
-                                content = resp.read()
+                            content = b""
+                            curr_url = str(path_or_url)
+                            for _ in range(4):
+                                p_url = urllib.parse.urlparse(curr_url)
+                                p_port = p_url.port or (443 if p_url.scheme == "https" else 80)
+                                p_path = p_url.path or "/"
+                                if p_url.query:
+                                    p_path = f"{p_path}?{p_url.query}"
+                                c_cls = http.client.HTTPSConnection if p_url.scheme == "https" else http.client.HTTPConnection
+                                conn = c_cls(p_url.hostname or "", port=p_port, timeout=12.0)
+                                try:
+                                    conn.request("GET", p_path, headers={"User-Agent": "Hotaru/1.0"})
+                                    h_resp = conn.getresponse()
+                                    if h_resp.status in (301, 302, 303, 307, 308):
+                                        redir = h_resp.getheader("Location")
+                                        if redir:
+                                            curr_url = urllib.parse.urljoin(curr_url, redir)
+                                            continue
+                                    content = h_resp.read()
+                                    break
+                                finally:
+                                    conn.close()
                             ext = ".mp4" if kind == "video" else ".png"
                             with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as handle:
                                 temp_p = Path(handle.name)
