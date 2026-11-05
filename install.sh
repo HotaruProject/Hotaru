@@ -216,7 +216,11 @@ EOF
             fi
 
             outro "Launching Hotaru setup..."
-            exec uv run python -m hotaru
+            if [ -r /dev/tty ] && [ -w /dev/tty ]; then
+                exec uv run python -m hotaru </dev/tty
+            else
+                exec uv run python -m hotaru
+            fi
             ;;
 
         2)
@@ -236,7 +240,11 @@ EOF
             step_done "Docker image built successfully."
 
             outro "Starting Hotaru interactive first-time login..."
-            docker compose run --rm hotaru
+            if [ -r /dev/tty ] && [ -w /dev/tty ]; then
+                docker compose run --rm hotaru </dev/tty
+            else
+                docker compose run --rm hotaru
+            fi
 
             echo -e "${C_GRAY}${S_START}  ${C_BOLD}Starting Hotaru Background Service${C_RESET}"
             docker compose up -d
@@ -249,10 +257,18 @@ EOF
 
             if command -v pct &>/dev/null || command -v lxc-create &>/dev/null; then
                 step_info "Starting LXC Container creator..."
-                exec bash lxc/create.sh
+                if [ -r /dev/tty ] && [ -w /dev/tty ]; then
+                    exec bash lxc/create.sh </dev/tty
+                else
+                    exec bash lxc/create.sh
+                fi
             else
                 step_info "Provisioning current environment as LXC container..."
-                exec bash lxc/setup.sh
+                if [ -r /dev/tty ] && [ -w /dev/tty ]; then
+                    exec bash lxc/setup.sh </dev/tty
+                else
+                    exec bash lxc/setup.sh
+                fi
             fi
             ;;
 
