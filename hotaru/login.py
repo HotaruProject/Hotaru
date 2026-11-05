@@ -1534,19 +1534,20 @@ async def _authorize_via_bot(app: Any, api_id: int, api_hash: str, bot: Any) -> 
 
 
 def install_daemon_prompt(runtime: Any = None) -> None:
-    from .daemon import DaemonError, install_daemon, is_root
+    from .daemon import DaemonError, detect_init_system, install_daemon, is_root
 
     state = getattr(runtime, "state", None) if runtime is not None else None
     if state is not None and state.get_setting("daemon-install-offered"):
         return
     if state is not None:
         state.set_setting("daemon-install-offered", True)
-    if shutil.which("systemctl") is None:
-        note("systemd is not available on this system, the daemon stays manual.", "daemon")
+    init = detect_init_system()
+    if init is None:
+        note("No supported service manager found on this system, the daemon stays manual.", "daemon")
         return
-    scope = "system" if is_root() else "user"
+    scope = init.scope_name()
     answer = select(
-        f"Install the Hotaru daemon ({scope} scope) so it starts automatically?",
+        f"Install the Hotaru daemon ({init.display_name}, {scope} scope) so it starts automatically?",
         [
             {"value": "yes", "label": "Yes", "hint": "start on boot"},
             {"value": "no", "label": "No", "hint": "run it manually"},
@@ -1557,7 +1558,7 @@ def install_daemon_prompt(runtime: Any = None) -> None:
         note("Daemon installation skipped.", "daemon")
         return
     try:
-        path = install_daemon(start=False)
+        path = install_daemon(start=False, init_name=init.id)
     except DaemonError as exc:
         log_error(f"Daemon installation failed: {exc}")
         return
@@ -1565,9 +1566,9 @@ def install_daemon_prompt(runtime: Any = None) -> None:
         log_error(f"Daemon installation failed: {exc}")
         return
     log_info(f"Daemon installed and enabled: {path}")
+    status_hint = init.status_command_hint()
     note(
-        "The daemon takes over on the next login or reboot.\n"
-        + ("systemctl status hotaru" if is_root() else "systemctl --user status hotaru"),
+        f"The daemon takes over on the next login or reboot.\n{status_hint}",
         "daemon ready",
     )
 
