@@ -325,7 +325,7 @@
           "description": "管理账号",
           "usage": "[number] [start|stop|restart|del]"
         },
-        "account_add": {
+        "addaccount": {
           "description": "添加或登录账号",
           "usage": "[number|cancel]"
         },
@@ -334,7 +334,7 @@
           "usage": "[number]"
         }
       },
-      "usage": "<b>账号</b>\n<code>{prefix}account_add [user_id]</code> · 通过二维码或手机号添加\n<code>{prefix}account_add cancel</code> · 取消登录\n<code>{prefix}accounts [#]</code> · 账号面板\n<code>{prefix}account [#]</code> · 账号面板\n<code>{prefix}account 2 start|stop|restart|on|off|del</code>",
+      "usage": "<b>账号</b>\n<code>{prefix}addaccount [user_id]</code> · 通过二维码或手机号添加\n<code>{prefix}addaccount cancel</code> · 取消登录\n<code>{prefix}accounts [#]</code> · 账号面板\n<code>{prefix}account [#]</code> · 账号面板\n<code>{prefix}account 2 start|stop|restart|on|off|del</code>",
       "empty": "没有已注册的账号。",
       "no_self": "无法确定会话用户 ID。",
       "not_registered": "账号 #{n} 未注册。",
@@ -822,7 +822,7 @@
       "disable": "禁用",
       "enable": "启用",
       "not_ready": "服务群组尚未准备就绪",
-      "caption": "Hotaru 备份文件",
+      "caption": "<tg-emoji emoji-id=\"5325732612084351248\">📦</tg-emoji> <b>Hotaru 备份</b>\n<blockquote><tg-emoji emoji-id=\"5258476306152038031\">🔒</tg-emoji> 已加密的状态、保管库与会话快照\n<tg-emoji emoji-id=\"5258105663359294787\">🗓</tg-emoji> <code>{name}</code></blockquote>",
       "failed": "备份失败：{error}",
       "sent": "备份已发送",
       "topic": "备份",

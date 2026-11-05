@@ -1,0 +1,14 @@
+.git
+.github
+.venv
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache
+sanctuary
+observatory
+backups
+runtime.db
+*.log
+.tests

@@ -946,9 +946,57 @@ class ForumHelper:
             await self._promote_bot(chat_id)
             await self._hide_general(chat_id)
             await self._sync_channel_to_bot(chat_id)
+            await self._apply_group_avatar(chat_id)
+            if manager is not None and getattr(manager, "info", None) is not None:
+                try:
+                    await manager._apply_bot_avatar(manager.info)
+                except Exception:
+                    pass
             self._applied.add(chat_id)
         except Exception as exc:
             self._emit("apply_failed", error=type(exc).__name__, detail=str(exc)[:160])
+
+    async def _apply_group_avatar(self, chat_id: int) -> None:
+        state = getattr(self._runtime, "state", None)
+        app = getattr(self._runtime, "app", None)
+        if app is None:
+            return
+        root = Path(__file__).resolve().parent.parent
+        candidates = [root / "hotaru/assets/logo.png", root / "hotaru/assets/avatar.png"]
+        logo_path = next((p for p in candidates if p.is_file()), None)
+        if logo_path is None:
+            return
+        import hashlib
+        digest = hashlib.sha256(logo_path.read_bytes()).hexdigest()
+        key = f"brand-avatar-forum-{chat_id}"
+        should_update = state is None or state.get_setting(key) != digest
+        if not should_update:
+            try:
+                peer = self._user_channel(chat_id)
+                if peer is not None:
+                    full = await self._user_call("channels.getFullChannel", channel=peer)
+                    chats = self._body(full).get("chats", [])
+                    if chats:
+                        chat_obj = chats[0] if isinstance(chats[0], dict) else {}
+                        photo = chat_obj.get("photo")
+                        if not photo or (isinstance(photo, dict) and photo.get("_") == "chatPhotoEmpty"):
+                            should_update = True
+            except Exception:
+                pass
+        if not should_update:
+            return
+        try:
+            peer = self._user_channel(chat_id)
+            if peer is None:
+                return
+            from relay.files import document, put
+            up = await put(app, str(logo_path), file_name=logo_path.name)
+            uploaded_file = document(up)["file"]
+            await self._user_call("channels.editPhoto", channel=peer, photo={"_": "inputChatUploadedPhoto", "file": uploaded_file})
+            if state is not None:
+                state.set_setting(key, digest)
+        except Exception as exc:
+            self._emit("avatar_failed", error=type(exc).__name__, detail=str(exc)[:140])
 
     async def _user_bot(self, bot_id: int, username: str) -> dict[str, Any] | None:
         entity = self._user_mt().entities.get(("user", bot_id))

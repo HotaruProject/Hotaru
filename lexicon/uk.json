@@ -265,7 +265,7 @@
           "description": "Керування акаунтом",
           "usage": "[number] [start|stop|restart|del]"
         },
-        "account_add": {
+        "addaccount": {
           "description": "Додати акаунт або увійти",
           "usage": "[number|cancel]"
         },
@@ -274,7 +274,7 @@
           "usage": "[number]"
         }
       },
-      "usage": "<b>Акаунти</b>\n<code>{prefix}account_add [user_id]</code> · додати за QR / номером\n<code>{prefix}account_add cancel</code> · скасувати вхід\n<code>{prefix}accounts [#]</code> · панель акаунтів\n<code>{prefix}account [#]</code> · панель акаунтів\n<code>{prefix}account 2 start|stop|restart|on|off|del</code>",
+      "usage": "<b>Акаунти</b>\n<code>{prefix}addaccount [user_id]</code> · додати за QR / номером\n<code>{prefix}addaccount cancel</code> · скасувати вхід\n<code>{prefix}accounts [#]</code> · панель акаунтів\n<code>{prefix}account [#]</code> · панель акаунтів\n<code>{prefix}account 2 start|stop|restart|on|off|del</code>",
       "empty": "Акаунти не зареєстровані.",
       "no_self": "Не вдалося визначити user id сесії.",
       "not_registered": "Акаунт #{n} не зареєстрований.",
@@ -786,7 +786,7 @@
       "disable": "Вимкнути",
       "enable": "Увімкнути",
       "not_ready": "Службовий чат ще не готовий",
-      "caption": "Резервна копія Hotaru",
+      "caption": "<tg-emoji emoji-id=\"5325732612084351248\">📦</tg-emoji> <b>Резервна копія Hotaru</b>\n<blockquote><tg-emoji emoji-id=\"5258476306152038031\">🔒</tg-emoji> Зашифрований знімок стану, vault та сесій\n<tg-emoji emoji-id=\"5258105663359294787\">🗓</tg-emoji> <code>{name}</code></blockquote>",
       "failed": "Не вдалося надіслати резервну копію: {error}",
       "sent": "Резервну копію надіслано",
       "topic": "Backups",
