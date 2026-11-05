@@ -200,7 +200,12 @@
       "code_collision": "'{code}' тіл коды қазірдің өзінде қолданылуда",
       "name_collision": "'{name}' топтама атауы қазірдің өзінде қолданылуда",
       "missing_keys": "Тіл топтамасы барлық кілттерді 100% қамтымайды: {count} кілт жетіспейді",
-      "no_text": "Аударуға арналған мәтін көрсетілмеген"
+      "no_text": "Аударуға арналған мәтін көрсетілмеген",
+      "err_file_missing": "Сөздік файлы табылмады: .json тіркеңіз немесе реплай жасаңыз",
+      "err_file_doc": "Хабарламада JSON-файл (.json) болуы керек",
+      "err_json_syntax": "Жарамсыз JSON синтаксисі: {err} ({line}-жол)",
+      "err_structure": "Сөздік құрылымының қатесі: {err}",
+      "err_load_failed": "Сөздікті жүктеу мүмкін болмады: {err}"
     },
     "test-features": {
       "description": "Hotaru прокси және мүмкіндік тесті",
@@ -832,7 +837,20 @@
         "suspend_api": {
           "usage": "<seconds>"
         }
-      }
+      },
+      "unavailable": "API қорғанысы қолжетімсіз",
+      "field_status": "Күйі:",
+      "field_window": "Терезе:",
+      "field_limit": "Шектеу:",
+      "field_pause": "Үзіліс:",
+      "field_requests": "Сұраныстар:",
+      "field_triggers": "Іске қосылулар:",
+      "footer_guard": "Telegram API флудвейті мен шамадан тыс жүктемеден қорғау",
+      "telemetry_title": "API шақыруларының телеметриясы",
+      "telemetry_empty": "Іріктеу терезесінде соңғы шақырулар жоқ",
+      "telemetry_footer": "Ағымдағы терезеде шақырылған әдістер",
+      "usage_suspend": "Қолданылуы: {prefix}suspend_api [секунд]",
+      "suspended_success": "API қорғанысы: <code>{seconds}с</code> тоқтатылды"
     },
     "genesis": {
       "title": "Жылдам баптау",

@@ -34,7 +34,7 @@ if command -v pct &>/dev/null; then
         --memory "$MEMORY" \
         --cores "$CORES" \
         --rootfs "local-lvm:${DISK}" \
-        --features nesting=1 \
+        --features nesting=1,keyctl=1 \
         --net0 name=eth0,bridge=vmbr0,ip=dhcp \
         --unprivileged 1 \
         --onboot 1
@@ -60,6 +60,9 @@ if command -v lxc-create &>/dev/null; then
 
     echo -e "${DIM}│  Creating Debian Bookworm container ${CT_NAME}...${NC}"
     lxc-create -t download -n "$CT_NAME" -- -d debian -r bookworm -a amd64
+
+    echo "lxc.apparmor.profile = unconfined" >> /var/lib/lxc/"$CT_NAME"/config 2>/dev/null || true
+    echo "lxc.cap.drop =" >> /var/lib/lxc/"$CT_NAME"/config 2>/dev/null || true
 
     echo -e "${DIM}│  Starting container ${CT_NAME}...${NC}"
     lxc-start -n "$CT_NAME" -d

@@ -1827,6 +1827,12 @@ class ModuleSandbox:
             bind_ro("/usr/lib", "/usr/lib", True)
             if os.path.isdir("/usr/lib64"):
                 bind_ro("/usr/lib64", "/usr/lib64", True)
+            if os.path.isdir("/usr/local/lib"):
+                bind_ro("/usr/local/lib", "/usr/local/lib", True)
+            if os.path.isdir("/usr/local/lib64"):
+                bind_ro("/usr/local/lib64", "/usr/local/lib64", True)
+            if os.path.exists("/etc/ld.so.cache"):
+                bind_ro("/etc/ld.so.cache", "/etc/ld.so.cache", False)
             for link_name in ("/lib", "/lib64"):
                 if os.path.islink(link_name):
                     target = os.readlink(link_name)
