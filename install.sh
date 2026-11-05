@@ -131,14 +131,45 @@ main() {
     ask_input "${C_GRAY}${S_BAR}     ${C_DIM}Enter choice [1-3] (Default: 1): ${C_RESET}" "1" deploy_mode
     deploy_mode="${deploy_mode:-1}"
 
-    clone_if_needed() {
+    sync_repo() {
+        local target_branch="develop"
         if [ ! -d "$install_dir" ]; then
             step_dim "Cloning Hotaru into ${install_dir}..."
-            git clone https://github.com/HotaruProject/Hotaru.git "$install_dir"
+            mkdir -p "$(dirname "$install_dir")"
+            git clone -b "$target_branch" https://github.com/HotaruProject/Hotaru.git "$install_dir"
+        elif [ -d "$install_dir/.git" ]; then
+            step_dim "Updating repository in ${install_dir}..."
+            (
+                cd "$install_dir"
+                git fetch origin "$target_branch" >/dev/null 2>&1 || true
+                git checkout "$target_branch" >/dev/null 2>&1 || true
+                git pull origin "$target_branch" >/dev/null 2>&1 || true
+            )
         elif [ "$is_hotaru_repo" = false ] && [ ! -f "$install_dir/pyproject.toml" ]; then
             step_dim "Cloning Hotaru into ${install_dir}..."
-            git clone https://github.com/HotaruProject/Hotaru.git "$install_dir"
+            git clone -b "$target_branch" https://github.com/HotaruProject/Hotaru.git "$install_dir"
         fi
+
+        if [ ! -f "$install_dir/docker-compose.yml" ]; then
+            if [ -f "$current_dir/docker-compose.yml" ]; then
+                cp "$current_dir/docker-compose.yml" "$install_dir/"
+            else
+                curl -fsSL https://raw.githubusercontent.com/HotaruProject/Hotaru/develop/docker-compose.yml -o "$install_dir/docker-compose.yml" 2>/dev/null || true
+            fi
+        fi
+        if [ ! -f "$install_dir/Dockerfile" ]; then
+            if [ -f "$current_dir/Dockerfile" ]; then
+                cp "$current_dir/Dockerfile" "$install_dir/"
+            else
+                curl -fsSL https://raw.githubusercontent.com/HotaruProject/Hotaru/develop/Dockerfile -o "$install_dir/Dockerfile" 2>/dev/null || true
+            fi
+        fi
+        if [ ! -f "$install_dir/.dockerignore" ]; then
+            if [ -f "$current_dir/.dockerignore" ]; then
+                cp "$current_dir/.dockerignore" "$install_dir/"
+            fi
+        fi
+
         cd "$install_dir"
     }
 
@@ -147,7 +178,7 @@ main() {
             step_done "Environment: Standard Host Deployment"
             install_host_packages
             ensure_uv
-            clone_if_needed
+            sync_repo
 
             step_info "Synchronizing dependencies..."
             uv sync
@@ -187,7 +218,7 @@ EOF
 
         2)
             step_done "Environment: Docker Deployment"
-            clone_if_needed
+            sync_repo
 
             if ! command -v docker &>/dev/null; then
                 step_warn "Docker is not installed. Installing Docker..."
@@ -208,7 +239,7 @@ EOF
 
         3)
             step_done "Environment: LXC Deployment"
-            clone_if_needed
+            sync_repo
 
             if command -v pct &>/dev/null || command -v lxc-create &>/dev/null; then
                 step_info "Starting LXC Container creator..."
