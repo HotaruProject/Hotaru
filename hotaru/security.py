@@ -79,8 +79,20 @@ class SecurityGate:
 
     def principal_of(self, event: Any, *, transport: str) -> Principal:
         user_id = getattr(event, "from_id", None)
+        if not isinstance(user_id, int) or user_id <= 0:
+            user = getattr(event, "from_user", None) or getattr(event, "sender", None)
+            if isinstance(user, dict):
+                user_id = user.get("id")
+            elif hasattr(user, "id") and isinstance(user.id, int):
+                user_id = user.id
         chat_id = getattr(event, "chat_id", None)
-        if not isinstance(user_id, int):
+        if not isinstance(user_id, int) or user_id <= 0:
+            chat = getattr(event, "chat", None)
+            if isinstance(chat, dict) and chat.get("type") == "private":
+                user_id = chat.get("id")
+            elif isinstance(chat_id, int) and chat_id > 0 and transport in ("bot", "bot-pm", "api"):
+                user_id = chat_id
+        if not isinstance(user_id, int) or user_id <= 0:
             user_id = None
         return Principal(user_id, chat_id, transport)
 
