@@ -14,7 +14,7 @@
 </div>
 
 > [!TIP]
-> Visit the interactive 3D web portal and developer documentation at **[hotaruproject.github.io/HotaruWeb](https://hotaruproject.github.io/HotaruWeb/)**.
+> Visit the interactive 3D web portal and developer documentation at **[hotaruproject.github.io](https://hotaruproject.github.io/)**.
 
 > [!NOTE]
 > Hotaru isolates third-party code at the OS level. Each module runs in its own Linux mount and network namespace, so untrusted scripts cannot read your session files, encryption keys, or system directories.
@@ -145,7 +145,7 @@ This project is licensed under the GNU Affero General Public License v3.0 (AGPL-
 [sandbox-badge]: https://img.shields.io/badge/Security-Namespaces_Sandbox-000000.svg?style=for-the-badge&logo=linux&logoColor=white
 [sandbox-url]: #linux-namespace-isolation
 [website-badge]: https://img.shields.io/badge/Website-HotaruWeb-000000.svg?style=for-the-badge&logo=githubpages&logoColor=white
-[website-url]: https://hotaruproject.github.io/HotaruWeb/
+[website-url]: https://hotaruproject.github.io/
 [docker-badge]: https://img.shields.io/badge/Docker-Ready-2496ED.svg?style=for-the-badge&logo=docker&logoColor=white
 [docker-url]: #installation
 [stars-badge]: https://img.shields.io/github/stars/HotaruProject/Hotaru?style=for-the-badge&logo=github&color=181717
