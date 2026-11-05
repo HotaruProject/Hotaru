@@ -836,14 +836,28 @@ class ScreenEngine:
         for value in (getattr(source, "_hotaru_actor_id", None), getattr(source, "from_id", None)):
             if isinstance(value, int) and value > 0:
                 return value
+        user = getattr(source, "from_user", None) or getattr(source, "sender", None)
+        if isinstance(user, dict) and isinstance(user.get("id"), int) and user["id"] > 0:
+            return user["id"]
+        if hasattr(user, "id") and isinstance(user.id, int) and user.id > 0:
+            return user.id
+        chat = getattr(source, "chat", None)
+        if isinstance(chat, dict) and chat.get("type") == "private" and isinstance(chat.get("id"), int) and chat["id"] > 0:
+            return chat["id"]
+        cid = getattr(source, "chat_id", None)
+        if isinstance(cid, int) and cid > 0:
+            return cid
         return int(getattr(getattr(self.runtime, "kernel", None), "owner_id", None) or 0)
 
     def _command_of(self, source: Any) -> Optional[str]:
         command = getattr(source, "_hotaru_command", None)
-        if isinstance(command, str):
+        if isinstance(command, str) and command:
             return command
+        text = str(getattr(source, "text", "") or "").strip()
+        if text.startswith("/"):
+            return text[1:].split()[0].split("@")[0].casefold()
         kernel = getattr(self.runtime, "kernel", None)
-        return kernel.command_name(getattr(source, "text", "") or "") if kernel is not None else None
+        return kernel.command_name(text) if kernel is not None else None
 
     def _bot_app(self) -> Any:
         app = getattr(getattr(self.runtime, "inline", None), "bot_app", None)
@@ -1143,10 +1157,15 @@ class ScreenEngine:
             return False
         if runtime.access is not None and runtime.access.is_owner(actor):
             return True
+        owner_id = getattr(getattr(runtime, "kernel", None), "owner_id", None)
+        if owner_id is not None and actor == owner_id:
+            return True
         target = str(action.get("m") or form.module)
         if actor != form.actor or target != form.module or not form.command or runtime.kernel is None:
             return False
         spec = runtime.kernel.registry.resolve_name(form.command)
+        if spec is None and hasattr(runtime.kernel.registry, "resolve_bot_name"):
+            spec = runtime.kernel.registry.resolve_bot_name(form.command)
         if spec is None or spec.module_id != form.module:
             return False
         return bool(runtime.kernel.is_authorized(SimpleNamespace(from_id=actor, chat_id=form.chat), spec))

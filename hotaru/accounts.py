@@ -17,8 +17,9 @@ VAULT_RE = re.compile(r"(?:user|hotaru)-(\d+)\.vault")
 
 
 def account_home(root: Path, user_id: int) -> Path:
-    sanctuary = Path(root) / "sanctuary"
-    old_home = Path(root) / f"account-{user_id}"
+    base = Path(root)
+    sanctuary = base if base.name == "sanctuary" else base / "sanctuary"
+    old_home = base / f"account-{user_id}"
     new_home = sanctuary / f"account-{user_id}"
     if old_home.exists() and old_home.is_dir() and not new_home.exists():
         sanctuary.mkdir(parents=True, exist_ok=True)

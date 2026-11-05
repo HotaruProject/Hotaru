@@ -477,10 +477,33 @@ class Runtime:
         text = str(getattr(message, "text", "") or "").strip()
         if not text:
             return
-        from_id = getattr(message, "from_id", None) or getattr(getattr(message, "from_user", None), "id", None)
-        owner_id = getattr(self.kernel, "owner_id", None)
-        if owner_id and from_id != owner_id:
-            if getattr(self, "access", None) is not None and not self.access.is_owner(from_id) and not self.access.can(from_id, "bot"):
+        from_id = getattr(message, "from_id", None)
+        if not isinstance(from_id, int) or from_id <= 0:
+            user = getattr(message, "from_user", None) or getattr(message, "sender", None)
+            if isinstance(user, dict):
+                from_id = user.get("id")
+            elif hasattr(user, "id") and isinstance(user.id, int):
+                from_id = user.id
+        if not isinstance(from_id, int) or from_id <= 0:
+            chat = getattr(message, "chat", None)
+            if isinstance(chat, dict) and chat.get("type") == "private":
+                from_id = chat.get("id")
+            elif getattr(message, "chat_id", None) is not None:
+                cid = getattr(message, "chat_id")
+                if isinstance(cid, int) and cid > 0:
+                    from_id = cid
+        if not isinstance(from_id, int) or from_id <= 0:
+            return
+        setattr(message, "from_id", from_id)
+        owner_id = getattr(self.kernel, "owner_id", None) or getattr(self.config, "owner_id", None)
+        is_owner = (owner_id is not None and from_id == owner_id) or (getattr(self, "access", None) is not None and self.access.is_owner(from_id))
+        if not is_owner:
+            if getattr(self, "access", None) is None:
+                return
+            body = text[1:].lstrip() if text.startswith("/") else text
+            cmd_name = body.split()[0].split("@")[0].casefold() if body else ""
+            spec = self.kernel.registry.resolve_bot_name(cmd_name) if hasattr(self.kernel.registry, "resolve_bot_name") else None
+            if spec is None or not self.kernel.is_authorized(message, spec):
                 return
         await self.kernel.dispatch_bot(message)
 
@@ -1708,6 +1731,15 @@ class Runtime:
     async def _on_inline_callback(self, callback: Any) -> Any:
         if self.security is None or self.callbacks is None:
             return None
+        sender_id = getattr(callback, "from_id", None)
+        if not isinstance(sender_id, int) or sender_id <= 0:
+            user = getattr(callback, "from_user", None) or getattr(callback, "sender", None)
+            if isinstance(user, dict):
+                sender_id = user.get("id")
+            elif hasattr(user, "id") and isinstance(user.id, int):
+                sender_id = user.id
+        if isinstance(sender_id, int) and sender_id > 0:
+            setattr(callback, "from_id", sender_id)
         try:
             callback._hotaru_runtime = self
         except Exception:

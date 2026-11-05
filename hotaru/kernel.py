@@ -208,6 +208,24 @@ class Kernel:
         raw_args = body[len(parts[0]):].lstrip()
         message_id = self._message_id(message)
         chat_id = getattr(message, "chat_id", None) or getattr(message, "from_id", None)
+        user_id = getattr(message, "from_id", None)
+        if not isinstance(user_id, int) or user_id <= 0:
+            user = getattr(message, "from_user", None) or getattr(message, "sender", None)
+            if isinstance(user, dict):
+                user_id = user.get("id")
+            elif hasattr(user, "id") and isinstance(user.id, int):
+                user_id = user.id
+        if not isinstance(user_id, int) or user_id <= 0:
+            chat = getattr(message, "chat", None)
+            if isinstance(chat, dict) and chat.get("type") == "private":
+                user_id = chat.get("id")
+            elif getattr(message, "chat_id", None) is not None:
+                cid = getattr(message, "chat_id")
+                if isinstance(cid, int) and cid > 0:
+                    user_id = cid
+        if isinstance(user_id, int) and user_id > 0:
+            setattr(message, "from_id", user_id)
+        setattr(message, "_hotaru_command", command_name)
         invocation = CommandInvocation(
             name=command_name,
             args=args,
@@ -348,11 +366,30 @@ class Kernel:
 
     def is_authorized(self, message: Any, spec: CommandSpec | None = None) -> bool:
         user_id = getattr(message, "from_id", None)
-        if not isinstance(user_id, int):
+        if not isinstance(user_id, int) or user_id <= 0:
+            user = getattr(message, "from_user", None) or getattr(message, "sender", None)
+            if isinstance(user, dict):
+                user_id = user.get("id")
+            elif hasattr(user, "id") and isinstance(user.id, int):
+                user_id = user.id
+        if not isinstance(user_id, int) or user_id <= 0:
+            chat = getattr(message, "chat", None)
+            if isinstance(chat, dict) and chat.get("type") == "private":
+                user_id = chat.get("id")
+            elif getattr(message, "chat_id", None) is not None:
+                cid = getattr(message, "chat_id")
+                if isinstance(cid, int) and cid > 0:
+                    user_id = cid
+        if not isinstance(user_id, int) or user_id <= 0:
             user_id = None
         if spec is None:
             name = self.command_name(getattr(message, "text", None) or "")
             spec = self.registry.resolve_name(name) if name is not None else None
+            if spec is None and hasattr(self.registry, "resolve_bot_name"):
+                text = str(getattr(message, "text", "") or "").strip()
+                if text.startswith("/"):
+                    cmd = text[1:].split()[0].split("@")[0].casefold()
+                    spec = self.registry.resolve_bot_name(cmd)
         if self.access is not None:
             if spec is not None and spec.kernel and not self.access.is_owner(user_id):
                 return spec.module_id == "accounts" and self.access.check_tsec(user_id, spec.module_id, spec.name, getattr(message, "chat_id", None))
