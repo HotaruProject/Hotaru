@@ -136,7 +136,7 @@ class LoadedModule:
 
 
 class HmodLoader:
-    def __init__(self, *, max_bytes: int = 256 * 1024) -> None:
+    def __init__(self, *, max_bytes: int = 100 * 1024 * 1024) -> None:
         if max_bytes < 1:
             raise ValueError("max_bytes must be positive")
         self.max_bytes = max_bytes

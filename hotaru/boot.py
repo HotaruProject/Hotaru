@@ -68,10 +68,14 @@ def _create_venv() -> None:
     try:
         import venv
         venv.create(dest, with_pip=True)
+        if venv_python().is_file():
+            subprocess.run([str(venv_python()), "-m", "ensurepip", "--upgrade"], cwd=ROOT, check=False)
+            return
     except Exception:
-        result = subprocess.run([sys.executable, "-m", "venv", str(dest)], cwd=ROOT)
-        if result.returncode != 0:
-            raise SystemExit("cannot create .venv (install python3-venv or uv)")
+        pass
+    result = subprocess.run([sys.executable, "-m", "venv", str(dest)], cwd=ROOT)
+    if result.returncode != 0 and not venv_python().is_file():
+        raise SystemExit("cannot create .venv (install python3-venv or uv)")
     subprocess.run([str(venv_python()), "-m", "ensurepip", "--upgrade"], cwd=ROOT, check=False)
 
 
@@ -84,6 +88,8 @@ def _install(specs: list[str]) -> None:
         commands = [
             [uv, "pip", "install", "--python", py, *specs],
             [uv, "pip", "install", "--python", py, "-U", *specs],
+            [py, "-m", "pip", "install", *specs],
+            [py, "-m", "pip", "install", "-U", "--upgrade-strategy", "eager", *specs],
         ]
     else:
         commands = [
