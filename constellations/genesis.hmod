@@ -53,7 +53,7 @@ def _webapp_button(ctx: Any) -> Optional[Any]:
 def active_screen(ctx: Any, nav: Any = None) -> Any:
     k = ctx.screens
     text = (
-        f'{k.wordmark()} — <b>{_escape(ctx.t("kernel.genesis.active_title", "Active & Online"))}</b>\n\n'
+        f'{k.wordmark()} - <b>{_escape(ctx.t("kernel.genesis.active_title", "Active & Online"))}</b>\n\n'
         f'<i>{_escape(ctx.t("kernel.genesis.active_desc", "Hotaru Userbot is configured and running. Use commands directly in your account."))}</i>'
     )
     rows: List[List[Any]] = []
@@ -300,9 +300,9 @@ def step_finish(ctx: Any, nav: Any = None) -> Any:
     text = (
         f'{k.wordmark()} · <tg-emoji emoji-id="5260726538302660868">✅</tg-emoji> <b>{_escape(ctx.t("kernel.genesis.done_title", "Setup Complete!"))}</b>\n\n'
         f'<tg-emoji emoji-id="5366045973988522066">✨</tg-emoji> {_escape(ctx.t("kernel.genesis.done_desc", "Hotaru is fully configured and ready to shine."))}\n\n'
-        f'• <code>{_escape(prefix)}help</code> — {_escape(ctx.t("kernel.help.description", "Module list"))}\n'
-        f'• <code>{_escape(prefix)}config</code> — {_escape(ctx.t("kernel.config.title", "Settings"))}\n'
-        f'• <code>{_escape(prefix)}info</code> — {_escape(ctx.t("kernel.info.description", "Information and latency"))}\n'
+        f'• <code>{_escape(prefix)}help</code> - {_escape(ctx.t("kernel.help.description", "Module list"))}\n'
+        f'• <code>{_escape(prefix)}config</code> - {_escape(ctx.t("kernel.config.title", "Settings"))}\n'
+        f'• <code>{_escape(prefix)}info</code> - {_escape(ctx.t("kernel.info.description", "Information and latency"))}\n'
     )
     rows: List[List[Any]] = []
     wb = _webapp_button(ctx)
@@ -323,7 +323,7 @@ async def command_start(ctx: Any, invocation: Any) -> Any:
 async def command_github(ctx: Any, invocation: Any) -> Any:
     k = ctx.screens
     text = (
-        f'{k.wordmark()} — <b>{_escape(ctx.t("kernel.genesis.links_title", "Hotaru Links"))}</b>\n\n'
+        f'{k.wordmark()} - <b>{_escape(ctx.t("kernel.genesis.links_title", "Hotaru Links"))}</b>\n\n'
         f'<i>{_escape(ctx.t("kernel.genesis.links_desc", "Official Hotaru project repository, documentation, and source code:"))}</i>'
     )
     rows = [

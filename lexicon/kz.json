@@ -491,7 +491,7 @@
       "self_owner": "Бұл пайдаланушы аккаунт иесі болып табылады.",
       "empty": "Берілген құқықтар жоқ. !perm <user_id> <role> қолданыңыз.",
       "bad_label": "Белгісіз құқық: {label}.",
-      "usage": "колданылуы:\n!owadd <user_id|reply> — owner беру\n!owrm <user_id|reply> — owner алу\n!owls — иелер\n!sgnew <name> — құқықтар тобын құру\n!sgls — топтар тізімі\n!sg <name> — топ қатысушылары мен ережелері\n!sgdel <name> — топты жою\n!sgadd <name> <user_id|reply> — топқа қосу\n!sgrm <name> <user_id|reply> — топтан шығару\n!rule <user|chat|sgroup> <target> <command|module>/<name> [мерзім] — ереже беру\n!rulerm — ережені жою\n!ruleclr — барлық ережелерді тазарту\n!perm <user_id> <admin|trusted|everyone> [remove] — құқық беру/алу\n!perms — құқықтар тізімі\n!whois <user_id> — пайдаланушы құқықтары",
+      "usage": "колданылуы:\n!owadd <user_id|reply> - owner беру\n!owrm <user_id|reply> - owner алу\n!owls - иелер\n!sgnew <name> - құқықтар тобын құру\n!sgls - топтар тізімі\n!sg <name> - топ қатысушылары мен ережелері\n!sgdel <name> - топты жою\n!sgadd <name> <user_id|reply> - топқа қосу\n!sgrm <name> <user_id|reply> - топтан шығару\n!rule <user|chat|sgroup> <target> <command|module>/<name> [мерзім] - ереже беру\n!rulerm - ережені жою\n!ruleclr - барлық ережелерді тазарту\n!perm <user_id> <admin|trusted|everyone> [remove] - құқық беру/алу\n!perms - құқықтар тізімі\n!whois <user_id> - пайдаланушы құқықтары",
       "no_groups": "Құқықтар топтары жоқ. Құр: !sgnew <name>",
       "no_owner_grant": "Owner !owadd арқылы беріледі."
     },
@@ -641,8 +641,8 @@
     "executor": {
       "exit_code": "Аяқталу коды: {returncode}",
       "running": "Орындалуда…",
-      "usage_sh": "<b>Қолдану:</b> <code>{prefix}sh [пәрмен] &lt;-so&gt;</code> — <i>shell пәрменін орындау</i>",
-      "usage_py": "<b>Қолдану:</b> <code>{prefix}py [код] &lt;-so&gt;</code> — <i>Python кодын орындау</i>",
+      "usage_sh": "<b>Қолдану:</b> <code>{prefix}sh [пәрмен] &lt;-so&gt;</code> - <i>shell пәрменін орындау</i>",
+      "usage_py": "<b>Қолдану:</b> <code>{prefix}py [код] &lt;-so&gt;</code> - <i>Python кодын орындау</i>",
       "cancelled": "Орындау тоқтатылды",
       "done": "Дайын ✓",
       "kill_reply": "<b>Процесті тоқтату үшін орындалып жатқан py/sh хабарламасына жауап бер.</b>",
@@ -810,7 +810,7 @@
       "webhook": "Hotaru инлайн-ботына бөгде вебхук орнатылған."
     },
     "flood": {
-      "notice": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>FloodWait — хабарлама қайта бағытталды</b>\n<code>{chat}</code> чатына <code>{source}</code> арқылы жеткізілмеді:\n<blockquote>{text}</blockquote>"
+      "notice": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>FloodWait - хабарлама қайта бағытталды</b>\n<code>{chat}</code> чатына <code>{source}</code> арқылы жеткізілмеді:\n<blockquote>{text}</blockquote>"
     },
     "apifw": {
       "name": "API Flood Protection",
@@ -918,7 +918,7 @@
       "btn_github": "GitHub репозиторийі"
     }
   },
-  "inline_commands_hint": "Команданы таңда — кез келген чатта @<бот> және оның атын тер",
+  "inline_commands_hint": "Команданы таңда - кез келген чатта @<бот> және оның атын тер",
   "settings": {
     "runtime_unavailable": "Қызмет қолжетімсіз",
     "usage_alias": "Қолдану: <code>{prefix}alias &lt;бүркеншік_ат&gt; &lt;команда&gt;</code>",
@@ -1021,14 +1021,14 @@
     "updated": "<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> <b>Жаңартылды:</b> <code>{module_id}</code> <code>v{version}</code>",
     "caps_request": "{module_id} v{version} модулі мына мүмкіндіктерді сұрайды:",
     "caps_retry": "Растау үшін жүктеу командасын қайтала",
-    "usage_mi": "<b>Қолдану:</b> <code>{prefix}mi [module]</code> — <i>модуль туралы ақпарат</i>",
-    "usage_help": "<b>Қолдану:</b> <code>{prefix}help &lt;page|module&gt;</code> — <i>анықтама</i>",
-    "usage_reload": "<b>Қолдану:</b> <code>{prefix}rl [module] &lt;force&gt;</code> — <i>модульді қайта жүктеу</i>",
+    "usage_mi": "<b>Қолдану:</b> <code>{prefix}mi [module]</code> - <i>модуль туралы ақпарат</i>",
+    "usage_help": "<b>Қолдану:</b> <code>{prefix}help &lt;page|module&gt;</code> - <i>анықтама</i>",
+    "usage_reload": "<b>Қолдану:</b> <code>{prefix}rl [module] &lt;force&gt;</code> - <i>модульді қайта жүктеу</i>",
     "usage_unload": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>Модульді көрсетіңіз:</b> <code>{prefix}ul &lt;модуль&gt;</code>",
-    "usage_reset": "<b>Қолдану:</b> <code>{prefix}rs [module]</code> — <i>күйді қалпына келтіру</i>",
-    "usage_export": "<b>Қолдану:</b> <code>{prefix}ex [module]</code> — <i>модульді экспорттау</i>",
-    "usage_backup": "<b>Қолдану:</b> <code>{prefix}bk &lt;list|test|restore&gt; &lt;archive&gt;</code> — <i>көшірмелерді басқару</i>",
-    "usage_load": "<b>Қолдану:</b> <code>{prefix}ld [raw-url|файл]</code> — <i>модульді жүктеу</i>",
+    "usage_reset": "<b>Қолдану:</b> <code>{prefix}rs [module]</code> - <i>күйді қалпына келтіру</i>",
+    "usage_export": "<b>Қолдану:</b> <code>{prefix}ex [module]</code> - <i>модульді экспорттау</i>",
+    "usage_backup": "<b>Қолдану:</b> <code>{prefix}bk &lt;list|test|restore&gt; &lt;archive&gt;</code> - <i>көшірмелерді басқару</i>",
+    "usage_load": "<b>Қолдану:</b> <code>{prefix}ld [raw-url|файл]</code> - <i>модульді жүктеу</i>",
     "bot_status": "Инлайн-бот: @{name} ({status})",
     "health": "Күйі: {status}",
     "last_error": "Соңғы қате: {error}",
@@ -1064,7 +1064,7 @@
   "acl": {
     "owners": "<b>Иелер</b><br>",
     "group_missing": "<code>{name}</code> тобы табылмады",
-    "group_item": "<b>{name}</b> — қатысушылар: {users}, ережелер: {rules}",
+    "group_item": "<b>{name}</b> - қатысушылар: {users}, ережелер: {rules}",
     "groups": "<b>Құқық топтары</b><br>",
     "group_rule": "<b>Ереже қосылды:</b> sgroup <code>{target}</code> → {kind}/{rule}{until}",
     "permissions": "<b>Құқықтар</b><br>",
@@ -1076,7 +1076,7 @@
     "grant_failed": "<b>Құқық беру орындалмады:</b> <i>{error}</i>",
     "granted": "<code>{user_id}</code> үшін <code>{label}</code> <b>құқығы берілді</b>",
     "bad_group": "Топ атауы: әріптер мен сандар, 32 таңбаға дейін.",
-    "bad_duration": "1m, 1h, 1d, 1w немесе forever енгіз. Ең көбі — 100 жыл.",
+    "bad_duration": "1m, 1h, 1d, 1w немесе forever енгіз. Ең көбі - 100 жыл.",
     "bad_rule": "Ереже: command/атау немесе module/атау.",
     "empty": "Берілген рұқсаттар жоқ. {prefix}perm &lt;user_id&gt; &lt;role&gt; қолданыңыз.",
     "bad_label": "Белгісіз құқық: {label}",
@@ -1178,7 +1178,7 @@
     "nothing_clear": "Тазартатын ештеңе жоқ",
     "self_owner": "Бұл пайдаланушы аккаунттың иесі.",
     "no_groups": "Қолжетімділік топтары жоқ. Жасау: {prefix}sgnew &lt;name&gt;",
-    "usage": "<code>{prefix}owadd &lt;user_id|reply&gt;</code> — Ие қосу\n<code>{prefix}owrm &lt;user_id|reply&gt;</code> — Иені жою\n<code>{prefix}owls</code> — Иелер тізімі\n<code>{prefix}sgnew &lt;name&gt;</code> — Құқық тобын құру\n<code>{prefix}sgls</code> — Топтар тізімі\n<code>{prefix}sg &lt;name&gt;</code> — Топ мүшелері мен ережелері\n<code>{prefix}sgdel &lt;name&gt;</code> — Топты жою\n<code>{prefix}sgadd &lt;name&gt; &lt;user_id|reply&gt;</code> — Қатысушы қосу\n<code>{prefix}sgrm &lt;name&gt; &lt;user_id|reply&gt;</code> — Қатысушыны жою\n<code>{prefix}rule &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;command|module&gt;/&lt;name&gt; [expiry]</code> — Рұқсат ережесін қосу\n<code>{prefix}rulerm &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;rule&gt;</code> — Ережені жою\n<code>{prefix}ruleclr &lt;user|chat|sgroup&gt; [target]</code> — Ережелерді тазарту\n<code>{prefix}perm &lt;user_id&gt; &lt;admin|trusted|everyone&gt; [remove]</code> — Құқық беру немесе қайтару\n<code>{prefix}perms</code> — Құқықтар тізімі\n<code>{prefix}whois &lt;user_id&gt;</code> — Пайдаланушы құқықтары",
+    "usage": "<code>{prefix}owadd &lt;user_id|reply&gt;</code> - Ие қосу\n<code>{prefix}owrm &lt;user_id|reply&gt;</code> - Иені жою\n<code>{prefix}owls</code> - Иелер тізімі\n<code>{prefix}sgnew &lt;name&gt;</code> - Құқық тобын құру\n<code>{prefix}sgls</code> - Топтар тізімі\n<code>{prefix}sg &lt;name&gt;</code> - Топ мүшелері мен ережелері\n<code>{prefix}sgdel &lt;name&gt;</code> - Топты жою\n<code>{prefix}sgadd &lt;name&gt; &lt;user_id|reply&gt;</code> - Қатысушы қосу\n<code>{prefix}sgrm &lt;name&gt; &lt;user_id|reply&gt;</code> - Қатысушыны жою\n<code>{prefix}rule &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;command|module&gt;/&lt;name&gt; [expiry]</code> - Рұқсат ережесін қосу\n<code>{prefix}rulerm &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;rule&gt;</code> - Ережені жою\n<code>{prefix}ruleclr &lt;user|chat|sgroup&gt; [target]</code> - Ережелерді тазарту\n<code>{prefix}perm &lt;user_id&gt; &lt;admin|trusted|everyone&gt; [remove]</code> - Құқық беру немесе қайтару\n<code>{prefix}perms</code> - Құқықтар тізімі\n<code>{prefix}whois &lt;user_id&gt;</code> - Пайдаланушы құқықтары",
     "account_owner": "Аккаунт иесін жоюға болмайды."
   },
   "inline": {

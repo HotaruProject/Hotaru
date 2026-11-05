@@ -240,7 +240,7 @@ def _module_screen(ctx: Any, module_id: str, origin: Optional[str]) -> Any:
         entries.append(f"{k.tap(key, param, id=module_id, key=key, origin=origin)}{mark}  {_shown(ctx, field, config.get(key), 32)}")
         description = _describe(ctx, manifest, field)
         if description:
-            notes.append(f"• <b>{_escape(key)}</b> — {_escape(ctx.tools.truncate(description, 160))}")
+            notes.append(f"• <b>{_escape(key)}</b> - {_escape(ctx.tools.truncate(description, 160))}")
     head = f"{k.module_icon(module_id)} <b>{_escape(module_id)}</b>  {k.badge(_escape(ctx.t('kernel.config.title_short')))}"
     if changed:
         head += " " + k.badge(ctx.t("kernel.config.changed", count=changed), "primary")
@@ -307,7 +307,7 @@ def _template_block(ctx: Any, module_id: str, field: ConfigField, value: Any, pa
         if meta.get("description_key"):
             description = ctx.t(meta["description_key"], str(description) or name)
         example = ctx.tools.truncate(ctx.tools.template_render("{" + name + "}", {name: meta}), 60)
-        entries.append(f"<code>{{{_escape(name)}}}</code> · {_escape(meta['type'])} — {_escape(ctx.tools.truncate(str(description), 100))} → <code>{_escape(example)}</code>")
+        entries.append(f"<code>{{{_escape(name)}}}</code> · {_escape(meta['type'])} - {_escape(ctx.tools.truncate(str(description), 100))} → <code>{_escape(example)}</code>")
     title = ctx.t("kernel.config.template_fields")
     counter = f" · {page + 1}/{pages}" if pages > 1 else ""
     syntax = _escape(ctx.t("kernel.config.template_syntax"))
@@ -365,7 +365,7 @@ def _param_screen(ctx: Any, module_id: str, key: str, origin: Optional[str], pag
     if facts:
         lines.append(k.table(facts, keys=True))
     if long_value and not field.secret:
-        lines.append(f"<b>{_escape(ctx.t('kernel.config.value'))}:</b><blockquote expandable>{_escape(field.format_value(value)) or '—'}</blockquote>")
+        lines.append(f"<b>{_escape(ctx.t('kernel.config.value'))}:</b><blockquote expandable>{_escape(field.format_value(value)) or '-'}</blockquote>")
     if field.requires_restart:
         lines.append(f"<i>{_escape(ctx.t('kernel.config.restart'))}</i>")
     rows: List[List[Any]] = []

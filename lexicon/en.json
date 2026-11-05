@@ -174,7 +174,7 @@
       "logs": "Logs"
     },
     "hotaru-kernel": {
-      "description": "Hotaru kernel — system commands",
+      "description": "Hotaru kernel - system commands",
       "commands": {
         "ver": {
           "description": "Show the running commit"
@@ -551,7 +551,7 @@
       "self_owner": "This user is already the account owner.",
       "empty": "No permissions granted. Use !perm <user_id> <role>.",
       "bad_label": "Unknown permission: {label}.",
-      "usage": "usage:\n!owadd <user_id|reply> — grant owner\n!owrm <user_id|reply> — revoke owner\n!owls — list owners\n!sgnew <name> — create a security group\n!sgls — list groups\n!sg <name> — show group users and rules\n!sgdel <name> — delete a group\n!sgadd <name> <user_id|reply> — add a user to a group\n!sgrm <name> <user_id|reply> — remove a user from a group\n!rule <user|chat|sgroup> <target> <command|module>/<name> [expiry] — add a rule\n!rulerm — remove a rule\n!ruleclr — clear rules for a target\n!perm <user_id> <admin|trusted|everyone> [remove] — grant/revoke a permission\n!perms — list permissions\n!whois <user_id> — user permissions",
+      "usage": "usage:\n!owadd <user_id|reply> - grant owner\n!owrm <user_id|reply> - revoke owner\n!owls - list owners\n!sgnew <name> - create a security group\n!sgls - list groups\n!sg <name> - show group users and rules\n!sgdel <name> - delete a group\n!sgadd <name> <user_id|reply> - add a user to a group\n!sgrm <name> <user_id|reply> - remove a user from a group\n!rule <user|chat|sgroup> <target> <command|module>/<name> [expiry] - add a rule\n!rulerm - remove a rule\n!ruleclr - clear rules for a target\n!perm <user_id> <admin|trusted|everyone> [remove] - grant/revoke a permission\n!perms - list permissions\n!whois <user_id> - user permissions",
       "no_groups": "No security groups. Create one: !sgnew <name>",
       "no_owner_grant": "Owner is granted via !owadd."
     },
@@ -636,8 +636,8 @@
     "executor": {
       "exit_code": "Exit code: {returncode}",
       "running": "Running...",
-      "usage_sh": "<b>Usage:</b> <code>{prefix}sh [command] &lt;-so&gt;</code> — <i>execute shell command</i>",
-      "usage_py": "<b>Usage:</b> <code>{prefix}py [code] &lt;-so&gt;</code> — <i>execute Python code</i>",
+      "usage_sh": "<b>Usage:</b> <code>{prefix}sh [command] &lt;-so&gt;</code> - <i>execute shell command</i>",
+      "usage_py": "<b>Usage:</b> <code>{prefix}py [code] &lt;-so&gt;</code> - <i>execute Python code</i>",
       "cancelled": "Execution cancelled",
       "done": "Done ✓",
       "kill_reply": "<b>Reply to a running py/sh output message to kill it.</b>",
@@ -805,7 +805,7 @@
       "webhook": "Someone set an external webhook on Hotaru's inline bot."
     },
     "flood": {
-      "notice": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>FloodWait — message redirected</b>\nFailed to deliver to chat <code>{chat}</code> via <code>{source}</code>:\n<blockquote>{text}</blockquote>"
+      "notice": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>FloodWait - message redirected</b>\nFailed to deliver to chat <code>{chat}</code> via <code>{source}</code>:\n<blockquote>{text}</blockquote>"
     },
     "apifw": {
       "name": "API Flood Protection",
@@ -941,7 +941,7 @@
     "ja": "Japanese",
     "zh": "Chinese"
   },
-  "inline_commands_hint": "Pick a command — type @<bot> and its name in any chat",
+  "inline_commands_hint": "Pick a command - type @<bot> and its name in any chat",
   "settings": {
     "runtime_unavailable": "Runtime unavailable",
     "usage_alias": "Usage: <code>{prefix}alias &lt;alias&gt; &lt;command&gt;</code>",
@@ -1021,14 +1021,14 @@
     "updated": "<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> <b>Updated:</b> <code>{module_id}</code> <code>v{version}</code>",
     "caps_request": "module {module_id} v{version} requests capabilities:",
     "caps_retry": "re-run the load command to confirm",
-    "usage_mi": "<b>Usage:</b> <code>{prefix}mi [module]</code> — <i>module info</i>",
-    "usage_help": "<b>Usage:</b> <code>{prefix}help &lt;page|module&gt;</code> — <i>commands help</i>",
-    "usage_reload": "<b>Usage:</b> <code>{prefix}rl [module] &lt;force&gt;</code> — <i>reload module</i>",
+    "usage_mi": "<b>Usage:</b> <code>{prefix}mi [module]</code> - <i>module info</i>",
+    "usage_help": "<b>Usage:</b> <code>{prefix}help &lt;page|module&gt;</code> - <i>commands help</i>",
+    "usage_reload": "<b>Usage:</b> <code>{prefix}rl [module] &lt;force&gt;</code> - <i>reload module</i>",
     "usage_unload": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>Specify a module:</b> <code>{prefix}ul &lt;module&gt;</code>",
-    "usage_reset": "<b>Usage:</b> <code>{prefix}rs [module]</code> — <i>reset module state</i>",
-    "usage_export": "<b>Usage:</b> <code>{prefix}ex [module]</code> — <i>export module source</i>",
-    "usage_backup": "<b>Usage:</b> <code>{prefix}bk &lt;list|test|restore&gt; &lt;archive&gt;</code> — <i>backup management</i>",
-    "usage_load": "<b>Usage:</b> <code>{prefix}ld [raw-url|file]</code> — <i>load module</i>",
+    "usage_reset": "<b>Usage:</b> <code>{prefix}rs [module]</code> - <i>reset module state</i>",
+    "usage_export": "<b>Usage:</b> <code>{prefix}ex [module]</code> - <i>export module source</i>",
+    "usage_backup": "<b>Usage:</b> <code>{prefix}bk &lt;list|test|restore&gt; &lt;archive&gt;</code> - <i>backup management</i>",
+    "usage_load": "<b>Usage:</b> <code>{prefix}ld [raw-url|file]</code> - <i>load module</i>",
     "bot_status": "Inline bot: @{name} ({status})",
     "health": "health: {status}",
     "last_error": "last_error: {error}",
@@ -1064,7 +1064,7 @@
   "acl": {
     "owners": "<b>Owners</b><br>",
     "group_missing": "Group <code>{name}</code> not found",
-    "group_item": "<b>{name}</b> — {users} users, {rules} rules",
+    "group_item": "<b>{name}</b> - {users} users, {rules} rules",
     "groups": "<b>Security groups</b><br>",
     "group_rule": "<b>Rule added:</b> sgroup <code>{target}</code> → {kind}/{rule}{until}",
     "permissions": "<b>Permissions</b><br>",
@@ -1089,7 +1089,7 @@
     "model": "Owners have full access. Other access is set below.",
     "forever": "No expiry",
     "allowed": "<code>{command}</code> · allowed",
-    "denied": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <code>{command}</code> — <i>no access</i>",
+    "denied": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <code>{command}</code> - <i>no access</i>",
     "full_owner": "Owner · full access",
     "roles": {
       "owner": "Owner",
@@ -1178,7 +1178,7 @@
     "nothing_clear": "nothing to clear",
     "self_owner": "This user already owns the account.",
     "no_groups": "No security groups. Create one: {prefix}sgnew &lt;name&gt;",
-    "usage": "<code>{prefix}owadd &lt;user_id|reply&gt;</code> — Add owner\n<code>{prefix}owrm &lt;user_id|reply&gt;</code> — Remove owner\n<code>{prefix}owls</code> — List owners\n<code>{prefix}sgnew &lt;name&gt;</code> — Create permission group\n<code>{prefix}sgls</code> — List groups\n<code>{prefix}sg &lt;name&gt;</code> — Show group members and rules\n<code>{prefix}sgdel &lt;name&gt;</code> — Delete group\n<code>{prefix}sgadd &lt;name&gt; &lt;user_id|reply&gt;</code> — Add group member\n<code>{prefix}sgrm &lt;name&gt; &lt;user_id|reply&gt;</code> — Remove group member\n<code>{prefix}rule &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;command|module&gt;/&lt;name&gt; [expiry]</code> — Add access rule\n<code>{prefix}rulerm &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;rule&gt;</code> — Remove rule\n<code>{prefix}ruleclr &lt;user|chat|sgroup&gt; [target]</code> — Clear rules\n<code>{prefix}perm &lt;user_id&gt; &lt;admin|trusted|everyone&gt; [remove]</code> — Grant or revoke permission\n<code>{prefix}perms</code> — List permissions\n<code>{prefix}whois &lt;user_id&gt;</code> — Show user permissions",
+    "usage": "<code>{prefix}owadd &lt;user_id|reply&gt;</code> - Add owner\n<code>{prefix}owrm &lt;user_id|reply&gt;</code> - Remove owner\n<code>{prefix}owls</code> - List owners\n<code>{prefix}sgnew &lt;name&gt;</code> - Create permission group\n<code>{prefix}sgls</code> - List groups\n<code>{prefix}sg &lt;name&gt;</code> - Show group members and rules\n<code>{prefix}sgdel &lt;name&gt;</code> - Delete group\n<code>{prefix}sgadd &lt;name&gt; &lt;user_id|reply&gt;</code> - Add group member\n<code>{prefix}sgrm &lt;name&gt; &lt;user_id|reply&gt;</code> - Remove group member\n<code>{prefix}rule &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;command|module&gt;/&lt;name&gt; [expiry]</code> - Add access rule\n<code>{prefix}rulerm &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;rule&gt;</code> - Remove rule\n<code>{prefix}ruleclr &lt;user|chat|sgroup&gt; [target]</code> - Clear rules\n<code>{prefix}perm &lt;user_id&gt; &lt;admin|trusted|everyone&gt; [remove]</code> - Grant or revoke permission\n<code>{prefix}perms</code> - List permissions\n<code>{prefix}whois &lt;user_id&gt;</code> - Show user permissions",
     "account_owner": "The account owner cannot be removed."
   },
   "inline": {

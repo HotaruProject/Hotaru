@@ -491,7 +491,7 @@
       "self_owner": "このユーザーはすでにアカウントのオーナーです。",
       "empty": "付与された権限はありません。!perm <user_id> <role> を使用。",
       "bad_label": "不明な権限: {label}。",
-      "usage": "使い方:\n!owadd <user_id|reply> — owner を付与\n!owrm <user_id|reply> — owner を取り消す\n!owls — オーナー一覧\n!sgnew <name> — 権限グループを作成\n!sgls — グループ一覧\n!sg <name> — グループのメンバーと権限\n!sgdel <name> — グループを削除\n!sgadd <name> <user_id|reply> — グループに追加\n!sgrm <name> <user_id|reply> — グループから除外\n!rule <user|chat|sgroup> <target> <command|module>/<name> [期限] — ルールを追加\n!rulerm — ルールを削除\n!ruleclr — 対象のルールを全消去\n!perm <user_id> <admin|trusted|everyone> [remove] — 権限の付与/取り消し\n!perms — 権限一覧\n!whois <user_id> — ユーザーの権限",
+      "usage": "使い方:\n!owadd <user_id|reply> - owner を付与\n!owrm <user_id|reply> - owner を取り消す\n!owls - オーナー一覧\n!sgnew <name> - 権限グループを作成\n!sgls - グループ一覧\n!sg <name> - グループのメンバーと権限\n!sgdel <name> - グループを削除\n!sgadd <name> <user_id|reply> - グループに追加\n!sgrm <name> <user_id|reply> - グループから除外\n!rule <user|chat|sgroup> <target> <command|module>/<name> [期限] - ルールを追加\n!rulerm - ルールを削除\n!ruleclr - 対象のルールを全消去\n!perm <user_id> <admin|trusted|everyone> [remove] - 権限の付与/取り消し\n!perms - 権限一覧\n!whois <user_id> - ユーザーの権限",
       "no_groups": "権限グループはありません。作成: !sgnew <name>",
       "no_owner_grant": "owner は !owadd で付与されます。"
     },
@@ -641,8 +641,8 @@
     "executor": {
       "exit_code": "終了コード: {returncode}",
       "running": "実行中…",
-      "usage_sh": "<b>使い方:</b> <code>{prefix}sh [コマンド] &lt;-so&gt;</code> — <i>シェルコマンドを実行</i>",
-      "usage_py": "<b>使い方:</b> <code>{prefix}py [コード] &lt;-so&gt;</code> — <i>Pythonコードを実行</i>",
+      "usage_sh": "<b>使い方:</b> <code>{prefix}sh [コマンド] &lt;-so&gt;</code> - <i>シェルコマンドを実行</i>",
+      "usage_py": "<b>使い方:</b> <code>{prefix}py [コード] &lt;-so&gt;</code> - <i>Pythonコードを実行</i>",
       "cancelled": "実行をキャンセルしました",
       "done": "完了 ✓",
       "kill_reply": "<b>実行中の py/sh の出力メッセージに返信して停止してください。</b>",
@@ -810,7 +810,7 @@
       "webhook": "Hotaru のインラインボットに外部の Webhook が設定されています。"
     },
     "flood": {
-      "notice": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>FloodWait — メッセージが転送されました</b>\n<code>{source}</code> 経由でチャット <code>{chat}</code> への配信に失敗しました:\n<blockquote>{text}</blockquote>"
+      "notice": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>FloodWait - メッセージが転送されました</b>\n<code>{source}</code> 経由でチャット <code>{chat}</code> への配信に失敗しました:\n<blockquote>{text}</blockquote>"
     },
     "apifw": {
       "name": "API Flood Protection",
@@ -918,7 +918,7 @@
       "btn_github": "GitHub リポジトリ"
     }
   },
-  "inline_commands_hint": "コマンドを選択 — 任意のチャットで @<bot> とコマンド名を入力",
+  "inline_commands_hint": "コマンドを選択 - 任意のチャットで @<bot> とコマンド名を入力",
   "settings": {
     "runtime_unavailable": "サービスを利用できません",
     "usage_alias": "使い方: <code>{prefix}alias &lt;別名&gt; &lt;コマンド&gt;</code>",
@@ -1021,14 +1021,14 @@
     "updated": "<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> <b>更新完了:</b> <code>{module_id}</code> <code>v{version}</code>",
     "caps_request": "モジュール {module_id} v{version} が次の機能を要求しています:",
     "caps_retry": "確認するには読み込みコマンドを再実行してください",
-    "usage_mi": "<b>使い方:</b> <code>{prefix}mi [module]</code> — <i>モジュール情報</i>",
-    "usage_help": "<b>使い方:</b> <code>{prefix}help &lt;page|module&gt;</code> — <i>ヘルプ表示</i>",
-    "usage_reload": "<b>使い方:</b> <code>{prefix}rl [module] &lt;force&gt;</code> — <i>モジュール再読み込み</i>",
+    "usage_mi": "<b>使い方:</b> <code>{prefix}mi [module]</code> - <i>モジュール情報</i>",
+    "usage_help": "<b>使い方:</b> <code>{prefix}help &lt;page|module&gt;</code> - <i>ヘルプ表示</i>",
+    "usage_reload": "<b>使い方:</b> <code>{prefix}rl [module] &lt;force&gt;</code> - <i>モジュール再読み込み</i>",
     "usage_unload": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>モジュールを指定してください:</b> <code>{prefix}ul &lt;モジュール&gt;</code>",
-    "usage_reset": "<b>使い方:</b> <code>{prefix}rs [module]</code> — <i>状態リセット</i>",
-    "usage_export": "<b>使い方:</b> <code>{prefix}ex [module]</code> — <i>エクスポート</i>",
-    "usage_backup": "<b>使い方:</b> <code>{prefix}bk &lt;list|test|restore&gt; &lt;archive&gt;</code> — <i>バックアップ管理</i>",
-    "usage_load": "<b>使い方:</b> <code>{prefix}ld [raw-url|ファイル]</code> — <i>モジュール読み込み</i>",
+    "usage_reset": "<b>使い方:</b> <code>{prefix}rs [module]</code> - <i>状態リセット</i>",
+    "usage_export": "<b>使い方:</b> <code>{prefix}ex [module]</code> - <i>エクスポート</i>",
+    "usage_backup": "<b>使い方:</b> <code>{prefix}bk &lt;list|test|restore&gt; &lt;archive&gt;</code> - <i>バックアップ管理</i>",
+    "usage_load": "<b>使い方:</b> <code>{prefix}ld [raw-url|ファイル]</code> - <i>モジュール読み込み</i>",
     "bot_status": "インラインボット: @{name}（{status}）",
     "health": "状態: {status}",
     "last_error": "最後のエラー: {error}",
@@ -1064,7 +1064,7 @@
   "acl": {
     "owners": "<b>オーナー</b><br>",
     "group_missing": "グループ <code>{name}</code> が見つかりません",
-    "group_item": "<b>{name}</b> — ユーザー: {users}、ルール: {rules}",
+    "group_item": "<b>{name}</b> - ユーザー: {users}、ルール: {rules}",
     "groups": "<b>権限グループ</b><br>",
     "group_rule": "<b>ルールを追加しました:</b> sgroup <code>{target}</code> → {kind}/{rule}{until}",
     "permissions": "<b>権限</b><br>",
@@ -1178,7 +1178,7 @@
     "nothing_clear": "消去するものがありません",
     "self_owner": "このユーザーはすでにアカウントの所有者です。",
     "no_groups": "アクセスグループがありません。作成: {prefix}sgnew &lt;name&gt;",
-    "usage": "<code>{prefix}owadd &lt;user_id|reply&gt;</code> — オーナーを追加\n<code>{prefix}owrm &lt;user_id|reply&gt;</code> — オーナーを削除\n<code>{prefix}owls</code> — オーナー一覧\n<code>{prefix}sgnew &lt;name&gt;</code> — 権限グループを作成\n<code>{prefix}sgls</code> — グループ一覧\n<code>{prefix}sg &lt;name&gt;</code> — グループのメンバーとルール\n<code>{prefix}sgdel &lt;name&gt;</code> — グループを削除\n<code>{prefix}sgadd &lt;name&gt; &lt;user_id|reply&gt;</code> — メンバーを追加\n<code>{prefix}sgrm &lt;name&gt; &lt;user_id|reply&gt;</code> — メンバーを削除\n<code>{prefix}rule &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;command|module&gt;/&lt;name&gt; [expiry]</code> — アクセスルールを追加\n<code>{prefix}rulerm &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;rule&gt;</code> — ルールを削除\n<code>{prefix}ruleclr &lt;user|chat|sgroup&gt; [target]</code> — ルールを消去\n<code>{prefix}perm &lt;user_id&gt; &lt;admin|trusted|everyone&gt; [remove]</code> — 権限を付与・取り消し\n<code>{prefix}perms</code> — 権限一覧\n<code>{prefix}whois &lt;user_id&gt;</code> — ユーザーの権限",
+    "usage": "<code>{prefix}owadd &lt;user_id|reply&gt;</code> - オーナーを追加\n<code>{prefix}owrm &lt;user_id|reply&gt;</code> - オーナーを削除\n<code>{prefix}owls</code> - オーナー一覧\n<code>{prefix}sgnew &lt;name&gt;</code> - 権限グループを作成\n<code>{prefix}sgls</code> - グループ一覧\n<code>{prefix}sg &lt;name&gt;</code> - グループのメンバーとルール\n<code>{prefix}sgdel &lt;name&gt;</code> - グループを削除\n<code>{prefix}sgadd &lt;name&gt; &lt;user_id|reply&gt;</code> - メンバーを追加\n<code>{prefix}sgrm &lt;name&gt; &lt;user_id|reply&gt;</code> - メンバーを削除\n<code>{prefix}rule &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;command|module&gt;/&lt;name&gt; [expiry]</code> - アクセスルールを追加\n<code>{prefix}rulerm &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;rule&gt;</code> - ルールを削除\n<code>{prefix}ruleclr &lt;user|chat|sgroup&gt; [target]</code> - ルールを消去\n<code>{prefix}perm &lt;user_id&gt; &lt;admin|trusted|everyone&gt; [remove]</code> - 権限を付与・取り消し\n<code>{prefix}perms</code> - 権限一覧\n<code>{prefix}whois &lt;user_id&gt;</code> - ユーザーの権限",
     "account_owner": "アカウントの所有者は削除できません。"
   },
   "inline": {

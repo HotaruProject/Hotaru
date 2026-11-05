@@ -551,7 +551,7 @@
       "self_owner": "Этот пользователь уже является владельцем аккаунта.",
       "empty": "Нет выданных прав. Используй !perm <user_id> <role>.",
       "bad_label": "Неизвестное право: {label}.",
-      "usage": "использование:\n!owadd <user_id|reply> — выдать owner\n!owrm <user_id|reply> — снять owner\n!owls — владельцы\n!sgnew <name> — создать группу прав\n!sgls — список групп\n!sg <name> — участники и права группы\n!sgdel <name> — удалить группу\n!sgadd <name> <user_id|reply> — добавить юзера в группу\n!sgrm <name> <user_id|reply> — убрать юзера из группы\n!rule <user|chat|sgroup> <target> <command|module>/<name> [срок] — выдать право\n!rulerm — убрать правило\n!ruleclr — очистить все правила цели\n!perm <user_id> <admin|trusted|everyone> [remove] — выдать/снять право\n!perms — список прав\n!whois <user_id> — права пользователя",
+      "usage": "использование:\n!owadd <user_id|reply> - выдать owner\n!owrm <user_id|reply> - снять owner\n!owls - владельцы\n!sgnew <name> - создать группу прав\n!sgls - список групп\n!sg <name> - участники и права группы\n!sgdel <name> - удалить группу\n!sgadd <name> <user_id|reply> - добавить юзера в группу\n!sgrm <name> <user_id|reply> - убрать юзера из группы\n!rule <user|chat|sgroup> <target> <command|module>/<name> [срок] - выдать право\n!rulerm - убрать правило\n!ruleclr - очистить все правила цели\n!perm <user_id> <admin|trusted|everyone> [remove] - выдать/снять право\n!perms - список прав\n!whois <user_id> - права пользователя",
       "no_groups": "Групп прав нет. Создай: !sgnew <name>",
       "no_owner_grant": "Право owner выдаётся через !owadd."
     },
@@ -636,8 +636,8 @@
     "executor": {
       "exit_code": "Код завершения: {returncode}",
       "running": "Выполняется…",
-      "usage_sh": "<b>Использование:</b> <code>{prefix}sh [команда] &lt;-so&gt;</code> — <i>выполнить shell-команду</i>",
-      "usage_py": "<b>Использование:</b> <code>{prefix}py [код] &lt;-so&gt;</code> — <i>выполнить Python-код</i>",
+      "usage_sh": "<b>Использование:</b> <code>{prefix}sh [команда] &lt;-so&gt;</code> - <i>выполнить shell-команду</i>",
+      "usage_py": "<b>Использование:</b> <code>{prefix}py [код] &lt;-so&gt;</code> - <i>выполнить Python-код</i>",
       "cancelled": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>Выполнение отменено</b>",
       "done": "Готово ✓",
       "kill_reply": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>Остановка процесса</b><blockquote>Ответьте на сообщение выполняющейся команды <code>{prefix}py</code> или <code>{prefix}sh</code>.</blockquote>",
@@ -805,7 +805,7 @@
       "webhook": "На инлайн-бота Hotaru установлен посторонний вебхук."
     },
     "flood": {
-      "notice": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>FloodWait — сообщение перенаправлено</b>\nНе удалось доставить в чат <code>{chat}</code> через <code>{source}</code>:\n<blockquote>{text}</blockquote>"
+      "notice": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>FloodWait - сообщение перенаправлено</b>\nНе удалось доставить в чат <code>{chat}</code> через <code>{source}</code>:\n<blockquote>{text}</blockquote>"
     },
     "apifw": {
       "name": "API Flood Protection",
@@ -941,7 +941,7 @@
     "ja": "Японский",
     "zh": "Китайский"
   },
-  "inline_commands_hint": "Выбери команду — введи @<бот> и её имя в любом чате",
+  "inline_commands_hint": "Выбери команду - введи @<бот> и её имя в любом чате",
   "settings": {
     "runtime_unavailable": "Сервис недоступен",
     "usage_alias": "Использование: <code>{prefix}alias &lt;алиас&gt; &lt;команда&gt;</code>",
@@ -1021,14 +1021,14 @@
     "updated": "<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> <b>Обновлён:</b> <code>{module_id}</code> <code>v{version}</code>",
     "caps_request": "Модуль {module_id} v{version} запрашивает возможности:",
     "caps_retry": "Повтори команду загрузки для подтверждения",
-    "usage_mi": "<b>Использование:</b> <code>{prefix}mi [module]</code> — <i>информация о модуле</i>",
-    "usage_help": "<b>Использование:</b> <code>{prefix}help &lt;page|module&gt;</code> — <i>справка по командам и модулям</i>",
-    "usage_reload": "<b>Использование:</b> <code>{prefix}rl [module] &lt;force&gt;</code> — <i>перезагрузить модуль</i>",
+    "usage_mi": "<b>Использование:</b> <code>{prefix}mi [module]</code> - <i>информация о модуле</i>",
+    "usage_help": "<b>Использование:</b> <code>{prefix}help &lt;page|module&gt;</code> - <i>справка по командам и модулям</i>",
+    "usage_reload": "<b>Использование:</b> <code>{prefix}rl [module] &lt;force&gt;</code> - <i>перезагрузить модуль</i>",
     "usage_unload": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>Укажите модуль:</b> <code>{prefix}ul &lt;модуль&gt;</code>",
-    "usage_reset": "<b>Использование:</b> <code>{prefix}rs [module]</code> — <i>сбросить состояние модуля</i>",
-    "usage_export": "<b>Использование:</b> <code>{prefix}ex [module]</code> — <i>экспортировать исходный код модуля</i>",
-    "usage_backup": "<b>Использование:</b> <code>{prefix}bk &lt;list|test|restore&gt; &lt;archive&gt;</code> — <i>управление копиями</i>",
-    "usage_load": "<b>Использование:</b> <code>{prefix}ld [raw-url|файл]</code> — <i>загрузить модуль</i>",
+    "usage_reset": "<b>Использование:</b> <code>{prefix}rs [module]</code> - <i>сбросить состояние модуля</i>",
+    "usage_export": "<b>Использование:</b> <code>{prefix}ex [module]</code> - <i>экспортировать исходный код модуля</i>",
+    "usage_backup": "<b>Использование:</b> <code>{prefix}bk &lt;list|test|restore&gt; &lt;archive&gt;</code> - <i>управление копиями</i>",
+    "usage_load": "<b>Использование:</b> <code>{prefix}ld [raw-url|файл]</code> - <i>загрузить модуль</i>",
     "bot_status": "Инлайн-бот: @{name} ({status})",
     "health": "Состояние: {status}",
     "last_error": "Последняя ошибка: {error}",
@@ -1064,7 +1064,7 @@
   "acl": {
     "owners": "<b>Владельцы</b><br>",
     "group_missing": "Группа <code>{name}</code> не найдена",
-    "group_item": "<b>{name}</b> — участников: {users}, правил: {rules}",
+    "group_item": "<b>{name}</b> - участников: {users}, правил: {rules}",
     "groups": "<b>Группы прав</b><br>",
     "group_rule": "<b>Правило добавлено:</b> sgroup <code>{target}</code> → {kind}/{rule}{until}",
     "permissions": "<b>Права</b><br>",
@@ -1084,12 +1084,12 @@
     "owner_confirm": "Выдать <code>{user_id}</code> полный доступ?",
     "confirm": "Подтвердить",
     "clear_confirm": "Очистить правила для <code>{scope}</code>?",
-    "kernel_rule": "Системные команды — только для владельцев.",
+    "kernel_rule": "Системные команды - только для владельцев.",
     "invalid_target": "Неверный пользователь, чат или группа.",
     "model": "У владельцев полный доступ. Остальные права настраиваются отдельно.",
     "forever": "Бессрочно",
     "allowed": "<code>{command}</code> · доступно",
-    "denied": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <code>{command}</code> — <i>нет доступа</i>",
+    "denied": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <code>{command}</code> - <i>нет доступа</i>",
     "full_owner": "Владелец · полный доступ",
     "roles": {
       "owner": "Владелец",
@@ -1178,7 +1178,7 @@
     "nothing_clear": "Очищать нечего",
     "self_owner": "Этот пользователь уже владеет аккаунтом.",
     "no_groups": "Нет групп доступа. Создать: {prefix}sgnew &lt;name&gt;",
-    "usage": "<code>{prefix}owadd &lt;user_id|reply&gt;</code> — Добавить владельца\n<code>{prefix}owrm &lt;user_id|reply&gt;</code> — Удалить владельца\n<code>{prefix}owls</code> — Список владельцев\n<code>{prefix}sgnew &lt;name&gt;</code> — Создать группу прав\n<code>{prefix}sgls</code> — Список групп\n<code>{prefix}sg &lt;name&gt;</code> — Участники и правила группы\n<code>{prefix}sgdel &lt;name&gt;</code> — Удалить группу\n<code>{prefix}sgadd &lt;name&gt; &lt;user_id|reply&gt;</code> — Добавить участника\n<code>{prefix}sgrm &lt;name&gt; &lt;user_id|reply&gt;</code> — Удалить участника\n<code>{prefix}rule &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;command|module&gt;/&lt;name&gt; [expiry]</code> — Добавить правило доступа\n<code>{prefix}rulerm &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;rule&gt;</code> — Удалить правило\n<code>{prefix}ruleclr &lt;user|chat|sgroup&gt; [target]</code> — Очистить правила\n<code>{prefix}perm &lt;user_id&gt; &lt;admin|trusted|everyone&gt; [remove]</code> — Выдать или отозвать права\n<code>{prefix}perms</code> — Список прав\n<code>{prefix}whois &lt;user_id&gt;</code> — Права пользователя",
+    "usage": "<code>{prefix}owadd &lt;user_id|reply&gt;</code> - Добавить владельца\n<code>{prefix}owrm &lt;user_id|reply&gt;</code> - Удалить владельца\n<code>{prefix}owls</code> - Список владельцев\n<code>{prefix}sgnew &lt;name&gt;</code> - Создать группу прав\n<code>{prefix}sgls</code> - Список групп\n<code>{prefix}sg &lt;name&gt;</code> - Участники и правила группы\n<code>{prefix}sgdel &lt;name&gt;</code> - Удалить группу\n<code>{prefix}sgadd &lt;name&gt; &lt;user_id|reply&gt;</code> - Добавить участника\n<code>{prefix}sgrm &lt;name&gt; &lt;user_id|reply&gt;</code> - Удалить участника\n<code>{prefix}rule &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;command|module&gt;/&lt;name&gt; [expiry]</code> - Добавить правило доступа\n<code>{prefix}rulerm &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;rule&gt;</code> - Удалить правило\n<code>{prefix}ruleclr &lt;user|chat|sgroup&gt; [target]</code> - Очистить правила\n<code>{prefix}perm &lt;user_id&gt; &lt;admin|trusted|everyone&gt; [remove]</code> - Выдать или отозвать права\n<code>{prefix}perms</code> - Список прав\n<code>{prefix}whois &lt;user_id&gt;</code> - Права пользователя",
     "account_owner": "Владельца аккаунта нельзя удалить."
   },
   "inline": {
