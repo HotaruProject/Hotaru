@@ -60,7 +60,7 @@ def home(ctx: Any, nav: Any = None) -> Any:
     rows = k.grid(options, 2)
     custom_langs = lexicon.custom_languages() if lexicon is not None else ()
     if custom_langs:
-        custom_label = ctx.t("kernel.translations.custom_packs", "Кастомные пакеты")
+        custom_label = ctx.t("kernel.translations.custom_packs", "Custom packs")
         rows.append([k.button(f"{k.icon('apps')} {custom_label} · {len(custom_langs)}", custom_menu)])
     rows.append(k.footer())
     current_label = _lang_meta(ctx, current)["name_native"]
@@ -81,10 +81,10 @@ def custom_menu(ctx: Any, nav: Any = None) -> Any:
         for lang in custom_langs
     ]
     rows: list[list[Any]] = k.grid(options, 2) if options else []
-    back_label = ctx.t("common.back", "Назад")
+    back_label = ctx.t("common.back", "Back")
     rows.append([k.button(f"{k.icon('back')} {back_label}", home), k.close()])
     current_label = _lang_meta(ctx, current)["name_native"]
-    title = ctx.t("kernel.translations.custom_title", "Кастомные языковые пакеты")
+    title = ctx.t("kernel.translations.custom_title", "Custom language packs")
     text = (
         f'{k.wordmark()}  <b>// {title}</b>\n'
         f'<tg-emoji emoji-id="5260512129240276089">📚</tg-emoji> <b>{_escape(current_label)}</b> · <code>{_escape(current)}</code>'
@@ -239,11 +239,11 @@ async def command_translate(ctx: Any, invocation: Any) -> Any:
             target_text = cap_val
 
     if not target_text:
-        await ctx.respond(f'<tg-emoji emoji-id="5260342697075416641">❌</tg-emoji> <b>{_escape(ctx.t("kernel.translations.no_text", "Текст для перевода не указан"))}</b>', parse_mode="HTML", output="edit")
+        await ctx.respond(f'<tg-emoji emoji-id="5260342697075416641">❌</tg-emoji> <b>{_escape(ctx.t("kernel.translations.no_text", "No text provided for translation"))}</b>', parse_mode="HTML", output="edit")
         return
 
     await ctx.respond(
-        f'<tg-emoji emoji-id="5291803847914698795">🌐</tg-emoji> <i>{_escape(ctx.t("kernel.translations.translating", "Переводим…"))}</i>',
+        f'<tg-emoji emoji-id="5291803847914698795">🌐</tg-emoji> <i>{_escape(ctx.t("kernel.translations.translating", "Translating…"))}</i>',
         parse_mode="HTML",
     )
 
@@ -253,12 +253,12 @@ async def command_translate(ctx: Any, invocation: Any) -> Any:
         log.error("translation error: %s", exc, exc_info=True)
         raw_err = str(exc)
         if "requires non-empty text" in raw_err:
-            msg = ctx.t("kernel.translations.empty_text", "Текст для перевода пуст")
+            msg = ctx.t("kernel.translations.empty_text", "Text for translation is empty")
         elif "exceeds" in raw_err:
-            msg = ctx.t("kernel.translations.text_too_large", "Текст слишком большой для одного запроса")
+            msg = ctx.t("kernel.translations.text_too_large", "Text is too large for a single request")
         else:
-            msg = f"{ctx.t('kernel.translations.failed', 'Не удалось перевести текст')} ({raw_err})"
-        await ctx.respond(f'<tg-emoji emoji-id="5260342697075416641">❌</tg-emoji> <b>{_escape(ctx.t("kernel.translations.error_title", "Ошибка перевода"))}:</b>\n<blockquote>{html.escape(msg, quote=False)}</blockquote>', parse_mode="HTML", output="edit")
+            msg = f"{ctx.t('kernel.translations.failed', 'Failed to translate text')} ({raw_err})"
+        await ctx.respond(f'<tg-emoji emoji-id="5260342697075416641">❌</tg-emoji> <b>{_escape(ctx.t("kernel.translations.error_title", "Translation error"))}:</b>\n<blockquote>{html.escape(msg, quote=False)}</blockquote>', parse_mode="HTML", output="edit")
         return
 
     from relay.toolkit import escape_smart
@@ -283,7 +283,7 @@ async def command_loadlex(ctx: Any, invocation: Any) -> Any:
         doc = getattr(source_msg, "document", None) or getattr(source_msg, "media", None)
     msg_text = str(getattr(source_msg, "text", "") or "").strip()
     if not invocation.args and doc is None and not (msg_text.startswith("{") and msg_text.endswith("}")):
-        await ctx.respond(f'<tg-emoji emoji-id="5260342697075416641">❌</tg-emoji> <b>{_escape(ctx.t("kernel.translations.usage_file", "Укажите ссылку, путь или сделайте реплай на файл (.json)"))}</b>', parse_mode="HTML", output="edit")
+        await ctx.respond(f'<tg-emoji emoji-id="5260342697075416641">❌</tg-emoji> <b>{_escape(ctx.t("kernel.translations.usage_file", "Provide a link, path, or reply to a JSON file (.json)"))}</b>', parse_mode="HTML", output="edit")
         return
 
     temporary = None
@@ -338,7 +338,7 @@ async def command_loadlex(ctx: Any, invocation: Any) -> Any:
         meta_dict: dict[str, Any] = cast('dict[str, Any]', raw_meta) if isinstance(raw_meta, dict) else {}
         code = str(meta_dict.get("code") or meta_dict.get("language") or code_override or "").strip().lower()
         if not re.fullmatch(r"[a-z]{2}", code):
-            raise ValueError(ctx.t("kernel.translations.code_len_error", "Код языка должен состоять ровно из 2 букв"))
+            raise ValueError(ctx.t("kernel.translations.code_len_error", "Language code must be exactly 2 letters"))
         name_en = str(meta_dict.get("name_en") or meta_dict.get("name") or code.upper()).strip()
         name_native = str(meta_dict.get("name_native") or meta_dict.get("name") or name_en).strip()
 
@@ -346,7 +346,7 @@ async def command_loadlex(ctx: Any, invocation: Any) -> Any:
         builtins = set(LANGUAGES) | {"ru", "en", "kz", "kk", "uk", "ja", "zh"}
         existing_customs: set[str] = set(lexicon.custom_languages()) if lexicon is not None else set()
         if code in builtins or code in existing_customs:
-            raise ValueError(ctx.t("kernel.translations.code_collision", "Код языка '{code}' уже используется", code=code))
+            raise ValueError(ctx.t("kernel.translations.code_collision", "Language code '{code}' is already in use", code=code))
 
         existing_names: set[str] = set()
         if lexicon is not None:
@@ -358,13 +358,13 @@ async def command_loadlex(ctx: Any, invocation: Any) -> Any:
                         existing_names.add(v.casefold())
         for n in (name_en.casefold(), name_native.casefold()):
             if n in existing_names:
-                raise ValueError(ctx.t("kernel.translations.name_collision", "Название пакета '{name}' уже используется", name=name_native))
+                raise ValueError(ctx.t("kernel.translations.name_collision", "Language pack name '{name}' is already in use", name=name_native))
 
         if lexicon is not None:
             ok, missing = lexicon.validate_coverage(data)
             if not ok:
                 examples = ", ".join(sorted(missing)[:5])
-                raise ValueError(ctx.t("kernel.translations.missing_keys", "Языковой пакет не покрывает 100% ключей: не хватает {count} ключей", count=len(missing)) + f" ({examples})")
+                raise ValueError(ctx.t("kernel.translations.missing_keys", "Language pack does not cover 100% of keys: missing {count} keys", count=len(missing)) + f" ({examples})")
 
         data["meta"] = {
             "code": code,
@@ -424,7 +424,7 @@ async def command_rmlex(ctx: Any, invocation: Any) -> Any:
     builtins = set(LANGUAGES) | {"ru", "en", "kz", "kk", "uk", "ja", "zh"}
     if code in builtins:
         await ctx.respond(
-            f'<tg-emoji emoji-id="5260342697075416641">❌</tg-emoji> <b>{_escape(ctx.t("kernel.translations.cannot_remove_builtin", "Нельзя удалить системный языковой пакет"))}:</b> <code>{_escape(code)}</code>',
+            f'<tg-emoji emoji-id="5260342697075416641">❌</tg-emoji> <b>{_escape(ctx.t("kernel.translations.cannot_remove_builtin", "Cannot remove system language pack"))}:</b> <code>{_escape(code)}</code>',
             parse_mode="HTML",
             output="edit",
         )
@@ -435,7 +435,7 @@ async def command_rmlex(ctx: Any, invocation: Any) -> Any:
         return
     if not lexicon.remove_custom(code):
         await ctx.respond(
-            f'<tg-emoji emoji-id="5260342697075416641">❌</tg-emoji> <b>{_escape(ctx.t("kernel.translations.not_found", "Кастомный языковой пакет не найден"))}:</b> <code>{_escape(code)}</code>',
+            f'<tg-emoji emoji-id="5260342697075416641">❌</tg-emoji> <b>{_escape(ctx.t("kernel.translations.not_found", "Custom language pack not found"))}:</b> <code>{_escape(code)}</code>',
             parse_mode="HTML",
             output="edit",
         )
@@ -443,7 +443,7 @@ async def command_rmlex(ctx: Any, invocation: Any) -> Any:
     if runtime.language() == code:
         runtime.set_language("en")
     await ctx.respond(
-        f'<tg-emoji emoji-id="5260726538302660868">✅</tg-emoji> <b>{_escape(ctx.t("kernel.translations.removed", "Кастомный языковой пакет удален"))}:</b> <code>{_escape(code)}</code>',
+        f'<tg-emoji emoji-id="5260726538302660868">✅</tg-emoji> <b>{_escape(ctx.t("kernel.translations.removed", "Custom language pack removed"))}:</b> <code>{_escape(code)}</code>',
         parse_mode="HTML",
         output="edit",
     )
