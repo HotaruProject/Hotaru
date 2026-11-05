@@ -1,11 +1,11 @@
 HOTARU = {
     "id": "singularity",
-    "version": "2.0.0",
+    "version": "2.0.1",
     "commands": ["dash"],
     "capabilities": ["mt"],
+    "banner": "https://raw.githubusercontent.com/HotaruProject/Hotaru/develop/hotaru/assets/singularity.mp4",
 }
 
-import html
 from typing import Any
 
 from singularity.relay import get_sanctuary_app_state, resolve_inline_banner_url
@@ -23,14 +23,17 @@ def _tr(ctx: Any, key: str, fallback: str, **kwargs: Any) -> str:
 
 async def command_dash(ctx: Any, invocation: Any) -> None:
     runtime = ctx.runtime
-    svc = getattr(runtime, "singularity", None)
-    if svc is None and hasattr(runtime, "_start_singularity"):
-        await runtime._start_singularity()
-        svc = getattr(runtime, "singularity", None)
-
     ready_info: dict[str, Any] = {}
-    if svc is not None and hasattr(svc, "ensure_ready"):
-        ready_info = await svc.ensure_ready()
+    if hasattr(runtime, "sync_web_app"):
+        ready_info = await runtime.sync_web_app() or {}
+    else:
+        svc = getattr(runtime, "singularity", None)
+        if svc is None and hasattr(runtime, "_start_singularity"):
+            await runtime._start_singularity()
+            svc = getattr(runtime, "singularity", None)
+        if svc is not None and hasattr(svc, "ensure_ready"):
+            ready_info = await svc.ensure_ready()
+    svc = getattr(runtime, "singularity", None)
 
     state = getattr(runtime, "state", None)
     db_state = get_sanctuary_app_state(state)
@@ -65,54 +68,51 @@ async def command_dash(ctx: Any, invocation: Any) -> None:
 
     status_tag = "ONLINE" if probe_online else "STANDBY"
     sync_tag = "SYNCED" if registered else "PENDING"
-    horizon_display = html.escape(tunnel_url) if tunnel_url else "initializing..."
+    status_emoji = '<tg-emoji emoji-id="5260726538302660868">✅</tg-emoji>' if probe_online else '<tg-emoji emoji-id="5260342697075416641">❌</tg-emoji>'
+    sync_emoji = '<tg-emoji emoji-id="5260726538302660868">✅</tg-emoji>' if registered else '<tg-emoji emoji-id="5260342697075416641">❌</tg-emoji>'
 
-    header = _tr(ctx, "kernel.singularity.card_title", "🕳 <b>Hotaru // Singularity</b>")
-    sub = _tr(
-        ctx,
-        "kernel.singularity.card_subtitle",
-        "<i>3D Event Horizon · Node.Probe · Read-Only Observatory Stream</i>",
-    )
+    header = _tr(ctx, "kernel.singularity.card_title", '<tg-emoji emoji-id="5985527717183888277">⚡</tg-emoji><tg-emoji emoji-id="5985515480822061758">⚡</tg-emoji><tg-emoji emoji-id="5985558606588681366">⚡</tg-emoji><tg-emoji emoji-id="5985757321840565902">⚡</tg-emoji> <b>// Singularity</b>')
+    probe_label = _tr(ctx, "kernel.singularity.probe", "Probe")
+    relay_label = _tr(ctx, "kernel.singularity.relay", "Relay")
     lines = [
         header,
-        sub,
-        "",
-        f"▸ <b>Probe:</b> <code>{status_tag}</code> · <b>Relay:</b> <code>{sync_tag}</code>",
-        f"▸ <b>Horizon:</b> <code>{horizon_display}</code>",
+        "<blockquote>"
+        f'<tg-emoji emoji-id="5258152182150077732">⚡️</tg-emoji> <b>{probe_label}:</b> {status_emoji} <code>{status_tag}</code><br>'
+        f'<tg-emoji emoji-id="5260730055880876557">⛓</tg-emoji> <b>{relay_label}:</b> {sync_emoji} <code>{sync_tag}</code>'
+        "</blockquote>",
     ]
-    if bot_user:
-        lines.append(f"▸ <b>Inline Bot:</b> <code>@{html.escape(bot_user)}</code>")
     text = "\n".join(lines)
 
-    open_label = _tr(ctx, "kernel.singularity.open_button", "🕳 Открыть Singularity")
-    close_label = _tr(ctx, "common.close", "✖ Закрыть")
+    open_label = _tr(ctx, "kernel.singularity.open_button", "Open Singularity")
 
     launch_url = app_link or tunnel_url
     buttons: list[list[dict[str, Any]]] = []
     if launch_url:
-        buttons.append([{"text": open_label, "url": launch_url}])
+        buttons.append([{"text": f"⚡ {open_label}", "url": launch_url, "style": "primary"}])
 
     if hasattr(ctx, "ui") and hasattr(ctx.ui, "close"):
-        buttons.append([ctx.ui.close(close_label)])
+        buttons.append([ctx.ui.close("✕ Close")])
 
     banner_url = ready_info.get("banner_url")
     if not banner_url:
         banner_url = await resolve_inline_banner_url(tunnel_url or None)
+    if not banner_url:
+        banner_url = "https://raw.githubusercontent.com/HotaruProject/Hotaru/develop/singularity/assets/WebApp.jpg"
 
     if buttons and hasattr(ctx, "form"):
         if isinstance(banner_url, str) and banner_url.startswith("https://"):
             try:
-                await ctx.form(text, buttons, module_id="singularity", photo=banner_url)
+                await ctx.form(text, buttons, module_id="singularity", photo=banner_url, rich=True)
                 return
             except Exception:
                 pass
         try:
-            await ctx.form(text, buttons, module_id="singularity")
+            await ctx.form(text, buttons, module_id="singularity", rich=True)
             return
         except Exception:
             pass
 
     if buttons and hasattr(ctx, "answer"):
-        await ctx.answer(text, rows=buttons, parse_mode="HTML")
+        await ctx.answer(text, rows=buttons, parse_mode="HTML", rich=True)
     else:
-        await ctx.respond(text, parse_mode="HTML")
+        await ctx.respond(text, photo=banner_url, parse_mode="HTML", rich=True)

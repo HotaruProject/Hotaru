@@ -31,6 +31,10 @@ SESSION_ERRORS = frozenset({
     "AUTH_KEY_DUPLICATED",
     "SESSION_REVOKED",
     "SESSION_EXPIRED",
+    "USER_DEACTIVATED_BAN",
+    "ACCOUNT_RESTRICTED",
+    "FROZEN_METHOD_NOT_AVAILABLE",
+    "PRIVACY_RESTRICTED",
 })
 
 log = logging.getLogger(__name__)
@@ -47,7 +51,16 @@ async def check_session(app: Any) -> bool:
             raise
         mt = app.mt
         await asyncio.wait_for(mt.close(), timeout=AUTH_TIMEOUT)
-        if app.session.path is not None:
+        if app.session.path is not None and app.session.path.exists():
+            try:
+                sz = app.session.path.stat().st_size
+                with app.session.path.open("r+b") as h:
+                    h.seek(0)
+                    h.write(b"\x00" * sz)
+                    h.flush()
+                    os.fsync(h.fileno())
+            except Exception:
+                pass
             app.session.path.unlink(missing_ok=True)
         app.session.data.clear()
         app.core.self_id = 0
@@ -1352,6 +1365,199 @@ async def _qr_login(app: Any, api_id: int, api_hash: str) -> dict[str, Any] | No
         return None
 
 
+async def _bot_identity(token: str) -> tuple[str | None, int | None]:
+    from goygram import GoyGram
+
+    app = GoyGram(bot_token=token, default_transport="api")
+    try:
+        me = await app.get_me()
+        if not isinstance(me, dict):
+            return None, None
+        username = me.get("username")
+        bot_id = me.get("id")
+        if not isinstance(username, str) or not username:
+            username = None
+        if not isinstance(bot_id, int) or bot_id <= 0:
+            bot_id = None
+        return username, bot_id
+    except Exception:
+        return None, None
+    finally:
+        try:
+            await app.close()
+        except Exception:
+            pass
+
+
+def _owner_id_problem(raw: str) -> str | None:
+    value = raw.strip()
+    if not value.isdigit():
+        return "the Telegram ID is a number, e.g. 123456789"
+    return None
+
+
+async def _bot_login(runtime: Any) -> tuple[int, Any] | None:
+    from .botlogin import EchoBot, token_problem
+
+    config = runtime.config
+    api_id = int(config.api_id)
+    api_hash = str(config.api_hash)
+    token = _ask("Bot token", secret=True, validate=token_problem)
+    if not token:
+        return None
+    bot = EchoBot(api_id, api_hash, token, Path(config.session_dir))
+    try:
+        await bot.start()
+    except Exception as exc:
+        log_error(f"Bot connection failed: {exc}")
+        await bot.close()
+        return None
+    username, _ = await _bot_identity(token)
+    try:
+        handle = f"@{username}" if username else "the bot"
+        note(
+            f"Open {handle} in Telegram and send /start.\nThe bot runs in echo mode and replies with your Telegram ID only.",
+            "bot echo mode",
+        )
+        owner = await _spin("Waiting for the bot report", bot.wait_for_owner(300.0))
+    except Exception as exc:
+        log_error(f"Bot login failed: {exc}")
+        await bot.close()
+        return None
+    entered = _ask("Enter your Telegram ID", placeholder=str(owner), validate=_owner_id_problem)
+    try:
+        confirmed = int(entered.strip())
+    except ValueError:
+        confirmed = -1
+    if confirmed != owner:
+        log_error("The entered ID does not match the bot report.")
+        await bot.close()
+        return None
+    state = getattr(runtime, "state", None)
+    if state is not None:
+        state.set_setting("owner-id", owner)
+    log_info(f"Bot verified, Telegram ID {owner} confirmed over SSH.")
+    return owner, bot
+
+
+async def _phone_login_via_bot(app: Any, api_id: int, api_hash: str, bot: Any) -> dict[str, Any] | None:
+    from goygram import ext as rx
+    security = importlib.import_module("goygram.security")
+    _extract_error = cast(Callable[[dict[str, Any]], str | None], getattr(security, "_extract_error"))
+    _extract_phone_code_hash = cast(Callable[[dict[str, Any]], str | None], getattr(security, "_extract_phone_code_hash"))
+    _extract_user = cast(Callable[[Any], dict[str, Any] | None], getattr(security, "_extract_user"))
+    _mt_req_with_migrate = cast(Callable[..., Awaitable[dict[str, Any]]], getattr(security, "_mt_req_with_migrate"))
+
+    async def _rpc(act: str, **kw: Any) -> tuple[dict[str, Any] | None, str]:
+        try:
+            res = await _mt_req_with_migrate(app, act, **kw)
+        except Exception as exc:
+            return None, str(exc)
+        return res, _extract_error(res) or ""
+
+    raw_phone = await bot.ask("Sign-in started.\nSend your phone number with the country code, e.g. +1 555 000 1234")
+    phone = _phone(raw_phone)
+    settings = rx.serialize_constructor("codeSettings", {"flags": 0})
+    total_code_attempts = 0
+    for attempt in range(3):
+        sent, send_err = await _rpc(
+            "auth_send_code", phone_number=phone, api_id=api_id, api_hash=api_hash, settings=settings,
+        )
+        if send_err and "SESSION_PASSWORD_NEEDED" not in send_err:
+            log_error(send_err)
+            return None
+        code_hash = _extract_phone_code_hash(sent) if sent else None
+        if not code_hash:
+            log_error("no code hash")
+            return None
+        if attempt > 0:
+            await bot.send("A new code was sent to your Telegram.")
+        while total_code_attempts < 5:
+            total_code_attempts += 1
+            expiry_note = "A fresh code was just sent." if attempt > 0 else "Code sent to your Telegram."
+            code = await bot.ask_code(f"{expiry_note}\nEnter the login code with the buttons below. (attempt {total_code_attempts}/5)")
+            sign, sign_err = await _rpc(
+                "auth_sign_in", phone_number=phone, phone_code=code, phone_code_hash=code_hash,
+                api_id=api_id, api_hash=api_hash,
+            )
+            if "PHONE_CODE_EXPIRED" in sign_err or "PHONE_CODE_EMPTY" in sign_err:
+                await bot.send("The code was already used or expired, requesting a fresh one.")
+                break
+            if "PHONE_CODE_INVALID" in sign_err or "CODE_INVALID" in sign_err:
+                await bot.send("That code is wrong. Try again.")
+                continue
+            if sign_err and "SESSION_PASSWORD_NEEDED" not in sign_err:
+                log_error(sign_err)
+                return None
+            final = sign or {}
+            if "SESSION_PASSWORD_NEEDED" in sign_err:
+                for pwd_attempt in range(3):
+                    pwd = await bot.ask(f"Your account has 2FA.\nSend the cloud password (try {pwd_attempt + 1}/3)")
+                    check, err2 = await _rpc("auth_check_password", password=pwd, api_id=api_id, api_hash=api_hash)
+                    if err2 and "PASSWORD_HASH_INVALID" in err2:
+                        await bot.send("That password is wrong. Try again.")
+                        continue
+                    if err2:
+                        log_error(err2)
+                        return None
+                    final = check or {}
+                    break
+                else:
+                    log_error("2FA password attempts exhausted")
+                    return None
+            user = _extract_user(final)
+            if not user:
+                log_error("no user in session")
+                return None
+            return {"user": user, "raw": final}
+    log_error("code attempts exhausted")
+    return None
+
+
+async def _authorize_via_bot(app: Any, api_id: int, api_hash: str, bot: Any) -> dict[str, Any] | None:
+    await bot.send("Answer the next questions here in the bot chat to sign in.")
+    return await _phone_login_via_bot(app, api_id, api_hash, bot)
+
+
+def install_daemon_prompt(runtime: Any = None) -> None:
+    from .daemon import DaemonError, install_daemon, is_root
+
+    state = getattr(runtime, "state", None) if runtime is not None else None
+    if state is not None and state.get_setting("daemon-install-offered"):
+        return
+    if state is not None:
+        state.set_setting("daemon-install-offered", True)
+    if shutil.which("systemctl") is None:
+        note("systemd is not available on this system, the daemon stays manual.", "daemon")
+        return
+    scope = "system" if is_root() else "user"
+    answer = select(
+        f"Install the Hotaru daemon ({scope} scope) so it starts automatically?",
+        [
+            {"value": "yes", "label": "Yes", "hint": "start on boot"},
+            {"value": "no", "label": "No", "hint": "run it manually"},
+        ],
+        initial="yes",
+    )
+    if answer != "yes":
+        note("Daemon installation skipped.", "daemon")
+        return
+    try:
+        path = install_daemon(start=False)
+    except DaemonError as exc:
+        log_error(f"Daemon installation failed: {exc}")
+        return
+    except Exception as exc:
+        log_error(f"Daemon installation failed: {exc}")
+        return
+    log_info(f"Daemon installed and enabled: {path}")
+    note(
+        "The daemon takes over on the next login or reboot.\n"
+        + ("systemctl status hotaru" if is_root() else "systemctl --user status hotaru"),
+        "daemon ready",
+    )
+
+
 async def sign_in(runtime: Any) -> dict[str, str]:
     try:
         return await _sign_in(runtime)
@@ -1378,14 +1584,35 @@ async def _sign_in(runtime: Any) -> dict[str, str]:
         [
             {"value": "qr", "label": "QR code", "hint": "scan with the Telegram app"},
             {"value": "phone", "label": "Phone number"},
+            {"value": "bot", "label": "Bot token", "hint": "the bot reports your Telegram ID"},
         ],
         initial="qr",
     )
     packed = None
+    bot = None
+    if method == "bot":
+        bot_state = await _bot_login(runtime)
+        if bot_state is None:
+            log_warn("Bot login unavailable, phone login")
+            method = "phone"
+        else:
+            _owner, bot = bot_state
+            install_daemon_prompt(runtime)
+            method = "bot"
     if method == "qr":
         packed = await _qr_login(app, api_id, api_hash)
         if packed is None:
             log_warn("QR failed, phone login")
+    if method == "bot" and bot is not None:
+        try:
+            packed = await _authorize_via_bot(app, api_id, api_hash, bot)
+        except Exception as exc:
+            log_error(f"Bot authorization failed: {exc}")
+            packed = None
+        finally:
+            await bot.close()
+        if packed is None:
+            log_warn("Bot authorization failed, phone login")
     if packed is None:
         while True:
             try:

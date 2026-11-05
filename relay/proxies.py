@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import asyncio
 import html
+import inspect
 import secrets
 import time
+from pathlib import Path
 from typing import Any, Awaitable, Callable, cast
 
 from .caps import MT_BLOCKED, MT_BLOCKED_PREFIXES, normalize_method
@@ -13,7 +15,7 @@ from .firewall import trusted_scope
 from goygram.sugar import extract_sent_message
 from . import emoji
 from .emoji import to_entities, to_rich
-from goygram.types.kbd import kbd_to_tl
+from hotaru.markup import kbd_to_tl
 
 
 def _data(value: object) -> dict[str, Any] | None:
@@ -125,7 +127,7 @@ class Gateway:
         payload: dict[str, Any] = {"message": text, "peer": chat, "reply_to": {"_": "inputReplyToMessage", "reply_to_msg_id": int(message_id)}, **kwargs}
         return await self.call("messages.sendMessage", payload)
 
-    async def react(self, chat: int | str, message_id: int, emoji: str = "👍", **kwargs: Any) -> Any:
+    async def react(self, chat: int | str, message_id: int, emoji: str = "\U0001F44D", **kwargs: Any) -> Any:
         reaction: list[dict[str, Any]] = [{"_": "reactionEmoji", "emoticon": emoji}]
         if kwargs.get("big"):
             reaction[0] = {"_": "reactionEmoji", "emoticon": emoji, "flags": 1}
@@ -619,6 +621,15 @@ class BotGateway:
         return method
 
 
+def topic_emoji_id(title: str) -> int | None:
+    t = str(title).casefold()
+    if any(k in t for k in ("log", "журнал")):
+        return 5257965174979042426
+    if any(k in t for k in ("backup", "бэкап", "бекап")):
+        return 5258514780469075716
+    return None
+
+
 class ForumHelper:
     def __init__(self, runtime: Any) -> None:
         self._runtime = runtime
@@ -902,6 +913,11 @@ class ForumHelper:
                 )
             except Exception as exc:
                 self._emit("create_failed", detail=str(exc)[:160])
+                exc_str = str(exc).upper()
+                if any(err in exc_str for err in ("USER_RESTRICTED", "PEER_FLOOD", "CHAT_RESTRICTED", "CHANNELS_ADMIN_LOCATED_TOO_MUCH", "CHANNELS_TOO_MUCH")):
+                    from hotaru.accounts import handle_account_critical_failure
+                    owner = getattr(self._runtime.config, "owner_id", 0)
+                    handle_account_critical_failure(self._runtime.config.session_dir, owner, f"Group creation restricted: {type(exc).__name__} ({exc})", self._runtime)
                 raise
             body = self._body(result)
             for item in _items(body.get("chats")):
@@ -931,9 +947,58 @@ class ForumHelper:
             await self._promote_bot(chat_id)
             await self._hide_general(chat_id)
             await self._sync_channel_to_bot(chat_id)
+            await self._apply_group_avatar(chat_id)
+            if manager is not None and getattr(manager, "info", None) is not None:
+                try:
+                    await manager._apply_bot_avatar(manager.info)
+                except Exception:
+                    pass
             self._applied.add(chat_id)
         except Exception as exc:
             self._emit("apply_failed", error=type(exc).__name__, detail=str(exc)[:160])
+
+    async def _apply_group_avatar(self, chat_id: int) -> None:
+        state = getattr(self._runtime, "state", None)
+        app = getattr(self._runtime, "app", None)
+        if app is None:
+            return
+        root = Path(__file__).resolve().parent.parent
+        candidates: list[Path] = [root / "hotaru/assets/logo.png", root / "hotaru/assets/avatar.png"]
+        logo_path: Path | None = next((p for p in candidates if p.is_file()), None)
+        if logo_path is None:
+            return
+        import hashlib
+        digest = hashlib.sha256(logo_path.read_bytes()).hexdigest()
+        key = f"brand-avatar-forum-{chat_id}"
+        should_update = state is None or state.get_setting(key) != digest
+        if not should_update:
+            try:
+                peer = self._user_channel(chat_id)
+                if peer is not None:
+                    full = await self._user_call("channels.getFullChannel", channel=peer)
+                    body_dict = self._body(full)
+                    chats = cast('list[Any]', body_dict.get("chats", []))
+                    if chats:
+                        chat_obj = cast('dict[str, Any]', chats[0]) if isinstance(chats[0], dict) else {}
+                        photo = chat_obj.get("photo")
+                        if not photo or (isinstance(photo, dict) and cast('dict[str, Any]', photo).get("_") == "chatPhotoEmpty"):
+                            should_update = True
+            except Exception:
+                pass
+        if not should_update:
+            return
+        try:
+            peer = self._user_channel(chat_id)
+            if peer is None:
+                return
+            from relay.files import document, put
+            up = await put(app, str(logo_path), file_name=str(logo_path.name))
+            uploaded_file = document(up)["file"]
+            await self._user_call("channels.editPhoto", channel=peer, photo={"_": "inputChatUploadedPhoto", "file": uploaded_file})
+            if state is not None:
+                state.set_setting(key, digest)
+        except Exception as exc:
+            self._emit("avatar_failed", error=type(exc).__name__, detail=str(exc)[:140])
 
     async def _user_bot(self, bot_id: int, username: str) -> dict[str, Any] | None:
         entity = self._user_mt().entities.get(("user", bot_id))
@@ -1083,7 +1148,7 @@ class ForumHelper:
             self._emit("bot_sync_failed", chat=chat_id, error=type(exc).__name__, detail=str(exc)[:160])
             return
 
-    async def ensure_topic(self, title: str) -> int | None:
+    async def ensure_topic(self, title: str, icon_emoji_id: int | None = None) -> int | None:
         chat_id = await self.ensure_group()
         if chat_id is None:
             return None
@@ -1096,13 +1161,40 @@ class ForumHelper:
         for item in _items(self._body(result).get("topics")):
             topic = _data(item)
             if topic is not None and isinstance(topic.get("id"), int) and str(topic.get("title") or "") == title:
-                return int(topic["id"])
+                tid = int(topic["id"])
+                eid = icon_emoji_id if icon_emoji_id is not None else topic_emoji_id(title)
+                if eid:
+                    prem = False
+                    try:
+                        if hasattr(self._runtime, "is_premium"):
+                            val = self._runtime.is_premium()
+                            prem = await val if inspect.isawaitable(val) else bool(val)
+                    except Exception:
+                        pass
+                    if prem and topic.get("icon_emoji_id") != eid:
+                        try:
+                            await self._user_call("messages.editForumTopic", peer=chat_id, topic_id=tid, icon_emoji_id=eid)
+                        except Exception:
+                            pass
+                return tid
         now = time.monotonic()
         last = self._topic_tries.get(title, 0.0)
         if now - last < 60.0:
             return None
         self._topic_tries[title] = now
-        created = await self._user_call("messages.createForumTopic", peer=chat_id, title=title, random_id=secrets.randbits(63))
+        topic_kwargs: dict[str, Any] = {"peer": chat_id, "title": title, "random_id": secrets.randbits(63)}
+        try:
+            prem = False
+            if hasattr(self._runtime, "is_premium"):
+                val = self._runtime.is_premium()
+                prem = await val if inspect.isawaitable(val) else bool(val)
+            if prem:
+                eid = icon_emoji_id if icon_emoji_id is not None else topic_emoji_id(title)
+                if eid:
+                    topic_kwargs["icon_emoji_id"] = eid
+        except Exception:
+            pass
+        created = await self._user_call("messages.createForumTopic", **topic_kwargs)
         body = self._body(created)
         self._ingest_user(created)
         for item in _items(body.get("updates")):
@@ -1491,9 +1583,9 @@ class UiHelper:
     def url(self, text: str, url: str) -> dict[str, str]:
         return self.button_url(text, url)
 
-    def close(self, text: str = "Close") -> dict[str, str]:
-        if text == "Close" and self._router is not None and self._router.runtime is not None:
-            text = self._router.runtime.t("common.close")
+    def close(self, text: str = "✕ Close") -> dict[str, str]:
+        if not text or text in {"Close", "Закрыть", "✕ Закрыть", "閉じる", "Жабу", "关闭", "Закрити"}:
+            text = "✕ Close"
         async def handler(callback: Any, payload: Any) -> Any:
             try:
                 await callback.respond()

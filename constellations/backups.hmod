@@ -1,0 +1,171 @@
+HOTARU = {
+    "id": "backups",
+    "version": "1.1.0",
+    "commands": ["backup", "restore"],
+    "capabilities": ["mt", "state", "files", "modules"],
+    "banner": "https://raw.githubusercontent.com/HotaruProject/Hotaru/develop/hotaru/assets/backups.mp4",
+    "tasks": {"send": {"interval": 60, "autostart": True}},
+    "config_schema": {
+        "enabled": {"type": "bool", "default": True},
+        "interval_hours": {"type": "int", "default": 24, "minimum": 1, "maximum": 720},
+    },
+}
+
+import asyncio
+import html
+import tempfile
+import time
+from pathlib import Path
+from typing import Any
+
+_lock = asyncio.Lock()
+TOPIC_EMOJI_ID = 5258514780469075716
+
+
+def home(ctx: Any, nav: Any = None) -> Any:
+    k = ctx.screens
+    enabled = ctx.config.get("enabled", True)
+    hours = ctx.config.get("interval_hours", 24)
+    last = ctx.state.get("last_sent", 0)
+    status = ctx.t("kernel.backups.enabled" if enabled else "kernel.backups.disabled")
+    text = ctx.t("kernel.backups.heading", icon='<tg-emoji emoji-id="5257969839313526622">📁</tg-emoji>', status=status, hours=hours)
+    if last:
+        text += "\n" + ctx.t("kernel.backups.last_sent", date=time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime(last)))
+    text += "\n" + ctx.t("kernel.backups.destination", topic=html.escape(ctx.t("kernel.backups.topic")))
+    text += "\n" + ctx.t("kernel.backups.encrypted")
+    return k.screen(text, [
+        [k.button(ctx.t("kernel.backups.send_now"), send_now)],
+        [k.button(ctx.t("kernel.backups.disable" if enabled else "kernel.backups.enable"), toggle)],
+        k.footer(),
+    ], banner=k.banner("backups"))
+
+
+def toggle(ctx: Any, nav: Any) -> Any:
+    ctx.config.set("enabled", not ctx.config.get("enabled", True))
+    return home(ctx)
+
+
+async def _send(ctx: Any, *, automatic: bool = False) -> bool:
+    async with _lock:
+        now = time.time()
+        if automatic:
+            if not ctx.config.get("enabled", True):
+                return False
+            if now - ctx.state.get("last_sent", 0) < ctx.config.get("interval_hours", 24) * 3600:
+                return False
+        topic = await ctx.forum.ensure_topic(ctx.t("kernel.backups.topic"), icon_emoji_id=TOPIC_EMOJI_ID)
+        if topic is None:
+            raise RuntimeError(ctx.t("kernel.backups.not_ready"))
+        archive = ctx.runtime.create_backup()
+        caption = ctx.t("kernel.backups.caption", name=archive.name)
+        await ctx.forum.send_file(topic, str(archive), caption, file_name=archive.name)
+        ctx.state.set("last_sent", time.time())
+        return True
+
+
+async def send_now(ctx: Any, nav: Any) -> Any:
+    try:
+        await _send(ctx)
+    except Exception as exc:
+        return home(ctx).with_notice(ctx.t("kernel.backups.failed", error=html.escape(str(exc))))
+    return home(ctx).with_notice(ctx.t("kernel.backups.sent"))
+
+
+async def task_send(ctx: Any) -> None:
+    ready = getattr(ctx.runtime, "_forum_ready", None)
+    if ready is None or not ready.is_set():
+        return
+    await _send(ctx, automatic=True)
+
+
+async def command_restore(ctx: Any, invocation: Any) -> None:
+    runtime = ctx.runtime
+    if runtime is None:
+        await ctx.respond(ctx.t('kernel.kernel.runtime_unavailable'))
+        return
+    temporary = None
+    log_lines = ["-----> Locating backup archive..."]
+    await ctx.respond(f"<pre>{chr(10).join(log_lines)}</pre>", parse_mode="HTML")
+    try:
+        archive_path = None
+        args = [a for a in invocation.args if a != "restore"]
+        if args:
+            target = str(args[0]).strip()
+            if target.startswith("https://") or target.startswith("http://"):
+                import urllib.request
+                with tempfile.NamedTemporaryFile(suffix=".hbk", delete=False) as handle:
+                    temporary = Path(handle.name)
+                req = urllib.request.Request(target, headers={"User-Agent": "HotaruBackupRestore/1.0"})
+                with urllib.request.urlopen(req, timeout=15) as resp:
+                    temporary.write_bytes(resp.read())
+                archive_path = temporary
+            else:
+                p = Path(target)
+                if not p.is_file():
+                    await ctx.respond(f"<pre> !     Error: backup archive not found: {html.escape(target)}</pre>", parse_mode="HTML", output="edit")
+                    return
+                archive_path = p
+        else:
+            msg = invocation.message
+            doc_msg = None
+            if msg is not None:
+                if hasattr(msg, "reply_to_msg") and getattr(msg.reply_to_msg, "media", None):
+                    doc_msg = msg.reply_to_msg
+                elif getattr(msg, "media", None) or getattr(msg, "document", None):
+                    doc_msg = msg
+            if doc_msg is None:
+                await ctx.respond(f"<pre> !     Error: reply to an .hbk file or provide an archive path/url</pre>", parse_mode="HTML", output="edit")
+                return
+            with tempfile.NamedTemporaryFile(suffix=".hbk", delete=False) as handle:
+                temporary = Path(handle.name)
+            await runtime._download_module_message(doc_msg, temporary)
+            archive_path = temporary
+
+        log_lines[-1] += " done"
+        log_lines.append("-----> Decrypting HBK container with sanctuary vault key...")
+        await ctx.respond(f"<pre>{chr(10).join(log_lines)}</pre>", parse_mode="HTML", output="edit")
+
+        plan = runtime.backups.plan(archive_path)
+
+        log_lines[-1] += " done"
+        log_lines.append(f"-----> Verifying manifest integrity ({len(plan.files)} entries)...")
+        await ctx.respond(f"<pre>{chr(10).join(log_lines)}</pre>", parse_mode="HTML", output="edit")
+
+        log_lines[-1] += " done"
+        log_lines.append("-----> Restoring database state snapshot...")
+        await ctx.respond(f"<pre>{chr(10).join(log_lines)}</pre>", parse_mode="HTML", output="edit")
+
+        modules_dir = runtime.constellations_dir
+        await runtime.restore_filesystem(plan, modules_dir)
+
+        log_lines[-1] += " done"
+        log_lines.append("-----> Unpacking and activating modules...")
+        log_lines.append("-----> Done! System restored successfully.")
+        await ctx.respond(f"<pre>{chr(10).join(log_lines)}</pre>", parse_mode="HTML", output="edit")
+
+        notice = f'<tg-emoji emoji-id="5260726538302660868">✅</tg-emoji> <b>{ctx.t("runtime.restore_done")}</b><blockquote><tg-emoji emoji-id="5258514780469075716">📂</tg-emoji> <b>{ctx.t("kernel.backups.restored_files", count=len(plan.files))}</b></blockquote>'
+        await ctx.respond(notice, parse_mode="HTML", output="edit")
+    except Exception as exc:
+        log_lines.append(f" !     {type(exc).__name__}: {html.escape(str(exc))}")
+        await ctx.respond(f"<pre>{chr(10).join(log_lines)}</pre>", parse_mode="HTML", output="edit")
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+
+
+async def command_backup(ctx: Any, invocation: Any) -> None:
+    args = list(invocation.args)
+    if args and args[0] == "restore":
+        await command_restore(ctx, invocation)
+        return
+    if args == ["now"]:
+        screen = await send_now(ctx, None)
+    elif args in (["on"], ["off"]):
+        ctx.config.set("enabled", args[0] == "on")
+        screen = home(ctx)
+    elif not args:
+        screen = home(ctx)
+    else:
+        await ctx.respond(ctx.t("kernel.backups.usage", prefix=html.escape(ctx.runtime.config.prefix)), parse_mode="HTML")
+        return
+    await ctx.screens.show(screen)

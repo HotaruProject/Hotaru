@@ -1,12 +1,15 @@
 {
   "meta": {
+    "code": "kz",
     "language": "kz",
-    "name": "Қазақша"
+    "name": "Қазақша",
+    "name_en": "Kazakh",
+    "name_native": "Қазақша"
   },
   "commands": {
     "lang": {
       "description": "Тілді көрсету немесе өзгерту",
-      "usage": "{prefix}lang [тіл]",
+      "usage": "{prefix}language [тіл]",
       "invalid": "Қолдау көрсетілмейтін тіл: {language}",
       "changed": "Тіл {language} болып өзгертілді",
       "unavailable": "Қызмет қолжетімсіз",
@@ -79,13 +82,9 @@
     "help": {
       "description": "Hotaru көмек модулі",
       "commands": {
-        "hlp": {
-          "description": "Көмек каталогы",
-          "usage": "[модуль]"
-        },
         "help": {
           "description": "Көмек каталогы",
-          "usage": "[модуль]"
+          "usage": "[module]"
         }
       }
     },
@@ -93,24 +92,36 @@
       "description": "Қуатты басқару",
       "commands": {
         "restart": {
-          "description": "Юзерботты қайта қосу"
+          "description": "Юзерботты қайта қосу",
+          "usage": "[-f|--force]"
         },
         "stop": {
-          "description": "Юзерботты тоқтату"
+          "description": "Юзерботты тоқтату",
+          "usage": "[-f|--force]"
         },
         "start": {
-          "description": "Юзерботты жалғастыру"
+          "description": "Юзерботты жалғастыру",
+          "usage": ""
+        },
+        "resume": {
+          "description": "Юзербот жұмысын жалғастыру",
+          "usage": ""
         }
       },
-      "restarted": "Юзербот сәтті қайта қосылды ({took})",
-      "already_stopped": "Юзербот тоқтатылған.",
-      "stopped": "Юзербот тоқтатылды.",
-      "stopped_details": "Қалыпты модульдер өшірілген. {prefix}start сияқты ядро пәрмендері жұмыс істейді.",
-      "already_started": "Юзербот қосылған.",
-      "started": "Юзербот қосылды. Барлық пәрмендер қайта жұмыс істейді.",
-      "restarting": "Юзербот қайта қосылуда…",
-      "running": "Юзербот жұмыс істеп тұр.",
-      "already_running": "Юзербот әлдеқашан жұмыс істеп тұр."
+      "restarted": "<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> <b>Hotaru сәтті қайта іске қосылды</b>\n<blockquote><tg-emoji emoji-id=\"5258152182150077732\">⚡️</tg-emoji> <b>Аяқталды:</b> <code>{took}</code></blockquote>",
+      "already_stopped": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>Юзербот әлдеқашан тоқтатылған.</b>",
+      "stopped": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>Юзербот тоқтатылды</b>",
+      "stopped_details": "<blockquote>Қарапайым модульдер өшірілді, бірақ ядро командалары (мысалы, <code>{prefix}start</code>) жұмыс істей береді.</blockquote>",
+      "already_started": "<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> <b>Юзербот іске қосылған.</b>",
+      "started": "<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> <b>Юзербот іске қосылды</b>\n<blockquote>Командаларды өңдеу қайта басталды.</blockquote>",
+      "restarting": "<tg-emoji emoji-id=\"5258420634785947640\">🔄</tg-emoji> <b>Hotaru қайта іске қосылуда…</b>\n<blockquote>Күйді сақтау және процестерді қайта жүктеу</blockquote>",
+      "running": "<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> <b>Юзербот жұмыс істеп тұр</b>",
+      "already_running": "<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> <b>Юзербот әлдеқашан жұмыс істеп тұр.</b>",
+      "stop_confirm": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>Юзерботты тоқтатасыз ба?</b><br>Қалыпты модульдер {prefix}start пәрменіне дейін үнсіз қалады.",
+      "stop_action": "Тоқтату",
+      "restart_confirm": "<tg-emoji emoji-id=\"5258420634785947640\">🔄</tg-emoji> <b>Hotaru қайта іске қосу</b><blockquote><tg-emoji emoji-id=\"5258258882022612173\">⏳</tg-emoji> Ядро процестерін қайта жүктеуді растаңыз. Күй мен сессиялар сақталады.</blockquote>",
+      "restart_action": "Қайта қосу",
+      "restoring": "<tg-emoji emoji-id=\"5258420634785947640\">🔄</tg-emoji> <b>Модульдерді қалпына келтіруде…</b> <code>{done}/{total}</code>"
     },
     "updater": {
       "description": "Hotaru жаңарту",
@@ -129,22 +140,22 @@
           "description": "Жаңарту хабарламаларын қосу"
         }
       },
-      "restarted": "Hotaru жаңартылып, сәтті қайта қосылды ({took})",
-      "restarting": "{commit} жаңартылды. Қайта қосыламын…",
+      "restarted": "<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> <b>Hotaru сәтті жаңартылды</b>\n<blockquote><tg-emoji emoji-id=\"5258152182150077732\">⚡️</tg-emoji> <b>Қайта қосылды:</b> <code>{took}</code></blockquote>",
+      "restarting": "<tg-emoji emoji-id=\"5258420634785947640\">🔄</tg-emoji> <b><code>{commit}</code> дейін жаңартылды. Қайта іске қосылуда…</b>",
       "updated": "Hotaru {seconds} с ішінде жаңартылды",
-      "ignored": "Жаңарту еленбеді.",
+      "ignored": "<tg-emoji emoji-id=\"5258258882022612173\">⏳</tg-emoji> <b>Жаңарту еленбеді.</b>",
       "ignored_toast": "Еленбеді",
       "updating": "Жаңартылуда…",
-      "notify_on": "Жаңарту хабарламалары қосылды",
-      "notify_off": "Жаңарту хабарламалары өшірілді",
+      "notify_on": "<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> <b>Жаңарту хабарландырулары қосылды</b>",
+      "notify_off": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>Жаңарту хабарландырулары өшірілді</b>",
       "unavailable": "Орындау ортасы қолжетімсіз",
-      "up_to_date": "Hotaru жаңартылған",
+      "up_to_date": "<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> <b>Hotaru әлдеқашан соңғы нұсқаға жаңартылған</b>",
       "update_available": "Hotaru жаңартуы қолжетімді",
-      "downloading": "Жаңарту жүктелуде…",
-      "syncing": "Тәуелділіктер жаңартылуда…",
-      "check_failed": "<b>Жаңартуларды тексеру орындалмады:</b> <i>{error}</i>",
-      "failed": "<b>Жаңарту орындалмады:</b> <i>{error}</i>",
-      "conflicts": "<b>Қайшылықтары бар жергілікті өзгерістер сақталды:</b> <code>{path}</code>",
+      "downloading": "<tg-emoji emoji-id=\"5258420634785947640\">🔄</tg-emoji> <b>Жаңарту жүктелуде…</b>",
+      "syncing": "<tg-emoji emoji-id=\"5258420634785947640\">🔄</tg-emoji> <b>Тәуелділіктер жаңартылуда…</b>",
+      "check_failed": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>Жаңартуларды тексеру сәтсіз:</b>\n<blockquote><i>{error}</i></blockquote>",
+      "failed": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>Жаңарту сәтсіз:</b>\n<blockquote><i>{error}</i></blockquote>",
+      "conflicts": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>Қайшылықтар сақталды:</b>\n<blockquote><code>{path}</code></blockquote>",
       "button_update": "Жаңарту",
       "button_ignore": "Өткізу",
       "confirm": "<br><br>Қазір жаңарту керек пе?"
@@ -152,22 +163,49 @@
     "translations": {
       "description": "Аудармаларды басқару",
       "commands": {
-        "lang": {
-          "description": "Тілді көрсету немесе өзгерту",
-          "usage": "[тіл]"
-        },
         "language": {
           "description": "Тілді көрсету немесе өзгерту",
-          "usage": "[тіл]"
+          "usage": "[language]"
+        },
+        "rmlex": {
+          "description": "Арнайы тіл топтамасын жою",
+          "usage": "<code>"
+        },
+        "loadlex": {
+          "description": "Тіл топтамасын жүктеу",
+          "usage": "<url|path|file>"
+        },
+        "translate": {
+          "description": "Мәтінді аудару",
+          "usage": "[language] <text|reply>"
         }
       },
       "native": {
         "ru": "Русский",
         "en": "English",
         "kz": "Қазақша",
+        "kk": "Қазақша",
         "uk": "Українська",
-        "ja": "日本語"
-      }
+        "ja": "日本語",
+        "zh": "中文"
+      },
+      "custom_packs": "Арнайы топтамалар",
+      "no_custom_packs": "Орнатылған арнайы тіл топтамалары жоқ",
+      "custom_title": "Арнайы тіл топтамалары",
+      "removed": "Арнайы тіл топтамасы жойылды",
+      "not_found": "Арнайы тіл топтамасы табылмады",
+      "cannot_remove_builtin": "Жүйелік тіл топтамасын жою мүмкін емес",
+      "usage_rm": "Арнайы топтаманың екі әріпті кодын көрсетіңіз: {prefix}rmlex <code>",
+      "code_len_error": "Тіл коды нақты 2 әріптен тұруы керек",
+      "code_collision": "'{code}' тіл коды қазірдің өзінде қолданылуда",
+      "name_collision": "'{name}' топтама атауы қазірдің өзінде қолданылуда",
+      "missing_keys": "Тіл топтамасы барлық кілттерді 100% қамтымайды: {count} кілт жетіспейді",
+      "no_text": "Аударуға арналған мәтін көрсетілмеген",
+      "err_file_missing": "Сөздік файлы табылмады: .json тіркеңіз немесе реплай жасаңыз",
+      "err_file_doc": "Хабарламада JSON-файл (.json) болуы керек",
+      "err_json_syntax": "Жарамсыз JSON синтаксисі: {err} ({line}-жол)",
+      "err_structure": "Сөздік құрылымының қатесі: {err}",
+      "err_load_failed": "Сөздікті жүктеу мүмкін болмады: {err}"
     },
     "test-features": {
       "description": "Hotaru прокси және мүмкіндік тесті",
@@ -209,27 +247,39 @@
       "capabilities": "Мүмкіндіктер",
       "unavailable": "<b>Қызмет қолжетімсіз</b>",
       "manager_unavailable": "<b>Модуль менеджері қолжетімсіз</b>",
-      "usage": "<b>Қолдану:</b> <code>{prefix}hlp</code> немесе <code>{prefix}hlp &lt;модуль&gt;</code>",
+      "usage": "<b>Қолдану:</b> <code>{prefix}help</code> немесе <code>{prefix}help &lt;модуль&gt;</code>",
       "disabled": "<b>Модуль өшірілген:</b> <code>{module}</code><br><i>Қате: {error}</i>",
-      "missing": "<b>Модуль табылмады:</b> <code>{module}</code>"
+      "missing": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>Модуль табылмады:</b> <code>{module}</code>",
+      "title": "Hotaru · анықтама",
+      "summary": "Модульдер: {count} · префикс <code>{prefix}</code>",
+      "pick": "Командаларын көру үшін модульді басыңыз.",
+      "kernel_badge": "kernel",
+      "user_badge": "орнатылған",
+      "no_commands": "Командалар жоқ",
+      "settings": "⚙️ Баптаулар",
+      "search_prompt": "модуль не команда",
+      "results": "«{query}» нәтижелері",
+      "aliases": "Бүркеншік атаулар",
+      "count": "модуль: {count}",
+      "prefix": "префикс {prefix}"
     },
     "accounts": {
       "description": "Аккаунттарды басқару",
       "commands": {
-        "acc": {
+        "account": {
           "description": "Аккаунтты басқару",
-          "usage": "[нөмір] [start|stop|restart|on|off|del]"
+          "usage": "[number] [start|stop|restart|del]"
         },
-        "acca": {
+        "addaccount": {
           "description": "Аккаунт қосу немесе кіру",
-          "usage": "[ID|cancel|password] [құпиясөз]"
+          "usage": "[number|cancel]"
         },
-        "accs": {
+        "accounts": {
           "description": "Аккаунттар тақтасын ашу",
-          "usage": "[нөмір]"
+          "usage": "[number]"
         }
       },
-      "usage": "<b>Аккаунттар</b>\n<code>{prefix}acca [user_id]</code> · QR / нөмір арқылы қосу\n<code>{prefix}acca cancel</code> · кіруден бас тарту\n<code>{prefix}accs [#]</code> · аккаунттар панелі\n<code>{prefix}acc [#]</code> · аккаунттар панелі\n<code>{prefix}acc 2 start|stop|restart|on|off|del</code>",
+      "usage": "<b>Аккаунттар</b>\n<code>{prefix}addaccount [user_id]</code> · QR / нөмір арқылы қосу\n<code>{prefix}addaccount cancel</code> · кіруден бас тарту\n<code>{prefix}accounts [#]</code> · аккаунттар панелі\n<code>{prefix}account [#]</code> · аккаунттар панелі\n<code>{prefix}account 2 start|stop|restart|on|off|del</code>",
       "empty": "Тіркелген аккаунттар жоқ.",
       "no_self": "Сессия user id анықталмады.",
       "not_registered": "#{n} аккаунты тіркелмеген.",
@@ -253,7 +303,7 @@
       "button": {
         "add": "Аккаунт қосу",
         "refresh": "Жаңарту",
-        "close": "Жабу",
+        "close": "✕ Close",
         "permissions": "Рұқсаттар",
         "start": "Қосу",
         "stop": "Тоқтату",
@@ -359,7 +409,11 @@
         "no_user": "Кіру кезінде пайдаланушы алынбады.",
         "wrong_account": "Аккаунт қате; {uid} пайдаланушысы қажет.",
         "unknown": "Әрекетті орындау мүмкін болмады."
-      }
+      },
+      "field": {
+        "autostart": "Автоіске қосу"
+      },
+      "title": "Аккаунттар"
     },
     "acl": {
       "description": "Құқықтарды басқару",
@@ -370,11 +424,59 @@
         },
         "perm": {
           "description": "Құқық беру немесе қайтару",
-          "usage": "[ID|@username|command/атау] [рөл] [remove]"
+          "usage": "<ID|@username> <admin|trusted|everyone> [remove]"
         },
         "whois": {
           "description": "Пайдаланушы құқықтары",
-          "usage": "[ID|@username] [команда]"
+          "usage": "<ID|@username> [command]"
+        },
+        "owadd": {
+          "description": "Ие қосу",
+          "usage": "<ID|@username|reply>"
+        },
+        "owrm": {
+          "description": "Иені жою",
+          "usage": "<ID|@username|reply>"
+        },
+        "owls": {
+          "description": "Иелер тізімі",
+          "usage": ""
+        },
+        "sgnew": {
+          "description": "Құқық тобын құру",
+          "usage": "<name>"
+        },
+        "sgls": {
+          "description": "Топтар тізімі",
+          "usage": ""
+        },
+        "sg": {
+          "description": "Топ мүшелері мен ережелері",
+          "usage": "<name>"
+        },
+        "sgdel": {
+          "description": "Топты жою",
+          "usage": "<name>"
+        },
+        "sgadd": {
+          "description": "Қатысушы қосу",
+          "usage": "<name> <ID|@username|reply>"
+        },
+        "sgrm": {
+          "description": "Қатысушыны жою",
+          "usage": "<name> <ID|@username|reply>"
+        },
+        "rule": {
+          "description": "Рұқсат ережесін қосу",
+          "usage": "<user|chat|sgroup> <target> <command|module> [1h|forever]"
+        },
+        "rulerm": {
+          "description": "Ережені жою",
+          "usage": "<user|chat|sgroup> <target> <rule>"
+        },
+        "ruleclr": {
+          "description": "Ережелерді тазарту",
+          "usage": "<user|chat|sgroup> [target]"
         }
       },
       "bad_group": "Топ атауы: тек әріптер мен цифрлар, 32 таңбаға дейін.",
@@ -382,7 +484,10 @@
       "bad_rule": "Ереже: command/атау немесе module/атау.",
       "self_owner": "Бұл пайдаланушы аккаунт иесі болып табылады.",
       "empty": "Берілген құқықтар жоқ. !perm <user_id> <role> қолданыңыз.",
-      "bad_label": "Белгісіз құқық: {label}."
+      "bad_label": "Белгісіз құқық: {label}.",
+      "usage": "колданылуы:\n!owadd <user_id|reply> — owner беру\n!owrm <user_id|reply> — owner алу\n!owls — иелер\n!sgnew <name> — құқықтар тобын құру\n!sgls — топтар тізімі\n!sg <name> — топ қатысушылары мен ережелері\n!sgdel <name> — топты жою\n!sgadd <name> <user_id|reply> — топқа қосу\n!sgrm <name> <user_id|reply> — топтан шығару\n!rule <user|chat|sgroup> <target> <command|module>/<name> [мерзім] — ереже беру\n!rulerm — ережені жою\n!ruleclr — барлық ережелерді тазарту\n!perm <user_id> <admin|trusted|everyone> [remove] — құқық беру/алу\n!perms — құқықтар тізімі\n!whois <user_id> — пайдаланушы құқықтары",
+      "no_groups": "Құқықтар топтары жоқ. Құр: !sgnew <name>",
+      "no_owner_grant": "Owner !owadd арқылы беріледі."
     },
     "lg": "лог төменгі бөлігі:\n{lines}",
     "commands": {
@@ -405,44 +510,71 @@
       "shared_uptime": "Жұмыс уақыты, секунд",
       "template_syntax": "{{name}}, сан пішімі {{name:.2f}}, ал жай жақшалар үшін {{{{ / }}}} пайдаланыңыз. Мәндер HTML үшін экрандалған.",
       "template_preview": "Алдын ала қарау (HTML, мән үлгілері)",
-      "directory_empty": "<b>Баптаулар</b>\n\nБапталатын модульдер жоқ.",
-      "directory": "<b>Баптаулар</b>\n\nМодульді таңдаңыз:",
+      "directory_empty": "<b>Баптаулар</b><br>Бапталатын модульдер жоқ.",
+      "directory": "<b>Баптаулар</b><br>Модульді таңдаңыз:",
       "module_missing_error": "<b>Қате:</b> <code>{module}</code> модулі табылмады.",
       "no_settings": "<b>Қате:</b> <code>{module}</code> модулінің баптаулары жоқ.",
       "parameter_missing_error": "<b>Қате:</b> <code>{parameter}</code> параметрі табылмады.",
-      "empty": "(бос)",
-      "parameter_details": "• Мәні: <code>{value}</code>\n• Түрі: <code>{type}</code>\n• Әдепкі мәні: <code>{default}</code>\n",
-      "parameter_description": "• Сипаттамасы: <i>{description}</i>\n",
+      "empty": "Әзірге ешбір модульде баптау жоқ.",
+      "parameter_details": "• Мәні: <code>{value}</code><br>• Түрі: <code>{type}</code><br>• Әдепкі мәні: <code>{default}</code>",
+      "parameter_description": "• Сипаттамасы: <i>{description}</i>",
       "template_unavailable": "Үлгі өрісі қолжетімсіз немесе экспортталмаған: {name}",
       "error": "Қате: {error}",
-      "boolean_true": "🔘 Иә",
-      "boolean_false": "⚪️ Жоқ",
+      "boolean_true": "[ ] Иә",
+      "boolean_false": "[ ] Жоқ",
       "minimum": "Ең аз мән: {value}",
       "maximum": "Ең көп мән: {value}",
-      "enter": "✏️ Енгізу",
-      "new_value": "{parameter} параметрінің жаңа мәні",
-      "reset": "🔄 Қалпына келтіру",
+      "enter": "[e] Енгізу",
+      "new_value": "{name} үшін жаңа мән",
+      "reset": "[~] Қалпына келтіру",
       "module_missing": "<code>{module}</code> модулі табылмады.",
       "parameter_missing": "<code>{parameter}</code> параметрі табылмады.",
-      "error_html": "Қате: <code>{error}</code>"
+      "error_html": "Қате: <code>{error}</code>",
+      "title": "⚙️ Баптаулар",
+      "title_short": "баптаулар",
+      "pick": "Модульді таңдаңыз:",
+      "missing": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b><code>{module}</code> модулінде параметрлер жоқ немесе ол жүктелмеген.</b>",
+      "param_missing": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b><code>{name}</code> параметрі табылмады.</b>",
+      "reset_all": "↺ Барлығын қалпына келтіру",
+      "reset_confirm": "<b>{module}</b> барлық параметрлерін әдепкі мәнге қайтару керек пе?",
+      "reset_yes": "Қалпына келтіру",
+      "reset_done": "Әдепкі мәндер қалпына келтірілді",
+      "value": "Мәні",
+      "default": "Әдепкі",
+      "type": "Түрі",
+      "restart": "Қайта іске қосқаннан кейін қолданылады.",
+      "copy": "⧉ Көшіру",
+      "field_unavailable": "Үлгі өрісі қолжетімсіз не экспортталмаған: {name}",
+      "param": "Параметр",
+      "about": "Параметрлердің мағынасы",
+      "changed": "өзгертілді: {count}"
     },
     "settings": {
-      "description": "Бүркеншік аттар мен префиксті басқару",
+      "description": "Модульдер, префикс және бүркеншік аттар баптаулары",
       "commands": {
         "alias": {
           "description": "Командаға бүркеншік ат беру",
-          "usage": "[алиас] [команда]"
+          "usage": "<alias> <command>"
         },
         "rmalias": {
           "description": "Команданың бүркеншік атын жою",
-          "usage": "[алиас]"
+          "usage": "<alias>"
         },
         "lsalias": {
-          "description": "Команда бүркеншік аттарының тізімі"
+          "description": "Команда бүркеншік аттарының тізімі",
+          "usage": ""
         },
         "prefix": {
           "description": "Команда префиксін өзгерту",
-          "usage": "[префикс]"
+          "usage": "<prefix>"
+        },
+        "settings": {
+          "description": "Параметрлерді ашу",
+          "usage": "[module]"
+        },
+        "config": {
+          "description": "Параметрлерді ашу",
+          "usage": "[module]"
         }
       }
     },
@@ -475,7 +607,11 @@
       "commands": {
         "logs": {
           "description": "Юзербот логтары файлмен бірге",
-          "usage": "[on|off|status|деңгей] [саны] [компонент]"
+          "usage": "[on|off|status|level] [count]"
+        },
+        "loglevel": {
+          "description": "Лог деңгейін өзгерту немесе таңдау",
+          "usage": "[level]"
         }
       },
       "pending": "күтілуде",
@@ -488,14 +624,19 @@
         "level": "Журналға жазылатын ең төменгі деңгей",
         "batch_size": "Бір хабарламадағы оқиғалар саны",
         "auto_topic": "Форумдағы журнал тақырыбын автоматты басқару"
-      }
+      },
+      "loglevel_menu_title": "Лог деңгейі",
+      "loglevel_choose": "Жазу үшін минималды деңгейді таңдаңыз:",
+      "loglevel_current": "Ағымдағы деңгей:",
+      "invalid_level": "Жарамсыз деңгей. Қолжетімді: {levels}",
+      "logs_menu_title": "Логтарды жүктеп алу",
+      "logs_choose": "Жүктеп алу үшін лог деңгейін таңдаңыз:"
     },
     "executor": {
-      "heading": "<b>Орындаушы</b> | <code>{elapsed:.1f} мс</code>",
       "exit_code": "Аяқталу коды: {returncode}",
       "running": "Орындалуда…",
-      "usage_sh": "<b>Қолдану:</b> <code>{prefix}sh &lt;команда&gt;</code>",
-      "usage_py": "<b>Қолдану:</b> <code>{prefix}py &lt;код&gt;</code> немесе кодқа жауап; -so — нәтижені көрсетпеу",
+      "usage_sh": "<b>Қолдану:</b> <code>{prefix}sh [пәрмен] &lt;-so&gt;</code> — <i>shell пәрменін орындау</i>",
+      "usage_py": "<b>Қолдану:</b> <code>{prefix}py [код] &lt;-so&gt;</code> — <i>Python кодын орындау</i>",
       "cancelled": "Орындау тоқтатылды",
       "done": "Дайын ✓",
       "kill_reply": "<b>Процесті тоқтату үшін орындалып жатқан py/sh хабарламасына жауап бер.</b>",
@@ -513,43 +654,42 @@
       "commands": {
         "py": {
           "description": "Python кодын орындау",
-          "usage": "[-so] [код]"
+          "usage": "[-so] <code>"
         },
         "sh": {
           "description": "Қабықша командасын орындау",
-          "usage": "[-so] [команда]"
+          "usage": "[-so] <command>"
         },
         "kill": {
-          "description": "Орындалып жатқан команданы тоқтату"
+          "description": "Орындалып жатқан команданы тоқтату",
+          "usage": ""
         }
-      }
+      },
+      "heading_sh": "<tg-emoji emoji-id=\"5298632983354291951\">🧑‍💻</tg-emoji> <b>Орындаушы</b> · <code>{elapsed:.1f} мс</code>",
+      "heading_py": "<tg-emoji emoji-id=\"5289608677244811430\">🐍</tg-emoji> <b>Орындаушы</b> · <code>{elapsed:.1f} мс</code>"
     },
     "catalyst": {
       "description": "Модульдерді басқару",
       "commands": {
         "ld": {
           "description": "Модульді жүктеу",
-          "usage": "[сілтеме|жол]"
+          "usage": "<url|path|reply>"
         },
         "ul": {
           "description": "Модульді тоқтату",
-          "usage": "[модуль] [-p]"
+          "usage": "<module> [-p]"
         },
         "rl": {
           "description": "Модульді қайта жүктеу",
-          "usage": "[модуль] [force]"
+          "usage": "[module] [force]"
         },
         "ex": {
           "description": "Модульді экспорттау",
-          "usage": "[модуль]"
-        },
-        "rs": {
-          "description": "Модуль деректерін тазарту",
-          "usage": "[модуль]"
+          "usage": "<module>"
         },
         "resetdb": {
           "description": "Модуль деректерін тазарту",
-          "usage": "[модуль]"
+          "usage": "<module>"
         }
       }
     },
@@ -561,13 +701,14 @@
       "inline": "инлайн-боттарға сұрау жіберу және олармен әрекеттесу",
       "modules": "модульдерді жүктеу, тоқтату, қайта жүктеу және олардың тізімін, хештерін, сипаттамаларын қарау",
       "assets": "жасырын тіркемелер қоймасына қатынас",
-      "shell": "модульдің workspace-інде shell командаларын жүргізеді; shell әрқашан оқшауланған құмсалғышта жұмыс істейді, онда тек workspace, оның құралдары және бөлек /tmp көрінеді; желі тек net capability болғанда, хост файлдарына қол жетімділік тек files болғанда ашылады, екеуі де құмсалғыштан шықпайды; таймаут және шығыс шектеулері сақталады",
+      "shell": "Hotaru процесінің ОЖ құқықтарымен қабықшаға толық қолжетімділік: хост файлдары, тіркелгі деректері және желі; модульдің жұмыс қалтасымен ШЕКТЕЛМЕЙДІ. Команданың уақыт шегі мен қайтарылатын шығыс көлемінің шегі сақталады",
       "logs": "құрылымды оқиғаларды журналға жазу; әрқашан рұқсат етілген",
       "fetch": "хабарламаларды, пайдаланушылар мен чаттар деректерін және жауаптарды оқу; әрқашан рұқсат етілген"
     },
     "ping": {
       "description": "Юзерботтың жауап беруін тексеру",
-      "template": "<b>Пинг</b> <code>{latency} ms</code>\n<b>Аптайм</b> <code>{uptime}</code>",
+      "template": "<tg-emoji emoji-id=\"5258152182150077732\">⚡️</tg-emoji> <b>Пинг:</b> <code>{latency} ms</code>\n<blockquote><tg-emoji emoji-id=\"5258258882022612173\">⏳</tg-emoji> <b>Жұмыс уақыты:</b> <code>{uptime}</code></blockquote>",
+      "measuring": "<tg-emoji emoji-id=\"5258152182150077732\">⚡️</tg-emoji> <i>Жауап өлшенуде…</i>",
       "commands": {
         "ping": {
           "description": "Юзербот пингін өлшеу"
@@ -576,67 +717,231 @@
       "fields": {
         "latency": "Жауап беру уақыты, миллисекундпен",
         "uptime": "Юзерботтың жұмыс уақыты, тек нөлден үлкен бірліктер",
-        "uptime_seconds": "Юзерботтың жұмыс уақыты, секундпен"
+        "uptime_seconds": "Юзерботтың жұмыс уақыты, секундпен",
+        "custom_message": "Пайдаланушы хабарламасының мәтіні"
       },
-      "example_uptime": "2 сағат 3 минут"
+      "example_uptime": "2 сағат 3 минут",
+      "config_fields": {
+        "template": "ping жауабының мәтіні",
+        "custom_message": "Ping жауабына қосылатын пайдаланушы хабарламасы"
+      },
+      "config": {
+        "custom_message": "Ping жауабына қосылатын пайдаланушы хабарламасы"
+      }
     },
     "info": {
       "description": "Юзербот ақпарат картасы",
-      "template": "<b>Hotaru</b> <code>{version}</code>\n\n<b>Жұмыс уақыты</b> · <code>{uptime}</code>\n<b>Модульдер</b> · <code>{modules}</code>",
+      "template": "<tg-emoji emoji-id=\"5258503720928288433\">ℹ️</tg-emoji> <b>Hotaru Userbot</b> <code>v{version}</code>\n<blockquote expandable><tg-emoji emoji-id=\"5258258882022612173\">⏳</tg-emoji> <b>Жұмыс уақыты:</b> <code>{uptime}</code>\n<tg-emoji emoji-id=\"5258514780469075716\">🧩</tg-emoji> <b>Модульдер:</b> <code>{modules}</code></blockquote>",
       "commands": {
         "info": {
-          "description": "Юзербот туралы ақпарат"
+          "description": "Юзербот туралы ақпарат",
+          "usage": ""
+        },
+        "ping": {
+          "usage": ""
         }
       },
       "empty_template": "Ақпарат үлгісі бос",
       "bad_placeholder": "Қате толтырғыш: {error}",
       "config": {
-        "template": ".info үлгісі, толтырғыштар: {version} {uptime} {modules}"
+        "template": ".info үлгісі, толтырғыштар: {version} {uptime} {modules}",
+        "custom_message": "Инфо картасында көрсетілетін хабарлама"
       },
       "config_fields": {
-        "template": ".info үлгісі, толтырғыштар: {version} {uptime} {modules}"
+        "template": ".info үлгісі, толтырғыштар: {version} {uptime} {modules}",
+        "custom_message": "Инфо картасында көрсетілетін хабарлама"
       }
     },
     "singularity": {
       "description": "Ядроның 3D-телеметриясы және Observatory ағыны (Singularity)",
-      "card_title": "🕳 <b>Hotaru // Singularity</b>",
+      "card_title": "<tg-emoji emoji-id=\"5985527717183888277\">⚡</tg-emoji><tg-emoji emoji-id=\"5985515480822061758\">⚡</tg-emoji><tg-emoji emoji-id=\"5985558606588681366\">⚡</tg-emoji><tg-emoji emoji-id=\"5985757321840565902\">⚡</tg-emoji> <b>// Singularity</b>",
       "card_subtitle": "<i>3D Event Horizon · Node.Probe · Read-Only Observatory Stream</i>",
       "open_button": "🕳 Singularity ашу",
       "commands": {
         "dash": {
-          "description": "Singularity Mini App inline-панелін ашу"
+          "description": "Singularity Mini App инлайн іске қосқышты ашу"
         }
-      }
+      },
+      "inline_bot": "Inline-бот",
+      "probe": "Зонд",
+      "relay": "Реле"
+    },
+    "backups": {
+      "description": "Сақтық көшірмелерді қызметтік чатқа жіберу",
+      "commands": {
+        "backup": {
+          "description": "Сақтық көшірмені жіберу немесе автоматты жіберуді баптау",
+          "usage": "[send|now]"
+        },
+        "restore": {
+          "usage": "<archive>"
+        }
+      },
+      "config_fields": {
+        "enabled": "Сақтық көшірмелерді автоматты түрде жіберу",
+        "interval_hours": "Сақтық көшірмелер арасындағы аралық (сағат)"
+      },
+      "heading": "{icon} <b>Сақтық көшірмелер</b>\n{status} · {hours} сағ.",
+      "enabled": "Қосулы",
+      "disabled": "Өшірулі",
+      "last_sent": "Соңғы жіберілген уақыт: {date}",
+      "destination": "Мекенжай: қызметтік чаттағы {topic} тақырыбы.",
+      "encrypted": "Сессия кілтімен шифрланған. Қалпына келтіру үшін сол кілт қажет.",
+      "send_now": "Қазір жіберу",
+      "disable": "Өшіру",
+      "enable": "Қосу",
+      "not_ready": "Қызметтік чат әлі дайын емес",
+      "caption": "<tg-emoji emoji-id=\"5325732612084351248\">📦</tg-emoji> <b>Hotaru сақтық көшірмесі</b>\n<blockquote><tg-emoji emoji-id=\"5258476306152038031\">🔒</tg-emoji> Шифрланған күй, vault және сессия көшірмесі\n<tg-emoji emoji-id=\"5258105663359294787\">🗓</tg-emoji> <code>{name}</code></blockquote>",
+      "failed": "Сақтық көшірмені жіберу мүмкін болмады: {error}",
+      "sent": "Сақтық көшірме жіберілді",
+      "topic": "Backups",
+      "usage": "<code>{prefix}backup [now|on|off]</code>",
+      "restored_files": "Қалпына келтірілген файлдар: {count}"
+    },
+    "intrusion": {
+      "alert": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>Hotaru сессиясы сырттан пайдаланылуда</b>\n\n{source}\n\n<blockquote><code>{detail}</code></blockquote>\n\nБасқа клиент Hotaru сессиясына қосылды. Hotaru қауіпсіздік үшін тоқтатылды.",
+      "session": "Басқа клиент Hotaru юзерботының сессия кілтін пайдаланып отыр.",
+      "webhook": "Hotaru инлайн-ботына бөгде вебхук орнатылған."
+    },
+    "flood": {
+      "notice": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>FloodWait — хабарлама қайта бағытталды</b>\n<code>{chat}</code> чатына <code>{source}</code> арқылы жеткізілмеді:\n<blockquote>{text}</blockquote>"
+    },
+    "apifw": {
+      "name": "API Flood Protection",
+      "status_title": "<tg-emoji emoji-id=\"5291803847914698795\">🌐</tg-emoji> <b>API Flood Protection</b>",
+      "enabled": "<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> Қосулы",
+      "disabled": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> Өшірулі",
+      "suspended_for": "<tg-emoji emoji-id=\"5280652390532395919\">🔋</tg-emoji> API қорғауы {seconds} сек тоқтатылды.",
+      "status_text": "<tg-emoji emoji-id=\"5291803847914698795\">🌐</tg-emoji> <b>API Flood Protection</b>\n\nКүйі: {status}\nӨлшеу терезесі: <code>{sample}с</code>\nШектеу: <code>{threshold} сұраныс</code>\nТоқтату кідірісі: <code>{cooldown}с</code>\nСоңғы сұраныстар: <code>{recent}</code>\nҚорғау іске қосылуы: <code>{total}</code>",
+      "alert": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>API Flood Protection іске қосылды!</b>\n\nTelegram API сұраныс жиілігі <code>{sample}с</code> ішінде <code>{count}</code> жетті (шек: {threshold}).\nСессияны сақтау үшін API сұраныстары <code>{cooldown}с</code> тоқтатылды.",
+      "btn_toggle": "Ауыстыру",
+      "btn_stats": "Статистика",
+      "btn_close": "Жабу"
+    },
+    "shield": {
+      "name": "API Flood Protection",
+      "status_title": "<tg-emoji emoji-id=\"5291803847914698795\">🌐</tg-emoji> <b>API Flood Protection</b>",
+      "enabled": "<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> Қосулы",
+      "disabled": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> Өшірулі",
+      "suspended_for": "<tg-emoji emoji-id=\"5280652390532395919\">🔋</tg-emoji> API қорғауы {seconds} сек тоқтатылды.",
+      "status_text": "<tg-emoji emoji-id=\"5291803847914698795\">🌐</tg-emoji> <b>API Flood Protection</b>\n\nКүйі: {status}\nӨлшеу терезесі: <code>{sample}с</code>\nШектеу: <code>{threshold} сұраныс</code>\nТоқтату кідірісі: <code>{cooldown}с</code>\nСоңғы сұраныстар: <code>{recent}</code>\nҚорғау іске қосылуы: <code>{total}</code>",
+      "alert": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>API Flood Protection іске қосылды!</b>\n\nTelegram API сұраныс жиілігі <code>{sample}с</code> ішінде <code>{count}</code> жетті (шек: {threshold}).\nСессияны сақтау үшін API сұраныстары <code>{cooldown}с</code> тоқтатылды.",
+      "btn_toggle": "Ауыстыру",
+      "btn_stats": "Статистика",
+      "btn_close": "Жабу",
+      "description": "Telegram API флудвейті мен шамадан тыс жүктемеден қорғау",
+      "commands": {
+        "shield": {
+          "usage": ""
+        },
+        "suspend_api": {
+          "usage": "<seconds>"
+        }
+      },
+      "unavailable": "API қорғанысы қолжетімсіз",
+      "field_status": "Күйі:",
+      "field_window": "Терезе:",
+      "field_limit": "Шектеу:",
+      "field_pause": "Үзіліс:",
+      "field_requests": "Сұраныстар:",
+      "field_triggers": "Іске қосылулар:",
+      "footer_guard": "Telegram API флудвейті мен шамадан тыс жүктемеден қорғау",
+      "telemetry_title": "API шақыруларының телеметриясы",
+      "telemetry_empty": "Іріктеу терезесінде соңғы шақырулар жоқ",
+      "telemetry_footer": "Ағымдағы терезеде шақырылған әдістер",
+      "usage_suspend": "Қолданылуы: {prefix}suspend_api [секунд]",
+      "suspended_success": "API қорғанысы: <code>{seconds}с</code> тоқтатылды"
+    },
+    "genesis": {
+      "title": "Жылдам баптау",
+      "welcome": "Hotaru-ға қош келдіңіз! Бастапқы баптау шебері:",
+      "language": "Тіл",
+      "prefix": "Префикс",
+      "log_level": "Лог деңгейі",
+      "backups": "Бэкаптар",
+      "start_wizard": "🚀 Баптауды бастау",
+      "btn_language": "🌐 Тіл",
+      "btn_prefix": "💻 Префикс",
+      "btn_logs": "📔 Лог деңгейі",
+      "btn_backups": "📂 Бэкаптар",
+      "btn_webapp": "🌐 WebApp панелі",
+      "step_lang_title": "1/4 қадам · Тілді таңдау",
+      "step_lang_desc": "Негізгі интерфейс тілін таңдаңыз:",
+      "lang_applied": "Тіл сәтті жаңартылды!",
+      "btn_next": "Келесі: Префикс ›",
+      "step_prefix_title": "2/4 қадам · Команда префиксі",
+      "step_prefix_desc": "Юзербот командалары алдындағы таңбаны таңдаңыз:",
+      "current": "Ағымдағы:",
+      "enter_prefix": "Жаңа префиксті енгізіңіз:",
+      "prefix_applied": "Префикс орнатылды: {prefix}",
+      "btn_next_logs": "Келесі: Логтар ›",
+      "step_logs_title": "3/4 қадам · Лог деңгейі",
+      "step_logs_desc": "Оқиғаларды жазудың минималды деңгейін таңдаңыз:",
+      "btn_next_backups": "Келесі: Бэкаптар ›",
+      "step_backups_title": "4/4 қадам · Сақтық көшірмелер",
+      "step_backups_desc": "Автоматты шифрланған сақтық көшірмелерді баптаңыз:",
+      "backup_hours_applied": "Бэкап аралығы {hours} сағатқа орнатылды",
+      "btn_complete": "Баптауды аяқтау ✅",
+      "done_title": "Баптау аяқталды!",
+      "done_desc": "Hotaru толықтай бапталды және жұмысқа дайын.",
+      "btn_help": "📖 Анықтама",
+      "btn_settings": "⚙️ Баптаулар",
+      "description": "Hotaru бастапқы баптау шебері",
+      "commands": {
+        "start": {
+          "description": "Бастапқы баптау шеберін ашу",
+          "usage": ""
+        },
+        "setup": {
+          "description": "Бастапқы баптау шеберін ашу",
+          "usage": ""
+        },
+        "genesis": {
+          "description": "Бастапқы баптау шеберін ашу",
+          "usage": ""
+        },
+        "quickstart": {
+          "description": "Бастапқы баптау шеберін ашу",
+          "usage": ""
+        }
+      },
+      "active_title": "Белсенді және онлайн",
+      "active_desc": "Hotaru Userbot бапталды және қосылды. Пәрмендерді тікелей аккаунтыңызда пайдаланыңыз.",
+      "links_title": "Hotaru сілтемелері",
+      "links_desc": "Hotaru ресми репозиторийі, құжаттама және бастапқы код:",
+      "btn_github": "GitHub репозиторийі"
     }
   },
   "inline_commands_hint": "Команданы таңда — кез келген чатта @<бот> және оның атын тер",
   "settings": {
     "runtime_unavailable": "Қызмет қолжетімсіз",
-    "usage_alias": "Қолдану: {prefix}alias <бүркеншік_ат> <команда мен аргументтері>",
+    "usage_alias": "Қолдану: <code>{prefix}alias &lt;бүркеншік_ат&gt; &lt;команда&gt;</code>",
     "alias_exists": "Команда бұрыннан бар: {alias}",
     "command_not_found": "Команда табылмады: {command}\nҚолжетімді: {known}",
     "alias_taken": "Бүркеншік ат қолданылуда: {alias} → {command}. Жою: {prefix}rmalias {alias}.",
     "alias_set": "Бүркеншік ат орнатылды: {alias} → {command}",
-    "usage_rmalias": "Қолдану: {prefix}rmalias <бүркеншік_ат>",
+    "usage_rmalias": "Қолдану: <code>{prefix}rmalias &lt;бүркеншік_ат&gt;</code>",
     "alias_removed": "Бүркеншік ат жойылды: {alias}",
     "alias_not_found": "Бүркеншік ат табылмады: {alias}",
     "alias_list_empty": "Бүркеншік аттар жоқ",
     "alias_list_title": "<b>Бүркеншік аттар</b>",
-    "prefix_current": "Қазіргі префикс: {prefix}. Өзгерту: {prefix}prefix <таңба>",
+    "prefix_current": "Қазіргі префикс: <code>{prefix}</code> · Өзгерту: <code>{prefix}prefix &lt;таңба&gt;</code>",
     "prefix_invalid": "Префикс бос орынсыз 1–8 көрінетін таңбадан тұруы керек.",
-    "prefix_set": "Префикс {prefix} болып өзгертілді",
+    "prefix_set": "Префикс <code>{prefix}</code> етіп өзгертілді",
     "description": "Бүркеншік аттар мен префиксті басқару",
     "commands": {
       "alias": "Командаға бүркеншік ат беру",
       "rmalias": "Команданың бүркеншік атын жою",
       "lsalias": "Команда бүркеншік аттарының тізімі",
       "prefix": "Команда префиксін өзгерту"
-    }
+    },
+    "alias_invalid": "Бүркеншік ат: 1–32 таңба, кез келген тілдің әріптері, цифрлар және _; цифрдан басталмауы керек."
   },
   "common": {
+    "brand": "<tg-emoji emoji-id=\"5985527717183888277\">⚡</tg-emoji><tg-emoji emoji-id=\"5985515480822061758\">⚡</tg-emoji><tg-emoji emoji-id=\"5985558606588681366\">⚡</tg-emoji><tg-emoji emoji-id=\"5985757321840565902\">⚡</tg-emoji>",
     "ok": "ОК",
     "cancel": "Бас тарту",
-    "close": "Жабу",
+    "close": "✕ Close",
     "back": "Артқа",
     "unknown_error": "Белгісіз қате",
     "confirm": "Растау",
@@ -652,14 +957,15 @@
     "en": "Ағылшынша",
     "kz": "Қазақша",
     "uk": "Украинша",
-    "ja": "Жапонша"
+    "ja": "Жапонша",
+    "zh": "Қытай тілі"
   },
   "runtime": {
     "modules_unavailable": "Модульдер қолжетімсіз",
     "modules_empty": "Модульдер жоқ",
     "modules": "Модульдер:\n",
     "module_unavailable": "Модуль қолжетімсіз",
-    "module_missing": "Модуль табылмады: {module_id}",
+    "module_missing": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>Модуль табылмады:</b> <code>{module_id}</code>",
     "module_info": "Модуль: {module}\nНұсқа: {version}\nКомандалар: {commands}\nМүмкіндіктер: {capabilities}\nСипаттама: {description}",
     "help_unavailable": "Анықтама қолжетімсіз",
     "page_unavailable": "Анықтама беті қолжетімсіз",
@@ -667,27 +973,27 @@
     "next": "Келесі",
     "bot_unavailable": "Инлайн-бот қолжетімсіз",
     "bot_failed": "Инлайн-бот жасау мүмкін болмады: {error}",
-    "protected": "Жүйелік модуль қорғалған: {module_id}",
-    "unload_failed": "Модульді тоқтату мүмкін болмады: {error}",
+    "protected": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>Жүйелік модуль қорғалған:</b> <code>{module_id}</code>",
+    "unload_failed": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>Модульді шығару сәтсіз:</b>\n<blockquote>{error}</blockquote>",
     "not_ready": "Қызметтер әлі дайын емес",
-    "purged": "Модуль жойылды: {module} (деректер тазартылды)",
-    "unloaded": "Модуль тоқтатылды: {module} (деректер сақталды)",
-    "reset_failed": "Деректер тазартылды, бірақ қайта жүктеу орындалмады: {error}",
-    "reset": "Деректер тазартылды: {module_id}",
+    "purged": "<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> <b>Модуль өшірілді:</b> <code>{module}</code>\n<blockquote>Деректер тазартылды.</blockquote>",
+    "unloaded": "<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> <b>Модуль жүктелмеді:</b> <code>{module}</code>\n<blockquote>Деректер сақталды.</blockquote>",
+    "reset_failed": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>Деректер тазартылды, бірақ қайта қосу сәтсіз:</b>\n<blockquote>{error}</blockquote>",
+    "reset": "<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> <b>Деректер тазартылды:</b> <code>{module_id}</code>",
     "id_mismatch": "Модуль идентификаторы сәйкес емес: {module_id}",
     "downgrade": "Нұсқаны төмендетуге тыйым салынған: {old} → {new}",
     "rollback_failed": "Қайта жүктеу орындалмады: {error}; қалпына келтіру де орындалмады",
     "rolled_back": "Қайта жүктеу орындалмады: {error}; алдыңғы нұсқа қалпына келтірілді",
-    "reloaded": "Қайта жүктелді: {module_id}",
-    "exported": "Экспортталды: {file_name}",
+    "reloaded": "<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> <b>Модуль қайта жүктелді:</b> <code>{module_id}</code>",
+    "exported": "<tg-emoji emoji-id=\"5258514780469075716\">📂</tg-emoji> <b>Модуль экспортталды:</b> <code>{file_name}</code>",
     "invalid_request": "Сұрау жарамсыз",
     "cancelled": "Бас тартылды",
     "module_cancelled": "Бас тартылды: {module_id}",
     "source_missing": "Бастапқы код жоқ",
     "activation_failed": "Модульді жүктеу мүмкін болмады",
     "module_loaded": "Модуль жүктелді",
-    "loaded": "Жүктелді: {module_id} {version}",
-    "backup_failed": "Сақтық көшірме жасау мүмкін болмады: {error}",
+    "loaded": "<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> <b>Жүктелді:</b> <code>{module_id}</code> <code>v{version}</code>",
+    "backup_failed": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>Көшірме жасау сәтсіз:</b>\n<blockquote>{error}</blockquote>",
     "backup_created": "Сақтық көшірме жасалды: {name}",
     "backups_empty": "Сақтық көшірмелер жоқ",
     "backups": "Сақтық көшірмелер:\n",
@@ -699,24 +1005,24 @@
     "invalid_page": "Анықтама беті жарамсыз",
     "invalid_restore": "Қалпына келтіру сұрауы жарамсыз",
     "restore_failed": "Қалпына келтіру орындалмады",
-    "restore_error": "Қалпына келтіру орындалмады: {error}",
+    "restore_error": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>Қалпына келтіру сәтсіз:</b>\n<blockquote>{error}</blockquote>",
     "restore_done": "Қалпына келтірілді",
     "callback_failed": "Әрекетті орындау мүмкін болмады",
     "callback_denied": "Батырма ескірген немесе қолжетімсіз.",
-    "load_error": "Жүктеу орындалмады: {error}: {detail}",
+    "load_error": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>Модульді жүктеу қатесі:</b>\n<blockquote>{error}: {detail}</blockquote>",
     "load_failed": "Жүктеу орындалмады: {error}",
     "load_screen": "Жүктеу орындалмады: {module_id} {version}\n{screen}",
-    "updated": "Жаңартылды: {module_id} {version}",
+    "updated": "<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> <b>Жаңартылды:</b> <code>{module_id}</code> <code>v{version}</code>",
     "caps_request": "{module_id} v{version} модулі мына мүмкіндіктерді сұрайды:",
     "caps_retry": "Растау үшін жүктеу командасын қайтала",
-    "usage_mi": "Қолдану: {prefix}mi <module>",
-    "usage_help": "Қолдану: {prefix}hlp [page] | {prefix}hlp <module>",
-    "usage_reload": "Қолдану: {prefix}rl <module> [force]",
-    "usage_unload": "Қолдану: {prefix}ul [-c] <module>",
-    "usage_reset": "Қолдану: {prefix}rs <module>",
-    "usage_export": "Қолдану: {prefix}ex <module>",
-    "usage_backup": "Қолдану: {prefix}bk | {prefix}bk list | {prefix}bk test <archive> | {prefix}bk restore <archive>",
-    "usage_load": "Қолдану: {prefix}ld <raw-url> немесе .hmod файлына жауап",
+    "usage_mi": "<b>Қолдану:</b> <code>{prefix}mi [module]</code> — <i>модуль туралы ақпарат</i>",
+    "usage_help": "<b>Қолдану:</b> <code>{prefix}help &lt;page|module&gt;</code> — <i>анықтама</i>",
+    "usage_reload": "<b>Қолдану:</b> <code>{prefix}rl [module] &lt;force&gt;</code> — <i>модульді қайта жүктеу</i>",
+    "usage_unload": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>Модульді көрсетіңіз:</b> <code>{prefix}ul &lt;модуль&gt;</code>",
+    "usage_reset": "<b>Қолдану:</b> <code>{prefix}rs [module]</code> — <i>күйді қалпына келтіру</i>",
+    "usage_export": "<b>Қолдану:</b> <code>{prefix}ex [module]</code> — <i>модульді экспорттау</i>",
+    "usage_backup": "<b>Қолдану:</b> <code>{prefix}bk &lt;list|test|restore&gt; &lt;archive&gt;</code> — <i>көшірмелерді басқару</i>",
+    "usage_load": "<b>Қолдану:</b> <code>{prefix}ld [raw-url|файл]</code> — <i>модульді жүктеу</i>",
     "bot_status": "Инлайн-бот: @{name} ({status})",
     "health": "Күйі: {status}",
     "last_error": "Соңғы қате: {error}",
@@ -742,7 +1048,12 @@
     },
     "file_missing": "Модуль файлы табылмады",
     "file_document": "Модульді файл ретінде жібер",
-    "unknown_capability": "белгісіз мүмкіндік (тыйым салынған)"
+    "unknown_capability": "белгісіз мүмкіндік (тыйым салынған)",
+    "loading_module": "{module_id} жүктелуде…",
+    "export_caption": "<tg-emoji emoji-id=\"5258514780469075716\">📂</tg-emoji> <b>{module}</b> <code>v{version}</code>\n<blockquote><tg-emoji emoji-id=\"5258134813302332906\">📦</tg-emoji> Hotaru модулін экспорттау</blockquote>",
+    "usage_load_source": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>Сілтемені, жолды көрсетіңіз немесе модуль файлына (.hmod) жауап беріңіз</b>",
+    "unloading": "<tg-emoji emoji-id=\"5258130763148172425\">🗑</tg-emoji> <i><code>{module}</code> түсірілуде...</i>",
+    "invalid_path": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>Көрсетілген файл немесе жол табылмады.</b>"
   },
   "acl": {
     "owners": "<b>Иелер</b><br>",
@@ -761,9 +1072,9 @@
     "bad_group": "Топ атауы: әріптер мен сандар, 32 таңбаға дейін.",
     "bad_duration": "1m, 1h, 1d, 1w немесе forever енгіз. Ең көбі — 100 жыл.",
     "bad_rule": "Ереже: command/атау немесе module/атау.",
-    "empty": "Берілген құқықтар жоқ. {prefix}perm <user_id> <рөл> командасын қолдан.",
+    "empty": "Берілген рұқсаттар жоқ. {prefix}perm &lt;user_id&gt; &lt;role&gt; қолданыңыз.",
     "bad_label": "Белгісіз құқық: {label}",
-    "no_owner_grant": "Ие құқығы {prefix}perms арқылы беріледі.",
+    "no_owner_grant": "Ие құқығы {prefix}owadd арқылы беріледі.",
     "owner_confirm": "<code>{user_id}</code> пайдаланушысына толық рұқсат берілсін бе?",
     "confirm": "Растау",
     "clear_confirm": "<code>{scope}</code> ережелері тазартылсын ба?",
@@ -824,9 +1135,45 @@
     "syntax": {
       "perms": "<code>{prefix}perms [ID|@username]</code>",
       "whois": "<code>{prefix}whois [ID|@username] [command]</code>",
-      "perm": "<code>{prefix}perm [ID|@username|command/name] &lt;role&gt; [remove]</code>"
+      "perm": "<code>{prefix}perm [ID|@username|command/name] &lt;role&gt; [remove]</code>",
+      "owadd": "<code>{prefix}owadd [ID|@username]</code>",
+      "owrm": "<code>{prefix}owrm [ID|@username]</code>",
+      "owls": "<code>{prefix}owls</code>",
+      "sgnew": "<code>{prefix}sgnew &lt;name&gt;</code>",
+      "sgdel": "<code>{prefix}sgdel &lt;name&gt;</code>",
+      "sgls": "<code>{prefix}sgls</code>",
+      "sg": "<code>{prefix}sg &lt;name&gt;</code>",
+      "sgadd": "<code>{prefix}sgadd &lt;name&gt; [ID|@username]</code>",
+      "sgrm": "<code>{prefix}sgrm &lt;name&gt; [ID|@username]</code>",
+      "rule": "<code>{prefix}rule &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;command/name|module/name&gt; [1h|forever]</code>",
+      "rulerm": "<code>{prefix}rulerm &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;command/name|module/name|*&gt;</code>",
+      "ruleclr": "<code>{prefix}ruleclr &lt;user|chat|sgroup&gt; [target]</code>"
     },
-    "all_chats": "Барлық чатта барлығына қолжетімді."
+    "all_chats": "Барлық чатта барлығына қолжетімді.",
+    "account": " · аккаунт",
+    "protected": " · қорғалған",
+    "failed": "<b>Қате:</b> <i>{error}</i>",
+    "owner_added": "<code>{user_id}</code> <b>иелер қатарына қосылды</b>",
+    "owner_exists": "<code>{user_id}</code> әлдеқашан иесі",
+    "owner_removed": "<code>{user_id}</code> <b>ие құқығынан айырылды</b>",
+    "owner_missing": "<code>{user_id}</code> ие болып тағайындалмаған",
+    "group_created": "<code>{name}</code> <b>тобы құрылды</b>",
+    "group_deleted": "<code>{name}</code> <b>тобы жойылды</b>",
+    "group_detail": "<b>{name} тобы</b><br><b>Қатысушылар</b><br>{users}<br><b>Ережелер</b><br>{rules}",
+    "member_exists": "<code>{user_id}</code> әлдеқашан <code>{name}</code> тобында",
+    "member_missing": "<code>{user_id}</code> <code>{name}</code> тобында жоқ",
+    "member_added": "<code>{user_id}</code> <code>{name}</code> <b>тобына қосылды</b>",
+    "member_removed": "<code>{user_id}</code> <code>{name}</code> <b>тобынан шығарылды</b>",
+    "duration": " {duration} мерзімге",
+    "rule_added": "<b>Ереже қосылды:</b> {kind} <code>{target}</code> → {type}/{rule}{until}",
+    "rule_removed": "<b>Ереже жойылды</b>",
+    "nothing_remove": "Жоятын ештеңе жоқ",
+    "rules_cleared": "<b>Ережелер тазартылды</b>",
+    "nothing_clear": "Тазартатын ештеңе жоқ",
+    "self_owner": "Бұл пайдаланушы аккаунттың иесі.",
+    "no_groups": "Қолжетімділік топтары жоқ. Жасау: {prefix}sgnew &lt;name&gt;",
+    "usage": "<code>{prefix}owadd &lt;user_id|reply&gt;</code> — Ие қосу\n<code>{prefix}owrm &lt;user_id|reply&gt;</code> — Иені жою\n<code>{prefix}owls</code> — Иелер тізімі\n<code>{prefix}sgnew &lt;name&gt;</code> — Құқық тобын құру\n<code>{prefix}sgls</code> — Топтар тізімі\n<code>{prefix}sg &lt;name&gt;</code> — Топ мүшелері мен ережелері\n<code>{prefix}sgdel &lt;name&gt;</code> — Топты жою\n<code>{prefix}sgadd &lt;name&gt; &lt;user_id|reply&gt;</code> — Қатысушы қосу\n<code>{prefix}sgrm &lt;name&gt; &lt;user_id|reply&gt;</code> — Қатысушыны жою\n<code>{prefix}rule &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;command|module&gt;/&lt;name&gt; [expiry]</code> — Рұқсат ережесін қосу\n<code>{prefix}rulerm &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;rule&gt;</code> — Ережені жою\n<code>{prefix}ruleclr &lt;user|chat|sgroup&gt; [target]</code> — Ережелерді тазарту\n<code>{prefix}perm &lt;user_id&gt; &lt;admin|trusted|everyone&gt; [remove]</code> — Құқық беру немесе қайтару\n<code>{prefix}perms</code> — Құқықтар тізімі\n<code>{prefix}whois &lt;user_id&gt;</code> — Пайдаланушы құқықтары",
+    "account_owner": "Аккаунт иесін жоюға болмайды."
   },
   "inline": {
     "command_open": "{command} ашу",
@@ -838,6 +1185,42 @@
       "403": "Рұқсат жоқ",
       "404": "Табылмады",
       "500": "Ішкі қате"
+    }
+  },
+  "ui": {
+    "close": "✕ Close",
+    "back": "‹ Артқа",
+    "expired": "Мәзірдің мерзімі өтті. Команданы қайта шақырыңыз.",
+    "stale": "Мәзір жаңа ғана жаңарды, қайта басыңыз.",
+    "denied": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> Бұл батырма сізге арналмаған.",
+    "failed": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>Қате орын алды:</b>\n<blockquote>{error}</blockquote>",
+    "flood": "Telegram {seconds} с күтуді сұрайды.",
+    "slow_down": "Тым жылдам, бір секунд күтіңіз.",
+    "inline_unavailable": "<i>Бұл чатта инлайн-мәзір қолжетімсіз, сондықтан мұнда қарапайым мәтін.</i>",
+    "input_send_secret": "Жіберу (таңба: {count}, жасырын)",
+    "search": "🔍 Іздеу",
+    "edit": "✎ Өзгерту",
+    "reset": "↺ Әдепкі",
+    "on": "Қосу",
+    "off": "Өшіру",
+    "error": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> {error}",
+    "saved": "Сақталды",
+    "empty": "бос",
+    "nothing_found": "«{query}» бойынша ештеңе табылмады."
+  },
+  "translations": {
+    "translating": "Аудару жүруде…",
+    "empty_text": "Аударуға арналған мәтін бос",
+    "text_too_large": "Мәтін бір сұраныс үшін тым үлкен",
+    "failed": "Мәтінді аудару мүмкін болмады",
+    "error_title": "Аудару қатесі",
+    "usage_file": "Сілтемені, жолды көрсетіңіз немесе файлға реплай жасаңыз (.json)"
+  },
+  "info": {
+    "commands": {
+      "ping": {
+        "description": "Юзербот пингін өлшеу"
+      }
     }
   }
 }

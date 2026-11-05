@@ -64,6 +64,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(prog="hotaru")
     parser.add_argument("--check", action="store_true")
     parser.add_argument("--account", type=int, default=None)
+    parser.add_argument("--weboff", action="store_true")
     args = parser.parse_args()
     if not os.environ.get("HOTARU_ACCOUNT_LOCK"):
         ensure_kernel_dependencies()
@@ -71,6 +72,9 @@ def main() -> None:
     from .runtime import Runtime
     path = os.environ.get("HOTARU_ACCOUNT_STATE") if args.account is not None else None
     config = RuntimeConfig.from_database(path, discover=False) if path else RuntimeConfig.from_database()
+    if args.weboff:
+        from dataclasses import replace
+        config = replace(config, singularity_enabled=False, weboff=True)
     if args.account is not None:
         from pathlib import Path
         from .accounts import AccountManager, account_config

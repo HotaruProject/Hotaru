@@ -13,3 +13,7 @@ sanctuary/
 observatory/
 .hotaru/
 nohup.out
+node_modules/
+dist/
+/*.hmod
+

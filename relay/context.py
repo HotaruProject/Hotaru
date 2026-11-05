@@ -10,7 +10,7 @@ def _deny_all(_value: object) -> bool:
 
 try:
     from .denylist import is_blocked_peer, is_readonly_peer, payload_hits_blocked, payload_hits_readonly
-except (ImportError, KeyError):  # denylist unavailable -> deny everything
+except (ImportError, KeyError):  # denylist unavailable -> deny everything)
     is_blocked_peer = _deny_all
     is_readonly_peer = _deny_all
     payload_hits_blocked = _deny_all
@@ -846,7 +846,14 @@ class ContextOperations:
     def prefix(self) -> Prefix:
         return self.get_prefix()
 
-    @property
+    def classify_error(self, exc: Any) -> dict[str, Any]:
+        from relay.toolkit import classify_error
+        return classify_error(exc)
+
+    async def check_restrictions(self) -> dict[str, Any]:
+        from relay.toolkit import check_restrictions
+        return await check_restrictions(self)
+
     def mt(self) -> MTContext:
         return MTContext(self)
 
@@ -1560,10 +1567,16 @@ async def _ctx_translate(target: MessageOperations, text: Any, to_lang: str | No
             body = _msg_field(body, "result")
         if not isinstance(body, list) or not body:
             raise RuntimeError("Telegram returned no translated text")
-        parts = [_msg_field(item, "text") for item in cast('list[Any]', body)]
-        if any(not isinstance(item, str) for item in parts):
-            raise RuntimeError("Telegram returned invalid translated text")
-        return "".join(cast('list[str]', parts))
+        parts: list[str] = []
+        for item in cast('list[Any]', body):
+            txt = _msg_field(item, "text") or ""
+            ents = cast('list[Any]', _msg_field(item, "entities") or [])
+            if ents:
+                from relay.toolkit import entities_to_html
+                parts.append(entities_to_html(txt, ents))
+            else:
+                parts.append(txt)
+        return "".join(parts)
     async def request(payload: dict[str, Any]) -> dict[str, Any]:
         result = await target.ctx.cap("net", payload)
         if not isinstance(result, dict):
@@ -1573,3 +1586,17 @@ async def _ctx_translate(target: MessageOperations, text: Any, to_lang: str | No
 
 
 CTX_OPERATIONS["translate"] = _ctx_translate
+
+
+async def _ctx_classify_error(target: MessageOperations, exc: Any) -> dict[str, Any]:
+    from relay.toolkit import classify_error
+    return classify_error(exc)
+
+
+async def _ctx_check_restrictions(target: MessageOperations) -> dict[str, Any]:
+    from relay.toolkit import check_restrictions
+    return await check_restrictions(target.ctx)
+
+
+CTX_OPERATIONS["classify_error"] = _ctx_classify_error
+CTX_OPERATIONS["check_restrictions"] = _ctx_check_restrictions

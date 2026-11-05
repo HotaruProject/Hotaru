@@ -67,12 +67,22 @@ class ModuleBinder:
                 import traceback; traceback.print_exc(); raise ActivationError(f"watcher handler is missing: {name}")
             watcher_handlers.append((name, handler))
 
+        bot_handlers: list[tuple[str, Any]] = []
+        for name in getattr(loaded.manifest, "bot_commands", ()):
+            if not name.isidentifier():
+                import traceback; traceback.print_exc(); raise ActivationError(f"module bot command is invalid: {name}")
+            handler = namespace.get(f"bot_{name}") or namespace.get(f"command_{name}")
+            if not sandbox and not callable(handler):
+                import traceback; traceback.print_exc(); raise ActivationError(f"module bot handler is missing: {name}")
+            bot_handlers.append((name, handler))
+
         from .registry import KERNEL_MODULES
         reserved = loaded.manifest.module_id in KERNEL_MODULES
         aliases = kernel.registry.alias_map()
         bound_inline: list[str] = []
         bound: list[str] = []
         bound_watchers: list[str] = []
+        bound_bot: list[str] = []
         try:
             if is_kernel:
                 kernel.registry.register_kernel_module(loaded.manifest.module_id)
@@ -85,6 +95,15 @@ class ModuleBinder:
                     sandbox=sandbox,
                 )
                 bound.append(name)
+            for name, handler in bot_handlers:
+                kernel.registry.register_bot(
+                    name,
+                    handler,
+                    module_id=loaded.manifest.module_id,
+                    kernel=is_kernel,
+                    sandbox=sandbox,
+                )
+                bound_bot.append(name)
             for name, handler in watcher_handlers:
                 kernel.registry.register_watcher(name, handler, module_id=loaded.manifest.module_id, sandbox=sandbox)
                 bound_watchers.append(name)
@@ -96,6 +115,8 @@ class ModuleBinder:
         except Exception as exc:
             for name in bound:
                 kernel.registry.unregister_kernel(name, module_id=loaded.manifest.module_id)
+            for name in bound_bot:
+                kernel.registry.unregister_bot(name, module_id=loaded.manifest.module_id)
             for name in bound_inline:
                 kernel.inline_registry.unregister(name, module_id=loaded.manifest.module_id)
             for name in bound_watchers:
@@ -116,6 +137,8 @@ class ModuleBinder:
                 kernel.registry.unregister_kernel(name, module_id=loaded.manifest.module_id)
             else:
                 kernel.unregister_module_command(loaded.manifest.module_id, name)
+        for name in getattr(loaded.manifest, "bot_commands", ()):
+            kernel.registry.unregister_bot(name, module_id=loaded.manifest.module_id)
         for name in getattr(loaded.manifest, "inline_commands", ()):
             kernel.inline_registry.unregister(name, module_id=loaded.manifest.module_id)
         for name in loaded.manifest.watchers:
@@ -614,3 +637,12 @@ class ModuleManager:
 
     def items(self) -> tuple[ActiveModule, ...]:
         return tuple(self._active.values())
+
+    def keys(self) -> tuple[str, ...]:
+        return tuple(self._active.keys())
+
+    def __iter__(self) -> Any:
+        return iter(self._active.keys())
+
+    def __contains__(self, module_id: str) -> bool:
+        return module_id in self._active

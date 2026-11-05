@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import html
 import logging
 import re
 import secrets
@@ -122,7 +121,6 @@ def _https_request_sync(url: str, method: str, timeout: float) -> tuple[int, byt
     ).encode("ascii")
     with trusted_scope():
         tls_ctx = ssl.create_default_context()
-        tls_ctx.minimum_version = ssl.TLSVersion.TLSv1_2
         with socket.create_connection((host, port), timeout=timeout) as raw_sock:
             with tls_ctx.wrap_socket(raw_sock, server_hostname=host) as tls_sock:
                 tls_sock.sendall(req_bytes)
@@ -344,57 +342,6 @@ def save_sanctuary_app_state(
     return record
 
 
-def build_owner_tunnel_message(
-    tunnel_url: str,
-    *,
-    bot_username: str | None = None,
-    short_name: str = "dashboard",
-    app_link: str | None = None,
-    registered: bool = False,
-    sync_detail: str = "",
-    command_prefix: str = ".",
-) -> str:
-    clean_bot = (bot_username or "").lstrip("@").strip()
-    resolved_app_link = app_link or (
-        f"https://t.me/{clean_bot}/{short_name}" if clean_bot else None
-    )
-    esc_url = html.escape(tunnel_url)
-    esc_prefix = html.escape(command_prefix or ".")
-
-    lines = [
-        "🕳 <b>Hotaru // Singularity</b>",
-        "",
-        f"▸ <b>Horizon Relay:</b>\n<code>{esc_url}</code>",
-    ]
-    if resolved_app_link:
-        lines.append(
-            f"▸ <b>Mini App Endpoint:</b>\n{html.escape(resolved_app_link)}"
-        )
-
-    if registered:
-        mode_tag = (
-            "provisioned (/newapp)"
-            if sync_detail == "created_new"
-            else "verified (unchanged)"
-            if sync_detail in ("already_up_to_date", "adopted_unchanged")
-            else "synced (Edit Web App URL)"
-        )
-        lines.extend(
-            [
-                f"▸ <b>BotFather Sync:</b> <code>{html.escape(mode_tag)}</code>",
-                f"▸ <b>Inline Panel:</b> <code>{esc_prefix}dash</code>",
-            ]
-        )
-
-    lines.extend(
-        [
-            "",
-            "<i>Sanctuary Guard: доступ открыт строго владельцу по подписи Telegram initData (остальным — 403).</i>",
-        ]
-    )
-    return "\n".join(lines)
-
-
 def _unwrap_tl(value: Any) -> dict[str, Any]:
     if not isinstance(value, dict):
         return {}
@@ -504,7 +451,7 @@ def _find_button_by_text(msg: Any, *needles: str) -> tuple[int, str, bytes] | No
 def _find_next_page_button(msg: Any) -> tuple[int, str, bytes] | None:
     for entry in _flatten_buttons(msg):
         label = entry[1].strip()
-        if label in ("»", ">", "➡️", "Next", "Next »"):
+        if label in ("»", ">", ">", "Next", "Next »"):
             return entry
     return None
 
@@ -542,6 +489,7 @@ class _BotFatherRelayDriver:
         self.mt = getattr(self.app, "mt", None) if self.app is not None else getattr(runtime, "mt", None)
         self.poll_interval = poll_interval
         self._peer: Any = None
+        self._tracked_ids: set[int] = set()
         self._self_id: int = int(
             getattr(getattr(self.app, "mt", None), "self_id", 0)
             or getattr(getattr(self.app, "session", None), "self_id", 0)
@@ -559,8 +507,14 @@ class _BotFatherRelayDriver:
                 if self.mt is None:
                     return False
                 self._peer = await self.mt.resolve_peer(BOTFATHER_PEER)
-                return self._peer is not None
-            return self.mt is not None
+                if self._peer is None:
+                    return False
+                self._initial_max_id = await self.max_message_id()
+                return True
+            ok = self.mt is not None
+            if ok:
+                self._initial_max_id = await self.max_message_id()
+            return ok
 
     async def get_recent_messages(self, limit: int = 8) -> list[Any]:
         with trusted_scope():
@@ -599,9 +553,15 @@ class _BotFatherRelayDriver:
                             random_id=secrets.randbits(63),
                         )
                         sent_id = self._extract_sent_id_from_updates(raw)
-                        return sent_id or before
+                        res = sent_id or before
+                        if res:
+                            self._tracked_ids.add(res)
+                        return res
                     sent = await self.mt.send_message(BOTFATHER_USERNAME, text)
-                    return _extract_msg_id(sent)
+                    res = _extract_msg_id(sent)
+                    if res:
+                        self._tracked_ids.add(res)
+                    return res
             except Exception as exc:
                 if attempt == 0 and await _sleep_on_flood(exc):
                     continue
@@ -642,7 +602,10 @@ class _BotFatherRelayDriver:
                     random_id=secrets.randbits(63),
                 )
                 sent_id = self._extract_sent_id_from_updates(raw)
-                return sent_id or before
+                res = sent_id or before
+                if res:
+                    self._tracked_ids.add(res)
+                return res
 
             suffix = ".jpg" if file_name.lower().endswith(".jpg") else ".png"
             with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
@@ -651,10 +614,16 @@ class _BotFatherRelayDriver:
             try:
                 if hasattr(self.mt, "send_photo"):
                     sent = await self.mt.send_photo(BOTFATHER_USERNAME, str(tmp_path))
-                    return _extract_msg_id(sent) or before
+                    res = _extract_msg_id(sent) or before
+                    if res:
+                        self._tracked_ids.add(res)
+                    return res
                 if hasattr(self.mt, "send_file"):
                     sent = await self.mt.send_file(BOTFATHER_USERNAME, str(tmp_path))
-                    return _extract_msg_id(sent) or before
+                    res = _extract_msg_id(sent) or before
+                    if res:
+                        self._tracked_ids.add(res)
+                    return res
                 raise RuntimeError("photo_upload_unsupported")
             finally:
                 tmp_path.unlink(missing_ok=True)
@@ -705,6 +674,10 @@ class _BotFatherRelayDriver:
             ]
             if incoming:
                 incoming.sort(key=_extract_msg_id)
+                for inc_m in incoming:
+                    inc_id = _extract_msg_id(inc_m)
+                    if inc_id:
+                        self._tracked_ids.add(inc_id)
                 if skip_url_prompt_echo:
                     non_echo = [m for m in incoming if not _is_url_prompt_echo(_extract_msg_text(m))]
                     if not non_echo:
@@ -728,6 +701,8 @@ class _BotFatherRelayDriver:
                 if _is_outgoing(m, self._self_id):
                     continue
                 mid = _extract_msg_id(m)
+                if mid:
+                    self._tracked_ids.add(mid)
                 txt = _extract_msg_text(m)
                 if mid > msg_id:
                     return m
@@ -765,6 +740,8 @@ class _BotFatherRelayDriver:
                 if _is_outgoing(m, self._self_id):
                     continue
                 mid = _extract_msg_id(m)
+                if mid:
+                    self._tracked_ids.add(mid)
                 txt = _extract_msg_text(m)
                 has_detail = (
                     "direct link:" in txt.lower()
@@ -777,6 +754,55 @@ class _BotFatherRelayDriver:
                     if has_detail:
                         return m
         return None
+
+    async def delete_messages(self, *ids: int) -> None:
+        valid = [i for i in ids if i > 0]
+        if not valid:
+            return
+        for i in valid:
+            self._tracked_ids.discard(i)
+        try:
+            with trusted_scope():
+                if self.is_goygram:
+                    await self.app.mt_messages_delete_messages(id=valid, revoke=True)
+                elif hasattr(self.mt, "delete_messages"):
+                    await self.mt.delete_messages(BOTFATHER_USERNAME, valid)
+        except Exception:
+            pass
+
+    async def cancel_dialogue(self) -> None:
+        try:
+            floor = await self.send_text("/cancel")
+            reply = await self.wait_reply_after(floor, timeout=3.0)
+            if reply is not None:
+                mid = _extract_msg_id(reply)
+                if mid:
+                    self._tracked_ids.add(mid)
+        except Exception:
+            pass
+
+    async def cleanup_messages(self) -> None:
+        try:
+            initial = getattr(self, "_initial_max_id", 0)
+            recent = await self.get_recent_messages(limit=30)
+            for m in recent:
+                mid = _extract_msg_id(m)
+                if mid > initial:
+                    self._tracked_ids.add(mid)
+        except Exception:
+            pass
+        if not self._tracked_ids:
+            return
+        to_del = list(self._tracked_ids)
+        self._tracked_ids.clear()
+        try:
+            with trusted_scope():
+                if self.is_goygram:
+                    await self.app.mt_messages_delete_messages(id=to_del, revoke=True)
+                elif hasattr(self.mt, "delete_messages"):
+                    await self.mt.delete_messages(BOTFATHER_USERNAME, to_del)
+        except Exception:
+            pass
 
     @staticmethod
     def _extract_sent_id_from_updates(raw: Any) -> int:
@@ -827,9 +853,6 @@ async def _provision_bot_via_driver(
     runtime: Any,
     state: Any | None,
 ) -> tuple[int, str, str]:
-    await driver.send_text("/cancel")
-    await asyncio.sleep(driver.poll_interval)
-
     mybots_msg = await driver.ask("/mybots", timeout=9.0)
     if mybots_msg is not None:
         current_msg = mybots_msg
@@ -857,8 +880,6 @@ async def _provision_bot_via_driver(
                         if tok_match:
                             token = tok_match.group(1)
                 if not token:
-                    await driver.send_text("/cancel")
-                    await asyncio.sleep(driver.poll_interval)
                     r_tok = await driver.ask("/token", timeout=7.0)
                     if r_tok is not None:
                         ans_tok = await driver.ask(f"@{cand_username}", timeout=7.0)
@@ -881,20 +902,27 @@ async def _provision_bot_via_driver(
                 break
             current_msg = nxt_msg
 
-    await driver.send_text("/cancel")
-    await asyncio.sleep(driver.poll_interval)
-
     r_new = await driver.ask("/newbot", timeout=9.0)
     if r_new is None:
         return 0, "", ""
     new_low = _extract_msg_text(r_new).lower()
     if "cannot create" in new_low or "too many" in new_low or "up to 20" in new_low:
-        await driver.send_text("/cancel")
+        await driver.cancel_dialogue()
         return 0, "", ""
     await driver.ask("Hotaru Relay", timeout=8.0)
 
-    for _ in range(5):
-        cand_username = f"hotaru_{secrets.token_hex(3)}_bot"
+    _roots = ("nova", "luna", "aero", "flux", "zeno", "pulse", "echo", "spark", "sol", "iris", "drift", "blaze")
+    _stems = ("ray", "flow", "dash", "link", "arc", "wave", "sync", "byte", "mesh", "gate")
+    candidates = []
+    for _ in range(3):
+        r = secrets.choice(_roots)
+        s = secrets.choice(_stems)
+        candidates.append(f"{r}{s}bot")
+        candidates.append(f"{r}_{s}_bot")
+        candidates.append(f"{r}_{s}_{secrets.token_hex(2)}_bot")
+    candidates.append(f"hotaru_{secrets.token_hex(3)}_bot")
+
+    for cand_username in candidates:
         reply = await driver.ask(cand_username, timeout=9.0)
         txt = _extract_msg_text(reply)
         tok_match = BOT_TOKEN_RE.search(txt)
@@ -912,7 +940,7 @@ async def _provision_bot_via_driver(
             continue
         break
 
-    await driver.send_text("/cancel")
+    await driver.cancel_dialogue()
     return 0, "", ""
 
 
@@ -996,13 +1024,16 @@ async def ensure_inline_bot_ready(
                 except Exception:
                     pass
             if await driver.prepare():
-                bid, buser, btok = await _provision_bot_via_driver(driver, runtime, state)
-                if btok and inline_mgr is not None and hasattr(inline_mgr, "start"):
-                    try:
-                        await inline_mgr.start()
-                    except Exception:
-                        pass
-                return bid, buser, btok
+                try:
+                    bid, buser, btok = await _provision_bot_via_driver(driver, runtime, state)
+                    if btok and inline_mgr is not None and hasattr(inline_mgr, "start"):
+                        try:
+                            await inline_mgr.start()
+                        except Exception:
+                            pass
+                    return bid, buser, btok
+                finally:
+                    await driver.cleanup_messages()
         return 0, "", ""
 
 
@@ -1027,7 +1058,7 @@ def _rank_myapps_candidates(
         if (
             "back" in low
             or "cancel" in low
-            or low in ("»", "«", ">", "<", "➡️", "⬅️", "next", "prev", "next »", "« prev")
+            or low in ("»", "«", ">", "<", ">", "<", "next", "prev", "next »", "« prev")
         ):
             return (-10, -idx)
         score = 0
@@ -1186,7 +1217,7 @@ async def _sync_existing_via_myapps(
             done_text = _extract_msg_text(done_reply)
             done_low = done_text.lower()
             if "invalid" in done_low and "url" in done_low:
-                await driver.send_text("/cancel")
+                await driver.cancel_dialogue()
                 return RelaySyncReport(
                     ok=False,
                     bot_username=clean_bot,
@@ -1240,7 +1271,7 @@ async def _register_new_via_newapp(
         r_bot = await driver.ask(f"@{clean_bot}", timeout=8.0)
 
     if r_bot is None or "invalid bot" in _extract_msg_text(r_bot).lower():
-        await driver.send_text("/cancel")
+        await driver.cancel_dialogue()
         return RelaySyncReport(ok=False, bot_username=clean_bot, detail="invalid_bot_selected")
 
     await driver.ask(title, timeout=8.0)
@@ -1250,7 +1281,7 @@ async def _register_new_via_newapp(
     photo_floor = await driver.send_cover_photo(cover_bytes, file_name=cover_name)
     photo_reply = await driver.wait_reply_after(photo_floor, timeout=12.0)
     if photo_reply is None or "640x360" in _extract_msg_text(photo_reply).lower():
-        await driver.send_text("/cancel")
+        await driver.cancel_dialogue()
         return RelaySyncReport(ok=False, bot_username=clean_bot, detail="cover_photo_rejected")
 
     await driver.ask("/empty", timeout=8.0)
@@ -1261,7 +1292,7 @@ async def _register_new_via_newapp(
         skip_url_prompt_echo=True,
     )
     if url_reply is None or "invalid" in _extract_msg_text(url_reply).lower():
-        await driver.send_text("/cancel")
+        await driver.cancel_dialogue()
         return RelaySyncReport(ok=False, bot_username=clean_bot, detail="invalid_url_rejected")
 
     slug_candidates = [short_name]
@@ -1297,7 +1328,7 @@ async def _register_new_via_newapp(
                 detail="created_new",
             )
 
-    await driver.send_text("/cancel")
+    await driver.cancel_dialogue()
     return RelaySyncReport(ok=False, bot_username=clean_bot, detail="short_name_unavailable")
 
 
@@ -1385,9 +1416,6 @@ async def configure_botfather_webapp(
                 return RelaySyncReport(ok=False, bot_username=clean_bot, detail="mt_unavailable")
 
             try:
-                await driver.send_text("/cancel")
-                await asyncio.sleep(driver.poll_interval)
-
                 synced = await _sync_existing_via_myapps(
                     driver,
                     clean_bot=clean_bot,
@@ -1434,9 +1462,6 @@ async def configure_botfather_webapp(
                         title=title,
                     )
 
-                await driver.send_text("/cancel")
-                await asyncio.sleep(driver.poll_interval)
-
                 created = await _register_new_via_newapp(
                     driver,
                     clean_bot=clean_bot,
@@ -1476,6 +1501,31 @@ async def configure_botfather_webapp(
             except Exception as exc:
                 log.warning("BotFather Mini App sync failed: %s", exc)
                 return RelaySyncReport(ok=False, bot_username=clean_bot, detail=str(exc))
+            finally:
+                await driver.cleanup_messages()
+
+
+async def sync_all_accounts_menu_button(runtime: Any, tunnel_url: str) -> int:
+    if not tunnel_url.startswith("https://"):
+        return 0
+    synced = 0
+    cfg = getattr(runtime, "config", None)
+    owner_id = getattr(runtime, "owner_id", None) or getattr(cfg, "owner_id", None)
+    target_ids: set[int] = set()
+    if owner_id:
+        target_ids.add(int(owner_id))
+    mgr = getattr(runtime, "account_manager", None)
+    if mgr is not None and hasattr(mgr, "items"):
+        for profile in mgr.items():
+            if profile.enabled and profile.user_id:
+                target_ids.add(int(profile.user_id))
+    for uid in target_ids:
+        try:
+            if await update_bot_menu_button(runtime, uid, tunnel_url):
+                synced += 1
+        except Exception:
+            pass
+    return synced
 
 
 async def update_bot_menu_button(runtime: Any, owner_id: int | None, tunnel_url: str) -> bool:
@@ -1527,65 +1577,9 @@ async def update_bot_menu_button(runtime: Any, owner_id: int | None, tunnel_url:
     return False
 
 
-async def notify_owner_saved_messages(
-    runtime: Any,
-    tunnel_url: str,
-    *,
-    bot_username: str | None = None,
-    short_name: str = "dashboard",
-    app_link: str | None = None,
-    registered: bool = False,
-    sync_detail: str = "",
-) -> bool:
-    with trusted_scope():
-        app_obj = getattr(runtime, "app", None)
-        mt = getattr(app_obj, "mt", None) if app_obj is not None else getattr(runtime, "mt", None)
-        if app_obj is None and mt is None:
-            return False
-
-        cfg = getattr(runtime, "config", None)
-        prefix = str(
-            getattr(cfg, "prefix", None)
-            or getattr(cfg, "command_prefix", None)
-            or "."
-        )
-        text = build_owner_tunnel_message(
-            tunnel_url,
-            bot_username=bot_username,
-            short_name=short_name,
-            app_link=app_link,
-            registered=registered,
-            sync_detail=sync_detail,
-            command_prefix=prefix,
-        )
-
-        sent_ok = False
-        if app_obj is not None and hasattr(app_obj, "send_msg"):
-            try:
-                await app_obj.send_msg("me", text, parse_mode="HTML", no_webpage=True)
-                sent_ok = True
-            except Exception as exc:
-                log.warning("Failed to send tunnel URL via app.send_msg: %s", exc)
-
-        if not sent_ok and mt is not None and hasattr(mt, "send_message"):
-            try:
-                await mt.send_message("me", text, parse_mode="HTML", link_preview=False)
-                sent_ok = True
-            except TypeError:
-                try:
-                    await mt.send_message("me", text, parse_mode="HTML")
-                    sent_ok = True
-                except Exception as exc:
-                    log.warning("Failed to send tunnel URL to Saved Messages: %s", exc)
-            except Exception as exc:
-                log.warning("Failed to send tunnel URL to Saved Messages: %s", exc)
-
-        if not sent_ok:
-            return False
-
-        owner_id = getattr(runtime, "owner_id", None) or getattr(cfg, "owner_id", None)
-        await update_bot_menu_button(runtime, owner_id, tunnel_url)
-        return True
+async def sync_owner_menu_button(runtime: Any, tunnel_url: str) -> bool:
+    count = await sync_all_accounts_menu_button(runtime, tunnel_url)
+    return count > 0
 
 
 WebAppDbState = SanctuaryAppState
