@@ -260,7 +260,12 @@
       "code_len_error": "Код языка должен состоять ровно из 2 букв",
       "code_collision": "Код языка '{code}' уже используется",
       "name_collision": "Название пакета '{name}' уже используется",
-      "missing_keys": "Языковой пакет не покрывает 100% ключей: не хватает {count} ключей"
+      "missing_keys": "Языковой пакет не покрывает 100% ключей: не хватает {count} ключей",
+      "err_file_missing": "Файл словаря не найден: прикрепите .json или сделайте реплай",
+      "err_file_doc": "Сообщение должно содержать JSON-файл (.json)",
+      "err_json_syntax": "Некорректный синтаксис JSON: {err} (строка {line})",
+      "err_structure": "Ошибка структуры словаря: {err}",
+      "err_load_failed": "Не удалось загрузить словарь: {err}"
     },
     "test-features": {
       "description": "Тестовый модуль прокси и возможностей Hotaru",
@@ -827,7 +832,20 @@
         "suspend_api": {
           "usage": "<seconds>"
         }
-      }
+      },
+      "unavailable": "Защита API недоступна",
+      "field_status": "Статус:",
+      "field_window": "Окно:",
+      "field_limit": "Лимит:",
+      "field_pause": "Пауза:",
+      "field_requests": "Запросов:",
+      "field_triggers": "Срабатываний:",
+      "footer_guard": "Защита от флудвейта и перегрузки Telegram API",
+      "telemetry_title": "Телеметрия вызовов API",
+      "telemetry_empty": "Нет недавних вызовов в окне сэмплирования",
+      "telemetry_footer": "Методы, вызванные в текущем окне",
+      "usage_suspend": "Использование: {prefix}suspend_api [секунды]",
+      "suspended_success": "Защита API: приостановлена на <code>{seconds}с</code>"
     },
     "genesis": {
       "title": "Быстрая настройка",

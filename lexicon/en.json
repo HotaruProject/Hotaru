@@ -260,7 +260,12 @@
       "code_len_error": "Language code must be exactly 2 letters",
       "code_collision": "Language code '{code}' is already in use",
       "name_collision": "Language pack name '{name}' is already in use",
-      "missing_keys": "Language pack does not cover 100% of keys: missing {count} keys"
+      "missing_keys": "Language pack does not cover 100% of keys: missing {count} keys",
+      "err_file_missing": "Dictionary file not found: attach .json or reply to message",
+      "err_file_doc": "Message must contain a JSON file (.json)",
+      "err_json_syntax": "Invalid JSON syntax: {err} (line {line})",
+      "err_structure": "Dictionary structure error: {err}",
+      "err_load_failed": "Failed to load dictionary: {err}"
     },
     "test-features": {
       "description": "Hotaru proxy and capability test module",
@@ -827,7 +832,20 @@
         "suspend_api": {
           "usage": "<seconds>"
         }
-      }
+      },
+      "unavailable": "API protection unavailable",
+      "field_status": "Status:",
+      "field_window": "Window:",
+      "field_limit": "Limit:",
+      "field_pause": "Pause:",
+      "field_requests": "Requests:",
+      "field_triggers": "Triggers:",
+      "footer_guard": "Telegram API flood & rate limit guard",
+      "telemetry_title": "API Call Telemetry",
+      "telemetry_empty": "No recent calls in sample window",
+      "telemetry_footer": "Methods called during current window",
+      "usage_suspend": "Usage: {prefix}suspend_api [seconds]",
+      "suspended_success": "API Protection: suspended for <code>{seconds}s</code>"
     },
     "genesis": {
       "title": "Genesis Setup",

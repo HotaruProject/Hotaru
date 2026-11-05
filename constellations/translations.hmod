@@ -383,15 +383,15 @@ async def command_loadlex(ctx: Any, invocation: Any) -> Any:
         log.error("lexicon load error: %s", exc, exc_info=True)
         err_raw = str(exc)
         if "file_missing" in err_raw or "not found" in err_raw.lower() or "не найден" in err_raw:
-            err_msg = "Файл словаря не найден: прикрепите .json или сделайте реплай"
+            err_msg = ctx.t("kernel.translations.err_file_missing", "Dictionary file not found: attach .json or reply to message")
         elif "file_document" in err_raw or "должно содержать" in err_raw:
-            err_msg = "Сообщение должно содержать JSON-файл (.json)"
+            err_msg = ctx.t("kernel.translations.err_file_doc", "Message must contain a JSON file (.json)")
         elif isinstance(exc, json.JSONDecodeError):
-            err_msg = f"Некорректный синтаксис JSON: {exc.msg} (строка {exc.lineno})"
+            err_msg = ctx.t("kernel.translations.err_json_syntax", "Invalid JSON syntax: {err} (line {line})", err=exc.msg, line=exc.lineno)
         elif isinstance(exc, (ValueError, TypeError)):
-            err_msg = f"Ошибка структуры словаря: {err_raw}"
+            err_msg = ctx.t("kernel.translations.err_structure", "Dictionary structure error: {err}", err=err_raw)
         else:
-            err_msg = f"Не удалось загрузить словарь: {err_raw}"
+            err_msg = ctx.t("kernel.translations.err_load_failed", "Failed to load dictionary: {err}", err=err_raw)
         log_lines.append(f" !     {html.escape(err_msg, quote=False)}")
         await ctx.respond(f"<pre>{chr(10).join(log_lines)}</pre>", parse_mode="HTML", output="edit")
     finally:

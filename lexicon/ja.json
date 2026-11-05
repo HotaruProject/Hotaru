@@ -200,7 +200,12 @@
       "code_collision": "言語コード「{code}」はすでに使用されています",
       "name_collision": "言語パック名「{name}」はすでに使用されています",
       "missing_keys": "言語パックがキーの100%をカバーしていません: {count}個のキーが不足しています",
-      "no_text": "翻訳するテキストが指定されていません"
+      "no_text": "翻訳するテキストが指定されていません",
+      "err_file_missing": "辞書ファイルが見つかりません: .jsonを添付するかメッセージに返信してください",
+      "err_file_doc": "メッセージにはJSONファイル（.json）が含まれている必要があります",
+      "err_json_syntax": "無効なJSON構文: {err} ({line}行目)",
+      "err_structure": "辞書構造エラー: {err}",
+      "err_load_failed": "辞書の読み込みに失敗しました: {err}"
     },
     "test-features": {
       "description": "Hotaru プロキシと機能のテストモジュール",
@@ -832,7 +837,20 @@
         "suspend_api": {
           "usage": "<seconds>"
         }
-      }
+      },
+      "unavailable": "API保護は利用できません",
+      "field_status": "ステータス:",
+      "field_window": "ウィンドウ:",
+      "field_limit": "制限:",
+      "field_pause": "一時停止:",
+      "field_requests": "リクエスト数:",
+      "field_triggers": "トリガー回数:",
+      "footer_guard": "Telegram APIフラッドおよびレート制限ガード",
+      "telemetry_title": "API呼び出しテレメトリ",
+      "telemetry_empty": "サンプル期間内の最近の呼び出しはありません",
+      "telemetry_footer": "現在の期間内に呼び出されたメソッド",
+      "usage_suspend": "使用法: {prefix}suspend_api [秒]",
+      "suspended_success": "API保護: <code>{seconds}秒</code> 一時停止しました"
     },
     "genesis": {
       "title": "初期セットアップ",

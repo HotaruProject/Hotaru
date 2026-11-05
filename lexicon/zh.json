@@ -260,7 +260,12 @@
       "code_len_error": "语言代码必须正好由2个字母组成",
       "code_collision": "语言代码 '{code}' 已被使用",
       "name_collision": "语言包名称 '{name}' 已被使用",
-      "missing_keys": "语言包未100%覆盖所有键: 缺少 {count} 个键"
+      "missing_keys": "语言包未100%覆盖所有键: 缺少 {count} 个键",
+      "err_file_missing": "字典文件未找到: 请附加 .json 文件或回复消息",
+      "err_file_doc": "消息必须包含 JSON 文件 (.json)",
+      "err_json_syntax": "无效的 JSON 语法: {err} (第 {line} 行)",
+      "err_structure": "字典结构错误: {err}",
+      "err_load_failed": "加载字典失败: {err}"
     },
     "test-features": {
       "description": "Hotaru 代理与能力测试模块",
@@ -795,7 +800,20 @@
         "suspend_api": {
           "usage": "<seconds>"
         }
-      }
+      },
+      "unavailable": "API 保护不可用",
+      "field_status": "状态:",
+      "field_window": "窗口:",
+      "field_limit": "限制:",
+      "field_pause": "暂停:",
+      "field_requests": "请求数:",
+      "field_triggers": "触发次数:",
+      "footer_guard": "Telegram API 泛洪与速率限制保护",
+      "telemetry_title": "API 调用遥测",
+      "telemetry_empty": "采样窗口内无近期调用",
+      "telemetry_footer": "当前窗口内调用的方法",
+      "usage_suspend": "用法: {prefix}suspend_api [秒数]",
+      "suspended_success": "API 保护: 已暂停 <code>{seconds}秒</code>"
     },
     "backups": {
       "description": "将备份发送至服务论坛",
