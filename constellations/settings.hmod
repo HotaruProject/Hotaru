@@ -506,7 +506,7 @@ async def command_conf(ctx: Any, invocation: Any) -> Any:
     if args[1].casefold() == "reset":
         config.reset()
         await ctx.respond(
-            f'<tg-emoji emoji-id="5260687119092817530">🔄</tg-emoji> <b>{_escape(module_id)}</b>: {_escape(ctx.t("kernel.config.reset_done", "Параметры сброшены"))}',
+            f'<tg-emoji emoji-id="5260687119092817530">🔄</tg-emoji> <b>{_escape(module_id)}</b>: {_escape(ctx.t("kernel.config.reset_done", "Defaults restored"))}',
             parse_mode="HTML",
         )
         return
