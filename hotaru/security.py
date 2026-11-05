@@ -3,7 +3,7 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any
+from typing import Any, cast
 
 from .access import AccessManager, Permission
 
@@ -80,16 +80,18 @@ class SecurityGate:
     def principal_of(self, event: Any, *, transport: str) -> Principal:
         user_id = getattr(event, "from_id", None)
         if not isinstance(user_id, int) or user_id <= 0:
-            user = getattr(event, "from_user", None) or getattr(event, "sender", None)
+            user: Any = getattr(event, "from_user", None) or getattr(event, "sender", None)
             if isinstance(user, dict):
-                user_id = user.get("id")
-            elif hasattr(user, "id") and isinstance(user.id, int):
-                user_id = user.id
+                user_id = cast('dict[str, Any]', user).get("id")
+            elif user is not None and hasattr(user, "id") and isinstance(getattr(user, "id", None), int):
+                user_id = getattr(user, "id", None)
         chat_id = getattr(event, "chat_id", None)
         if not isinstance(user_id, int) or user_id <= 0:
-            chat = getattr(event, "chat", None)
-            if isinstance(chat, dict) and chat.get("type") == "private":
-                user_id = chat.get("id")
+            chat: Any = getattr(event, "chat", None)
+            if isinstance(chat, dict):
+                chat_dict = cast('dict[str, Any]', chat)
+                if chat_dict.get("type") == "private":
+                    user_id = chat_dict.get("id")
             elif isinstance(chat_id, int) and chat_id > 0 and transport in ("bot", "bot-pm", "api"):
                 user_id = chat_id
         if not isinstance(user_id, int) or user_id <= 0:

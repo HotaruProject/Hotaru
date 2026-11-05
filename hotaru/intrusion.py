@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import asyncio
 import html
+import http.client
 import json
 import logging
 import re
-import urllib.request
 from typing import Any
 
 log = logging.getLogger(__name__)
@@ -99,13 +99,19 @@ class IntrusionGuard:
             {"chat_id": owner, "text": text, "parse_mode": "HTML", "disable_web_page_preview": True},
             ensure_ascii=False,
         ).encode("utf-8")
-        request = urllib.request.Request(
-            f"https://api.telegram.org/bot{token}/sendMessage",
-            data=data,
-            headers={"Content-Type": "application/json"},
-        )
-        with urllib.request.urlopen(request, timeout=10.0) as response:
+        conn_factory = getattr(http.client, "HTTPSConnection")
+        conn = conn_factory("api.telegram.org", timeout=10.0)
+        try:
+            conn.request(
+                "POST",
+                f"/bot{token}/sendMessage",
+                body=data,
+                headers={"Content-Type": "application/json"},
+            )
+            response = conn.getresponse()
             body = response.read().decode("utf-8", "replace")
+        finally:
+            conn.close()
         payload = json.loads(body)
         if not payload.get("ok"):
             raise RuntimeError(body[:240])

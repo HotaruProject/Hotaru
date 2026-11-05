@@ -28,9 +28,8 @@ HOTARU = {
     },
 }
 
-import html
 import time
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from hotaru.commands import CommandInvocation
@@ -54,13 +53,6 @@ async def command_info(ctx: 'ModuleContext', invocation: 'CommandInvocation') ->
     minutes = (uptime_s % 3600) // 60
     seconds = uptime_s % 60
     uptime_fmt = f"{hours}:{minutes:02d}:{seconds:02d}"
-
-    total_stored = 0
-    if hasattr(ctx, "state") and ctx.state:
-        total_stored = int(ctx.state.get("total_uptime", 0))
-    total_s = total_stored + uptime_s
-    lang = getattr(getattr(ctx, "i18n", None), "language", "en")
-    total_fmt = ctx.tools.duration(total_s, lang) if hasattr(ctx, "tools") else f"{total_s}s"
 
     modules = 0
     mod_mgr = getattr(runtime, "modules", None)

@@ -111,13 +111,13 @@ def step_lang(ctx: Any, nav: Any = None) -> Any:
     runtime = ctx.runtime
     current = runtime.language() if runtime else "en"
     available = ctx.i18n.available_languages() if hasattr(ctx, "i18n") and hasattr(ctx.i18n, "available_languages") else ("en", "ru", "uk", "kz", "ja", "zh")
-    buttons = []
+    buttons: list[Any] = []
     for code in available:
         meta = ctx.i18n.get_meta(code) if hasattr(ctx.i18n, "get_meta") else {"name_native": code}
         label = meta.get("name_native", code)
         is_selected = (code == current)
         buttons.append(k.button(k.radio(label, is_selected), apply_lang, style="success" if is_selected else None, code=code))
-    rows = k.grid(buttons, 2)
+    rows: list[list[Any]] = k.grid(buttons, 2)
     rows.append([k.back(home), k.button(ctx.t("kernel.genesis.btn_next", "Next: Prefix ›"), step_prefix)])
     rows.append([k.close()])
     text = (
@@ -149,11 +149,11 @@ def step_prefix(ctx: Any, nav: Any = None) -> Any:
     runtime = ctx.runtime
     current = getattr(runtime.config, "prefix", ".") if runtime else "."
     presets = [".", "!", ",", "/", "$", "~"]
-    buttons = []
+    buttons: list[Any] = []
     for p in presets:
         is_selected = (p == current)
         buttons.append(k.button(k.radio(p, is_selected), apply_prefix, style="success" if is_selected else None, p=p))
-    rows = k.grid(buttons, 3)
+    rows: list[list[Any]] = k.grid(buttons, 3)
     rows.append([k.input(ctx.t("ui.edit", "Custom Prefix"), set_custom_prefix, ctx.t("kernel.genesis.enter_prefix", "Enter command prefix:"))])
     rows.append([k.back(step_lang), k.button(ctx.t("kernel.genesis.btn_next_logs", "Next: Logs ›"), step_logs)])
     rows.append([k.close()])
@@ -207,11 +207,11 @@ def step_logs(ctx: Any, nav: Any = None) -> Any:
     logger_cfg = getattr(getattr(logger_mod, "loaded", None), "config", None)
     current = str(logger_cfg.get("level", "info") if logger_cfg else "info").lower()
     options = ["all", "debug", "info", "warn", "error", "fatal"]
-    buttons = []
+    buttons: list[Any] = []
     for opt in options:
         is_selected = (opt == current)
         buttons.append(k.button(k.radio(opt.upper(), is_selected), apply_loglevel, style="success" if is_selected else None, level=opt))
-    rows = k.grid(buttons, 3)
+    rows: list[list[Any]] = k.grid(buttons, 3)
     rows.append([k.back(step_prefix), k.button(ctx.t("kernel.genesis.btn_next_backups", "Next: Backups ›"), step_backups)])
     rows.append([k.close()])
     text = (
@@ -247,7 +247,7 @@ def step_backups(ctx: Any, nav: Any = None) -> Any:
     enabled = bool(backups_cfg.get("enabled", True)) if backups_cfg else True
     current_hours = int(backups_cfg.get("interval_hours", 24)) if backups_cfg else 24
     intervals = [6, 12, 24, 48, 72]
-    buttons = []
+    buttons: list[Any] = []
     for h in intervals:
         is_selected = (h == current_hours)
         buttons.append(k.button(k.radio(f"{h}h", is_selected), apply_backup_hours, style="success" if is_selected else None, hours=h))

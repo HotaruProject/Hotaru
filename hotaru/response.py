@@ -270,7 +270,6 @@ class ResponseService:
         if topic_id is not None:
             payload["topic_id"] = topic_id
         raw_html = text
-        flood_exc: Exception | None = None
         if text is not None and str(payload.get("parse_mode", "")).lower() == "html":
             if getattr(msg, "src", "mt") == "bot":
                 payload["parse_mode"] = "HTML"
@@ -286,8 +285,8 @@ class ResponseService:
                 result = await msg.edit(text or "", **payload)
             except MessageNotModifiedError:
                 return Response(True, "edit", getattr(msg, "src", None), msg)
-            except FloodWaitError as exc:
-                flood_exc = exc
+            except FloodWaitError:
+                pass
             except (MessageIdInvalidError, MessageNotFoundError, RPCError, Exception):
                 pass
             else:
@@ -296,8 +295,8 @@ class ResponseService:
             try:
                 result = await msg.reply(text or "", **payload)
                 return Response(True, "reply", getattr(msg, "src", None), result)
-            except FloodWaitError as exc:
-                flood_exc = exc
+            except FloodWaitError:
+                pass
             except (MessageIdInvalidError, MessageNotFoundError, RPCError, Exception):
                 pass
         chat_id = msg_field(msg, "chat_id")
@@ -309,8 +308,8 @@ class ResponseService:
             try:
                 result = await msg.respond(text or "", **send_payload)
                 return Response(True, "reply", getattr(msg, "src", None), result)
-            except FloodWaitError as exc:
-                flood_exc = exc
+            except FloodWaitError:
+                pass
             except Exception:
                 pass
         if chat_id is not None and app is not None and hasattr(app, "send_msg"):
@@ -318,8 +317,8 @@ class ResponseService:
                 via = msg_field(msg, "src")
                 result = await app.send_msg(chat_id, text or "", via=via, **send_payload)
                 return Response(True, "reply", getattr(msg, "src", None), result)
-            except FloodWaitError as exc:
-                flood_exc = exc
+            except FloodWaitError:
+                pass
             except Exception:
                 pass
         if self.flood is not None and chat_id is not None and (raw_html or text):
@@ -709,14 +708,14 @@ class ModuleContext(ContextOperations):
         if engine is not None:
             import secrets
             import time
-            from .screens import _PAGE_CACHE, Screen
+            from .screens import PAGE_CACHE, Screen
             now = time.time()
-            if len(_PAGE_CACHE) > 200:
-                expired = [k for k, v in _PAGE_CACHE.items() if now - v.get("time", 0) > 3600]
+            if len(PAGE_CACHE) > 200:
+                expired = [k for k, v in PAGE_CACHE.items() if now - v.get("time", 0) > 3600]
                 for k in expired:
-                    _PAGE_CACHE.pop(k, None)
+                    PAGE_CACHE.pop(k, None)
             key = secrets.token_hex(6)
-            _PAGE_CACHE[key] = {"pages": pages, "time": now, "rich": rich}
+            PAGE_CACHE[key] = {"pages": pages, "time": now, "rich": rich}
             page = max(0, min(page, len(pages) - 1))
             rows = [engine.kit.pager("paginate", page, len(pages), k=key), [engine.kit.close()]]
             screen = Screen(pages[page], rows, rich=rich)

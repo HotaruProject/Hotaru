@@ -13,7 +13,7 @@ import re
 import tempfile
 import urllib.request
 from pathlib import Path
-from typing import Any, Callable, List
+from typing import Any, Awaitable, cast
 
 log = logging.getLogger(__name__)
 
@@ -80,7 +80,7 @@ def custom_menu(ctx: Any, nav: Any = None) -> Any:
         k.button(k.radio(f"{_lang_meta(ctx, lang)['name_native']} ({lang.upper()})", lang == current), select, style="success" if lang == current else None, language=lang, origin="custom")
         for lang in custom_langs
     ]
-    rows = k.grid(options, 2) if options else []
+    rows: list[list[Any]] = k.grid(options, 2) if options else []
     back_label = ctx.t("common.back", "Назад")
     rows.append([k.button(f"{k.icon('back')} {back_label}", home), k.close()])
     current_label = _lang_meta(ctx, current)["name_native"]
@@ -155,23 +155,24 @@ async def command_language(ctx: Any, invocation: Any) -> Any:
 
 
 async def _extract_reply_source(ctx: Any, invocation: Any) -> Any:
-    reply = getattr(invocation, "reply_message", None)
-    if reply is None and hasattr(invocation, "reply") and callable(invocation.reply):
+    reply: Any = getattr(invocation, "reply_message", None)
+    inv_reply: Any = getattr(invocation, "reply", None)
+    if reply is None and callable(inv_reply):
         try:
-            reply = await invocation.reply()
+            reply = await cast('Awaitable[Any]', inv_reply())
         except Exception:
             reply = None
-    if reply is None and getattr(invocation, "message", None) is not None:
-        msg = invocation.message
-        reply = getattr(msg, "reply_to_message", None) or (msg.get("reply_to_message") if isinstance(msg, dict) else None)
+    inv_msg: Any = getattr(invocation, "message", None)
+    if reply is None and inv_msg is not None:
+        reply = getattr(inv_msg, "reply_to_message", None) or (cast('dict[str, Any]', inv_msg).get("reply_to_message") if isinstance(inv_msg, dict) else None)
     from hotaru.response import reply_message_id
-    rid = reply_message_id(getattr(invocation, "message", None))
+    rid = reply_message_id(inv_msg)
     if reply is None and rid is not None and getattr(invocation, "chat_id", None) and callable(getattr(ctx, "msg", None)):
         try:
             reply = await ctx.msg(invocation.chat_id, rid)
         except Exception:
             reply = None
-    if callable(reply):
+    if callable(cast(object, reply)):
         reply = None
     return reply
 
@@ -200,37 +201,42 @@ async def command_translate(ctx: Any, invocation: Any) -> Any:
     if callable(source_msg):
         source_msg = None
 
-    if not target_text and source_msg is not None:
-        doc = getattr(source_msg, "document", None) or (source_msg.get("document") if isinstance(source_msg, dict) else None)
-        if doc is None and getattr(source_msg, "media", None):
-            media = getattr(source_msg, "media")
-            doc = getattr(media, "document", None) or (media.get("document") if isinstance(media, dict) else None)
+    src_obj: Any = source_msg
+    if not target_text and src_obj is not None:
+        doc: Any = getattr(cast(object, src_obj), "document", None) or (cast('dict[str, Any]', src_obj).get("document") if isinstance(src_obj, dict) else None)
+        if doc is None and getattr(cast(object, src_obj), "media", None):
+            media: Any = getattr(cast(object, src_obj), "media")
+            doc = getattr(cast(object, media), "document", None) or (cast('dict[str, Any]', media).get("document") if isinstance(media, dict) else None)
         if doc is not None and getattr(ctx.runtime, "_download_module_message", None) is not None:
             with tempfile.NamedTemporaryFile(suffix=".txt", delete=False) as handle:
                 tmp_path = Path(handle.name)
             try:
-                await ctx.runtime._download_module_message(source_msg, tmp_path)
+                await ctx.runtime._download_module_message(src_obj, tmp_path)
                 target_text = tmp_path.read_text(encoding="utf-8", errors="replace")
             except Exception as exc:
                 log.error("translate file fetch failed: %s", exc)
             finally:
                 tmp_path.unlink(missing_ok=True)
 
-    if not target_text and reply is not None:
-        target_text = ctx.tools.message_text(reply) if hasattr(ctx, "tools") else None
+    reply_obj: Any = reply
+    if not target_text and reply_obj is not None:
+        target_text = ctx.tools.message_text(reply_obj) if hasattr(ctx, "tools") else None
         if not target_text:
             for attr in ("text", "caption", "message", "raw_text"):
-                val = getattr(reply, attr, None) or (reply.get(attr) if isinstance(reply, dict) else None)
+                val: Any = getattr(cast(object, reply_obj), attr, None) or (cast('dict[str, Any]', reply_obj).get(attr) if isinstance(reply_obj, dict) else None)
                 if isinstance(val, dict):
-                    val = val.get("text") or val.get("message")
+                    val = cast('dict[str, Any]', val).get("text") or cast('dict[str, Any]', val).get("message")
                 if isinstance(val, str) and val.strip():
                     target_text = val
                     break
 
-    if not target_text and getattr(invocation, "message", None) is not None and not callable(invocation.message):
-        target_text = getattr(invocation.message, "caption", None)
-        if isinstance(target_text, dict):
-            target_text = target_text.get("text", "")
+    inv_m: Any = getattr(invocation, "message", None)
+    if not target_text and inv_m is not None and not callable(cast(object, inv_m)):
+        cap_val: Any = getattr(inv_m, "caption", None)
+        if isinstance(cap_val, dict):
+            target_text = str(cast('dict[str, Any]', cap_val).get("text", ""))
+        elif isinstance(cap_val, str):
+            target_text = cap_val
 
     if not target_text:
         await ctx.respond(f'<tg-emoji emoji-id="5260342697075416641">❌</tg-emoji> <b>{_escape(ctx.t("kernel.translations.no_text", "Текст для перевода не указан"))}</b>', parse_mode="HTML", output="edit")
@@ -313,9 +319,9 @@ async def command_loadlex(ctx: Any, invocation: Any) -> Any:
                     temporary = Path(handle.name)
                 await runtime._download_module_message(source_msg, temporary)
                 source = temporary.read_text(encoding="utf-8")
-                doc_obj = getattr(source_msg, "document", None) or (source_msg.get("document") if isinstance(source_msg, dict) else None)
+                doc_obj: Any = getattr(source_msg, "document", None) or (cast('dict[str, Any]', source_msg).get("document") if isinstance(source_msg, dict) else None)
                 if doc_obj:
-                    file_name = getattr(doc_obj, "file_name", None) or (doc_obj.get("file_name") if isinstance(doc_obj, dict) else None)
+                    file_name: Any = getattr(doc_obj, "file_name", None) or (cast('dict[str, Any]', doc_obj).get("file_name") if isinstance(doc_obj, dict) else None)
                     if file_name and str(file_name).endswith(".json"):
                         code_override = Path(str(file_name)).stem.lower()
 
@@ -327,20 +333,22 @@ async def command_loadlex(ctx: Any, invocation: Any) -> Any:
         if not isinstance(data, dict):
             raise ValueError("Lexicon root must be a JSON object")
 
-        meta = data.get("meta") if isinstance(data.get("meta"), dict) else {}
-        code = str(meta.get("code") or meta.get("language") or code_override or "").strip().lower()
+        data_dict: dict[str, Any] = cast('dict[str, Any]', data)
+        raw_meta = data_dict.get("meta")
+        meta_dict: dict[str, Any] = cast('dict[str, Any]', raw_meta) if isinstance(raw_meta, dict) else {}
+        code = str(meta_dict.get("code") or meta_dict.get("language") or code_override or "").strip().lower()
         if not re.fullmatch(r"[a-z]{2}", code):
             raise ValueError(ctx.t("kernel.translations.code_len_error", "Код языка должен состоять ровно из 2 букв"))
-        name_en = str(meta.get("name_en") or meta.get("name") or code.upper()).strip()
-        name_native = str(meta.get("name_native") or meta.get("name") or name_en).strip()
+        name_en = str(meta_dict.get("name_en") or meta_dict.get("name") or code.upper()).strip()
+        name_native = str(meta_dict.get("name_native") or meta_dict.get("name") or name_en).strip()
 
         lexicon = runtime.lexicon
         builtins = set(LANGUAGES) | {"ru", "en", "kz", "kk", "uk", "ja", "zh"}
-        existing_customs = set(lexicon.custom_languages()) if lexicon is not None else set()
+        existing_customs: set[str] = set(lexicon.custom_languages()) if lexicon is not None else set()
         if code in builtins or code in existing_customs:
             raise ValueError(ctx.t("kernel.translations.code_collision", "Код языка '{code}' уже используется", code=code))
 
-        existing_names = set()
+        existing_names: set[str] = set()
         if lexicon is not None:
             for cand in lexicon.available_languages():
                 m = lexicon.get_meta(cand)

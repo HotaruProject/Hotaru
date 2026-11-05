@@ -1597,7 +1597,7 @@ async def _sh_run(ctx: Any, invocation: Any) -> Any:
         return
 
     buffer_str = updater.strip_ansi(updater.buffer).strip()
-    sections = [("command", cmd, True, "bash")]
+    sections: list[tuple[Any, ...]] = [("command", cmd, True, "bash")]
     if buffer_str:
         sections.append(("output", buffer_str, True))
     if process.returncode != 0:

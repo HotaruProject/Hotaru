@@ -35,7 +35,7 @@ class Lexicon:
 
     def available_languages(self) -> tuple[str, ...]:
         builtins = {f.stem.casefold() for f in self.root.glob("*.json")}
-        customs = {f.stem.casefold() for f in self.custom_root.glob("*.json")} if self.custom_root.is_dir() else set()
+        customs: set[str] = {f.stem.casefold() for f in self.custom_root.glob("*.json")} if self.custom_root.is_dir() else set()
         known = [lang for lang in SUPPORTED_LANGUAGES if lang in builtins]
         extra = sorted((builtins | customs) - set(SUPPORTED_LANGUAGES))
         return tuple(known + extra)
@@ -85,9 +85,10 @@ class Lexicon:
             payload = self.load(language)
             meta = payload.get("meta")
             if isinstance(meta, dict):
-                code = str(meta.get("code") or meta.get("language") or language).strip().lower()
-                name_en = str(meta.get("name_en") or meta.get("name") or code.upper()).strip()
-                name_native = str(meta.get("name_native") or meta.get("name") or name_en).strip()
+                meta_dict = cast('dict[str, Any]', meta)
+                code = str(meta_dict.get("code") or meta_dict.get("language") or language).strip().lower()
+                name_en = str(meta_dict.get("name_en") or meta_dict.get("name") or code.upper()).strip()
+                name_native = str(meta_dict.get("name_native") or meta_dict.get("name") or name_en).strip()
                 return {
                     "code": code,
                     "language": code,
@@ -199,6 +200,8 @@ class Lexicon:
             return False
         code = language.casefold().strip()
         return code in SUPPORTED_LANGUAGES or (self.custom_root / f"{code}.json").is_file() or (self.root / f"{code}.json").is_file() or bool(re.fullmatch(r"[a-z]{2,8}(?:-[a-z0-9]{2,8})*", code))
+
+    is_valid_language = _validate_language
 
     @classmethod
     def _validate_values(cls, value: object) -> None:

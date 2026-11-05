@@ -3,7 +3,6 @@ from __future__ import annotations
 import re
 from typing import Any, cast
 
-from goygram.rich import rich_html
 from goygram.sugar import html_to_entities
 
 _CUSTOM = "messageEntityCustomEmoji"

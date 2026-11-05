@@ -16,7 +16,7 @@ import zipfile
 import struct
 import zlib
 from dataclasses import dataclass
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Awaitable, Callable, TypeVar, TypedDict, cast
 
@@ -110,7 +110,7 @@ class BackupService:
             snapshot.unlink(missing_ok=True)
 
     @staticmethod
-    def _pack_container(manifest: dict[str, object], files: Sequence[tuple[str, bytes]]) -> bytes:
+    def _pack_container(manifest: Mapping[str, object], files: Sequence[tuple[str, bytes]]) -> bytes:
         manifest_bytes = json.dumps(manifest, sort_keys=True, separators=(",", ":")).encode("utf-8")
         out = bytearray()
         out.extend(struct.pack(">BBI", 1, 1, len(manifest_bytes)))
@@ -130,7 +130,7 @@ class BackupService:
     def _unpack_container(raw: bytes) -> tuple[dict[str, object], dict[str, bytes]]:
         if len(raw) < 6:
             raise BackupError("backup container header is truncated")
-        ver, comp_type, mlen = struct.unpack_from(">BBI", raw, 0)
+        _ver, _comp_type, mlen = struct.unpack_from(">BBI", raw, 0)
         pos = 6
         if len(raw) < pos + mlen + 4:
             raise BackupError("backup manifest is truncated")
@@ -222,9 +222,9 @@ class BackupService:
 
     @staticmethod
     def _key() -> bytes:
-        from .state import _master
+        from .state import master_key
 
-        return hmac.new(_master(), KEY_CONTEXT, hashlib.sha256).digest()
+        return hmac.new(master_key(), KEY_CONTEXT, hashlib.sha256).digest()
 
     def _inspect(self, source: zipfile.ZipFile) -> DryRunResult:
         names = source.namelist()
@@ -329,7 +329,7 @@ class BackupService:
         destination.mkdir(parents=True, exist_ok=True)
         destination.chmod(0o700)
         if fmt == 3:
-            manifest, files = self._unpack_container(payload)
+            _manifest, files = self._unpack_container(payload)
             for name, data in files.items():
                 target = destination / name
                 if target.parent.is_symlink():

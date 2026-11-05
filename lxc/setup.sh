@@ -27,7 +27,10 @@ apt-get install -y --no-install-recommends \
 
 if ! command -v uv &>/dev/null; then
     echo -e "${DIM}│  Installing uv package manager...${NC}"
-    curl -LsSf https://astral.sh/uv/install.sh | sh
+    TMP_UV=$(mktemp)
+    curl -LsSf https://astral.sh/uv/install.sh -o "$TMP_UV"
+    sh "$TMP_UV"
+    rm -f "$TMP_UV"
     export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
 fi
 

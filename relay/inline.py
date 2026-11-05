@@ -9,6 +9,7 @@ import string
 import time
 import traceback
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Awaitable, Callable, cast
 
 from goygram import Session
@@ -254,24 +255,29 @@ class BotFatherConversation:
         return reply
 
     async def click_button(self, reply: dict[str, Any], *needles: str) -> dict[str, Any] | None:
-        markup = reply.get("reply_markup")
+        markup: Any = reply.get("reply_markup")
         if not isinstance(markup, dict):
             return None
-        rows = markup.get("rows")
-        if not isinstance(rows, list):
+        markup_dict = cast('dict[str, Any]', markup)
+        raw_rows = markup_dict.get("rows")
+        if not isinstance(raw_rows, list):
             return None
+        rows = cast('list[Any]', raw_rows)
         floor = reply.get("id", self._last_id)
         for row in rows:
             if not isinstance(row, dict):
                 continue
-            buttons = row.get("buttons")
-            if not isinstance(buttons, list):
+            row_dict = cast('dict[str, Any]', row)
+            raw_buttons = row_dict.get("buttons")
+            if not isinstance(raw_buttons, list):
                 continue
+            buttons = cast('list[Any]', raw_buttons)
             for btn in buttons:
                 if not isinstance(btn, dict):
                     continue
-                btn_text = str(btn.get("text") or "")
-                data = btn.get("data")
+                btn_dict = cast('dict[str, Any]', btn)
+                btn_text = str(btn_dict.get("text") or "")
+                data = btn_dict.get("data")
                 matches = not needles or any(n.casefold() in btn_text.casefold() for n in needles)
                 if matches and isinstance(data, (bytes, bytearray)):
                     try:
@@ -519,7 +525,7 @@ class InlineManager:
                 ("setMyCommands", default_cmd_payload),
             ):
                 try:
-                    await app.bot_req(method, **payload)
+                    await getattr(app, "bot_req")(method, **payload)
                 except Exception:
                     continue
             await self._apply_bot_avatar(info)
@@ -538,8 +544,8 @@ class InlineManager:
         if app is None or getattr(app, "mt", None) is None:
             return
         root = Path(__file__).resolve().parent.parent
-        candidates = [root / "hotaru/assets/logo.png", root / "hotaru/assets/avatar.png"]
-        logo_path = next((p for p in candidates if p.is_file()), None)
+        candidates: list[Path] = [root / "hotaru/assets/logo.png", root / "hotaru/assets/avatar.png"]
+        logo_path: Path | None = next((p for p in candidates if p.is_file()), None)
         if logo_path is None:
             return
         import hashlib
@@ -550,12 +556,11 @@ class InlineManager:
         try:
             with trusted_scope():
                 peer = await app.mt.resolve_peer("@" + info.username)
-                if not isinstance(peer, dict):
-                    peer = peer.to_dict() if hasattr(peer, "to_dict") else {}
-                access_hash = peer.get("access_hash") or 0
+                peer_dict = cast('dict[str, Any]', peer.to_dict() if hasattr(peer, "to_dict") else peer if isinstance(peer, dict) else {})
+                access_hash = peer_dict.get("access_hash") or 0
                 bot = {"_": "inputUser", "user_id": int(info.bot_id), "access_hash": int(access_hash)}
                 from relay.files import document, put
-                up = await put(app, str(logo_path), file_name=logo_path.name)
+                up = await put(app, str(logo_path), file_name=str(logo_path.name))
                 uploaded_file = document(up)["file"]
                 await app.mt_photos_upload_profile_photo(bot=bot, file=uploaded_file)
             if state is not None:

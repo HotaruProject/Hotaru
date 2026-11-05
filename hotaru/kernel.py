@@ -210,15 +210,17 @@ class Kernel:
         chat_id = getattr(message, "chat_id", None) or getattr(message, "from_id", None)
         user_id = getattr(message, "from_id", None)
         if not isinstance(user_id, int) or user_id <= 0:
-            user = getattr(message, "from_user", None) or getattr(message, "sender", None)
+            user: Any = getattr(message, "from_user", None) or getattr(message, "sender", None)
             if isinstance(user, dict):
-                user_id = user.get("id")
-            elif hasattr(user, "id") and isinstance(user.id, int):
-                user_id = user.id
+                user_id = cast('dict[str, Any]', user).get("id")
+            elif user is not None and hasattr(user, "id") and isinstance(getattr(user, "id", None), int):
+                user_id = getattr(user, "id", None)
         if not isinstance(user_id, int) or user_id <= 0:
-            chat = getattr(message, "chat", None)
-            if isinstance(chat, dict) and chat.get("type") == "private":
-                user_id = chat.get("id")
+            chat: Any = getattr(message, "chat", None)
+            if isinstance(chat, dict):
+                chat_dict = cast('dict[str, Any]', chat)
+                if chat_dict.get("type") == "private":
+                    user_id = chat_dict.get("id")
             elif getattr(message, "chat_id", None) is not None:
                 cid = getattr(message, "chat_id")
                 if isinstance(cid, int) and cid > 0:
@@ -367,15 +369,17 @@ class Kernel:
     def is_authorized(self, message: Any, spec: CommandSpec | None = None) -> bool:
         user_id = getattr(message, "from_id", None)
         if not isinstance(user_id, int) or user_id <= 0:
-            user = getattr(message, "from_user", None) or getattr(message, "sender", None)
+            user: Any = getattr(message, "from_user", None) or getattr(message, "sender", None)
             if isinstance(user, dict):
-                user_id = user.get("id")
-            elif hasattr(user, "id") and isinstance(user.id, int):
-                user_id = user.id
+                user_id = cast('dict[str, Any]', user).get("id")
+            elif user is not None and hasattr(user, "id") and isinstance(getattr(user, "id", None), int):
+                user_id = getattr(user, "id", None)
         if not isinstance(user_id, int) or user_id <= 0:
-            chat = getattr(message, "chat", None)
-            if isinstance(chat, dict) and chat.get("type") == "private":
-                user_id = chat.get("id")
+            chat: Any = getattr(message, "chat", None)
+            if isinstance(chat, dict):
+                chat_dict = cast('dict[str, Any]', chat)
+                if chat_dict.get("type") == "private":
+                    user_id = chat_dict.get("id")
             elif getattr(message, "chat_id", None) is not None:
                 cid = getattr(message, "chat_id")
                 if isinstance(cid, int) and cid > 0:

@@ -6,14 +6,17 @@ HOTARU = {
     "banner": "https://raw.githubusercontent.com/HotaruProject/Hotaru/develop/hotaru/assets/catalyst.mp4",
 }
 
-from typing import Any, Tuple, cast
+from typing import Any, Awaitable, Tuple, cast
 from pathlib import Path
 from types import SimpleNamespace
 import html
+import logging
 import tempfile
 
+log = logging.getLogger(__name__)
+
 async def command_ld(ctx: Any, invocation: Any) -> Any:
-    runtime = ctx.runtime
+    runtime: Any = getattr(ctx, "runtime", None)
     if runtime is None:
         await ctx.respond(ctx.t('kernel.kernel.runtime_unavailable'))
         return
@@ -21,34 +24,37 @@ async def command_ld(ctx: Any, invocation: Any) -> Any:
         await ctx.respond(ctx.t('runtime.usage_load', prefix=runtime.config.prefix))
         return
 
-    reply = None
-    if callable(getattr(ctx, "reply", None)):
+    inv_msg: Any = invocation.message
+    reply: Any = None
+    ctx_reply: Any = getattr(ctx, "reply", None)
+    if callable(ctx_reply):
         try:
-            reply = await ctx.reply()
+            reply = await cast('Awaitable[Any]', ctx_reply())
         except Exception:
             reply = None
-    if reply is None and hasattr(invocation, "reply") and callable(invocation.reply):
+    inv_reply: Any = getattr(invocation, "reply", None)
+    if reply is None and callable(inv_reply):
         try:
-            reply = await invocation.reply()
+            reply = await cast('Awaitable[Any]', inv_reply())
         except Exception:
             reply = None
     if reply is None:
         reply = getattr(invocation, "reply_message", None)
-    if reply is None and invocation.message:
-        reply = getattr(invocation.message, "reply_to_message", None) or (invocation.message.get("reply_to_message") if isinstance(invocation.message, dict) else None)
-    if callable(reply):
+    if reply is None and inv_msg:
+        reply = getattr(inv_msg, "reply_to_message", None) or (cast('dict[str, Any]', inv_msg).get("reply_to_message") if isinstance(inv_msg, dict) else None)
+    if callable(cast(object, reply)):
         reply = None
 
     from hotaru.response import reply_message_id
-    reply_id = reply_message_id(invocation.message)
+    reply_id = reply_message_id(inv_msg)
     if reply is None and reply_id is not None:
-        chat_id = invocation.chat_id or (invocation.message.get("chat_id") if isinstance(invocation.message, dict) else None)
+        chat_id = invocation.chat_id or (cast('dict[str, Any]', inv_msg).get("chat_id") if isinstance(inv_msg, dict) else None)
         if chat_id is not None and callable(getattr(ctx, "msg", None)):
             try:
                 reply = await ctx.msg(chat_id, reply_id)
             except Exception:
                 reply = None
-        if reply is None and runtime is not None:
+        if reply is None:
             cap_host = getattr(runtime, "cap_host", None)
             if cap_host is not None:
                 from relay.firewall import trusted_scope
@@ -58,11 +64,11 @@ async def command_ld(ctx: Any, invocation: Any) -> Any:
                     except Exception:
                         reply = None
 
-    doc = None
-    if invocation.message is not None and not callable(invocation.message):
-        doc = getattr(invocation.message, "document", None) or getattr(invocation.message, "media", None)
-        if doc is None and hasattr(invocation.message, "get"):
-            doc = invocation.message.get("document") or invocation.message.get("media")
+    doc: Any = None
+    if inv_msg is not None and not callable(cast(object, inv_msg)):
+        doc = getattr(cast(object, inv_msg), "document", None) or getattr(cast(object, inv_msg), "media", None)
+        if doc is None and isinstance(inv_msg, dict):
+            doc = cast('dict[str, Any]', inv_msg).get("document") or cast('dict[str, Any]', inv_msg).get("media")
 
     if not invocation.args and reply is None and reply_id is None and doc is None:
         await ctx.respond(ctx.t("runtime.usage_load_source"), parse_mode="HTML")
@@ -80,13 +86,13 @@ async def command_ld(ctx: Any, invocation: Any) -> Any:
                     return
                 source = Path(source).read_text(encoding="utf-8")
         else:
-            source_msg = reply if reply is not None else invocation.message
+            source_msg: Any = reply if reply is not None else cast(object, inv_msg)
             if source_msg is None:
                 await ctx.respond(f"<pre> !     Error: reply to a file or provide a url</pre>", parse_mode="HTML", output="edit")
                 return
             with tempfile.NamedTemporaryFile(suffix=".hmod", delete=False) as handle:
                 temporary = Path(handle.name)
-            await runtime._download_module_message(source_msg, temporary)
+            await getattr(runtime, "_download_module_message")(source_msg, temporary)
             source = temporary.read_text(encoding="utf-8")
         log_lines[-1] += " done"
         log_lines.append("-----> Validating capabilities and sandbox...")
@@ -96,8 +102,9 @@ async def command_ld(ctx: Any, invocation: Any) -> Any:
         log_lines.append(f"-----> Launching module {result.get('module_id', '')} v{result.get('version', '')}...")
         await ctx.respond(f"<pre>{chr(10).join(log_lines)}</pre>", parse_mode="HTML", output="edit")
     except Exception as exc:
-        if runtime.observatory is not None:
-            runtime.observatory.emit("modules", "load_error", error=exc)
+        obs = getattr(runtime, "observatory", None)
+        if obs is not None:
+            obs.emit("modules", "load_error", error=exc)
         log.error("module load error: %s", exc, exc_info=True)
         err_raw = str(exc)
         if "file_missing" in err_raw or "not found" in err_raw.lower() or "не найден" in err_raw or isinstance(exc, FileNotFoundError):
@@ -118,7 +125,7 @@ async def command_ld(ctx: Any, invocation: Any) -> Any:
             temporary.unlink(missing_ok=True)
     action = result["action"]
     if action == "confirm":
-        screen = await runtime._render_caps_screen(
+        screen = await getattr(runtime, "_render_caps_screen")(
             result["module_id"], SimpleNamespace(capabilities=result["capabilities"], version=result["version"]),
             result["source"], invocation.chat_id, invocation.message_id,
         )
@@ -127,11 +134,14 @@ async def command_ld(ctx: Any, invocation: Any) -> Any:
         else:
             await ctx.respond(screen)
     elif action in {"loaded", "updated"}:
-        help_mod = runtime.modules.get("help") if runtime.modules is not None else None
-        card_fn = getattr(getattr(help_mod, "context", None), "namespace", {}).get("_card") if help_mod is not None else None
+        mods = getattr(runtime, "modules", None)
+        help_mod: Any = mods.get("help") if mods is not None else None
+        help_ctx: Any = getattr(help_mod, "context", None)
+        ns: Any = getattr(help_ctx, "namespace", None)
+        card_fn: Any = cast('dict[str, Any]', ns).get("_card") if isinstance(ns, dict) else None
         if card_fn is not None:
-            actor = getattr(invocation.message, "from_id", None)
-            screen = card_fn(ctx, result["module_id"], actor, None)
+            actor: Any = getattr(cast(object, inv_msg), "from_id", None)
+            screen: Any = card_fn(ctx, result["module_id"], actor, None)
             notice = ctx.t("runtime." + action, module_id=result["module_id"], version=result["version"])
             await ctx.screens.show(screen.with_notice(notice))
         else:
