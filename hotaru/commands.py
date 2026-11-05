@@ -35,7 +35,7 @@ class CommandParser:
     @prefix.setter
     def prefix(self, value: str) -> None:
         if not valid_prefix(value):
-            raise ValueError("prefix must contain 1–8 visible non-whitespace characters")
+            raise ValueError("prefix must contain 1-8 visible non-whitespace characters")
         self._prefix = value
 
     def parse(

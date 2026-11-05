@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Literal, cast
 from collections.abc import Awaitable
 
-from goygram.errors import MessageNotModifiedError, MessageIdInvalidError, MessageNotFoundError, RPCError
+from goygram.errors import FloodWaitError, MessageNotModifiedError, MessageIdInvalidError, MessageNotFoundError, RPCError
 
 from .state import StateNamespace
 from .plainfmt import rich_to_plain
@@ -215,6 +215,7 @@ def reply_peer(message: Any) -> Any:
 class ResponseService:
     def __init__(self, rich_sender: Callable[..., Any] | None = None) -> None:
         self.rich_sender = rich_sender
+        self.flood: Any = None
 
     async def respond(
         self,
@@ -268,6 +269,7 @@ class ResponseService:
                     break
         if topic_id is not None:
             payload["topic_id"] = topic_id
+        raw_html = text
         if text is not None and str(payload.get("parse_mode", "")).lower() == "html":
             if getattr(msg, "src", "mt") == "bot":
                 payload["parse_mode"] = "HTML"
@@ -283,6 +285,8 @@ class ResponseService:
                 result = await msg.edit(text or "", **payload)
             except MessageNotModifiedError:
                 return Response(True, "edit", getattr(msg, "src", None), msg)
+            except FloodWaitError:
+                pass
             except (MessageIdInvalidError, MessageNotFoundError, RPCError, Exception):
                 pass
             else:
@@ -291,6 +295,8 @@ class ResponseService:
             try:
                 result = await msg.reply(text or "", **payload)
                 return Response(True, "reply", getattr(msg, "src", None), result)
+            except FloodWaitError:
+                pass
             except (MessageIdInvalidError, MessageNotFoundError, RPCError, Exception):
                 pass
         chat_id = msg_field(msg, "chat_id")
@@ -302,6 +308,8 @@ class ResponseService:
             try:
                 result = await msg.respond(text or "", **send_payload)
                 return Response(True, "reply", getattr(msg, "src", None), result)
+            except FloodWaitError:
+                pass
             except Exception:
                 pass
         if chat_id is not None and app is not None and hasattr(app, "send_msg"):
@@ -309,8 +317,21 @@ class ResponseService:
                 via = msg_field(msg, "src")
                 result = await app.send_msg(chat_id, text or "", via=via, **send_payload)
                 return Response(True, "reply", getattr(msg, "src", None), result)
+            except FloodWaitError:
+                pass
             except Exception:
                 pass
+        if self.flood is not None and chat_id is not None and (raw_html or text):
+            target_text = raw_html if raw_html else text
+            fallback_res = await self.flood.send(
+                chat_id,
+                target_text or "",
+                src=getattr(msg, "src", None),
+                reply_to=reply_to or getattr(msg, "id", None),
+                topic_id=topic_id,
+            )
+            if fallback_res is not None:
+                return Response(True, "reply", "bot" if getattr(msg, "src", None) != "bot" else "userbot", fallback_res)
         return Response(False, "none", None)
 
     async def smart(
@@ -610,6 +631,10 @@ class ModuleContext(ContextOperations):
         return TOOLS
 
     @property
+    def toolkit(self) -> Any:
+        return TOOLS
+
+    @property
     def assets(self) -> Any:
             return AssetsHelper(self)
 
@@ -662,6 +687,46 @@ class ModuleContext(ContextOperations):
             owner_id = None
         return UiHelper(self.module_id, self.callback_router.store, owner_id, getattr(self._source, "chat_id", None), getattr(self._source, "id", 0), self.callback_router)
 
+    @property
+    def screens(self) -> Any:
+        from .screens import Kit
+        return Kit(getattr(self.runtime, "screens", None) if self.runtime is not None else None, self)
+
+    def wordmark(self) -> str:
+        return TOOLS.wordmark()
+
+    async def paginate(self, content: str | list[str], *, page: int = 0, limit: int = 4000, rich: bool = True) -> Any:
+        if isinstance(content, str):
+            pages = TOOLS.paginate_chunks(content, limit=limit)
+        else:
+            pages = [str(p) for p in content]
+        if not pages:
+            pages = [""]
+        if len(pages) == 1:
+            return await self.respond(pages[0], parse_mode="HTML", rich=rich)
+        engine = getattr(self.runtime, "screens", None)
+        if engine is not None:
+            import secrets
+            import time
+            from .screens import PAGE_CACHE, Screen
+            now = time.time()
+            if len(PAGE_CACHE) > 200:
+                expired = [k for k, v in PAGE_CACHE.items() if now - v.get("time", 0) > 3600]
+                for k in expired:
+                    PAGE_CACHE.pop(k, None)
+            key = secrets.token_hex(6)
+            PAGE_CACHE[key] = {"pages": pages, "time": now, "rich": rich}
+            page = max(0, min(page, len(pages) - 1))
+            rows = [engine.kit.pager("paginate", page, len(pages), k=key), [engine.kit.close()]]
+            screen = Screen(pages[page], rows, rich=rich)
+            return await engine.show(self, screen)
+        return await self.respond(pages[page], parse_mode="HTML", rich=rich)
+
+    def classify_error(self, exc: Any) -> dict[str, Any]:
+        return TOOLS.classify_error(exc)
+
+    async def check_restrictions(self) -> dict[str, Any]:
+        return await TOOLS.check_restrictions(self)
     @staticmethod
     async def _ctx_prepare(text: Any, parse_mode: Any, buttons: Any) -> dict[str, Any]:
         data: dict[str, Any] = {}
@@ -1270,7 +1335,7 @@ class ModuleContext(ContextOperations):
                 result = await self._bot_form(html, buttons, {**kwargs, "rich": True})
                 return result if isinstance(result, Response) else Response(True, "reply", getattr(self._source, "src", None), result)
             if kind == "inline":
-                from goygram.types.kbd import kbd_to_tl
+                from .markup import kbd_to_tl
                 kwargs["reply_markup"] = kbd_to_tl({"inline_keyboard": buttons})
             else:
                 html = str(html) + buttons_html(buttons, kind=kind)
@@ -1502,6 +1567,7 @@ class ModuleContextFactory:
         self.callback_router: Any = None
         self.inline_manager: Any = None
         self.form_sender: Any = None
+        self.screens: Any = None
         self.runtime: Any = runtime
 
     def create(self, module_id: str, message: Any) -> ModuleContext:

@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import asyncio
+import glob
 import http.client
 import json
 import logging
 import os
 import secrets
 import shutil
+import signal
+import subprocess
 import time
 import urllib.parse
 from contextlib import nullcontext
@@ -31,7 +34,7 @@ from .relay import (
     configure_botfather_webapp,
     ensure_inline_bot_ready,
     get_sanctuary_app_state,
-    notify_owner_saved_messages,
+    sync_owner_menu_button,
     resolve_inline_banner_url,
 )
 
@@ -40,6 +43,29 @@ log = logging.getLogger("hotaru.singularity.kernel")
 SINGULARITY_DIR = Path(__file__).resolve().parent
 BACKEND_DIR = SINGULARITY_DIR / "backend"
 FRONTEND_DIR = SINGULARITY_DIR / "frontend"
+
+
+def _resolve_binary(name: str) -> str | None:
+    found = shutil.which(name)
+    if found:
+        return found
+    candidates: list[str] = [
+        f"/usr/local/bin/{name}",
+        f"/usr/bin/{name}",
+        f"/bin/{name}",
+        os.path.expanduser(f"~/.local/bin/{name}"),
+    ]
+    for pattern in (
+        os.path.expanduser(f"~/.nvm/versions/node/*/bin/{name}"),
+        os.path.expanduser(f"~/.fnm/current/bin/{name}"),
+        os.path.expanduser(f"~/.asdf/shims/{name}"),
+        f"/root/.nvm/versions/node/*/bin/{name}",
+    ):
+        candidates.extend(sorted(glob.glob(pattern), reverse=True))
+    for path in candidates:
+        if os.path.isfile(path) and os.access(path, os.X_OK):
+            return path
+    return None
 
 
 def _parse_bool(val: Any, default: bool) -> bool:
@@ -262,6 +288,7 @@ class SingularityKernel:
         self.sync_retry_cooldown = sync_retry_cooldown
         self._ipc_key = secrets.token_hex(24)
         self._provision_lock = asyncio.Lock()
+        self._start_lock = asyncio.Lock()
 
         self._node_proc: asyncio.subprocess.Process | None = None
         self._metrics_task: asyncio.Task[None] | None = None
@@ -354,13 +381,19 @@ class SingularityKernel:
 
     async def _run_npm_step(self, cwd: Path, *args: str) -> None:
         with trusted_scope():
-            npm_bin = shutil.which("npm")
+            npm_bin = _resolve_binary("npm")
             if not npm_bin:
                 raise RuntimeError("`npm` is not installed in PATH")
+            proc_env = os.environ.copy()
+            npm_dir = str(Path(npm_bin).parent)
+            curr_p = proc_env.get("PATH", "")
+            if npm_dir not in curr_p.split(os.pathsep):
+                proc_env["PATH"] = f"{npm_dir}{os.pathsep}{curr_p}"
             proc = await asyncio.create_subprocess_exec(
                 npm_bin,
                 *args,
                 cwd=str(cwd),
+                env=proc_env,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.STDOUT,
                 close_fds=True,
@@ -379,19 +412,134 @@ class SingularityKernel:
                 log.info("Installing Singularity probe dependencies...")
                 await self._run_npm_step(BACKEND_DIR, "install", "--no-audit", "--no-fund")
 
-            if not (FRONTEND_DIR / "dist" / "index.html").is_file():
-                if not (FRONTEND_DIR / "node_modules" / "vite").exists():
-                    log.info("Installing Singularity frontend dependencies...")
-                    await self._run_npm_step(FRONTEND_DIR, "install", "--no-audit", "--no-fund")
-                log.info("Building Singularity frontend bundle...")
+            if self._frontend_deps_changed():
+                log.info("Installing Singularity frontend dependencies...")
+                try:
+                    await self._run_npm_step(
+                        FRONTEND_DIR, "install", "--no-audit", "--no-fund", "--prefer-offline"
+                    )
+                except Exception as exc:
+                    if not (FRONTEND_DIR / "node_modules" / "vite").exists():
+                        raise
+                    log.warning(
+                        "Singularity frontend dependency refresh skipped: %s",
+                        exc,
+                    )
+
+            log.info("Building Singularity frontend bundle...")
+            try:
                 await self._run_npm_step(FRONTEND_DIR, "run", "build")
+            except Exception as exc:
+                if (FRONTEND_DIR / "dist" / "index.html").is_file():
+                    log.warning(
+                        "Singularity frontend build failed, keeping the previous bundle: %s",
+                        exc,
+                    )
+                    return
+                raise
+
+    def _frontend_deps_changed(self) -> bool:
+        vite = FRONTEND_DIR / "node_modules" / "vite"
+        if not vite.exists():
+            return True
+        lock = FRONTEND_DIR / "package-lock.json"
+        stamp = FRONTEND_DIR / "node_modules" / ".package-lock.json"
+        if not lock.is_file() or not stamp.is_file():
+            return True
+        try:
+            return lock.stat().st_mtime > stamp.stat().st_mtime
+        except OSError:
+            return False
+
+    def _stale_backend_pids(self, port: int) -> list[int]:
+        ss_bin = shutil.which("ss")
+        if not ss_bin:
+            return []
+        try:
+            proc = subprocess.run(
+                [ss_bin, "-ltnpH"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+                check=False,
+            )
+        except Exception:
+            return []
+        pids: list[int] = []
+        for line in (proc.stdout or "").splitlines():
+            fields = line.split()
+            if len(fields) < 4:
+                continue
+            local = fields[3]
+            if not local.rsplit(":", 1)[-1].isdigit():
+                continue
+            if int(local.rsplit(":", 1)[-1]) != port:
+                continue
+            for chunk in line.split("pid=")[1:]:
+                digits = ""
+                for ch in chunk:
+                    if ch.isdigit():
+                        digits += ch
+                    else:
+                        break
+                if digits:
+                    value = int(digits)
+                    if value not in pids:
+                        pids.append(value)
+        return pids
+
+    def _release_stale_backend(self, port: int) -> None:
+        import socket
+        for _ in range(5):
+            pids = self._stale_backend_pids(port)
+            if not pids:
+                break
+            for pid in pids:
+                try:
+                    cmdline = Path(f"/proc/{pid}/cmdline").read_bytes().decode(
+                        "utf-8", errors="replace"
+                    )
+                except OSError:
+                    continue
+                if "server.js" not in cmdline:
+                    continue
+                log.warning(
+                    "Stopping a stale Singularity backend (pid %s) that still holds port %s",
+                    pid,
+                    port,
+                )
+                try:
+                    os.kill(pid, signal.SIGTERM)
+                except OSError:
+                    continue
+                for _ in range(30):
+                    if not Path(f"/proc/{pid}").exists():
+                        break
+                    time.sleep(0.1)
+                else:
+                    try:
+                        os.kill(pid, signal.SIGKILL)
+                    except OSError:
+                        pass
+            time.sleep(0.1)
+        for _ in range(20):
+            try:
+                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                    s.settimeout(0.1)
+                    if s.connect_ex(("127.0.0.1", port)) != 0:
+                        break
+            except Exception:
+                break
+            time.sleep(0.1)
 
     async def _spawn_backend(self) -> bool:
         with trusted_scope():
-            node_bin = shutil.which("node")
+            node_bin = _resolve_binary("node")
             if not node_bin:
                 log.warning("Singularity skipped: `node` binary not found in PATH")
                 return False
+
+            self._release_stale_backend(self.config.port)
 
             if self.runtime is not None:
                 fresh = KernelConfig.from_runtime(self.runtime)
@@ -405,6 +553,10 @@ class SingularityKernel:
                     self.config.owner_id = fresh.owner_id
 
             child_env = os.environ.copy()
+            node_dir = str(Path(node_bin).parent)
+            curr_p = child_env.get("PATH", "")
+            if node_dir not in curr_p.split(os.pathsep):
+                child_env["PATH"] = f"{node_dir}{os.pathsep}{curr_p}"
             child_env.update(
                 {
                     "NODE_ENV": "production",
@@ -465,39 +617,40 @@ class SingularityKernel:
             return False
 
     async def start(self) -> bool:
-        with trusted_scope():
-            if not self.config.enabled:
-                log.info("Singularity kernel is disabled in config")
-                return False
-            if self.is_running:
-                return True
+        async with self._start_lock:
+            with trusted_scope():
+                if not self.config.enabled:
+                    log.info("Singularity kernel is disabled in config")
+                    return False
+                if self.is_running:
+                    return True
 
-            try:
-                await self.ensure_built()
-            except Exception as exc:
-                log.warning("Singularity build failed: %s", exc)
-                return False
+                try:
+                    await self.ensure_built()
+                except Exception as exc:
+                    log.warning("Singularity build failed: %s", exc)
+                    return False
 
-            self._running = True
-            ok = await self._spawn_backend()
-            if not ok:
-                self._running = False
-                await self._stop_backend_proc()
-                return False
+                self._running = True
+                ok = await self._spawn_backend()
+                if not ok:
+                    self._running = False
+                    await self._stop_backend_proc()
+                    return False
 
-            await self._push_metrics_once()
-            self._metrics_task = asyncio.create_task(
-                self._metrics_and_watchdog_loop(), name="singularity:observatory-loop"
-            )
-
-            if self.config.tunnel_enabled:
-                self._last_tunnel_restart_ts = time.monotonic()
-                self._tunnel_task = asyncio.create_task(
-                    self._start_tunnel_and_provision(), name="singularity:horizon-boot"
+                await self._push_metrics_once()
+                self._metrics_task = asyncio.create_task(
+                    self._metrics_and_watchdog_loop(), name="singularity:observatory-loop"
                 )
 
-            log.info("Singularity probe active on %s", self.local_url)
-            return True
+                if self.config.tunnel_enabled:
+                    self._last_tunnel_restart_ts = time.monotonic()
+                    self._tunnel_task = asyncio.create_task(
+                        self._start_tunnel_and_provision(), name="singularity:horizon-boot"
+                    )
+
+                log.info("Singularity probe active on %s", self.local_url)
+                return True
 
     async def _push_metrics_once(self) -> None:
         if not self._running:
@@ -629,6 +782,7 @@ class SingularityKernel:
 
                 bot_user = buser or self._resolve_bot_username()
                 if not bot_user:
+                    log.warning("Singularity provisioning skipped: inline bot username is missing")
                     return RelaySyncReport(ok=False, detail="inline_bot_missing")
 
                 if not self.config.auto_botfather:
@@ -644,6 +798,7 @@ class SingularityKernel:
                         detail="auto_botfather_disabled",
                     )
 
+                log.info("Singularity starting BotFather WebApp sync for @%s with %s", bot_user, url)
                 res = await configure_botfather_webapp(
                     self.runtime,
                     bot_user,
@@ -651,6 +806,12 @@ class SingularityKernel:
                     bot_id=self.config.bot_id,
                     short_name=self.config.short_name,
                     title="Hotaru",
+                )
+                log.info(
+                    "Singularity BotFather WebApp sync finished: ok=%s detail=%s link=%s",
+                    res.ok,
+                    res.detail,
+                    res.app_link,
                 )
                 if res.ok:
                     self.webapp_registered = True
@@ -675,15 +836,7 @@ class SingularityKernel:
                 await asyncio.sleep(1.5)
 
         if self._running and self.runtime is not None:
-            await notify_owner_saved_messages(
-                self.runtime,
-                url,
-                bot_username=sync_res.bot_username or self._resolve_bot_username() or None,
-                short_name=sync_res.short_name or self.config.short_name,
-                app_link=self.webapp_link,
-                registered=self.webapp_registered,
-                sync_detail=sync_res.detail,
-            )
+            await sync_owner_menu_button(self.runtime, url)
         return sync_res
 
     async def _start_tunnel_and_provision(self) -> None:
@@ -770,6 +923,7 @@ class SingularityKernel:
                     pass
             except Exception:
                 pass
+        self._release_stale_backend(self.config.port)
 
     async def stop(self) -> None:
         self._running = False

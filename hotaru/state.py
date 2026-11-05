@@ -104,6 +104,9 @@ def _master() -> bytes:
     return vault_master()
 
 
+master_key = _master
+
+
 @lru_cache(maxsize=8)
 def _derive_state_key(salt_hex: str) -> bytes:
     return hashlib.pbkdf2_hmac("sha256", _master(), bytes.fromhex(salt_hex), 600000, dklen=32)

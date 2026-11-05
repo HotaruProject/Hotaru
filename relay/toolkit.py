@@ -14,12 +14,13 @@ import time
 from datetime import datetime, timezone
 from types import SimpleNamespace
 from typing import Any, cast
+from pathlib import Path
 from urllib.parse import urlparse
 
 _BOOT_TS = time.perf_counter()
 
 _TAG_RE = re.compile(r"</?([a-zA-Z][a-zA-Z0-9\-]*)(?:\s[^<>]*)?>")
-_TG_TAGS = frozenset({"b", "strong", "i", "em", "u", "ins", "s", "strike", "del", "code", "pre", "a", "blockquote", "tg-spoiler", "tg-emoji", "tg-button", "tg-button-row", "tg-time", "tg-math", "br", "p", "details", "summary", "h1", "h2", "h3", "ul", "ol", "li"})
+_TG_TAGS = frozenset({"b", "strong", "i", "em", "u", "ins", "s", "strike", "del", "code", "pre", "a", "blockquote", "tg-spoiler", "tg-emoji", "tg-button", "tg-button-row", "tg-time", "tg-math", "br", "p", "details", "summary", "h1", "h2", "h3", "h4", "h5", "h6", "ul", "ol", "li", "table", "tbody", "thead", "tfoot", "tr", "td", "th", "hr", "img", "video", "tg-thinking", "caption", "figcaption", "figure", "cite", "aside", "footer"})
 _URL_RE = re.compile(r"https?://[^\s<>\"']+")
 _EMOJI_RE = re.compile(
     "["
@@ -39,16 +40,16 @@ _EMOJI_RE = re.compile(
     flags=re.UNICODE,
 )
 _FACES = [
-    "ヽ(๑◠ܫ◠๑)ﾉ", "(◕ᴥ◕ʋ)", "ᕙ(`▽´)ᕗ", "(✿◠‿◠)", "(▰˘◡˘▰)",
+    "ヽ(๑◠ܫ◠๑)ﾉ", "(◕ᴥ◕ʋ)", "ᕙ(`▽´)ᕗ", "(*◠‿◠)", "(▰˘◡˘▰)",
     "(˵ ͡° ͜ʖ ͡°˵)", "ʕっ•ᴥ•ʔっ", "( ͡° ᴥ ͡°)", "(๑•́ ヮ •̀๑)", "٩(^‿^)۶",
     "(っˆڡˆς)", "ψ(｀∇´)ψ", "⊙ω⊙", "٩(^ᴗ^)۶", "(´・ω・)っ由",
-    "( ͡~ ͜ʖ ͡°)", "✧♡(◕‿◕✿)", "∩｡• ᵕ •｡∩ ♡", "(♡´౪`♡)", "(◍＞◡＜◍)⋈。✧♡",
-    "╰(✿´⌣`✿)╯♡", "ʕ•ᴥ•ʔ", "ᶘ ◕ᴥ◕ᶅ", "▼・ᴥ・▼", "ฅ^•ﻌ•^ฅ",
+    "( ͡~ ͜ʖ ͡°)", "**(◕‿◕*)", "∩｡• ᵕ •｡∩ *", "(*´౪`*)", "(◍＞◡＜◍)⋈。**",
+    "╰(*´⌣`*)╯*", "ʕ•ᴥ•ʔ", "ᶘ ◕ᴥ◕ᶅ", "▼・ᴥ・▼", "ฅ^•ﻌ•^ฅ",
     "(΄◞ิ౪◟ิ‵)", "ᕴｰᴥｰᕵ", "ʕ￫ᴥ￩ʔ", "ʕᵕᴥᵕʔ", "ʕᵒᴥᵒʔ",
-    "ᵔᴥᵔ", "(✿╹◡╹)", "(๑￫ܫ￩)", "ʕ·ᴥ· ʔ", "(ﾉ≧ڡ≦)",
-    "(≖ᴗ≖✿)", "（〜^∇^ )〜", "( ﾉ･ｪ･ )ﾉ", "~( ˘▾˘~)", "(〜^∇^)〜",
+    "ᵔᴥᵔ", "(*╹◡╹)", "(๑￫ܫ￩)", "ʕ·ᴥ· ʔ", "(ﾉ≧ڡ≦)",
+    "(≖ᴗ≖*)", "（〜^∇^ )〜", "( ﾉ･ｪ･ )ﾉ", "~( ˘▾˘~)", "(〜^∇^)〜",
     "ヽ(^ᴗ^ヽ)", "(´･ω･`)", "₍ᐢ•ﻌ•ᐢ₎*･ﾟ｡", "(。・・)_且", "(=｀ω´=)",
-    "(*•‿•*)", "(*ﾟ∀ﾟ*)", "(☉⋆‿⋆☉)", "ɷ◡ɷ", "ʘ‿ʘ",
+    "(*•‿•*)", "(*ﾟ∀ﾟ*)", "(*⋆‿⋆*)", "ɷ◡ɷ", "ʘ‿ʘ",
     "(。-ω-)ﾉ", "( ･ω･)ﾉ", "(=ﾟωﾟ)ﾉ", "(・ε・`*)", "(*˘︶˘*)",
     "ಥ_ಥ", "･ﾟ･(｡>д<｡)･ﾟ･", "(┬┬＿┬┬)", "(◞‸◟ㆀ)",
 ]
@@ -474,7 +475,7 @@ def template_fields(raw: object) -> dict[str, dict[str, Any]]:
         description = meta.get("description", "")
         if isinstance(description, dict):
             descriptions = cast('dict[object, object]', description)
-            if not descriptions or any(lang not in ("en", "ru", "kz", "uk", "ja") or not isinstance(text, str) or len(text) > 1000 for lang, text in descriptions.items()):
+            if not descriptions or any(lang not in ("en", "ru", "kz", "uk", "ja", "zh") or not isinstance(text, str) or len(text) > 1000 for lang, text in descriptions.items()):
                 raise ValueError(f"{name}: invalid localized description")
         elif not isinstance(description, str) or len(description) > 1000:
             raise ValueError(f"{name}: description must be text or a locale mapping")
@@ -594,8 +595,8 @@ def time_range(start: int | float, end: int | float | None = None, language: str
     if first == last:
         return first
     if last.split(" · ")[0] == first.split(" · ")[0]:
-        return first[:-4] + "–" + last.split(" · ")[1]
-    return first + " — " + last
+        return first[:-4] + "-" + last.split(" · ")[1]
+    return first + " - " + last
 
 
 def truncate(text: str, limit: int, suffix: str = "…") -> str:
@@ -731,7 +732,7 @@ def hash_short(text: str, length: int = 8) -> str:
 
 
 def badge(text: str, style: str = "info") -> str:
-    icons = {"info": "ℹ️", "ok": "✅", "warn": "⚠️", "error": "❌", "new": "🆕"}
+    icons = {"info": "ℹ", "ok": "[ok]", "warn": "!", "error": "[x]", "new": "🆕"}
     icon = icons.get(style, "•")
     return f"{icon} {escape(text)}"
 
@@ -862,6 +863,14 @@ def _rich_block(block: object) -> str:
         open_attr = " open" if block.get("open") else ""
         return f"<details{open_attr}><summary>{title}</summary>{inner}</details>"
     if kind == "pageBlockTable":
+        attrs = ""
+        if block.get("bordered"):
+            attrs += " bordered"
+        if block.get("striped"):
+            attrs += " striped"
+        if block.get("compact"):
+            attrs += " compact"
+        title_tag = f"<caption>{_rich_text(block.get('title'))}</caption>" if block.get("title") is not None else ""
         rows: list[str] = []
         for row in cast('list[Any]', block.get("rows") or []):
             if not isinstance(row, dict):
@@ -873,10 +882,23 @@ def _rich_block(block: object) -> str:
                     continue
                 cell = cast('dict[str, Any]', cell)
                 tag = "th" if cell.get("header") else "td"
-                cells.append(f"<{tag}>{_rich_text(cell.get('text'))}</{tag}>")
+                c_attrs = ""
+                if cell.get("align_center"):
+                    c_attrs += ' align="center"'
+                elif cell.get("align_right"):
+                    c_attrs += ' align="right"'
+                if cell.get("valign_middle"):
+                    c_attrs += ' valign="middle"'
+                elif cell.get("valign_bottom"):
+                    c_attrs += ' valign="bottom"'
+                if cell.get("colspan"):
+                    c_attrs += f' colspan="{cell["colspan"]}"'
+                if cell.get("rowspan"):
+                    c_attrs += f' rowspan="{cell["rowspan"]}"'
+                cells.append(f"<{tag}{c_attrs}>{_rich_text(cell.get('text'))}</{tag}>")
             if cells:
                 rows.append(f"<tr>{''.join(cells)}</tr>")
-        return f"<table>{''.join(rows)}</table>" if rows else ""
+        return f"<table{attrs}>{title_tag}{''.join(rows)}</table>" if (rows or title_tag) else ""
     return text
 
 
@@ -989,6 +1011,8 @@ class _MessageTextParser(HTMLParser):
 def message_text(message: object) -> str:
     if isinstance(message, str):
         return message
+    if callable(message):
+        return ""
     raw = _ent_get(message, "raw", message)
     rich = _ent_get(raw, "rich_message") or _ent_get(raw, "richMessage")
     if rich is None and _ent_get(raw, "_") in {"richMessage", "inputRichMessage", "inputRichMessageHTML"}:
@@ -1455,7 +1479,129 @@ def regdate(user_id: object, *, registration_month: object = None, not_after: ob
     }
 
 
-TOOLKIT_FUNCS = {
+def wordmark() -> str:
+    return '<tg-emoji emoji-id="5985527717183888277">⚡</tg-emoji><tg-emoji emoji-id="5985515480822061758">⚡</tg-emoji><tg-emoji emoji-id="5985558606588681366">⚡</tg-emoji><tg-emoji emoji-id="5985757321840565902">⚡</tg-emoji>'
+
+
+def paginate_chunks(text: str, limit: int = 4000) -> list[str]:
+    if not text:
+        return [""]
+    if len(text) <= limit:
+        return [text]
+    lines = text.split("\n")
+    pages: list[str] = []
+    current: list[str] = []
+    current_len = 0
+    for line in lines:
+        line_len = len(line) + 1
+        if current_len + line_len > limit and current:
+            pages.append("\n".join(current))
+            current = []
+            current_len = 0
+        if len(line) > limit:
+            for i in range(0, len(line), limit):
+                chunk = line[i:i + limit]
+                if current:
+                    pages.append("\n".join(current))
+                    current = []
+                    current_len = 0
+                pages.append(chunk)
+            continue
+        current.append(line)
+        current_len += line_len
+    if current:
+        pages.append("\n".join(current))
+    return pages or [text]
+
+
+def classify_error(exc: Any) -> dict[str, Any]:
+    text = str(exc or "")
+    text_upper = text.upper()
+    flood_seconds = 0
+    match = re.search(r"FLOOD_WAIT_(\d+)", text_upper)
+    if match:
+        flood_seconds = int(match.group(1))
+    elif hasattr(exc, "seconds") and isinstance(getattr(exc, "seconds"), (int, float)):
+        flood_seconds = int(exc.seconds)
+    elif "WAIT " in text_upper:
+        m2 = re.search(r"WAIT (\d+) SECOND", text_upper)
+        if m2:
+            flood_seconds = int(m2.group(1))
+
+    is_flood = flood_seconds > 0 or "FLOOD" in text_upper
+    is_spam = any(k in text_upper for k in ("PEER_FLOOD", "SPAMPROTECTION", "USER_BANNED_IN_CHANNEL", "CHAT_WRITE_FORBIDDEN", "SPAMBOT", "SPAMBAN"))
+    is_frozen = any(k in text_upper for k in ("PRIVACY_RESTRICTED", "ACCOUNT_RESTRICTED", "FROZEN_METHOD_NOT_AVAILABLE", "USER_RESTRICTED", "USER_DEACTIVATED_BAN", "AUTH_KEY_UNREGISTERED", "SESSION_REVOKED", "SESSION_EXPIRED", "FROZEN"))
+
+    if is_flood:
+        err_type = "flood_wait"
+    elif is_spam:
+        err_type = "spamblock"
+    elif is_frozen:
+        err_type = "frozen"
+    elif any(k in text_upper for k in ("SLOWMODE", "RATELIMIT", "RATE_LIMIT")):
+        err_type = "rate_limit"
+    elif any(k in text_upper for k in ("CONNECTION", "TIMEOUT", "NETWORK", "OSERROR", "RESET BY PEER")):
+        err_type = "network"
+    else:
+        err_type = "unknown"
+
+    return {
+        "type": err_type,
+        "is_restriction": is_flood or is_spam or is_frozen,
+        "flood_wait": flood_seconds,
+        "detail": text,
+        "recoverable": not is_frozen and err_type != "unknown",
+    }
+
+
+async def check_restrictions(ctx: Any) -> dict[str, Any]:
+    reasons: list[str] = []
+    is_spam = False
+    is_frozen = False
+    flood_wait = 0
+    can_send = True
+
+    app = getattr(ctx, "app", None) or getattr(getattr(ctx, "runtime", None), "app", None)
+    if app is not None and getattr(app, "mt", None) is not None:
+        try:
+            from relay.firewall import trusted_scope
+            with trusted_scope():
+                await app.mt_users_get_users(id=[{"_": "inputUserSelf"}], retry=0)
+        except Exception as exc:
+            classified = classify_error(exc)
+            if classified["type"] == "frozen":
+                is_frozen = True
+                reasons.append(str(exc))
+                can_send = False
+            elif classified["type"] == "flood_wait":
+                flood_wait = classified["flood_wait"]
+                reasons.append(f"Flood wait {flood_wait}s")
+            elif classified["type"] == "spamblock":
+                is_spam = True
+                reasons.append(str(exc))
+                can_send = False
+
+    return {
+        "restricted": is_spam or is_frozen or (flood_wait > 0),
+        "spamblock": is_spam,
+        "frozen": is_frozen,
+        "flood_wait": flood_wait,
+        "reasons": reasons,
+        "can_send": can_send,
+    }
+
+
+def prune_logs(root: str | Path = ".", max_file_bytes: int = 8 * 1024 * 1024, keep_tail_bytes: int = 1 * 1024 * 1024) -> int:
+    from hotaru.observatory import prune_logs as _prune
+    return _prune(root, max_file_bytes, keep_tail_bytes)
+
+
+TOOLKIT_FUNCS: dict[str, Any] = {
+    "wordmark": wordmark,
+    "paginate_chunks": paginate_chunks,
+    "classify_error": classify_error,
+    "check_restrictions": check_restrictions,
+    "prune_logs": prune_logs,
     "regdate": regdate,
     "template_fields": template_fields,
     "template_names": template_names,

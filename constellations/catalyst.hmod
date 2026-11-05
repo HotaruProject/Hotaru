@@ -1,62 +1,153 @@
 HOTARU = {
     "id": "catalyst",
-    "version": "1.2.0",
-    "commands": ['ld', 'ul', 'rl', 'ex', 'rs', 'resetdb'],
+    "version": "1.3.0",
+    "commands": ['ld', 'ul', 'rl', 'ex', 'resetdb'],
     "capabilities": ["modules"],
+    "banner": "https://raw.githubusercontent.com/HotaruProject/Hotaru/develop/hotaru/assets/catalyst.mp4",
 }
 
-from typing import Any, Tuple, cast
+from typing import Any, Awaitable, Tuple, cast
 from pathlib import Path
 from types import SimpleNamespace
+import html
+import logging
 import tempfile
 
+log = logging.getLogger(__name__)
+
 async def command_ld(ctx: Any, invocation: Any) -> Any:
-    runtime = ctx.runtime
+    runtime: Any = getattr(ctx, "runtime", None)
     if runtime is None:
         await ctx.respond(ctx.t('kernel.kernel.runtime_unavailable'))
         return
     if len(invocation.args) > 1:
         await ctx.respond(ctx.t('runtime.usage_load', prefix=runtime.config.prefix))
         return
+
+    inv_msg: Any = invocation.message
+    reply: Any = None
+    ctx_reply: Any = getattr(ctx, "reply", None)
+    if callable(ctx_reply):
+        try:
+            reply = await cast('Awaitable[Any]', ctx_reply())
+        except Exception:
+            reply = None
+    inv_reply: Any = getattr(invocation, "reply", None)
+    if reply is None and callable(inv_reply):
+        try:
+            reply = await cast('Awaitable[Any]', inv_reply())
+        except Exception:
+            reply = None
+    if reply is None:
+        reply = getattr(invocation, "reply_message", None)
+    if reply is None and inv_msg:
+        reply = getattr(inv_msg, "reply_to_message", None) or (cast('dict[str, Any]', inv_msg).get("reply_to_message") if isinstance(inv_msg, dict) else None)
+    if callable(cast(object, reply)):
+        reply = None
+
+    from hotaru.response import reply_message_id
+    reply_id = reply_message_id(inv_msg)
+    if reply is None and reply_id is not None:
+        chat_id = invocation.chat_id or (cast('dict[str, Any]', inv_msg).get("chat_id") if isinstance(inv_msg, dict) else None)
+        if chat_id is not None and callable(getattr(ctx, "msg", None)):
+            try:
+                reply = await ctx.msg(chat_id, reply_id)
+            except Exception:
+                reply = None
+        if reply is None:
+            cap_host = getattr(runtime, "cap_host", None)
+            if cap_host is not None:
+                from relay.firewall import trusted_scope
+                with trusted_scope():
+                    try:
+                        reply = await cap_host.call("loader", "fetch", {"op": "message", "peer": chat_id, "id": reply_id})
+                    except Exception:
+                        reply = None
+
+    doc: Any = None
+    if inv_msg is not None and not callable(cast(object, inv_msg)):
+        doc = getattr(cast(object, inv_msg), "document", None) or getattr(cast(object, inv_msg), "media", None)
+        if doc is None and isinstance(inv_msg, dict):
+            doc = cast('dict[str, Any]', inv_msg).get("document") or cast('dict[str, Any]', inv_msg).get("media")
+
+    if not invocation.args and reply is None and reply_id is None and doc is None:
+        await ctx.respond(ctx.t("runtime.usage_load_source"), parse_mode="HTML")
+        return
+
     temporary = None
+    log_lines = ["-----> Fetching module source..."]
+    await ctx.respond(f"<pre>{chr(10).join(log_lines)}</pre>", parse_mode="HTML")
     try:
         if invocation.args:
             source = str(invocation.args[0])
             if not (source.startswith("https://") or "\n" in source or source.lstrip().startswith("HOTARU")):
                 if not Path(source).is_file():
-                    await ctx.respond(ctx.t('runtime.usage_load', prefix=runtime.config.prefix))
+                    await ctx.respond(f"<pre> !     Error: invalid path or url</pre>", parse_mode="HTML", output="edit")
                     return
                 source = Path(source).read_text(encoding="utf-8")
         else:
-            if invocation.message is None:
-                await ctx.respond(ctx.t('runtime.usage_load', prefix=runtime.config.prefix))
+            source_msg: Any = reply if reply is not None else cast(object, inv_msg)
+            if source_msg is None:
+                await ctx.respond(f"<pre> !     Error: reply to a file or provide a url</pre>", parse_mode="HTML", output="edit")
                 return
             with tempfile.NamedTemporaryFile(suffix=".hmod", delete=False) as handle:
                 temporary = Path(handle.name)
-            await runtime._download_module_message(invocation.message, temporary)
+            await getattr(runtime, "_download_module_message")(source_msg, temporary)
             source = temporary.read_text(encoding="utf-8")
+        log_lines[-1] += " done"
+        log_lines.append("-----> Validating capabilities and sandbox...")
+        await ctx.respond(f"<pre>{chr(10).join(log_lines)}</pre>", parse_mode="HTML", output="edit")
         result = await ctx.load_module(source)
+        log_lines[-1] += " done"
+        log_lines.append(f"-----> Launching module {result.get('module_id', '')} v{result.get('version', '')}...")
+        await ctx.respond(f"<pre>{chr(10).join(log_lines)}</pre>", parse_mode="HTML", output="edit")
     except Exception as exc:
-        if runtime.observatory is not None:
-            runtime.observatory.emit("modules", "load_error", error=exc)
-        await ctx.respond(ctx.t('runtime.load_error', error=type(exc).__name__, detail=str(exc)[:3500]))
+        obs = getattr(runtime, "observatory", None)
+        if obs is not None:
+            obs.emit("modules", "load_error", error=exc)
+        log.error("module load error: %s", exc, exc_info=True)
+        err_raw = str(exc)
+        if "file_missing" in err_raw or "not found" in err_raw.lower() or "не найден" in err_raw or isinstance(exc, FileNotFoundError):
+            err_msg = ctx.t("runtime.file_missing")
+        elif "file_document" in err_raw or "должно содержать" in err_raw:
+            err_msg = ctx.t("runtime.file_document")
+        elif "invalid path" in err_raw.lower():
+            err_msg = ctx.t("runtime.invalid_path")
+        elif isinstance(exc, (ValueError, TypeError)):
+            err_msg = ctx.t("runtime.invalid_module") + f": {err_raw}"
+        else:
+            err_msg = ctx.t("runtime.activation_failed") + f": {err_raw}"
+        log_lines.append(f" !     {html.escape(err_msg, quote=False)}")
+        await ctx.respond(f"<pre>{chr(10).join(log_lines)}</pre>", parse_mode="HTML", output="edit")
         return
     finally:
         if temporary is not None:
             temporary.unlink(missing_ok=True)
     action = result["action"]
     if action == "confirm":
-        screen = await runtime._render_caps_screen(
+        screen = await getattr(runtime, "_render_caps_screen")(
             result["module_id"], SimpleNamespace(capabilities=result["capabilities"], version=result["version"]),
             result["source"], invocation.chat_id, invocation.message_id,
         )
         if isinstance(screen, tuple):
-            text, buttons = cast(Tuple[Any, Any], screen)
-            await ctx.respond(text, buttons=buttons)
+            await ctx.screens.show(ctx.screens.screen(screen[0], screen[1]))
         else:
             await ctx.respond(screen)
     elif action in {"loaded", "updated"}:
-        await ctx.respond(ctx.t("runtime." + action, module_id=result["module_id"], version=result["version"]))
+        mods = getattr(runtime, "modules", None)
+        help_mod: Any = mods.get("help") if mods is not None else None
+        help_ctx: Any = getattr(help_mod, "context", None)
+        ns: Any = getattr(help_ctx, "namespace", None)
+        card_fn: Any = cast('dict[str, Any]', ns).get("_card") if isinstance(ns, dict) else None
+        if card_fn is not None:
+            actor: Any = getattr(cast(object, inv_msg), "from_id", None)
+            screen: Any = card_fn(ctx, result["module_id"], actor, None)
+            notice = ctx.t("runtime." + action, module_id=result["module_id"], version=result["version"])
+            await ctx.screens.show(screen.with_notice(notice))
+        else:
+            notice = ctx.t("runtime." + action, module_id=result["module_id"], version=result["version"])
+            screen = ctx.screens.screen(notice, [[ctx.screens.close()]], banner=ctx.screens.banner(result["module_id"]))
+            await ctx.screens.show(screen)
     else:
         await ctx.respond(action)
 
@@ -65,22 +156,25 @@ async def command_ul(ctx: Any, invocation: Any) -> Any:
     if runtime is None:
         await ctx.respond(ctx.t('kernel.kernel.runtime_unavailable'))
         return
-    flags = {"-c", "--clean", "-p", "--purge", "-r", "--reset", "-d", "--drop"}
+    flags = {"-c", "--clean", "-p", "--purge", "-r", "--reset", "-d", "--drop", "-f", "--force"}
     args = [arg for arg in invocation.args if arg.casefold() not in flags]
     purge = len(args) != len(invocation.args)
     if len(args) != 1:
-        await ctx.respond(ctx.t('runtime.usage_unload', prefix=runtime.config.prefix))
+        await ctx.respond(ctx.t("runtime.usage_unload", prefix=runtime.config.prefix), parse_mode="HTML")
         return
-    module_id = str(args[0]).casefold()
+    raw_mod = str(args[0]).casefold()
+    module_id = (runtime.find_module(raw_mod) if hasattr(runtime, "find_module") else None) or raw_mod
     if runtime._is_kernel_module(module_id):
-        await ctx.respond(ctx.t('runtime.core_protected'))
+        await ctx.respond(ctx.t('runtime.protected', module_id=module_id))
         return
+    await ctx.respond(ctx.t('runtime.unloading', module=module_id), parse_mode="HTML")
     try:
         await ctx.unload_module(module_id, purge=purge)
     except Exception as exc:
-        await ctx.respond(str(exc))
+        err = html.escape(str(exc), quote=False)
+        await ctx.respond(ctx.t('runtime.unload_failed', error=err), parse_mode="HTML", output="edit")
         return
-    await ctx.respond(ctx.t('runtime.purged' if purge else 'runtime.unloaded', module=module_id))
+    await ctx.respond(ctx.t('runtime.purged' if purge else 'runtime.unloaded', module=module_id), parse_mode="HTML", output="edit")
 
 async def command_rl(ctx: Any, invocation: Any) -> Any:
     runtime = ctx.runtime
@@ -103,12 +197,10 @@ async def command_ex(ctx: Any, invocation: Any) -> Any:
     if result:
         await ctx.respond(result)
 
-async def command_rs(ctx: Any, invocation: Any) -> Any:
+async def command_resetdb(ctx: Any, invocation: Any) -> Any:
     runtime = ctx.runtime
     if runtime is None:
         await ctx.respond(ctx.t('kernel.kernel.runtime_unavailable'))
         return
     result = await runtime._command_rs(invocation)
     await ctx.respond(result)
-
-command_resetdb = command_rs

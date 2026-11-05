@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import html
 import inspect
 import logging
+import traceback
 from collections import OrderedDict
 from relay.denylist import is_blocked_peer, is_readonly_peer
 from relay.firewall import module_scope
@@ -189,17 +191,87 @@ class Kernel:
         self._running[task_key] = task
         task.add_done_callback(lambda t: self._running.pop(task_key, None) if self._running.get(task_key) is t else None)
 
+    async def dispatch_bot(self, message: Any) -> object | None:
+        text = str(getattr(message, "text", "") or "").strip()
+        if not text or not text.startswith("/"):
+            return None
+        prefix = "/"
+        body = text[len(prefix):].lstrip()
+        if not body:
+            return None
+        parts = body.split()
+        cmd_part = parts[0]
+        if "@" in cmd_part:
+            cmd_part = cmd_part.split("@")[0]
+        command_name = cmd_part.casefold()
+        args = tuple(parts[1:])
+        raw_args = body[len(parts[0]):].lstrip()
+        message_id = self._message_id(message)
+        chat_id = getattr(message, "chat_id", None) or getattr(message, "from_id", None)
+        user_id = getattr(message, "from_id", None)
+        if not isinstance(user_id, int) or user_id <= 0:
+            user: Any = getattr(message, "from_user", None) or getattr(message, "sender", None)
+            if isinstance(user, dict):
+                user_id = cast('dict[str, Any]', user).get("id")
+            elif user is not None and hasattr(user, "id") and isinstance(getattr(user, "id", None), int):
+                user_id = getattr(user, "id", None)
+        if not isinstance(user_id, int) or user_id <= 0:
+            chat: Any = getattr(message, "chat", None)
+            if isinstance(chat, dict):
+                chat_dict = cast('dict[str, Any]', chat)
+                if chat_dict.get("type") == "private":
+                    user_id = chat_dict.get("id")
+            elif getattr(message, "chat_id", None) is not None:
+                cid = getattr(message, "chat_id")
+                if isinstance(cid, int) and cid > 0:
+                    user_id = cid
+        if isinstance(user_id, int) and user_id > 0:
+            setattr(message, "from_id", user_id)
+        setattr(message, "_hotaru_command", command_name)
+        invocation = CommandInvocation(
+            name=command_name,
+            args=args,
+            source="bot",
+            message_id=message_id,
+            chat_id=chat_id,
+            message=message,
+            raw_args=raw_args,
+        )
+        spec = self.registry.resolve_bot(invocation)
+        if spec is None:
+            return None
+        if not self.is_authorized(message, spec):
+            return None
+        if self.security is not None:
+            verdict = self.security.check(message, transport="bot", module_id=spec.module_id, is_group=self._is_group(message), authorized=True)
+            if verdict is not AccessVerdict.ALLOW:
+                return None
+        context = self.context_factory.create(spec.module_id, message) if self.context_factory is not None else None
+        try:
+            work = self.tasks.spawn(
+                spec.module_id,
+                self._invoke(spec, invocation, message, context),
+                name=f"hotaru:cmd:bot:{spec.name}",
+            )
+        except TaskLimitError:
+            return None
+        task = asyncio.create_task(self._execute(spec, message, work, context), name=f"hotaru:response:bot:{spec.name}")
+        return await task
+
     async def _execute(self, spec: Any, message: Any, task: asyncio.Task[Any], context: Any = None) -> object | None:
         try:
             result = await task
         except asyncio.CancelledError:
             return None
         except (Exception, SystemExit) as exc:
-            log.error("command failed: %s", type(exc).__name__, exc_info=exc)
+            trace = getattr(exc, "worker_trace", "") or "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
+            log.error("command failed [%s] %s: %s\n%s", getattr(spec, "module_id", None), getattr(spec, "name", None), exc, trace)
             if self.response_service is not None:
                 try:
-                    text = f"{type(exc).__name__}: {exc}"[:300]
-                    return await context.respond(text) if context is not None else await self.response_service.respond(message, text=text, output="auto")
+                    raw_err = getattr(exc, "args", [str(exc)])[0] if getattr(exc, "args", None) else str(exc)
+                    err_msg = html.escape(str(raw_err), quote=False)[:3000]
+                    text = f'<tg-emoji emoji-id="5260342697075416641">❌</tg-emoji> <b>{type(exc).__name__}:</b>\n<blockquote>{err_msg}</blockquote>'
+                    return await context.respond(text, rich=False) if context is not None else await self.response_service.respond(message, text=text, output="auto")
                 except Exception as response_exc:
                     log.error("command error response failed: %s", type(response_exc).__name__, exc_info=response_exc)
                     return None
@@ -296,11 +368,32 @@ class Kernel:
 
     def is_authorized(self, message: Any, spec: CommandSpec | None = None) -> bool:
         user_id = getattr(message, "from_id", None)
-        if not isinstance(user_id, int):
+        if not isinstance(user_id, int) or user_id <= 0:
+            user: Any = getattr(message, "from_user", None) or getattr(message, "sender", None)
+            if isinstance(user, dict):
+                user_id = cast('dict[str, Any]', user).get("id")
+            elif user is not None and hasattr(user, "id") and isinstance(getattr(user, "id", None), int):
+                user_id = getattr(user, "id", None)
+        if not isinstance(user_id, int) or user_id <= 0:
+            chat: Any = getattr(message, "chat", None)
+            if isinstance(chat, dict):
+                chat_dict = cast('dict[str, Any]', chat)
+                if chat_dict.get("type") == "private":
+                    user_id = chat_dict.get("id")
+            elif getattr(message, "chat_id", None) is not None:
+                cid = getattr(message, "chat_id")
+                if isinstance(cid, int) and cid > 0:
+                    user_id = cid
+        if not isinstance(user_id, int) or user_id <= 0:
             user_id = None
         if spec is None:
             name = self.command_name(getattr(message, "text", None) or "")
             spec = self.registry.resolve_name(name) if name is not None else None
+            if spec is None and hasattr(self.registry, "resolve_bot_name"):
+                text = str(getattr(message, "text", "") or "").strip()
+                if text.startswith("/"):
+                    cmd = text[1:].split()[0].split("@")[0].casefold()
+                    spec = self.registry.resolve_bot_name(cmd)
         if self.access is not None:
             if spec is not None and spec.kernel and not self.access.is_owner(user_id):
                 return spec.module_id == "accounts" and self.access.check_tsec(user_id, spec.module_id, spec.name, getattr(message, "chat_id", None))

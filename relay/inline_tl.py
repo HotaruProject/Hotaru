@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any, cast
 
 from .emoji import to_entities
-from goygram.types.kbd import kbd_to_tl
+from hotaru.markup import kbd_to_tl
 
 _MEDIA_KINDS = {"photo", "video", "mpeg4_gif", "audio", "voice", "document", "gif"}
 
@@ -52,22 +52,13 @@ def _markup_of(result: dict[str, Any]) -> dict[str, Any] | None:
 
 
 def _send_message(result: dict[str, Any], content: dict[str, Any], kind: str) -> dict[str, Any]:
-    rich = content.get("rich_message")
-    if isinstance(rich, dict):
-        payload: dict[str, Any] = {"_": "inputBotInlineMessageRichMessage", "rich_message": rich}
-        markup = _markup_of(result)
-        if markup is None:
-            markup = _markup_of(content)
-        if markup is not None:
-            payload["reply_markup"] = markup
-        return payload
     markup = _markup_of(result)
     if markup is None:
         markup = _markup_of(content)
     if kind in _MEDIA_KINDS:
         text = str(content.get("message_text", content.get("text", "")) or result.get("caption", ""))
         media: dict[str, Any] = {"_": "inputBotInlineMessageMediaAuto", "message": text}
-        if str(result.get("parse_mode", "")).lower() == "html" or str(content.get("parse_mode", "")).lower() == "html":
+        if str(result.get("parse_mode", "")).lower() == "html" or str(content.get("parse_mode", "")).lower() == "html" or content.get("rich_message"):
             plain, ents = to_entities(text)
             if ents:
                 media["message"] = plain
@@ -75,6 +66,12 @@ def _send_message(result: dict[str, Any], content: dict[str, Any], kind: str) ->
         if markup is not None:
             media["reply_markup"] = markup
         return media
+    rich = content.get("rich_message")
+    if isinstance(rich, dict):
+        payload: dict[str, Any] = {"_": "inputBotInlineMessageRichMessage", "rich_message": rich}
+        if markup is not None:
+            payload["reply_markup"] = markup
+        return payload
     text = str(content.get("message_text", content.get("text", "")))
     text_payload: dict[str, Any] = {"_": "inputBotInlineMessageText", "message": text}
     if content.get("disable_web_page_preview") or content.get("no_webpage"):

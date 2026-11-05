@@ -1,8 +1,9 @@
 HOTARU = {
     "id": "updater",
-    "version": "1.5.4",
+    "version": "2.0.0",
     "commands": ["upd", "updlog", "updoff", "updon"],
     "capabilities": ["net", "mt"],
+    "banner": "https://raw.githubusercontent.com/HotaruProject/Hotaru/develop/hotaru/assets/updater.mp4",
     "tasks": {
         "poller": {"interval": 300, "autostart": True},
     },
@@ -16,6 +17,8 @@ import asyncio
 import os
 import subprocess
 import time
+
+from relay.emoji import to_entities
 
 REPO_URL = "https://github.com/HotaruProject/Hotaru"
 
@@ -116,19 +119,22 @@ def _pending_from_callback(ctx: Any, callback: Any) -> None:
 
 
 def _rich(text: Any) -> Any:
-    return {"_": "inputRichMessageHTML", "html": text}
+    from relay.emoji import to_rich
+    return {"_": "inputRichMessageHTML", **to_rich(str(text))}
 
 async def _edit_inline(ctx: Any, text: Any, surface: dict[str, Any]) -> bool:
     mid = _restore_inline(surface.get("inline_id"))
     if mid is None:
         return False
+    plain, entities = to_entities(text)
+    extra: dict[str, Any] = {"entities": entities} if entities else {}
     try:
-        await ctx.bot.call("editMessageText", inline_message_id=mid, rich_message=_rich(text))
+        await ctx.bot.call("editMessageText", inline_message_id=mid, text=plain, rich_message=_rich(text), **extra)
         return True
     except Exception as exc:
         _emit(ctx, "edit_inline_error", error=type(exc).__name__, detail=str(exc)[:120])
     try:
-        await ctx.bot.call("editMessageText", inline_message_id=mid, text=text, parse_mode="HTML")
+        await ctx.bot.call("editMessageText", inline_message_id=mid, text=plain, **extra)
         return True
     except Exception as exc:
         _emit(ctx, "edit_inline_error", error=type(exc).__name__, detail=str(exc)[:120])
@@ -139,16 +145,21 @@ async def _edit_own(ctx: Any, text: Any, surface: dict[str, Any]) -> bool:
     message_id = surface.get("message_id")
     if not peer_hex or not isinstance(message_id, int):
         return False
+    plain, entities = to_entities(text)
+    data: dict[str, Any] = {"id": int(message_id), "message": plain, "rich_message": _rich(text), "peer": bytes.fromhex(peer_hex)}
+    if entities:
+        data["entities"] = entities
     try:
-        await ctx.tg.call("messages.editMessage", {"id": int(message_id), "rich_message": _rich(text), "peer": bytes.fromhex(peer_hex)})
+        await ctx.tg.call("messages.editMessage", data)
         return True
     except Exception as exc:
         _emit(ctx, "edit_own_error", error=type(exc).__name__, detail=str(exc)[:120])
         err = str(exc)
         if "INLINE_BOT_REQUIRED" in err or "MESSAGE_AUTHOR_REQUIRED" in err:
             return False
+    data.pop("rich_message", None)
     try:
-        await ctx.tg.edit_rich(message_id, text, peer=surface.get("chat_id"))
+        await ctx.tg.call("messages.editMessage", data)
         return True
     except Exception as exc:
         _emit(ctx, "edit_own_error", error=type(exc).__name__, detail=str(exc)[:120])
@@ -256,10 +267,13 @@ async def _finalize_restart(ctx: Any, pending: dict[str, Any]) -> None:
             await asyncio.wait_for(inline.ready.wait(), timeout=10.0)
     except Exception:
         pass
-    took_raw = round(time.time() - float(pending["restarting"])) if isinstance(pending.get("restarting"), (int, float)) else None
-    took = ctx.t("common.seconds", n=took_raw) if took_raw is not None else ctx.t("common.unknown")
-    text = ctx.t('kernel.updater.restarted', took=took)
-    html = f"<b>{text}</b>"
+    restarting = pending.get("restarting")
+    if isinstance(restarting, (int, float)):
+        diff = max(0.01, time.time() - float(restarting))
+        took = f"{diff:.2f}s" if diff < 10 else f"{diff:.1f}s"
+    else:
+        took = ctx.t("common.unknown")
+    html = ctx.t('kernel.updater.restarted', took=took)
     surfaces = _surfaces(pending)
     done: dict[int, str] = {}
     for attempt in range(5):
@@ -287,11 +301,48 @@ def _emit(ctx: Any, event: Any, **fields: Any) -> Any:
             pass
 
 def _notify_text(ctx: Any, current: str, latest: str, changelog: list[str]) -> str:
-    link = f'<a href="{REPO_URL}/compare/{current[:12]}...{latest[:12]}">{latest[:6]}</a>'
-    lines = [f"<b>{ctx.t('kernel.updater.update_available')}</b> → <code>{link}</code>"]
-    for entry in (changelog or [])[:10]:
-        lines.append(f"• {_escape(entry)}")
-    return "<br>".join(lines)
+    wm = ctx.wordmark() if hasattr(ctx, "wordmark") else ctx.screens.wordmark() if hasattr(ctx, "screens") and hasattr(ctx.screens, "wordmark") else '<tg-emoji emoji-id="5985527717183888277">⚡</tg-emoji><tg-emoji emoji-id="5985515480822061758">⚡</tg-emoji><tg-emoji emoji-id="5985558606588681366">⚡</tg-emoji><tg-emoji emoji-id="5985757321840565902">⚡</tg-emoji>'
+    link = f'<a href="{REPO_URL}/compare/{current[:12]}...{latest[:12]}"><code>{latest[:7]}</code></a>'
+    head = (
+        '<table bordered striped compact>'
+        f'<tr><th colspan="2" align="center">{wm} · <b>{ctx.t("kernel.updater.update_available")}</b></th></tr>'
+        f'<tr><td><tg-emoji emoji-id="5258391025281408576">📈</tg-emoji> <b>Commit:</b></td><td align="right">{link}</td></tr>'
+        f'<tr><td><tg-emoji emoji-id="5260730055880876557">🔗</tg-emoji> <b>Branch:</b></td><td align="right"><code>develop</code></td></tr>'
+        '</table>'
+    )
+    entries = [f'<tg-emoji emoji-id="5325732612084351248">📦</tg-emoji> {_escape(entry)}' for entry in (changelog or [])[:20]]
+    if not entries:
+        return head
+    body = "<br>".join(entries)
+    return f"{head}<blockquote expandable>{body}</blockquote>"
+
+
+def _offer(ctx: Any, text: str, latest: str) -> Any:
+    k = ctx.screens
+    btn_update = f'⚡ {ctx.t("kernel.updater.button_update")}'
+    btn_ignore = f'✕ {ctx.t("kernel.updater.button_ignore")}'
+    return k.screen(
+        text,
+        [[
+            k.primary(btn_update, update_now),
+            k.button(btn_ignore, skip_update, commit=latest),
+        ]],
+        rich=True,
+    )
+
+
+async def update_now(ctx: Any, nav: Any) -> Any:
+    await nav.toast(ctx.t('kernel.updater.updating'))
+    _pending_from_callback(ctx, nav.call)
+    await _run_update(ctx)
+
+
+def skip_update(ctx: Any, nav: Any) -> Any:
+    ctx.state.set("notified_commit", nav.arg("commit"))
+    _drop_surface(ctx, nav.call)
+    screen = ctx.screens.screen(f"<b>{ctx.t('kernel.updater.ignored')}</b>")
+    screen.toast = ctx.t('kernel.updater.ignored_toast')
+    return screen
 
 async def command_updlog(ctx: Any, invocation: Any) -> Any:
     runtime = ctx.runtime
@@ -307,34 +358,34 @@ async def command_updlog(ctx: Any, invocation: Any) -> Any:
         await ctx.respond(ctx.t('kernel.updater.check_failed', error=_escape(exc)), parse_mode="HTML")
         return
     if current == latest:
-        await ctx.respond(f"<b>{ctx.t('kernel.updater.up_to_date')}</b>", parse_mode="HTML")
+        await ctx.respond(ctx.t('kernel.updater.up_to_date'), parse_mode="HTML")
         return
     await ctx.respond(_notify_text(ctx, current, latest, changelog), parse_mode="HTML")
 
 async def command_updoff(ctx: Any, invocation: Any) -> Any:
     ctx.state.set("notify", False)
-    await ctx.respond(f"<b>{ctx.t('kernel.updater.notify_off')}</b>", parse_mode="HTML")
+    await ctx.respond(ctx.t('kernel.updater.notify_off'), parse_mode="HTML")
 
 async def command_updon(ctx: Any, invocation: Any) -> Any:
     ctx.state.set("notify", True)
-    await ctx.respond(f"<b>{ctx.t('kernel.updater.notify_on')}</b>", parse_mode="HTML")
+    await ctx.respond(ctx.t('kernel.updater.notify_on'), parse_mode="HTML")
 
 async def _run_update(ctx: Any) -> Any:
     async def say(text: Any) -> Any:
         await _status(ctx, text)
-    await say(f"<b>{ctx.t('kernel.updater.downloading')}</b>")
+    await say(ctx.t('kernel.updater.downloading'))
     try:
         update = _pull(ctx.runtime)
     except Exception as exc:
         await say(ctx.t('kernel.updater.failed', error=_escape(exc)))
         return
     if update.before == update.after:
-        await say(f"<b>{ctx.t('kernel.updater.up_to_date')}</b>")
+        await say(ctx.t('kernel.updater.up_to_date'))
         return
     if update.conflicts:
         await say(ctx.t('kernel.updater.conflicts', path=_escape(str(update.recovery))))
     ctx.state.set("notified_commit", update.after)
-    await say(f"<b>{ctx.t('kernel.updater.restarting', commit=_escape(update.after[:7]))}</b>")
+    await say(ctx.t('kernel.updater.restarting', commit=_escape(update.after[:7])))
     pending = ctx.state.get("update_pending")
     if isinstance(pending, dict):
         pending = dict(cast('dict[str, Any]', pending))
@@ -357,7 +408,7 @@ async def command_upd(ctx: Any, invocation: Any) -> Any:
     if runtime is None:
         await ctx.respond(f"<b>{ctx.t('kernel.updater.unavailable')}</b>", parse_mode="HTML")
         return
-    force = "force" in invocation.args or "-f" in invocation.args
+    force = "force" in invocation.args or "-f" in invocation.args or "--force" in invocation.args
     try:
         _fetch_origin(runtime)
         current = _current_commit(runtime)
@@ -370,60 +421,19 @@ async def command_upd(ctx: Any, invocation: Any) -> Any:
         return
 
     if current == latest:
-        await ctx.respond(f"<b>{ctx.t('kernel.updater.up_to_date')}</b>", parse_mode="HTML")
+        await ctx.respond(ctx.t('kernel.updater.up_to_date'), parse_mode="HTML")
         return
 
     if force:
         await _run_update(ctx)
         return
 
-    async def update_handler(callback: Any, payload: Any) -> Any:
-        await callback.respond(ctx.t('kernel.updater.updating'))
-        _pending_from_callback(ctx, callback)
-        await _run_update(ctx)
-
-    async def ignore_handler(callback: Any, payload: Any) -> Any:
-        ctx.state.set("notified_commit", latest)
-        await callback.respond(ctx.t('kernel.updater.ignored_toast'))
-        try:
-            await callback.edit(f"<b>{ctx.t('kernel.updater.ignored')}</b>")
-        except Exception:
-            pass
-        _drop_surface(ctx, callback)
-
-    buttons = [
-        [
-            ctx.ui.button(ctx.t('kernel.updater.button_update'), update_handler, style="primary"),
-            ctx.ui.button(ctx.t('kernel.updater.button_ignore'), ignore_handler, style="danger"),
-        ]
-    ]
-    message = await ctx.respond(
-        _notify_text(ctx, current, latest, changelog) + ctx.t('kernel.updater.confirm'),
-        buttons=buttons,
-        inline=True,
-        parse_mode="HTML",
-    )
-    surface: dict[str, Any] | None = None
-    sent = cast(Any, getattr(message, "value", None) if message is not None and not isinstance(message, dict) else message)
-    if isinstance(sent, dict):
-        sent = cast('dict[str, Any]', sent)
-        body = sent.get("result", sent)
-        if isinstance(body, dict):
-            body = cast('dict[str, Any]', body)
-            message_id = body.get("id") if isinstance(body.get("id"), int) else body.get("message_id")
-            chat_id = getattr(ctx.message, "chat_id", None)
-            if isinstance(chat_id, int) and isinstance(message_id, int):
-                surface = {"chat_id": chat_id, "message_id": message_id, "own": False}
-    if surface is not None:
-        peer_hex = None
-        try:
-            app = getattr(ctx.runtime, "app", None)
-            mt = getattr(app, "mt", None) if app is not None else None
-            if mt is not None and hasattr(mt, "resolve_peer"):
-                peer_hex = (await mt.resolve_peer(surface["chat_id"])).hex()
-        except Exception:
-            peer_hex = None
-        surface["peer"] = peer_hex
+    form = await ctx.screens.show(_offer(ctx, _notify_text(ctx, current, latest, changelog) + ctx.t('kernel.updater.confirm'), latest))
+    inline_id = _serialize_inline(getattr(form, "inline_id", None))
+    if inline_id is not None:
+        surface: dict[str, Any] = {"own": False, "inline_id": inline_id}
+        if isinstance(form.chat, int):
+            surface["chat_id"] = form.chat
         _remember_surface(ctx, surface)
 
 async def task_poller(ctx: Any) -> Any:
@@ -454,50 +464,13 @@ async def task_poller(ctx: Any) -> Any:
         _emit(ctx, "poller_no_owner")
         return
 
-    async def update_handler(callback: Any, payload: Any) -> Any:
-        await callback.respond(ctx.t('kernel.updater.updating'))
-        _pending_from_callback(ctx, callback)
-        await _run_update(ctx)
-
-    async def ignore_handler(callback: Any, payload: Any) -> Any:
-        ctx.state.set("notified_commit", latest)
-        await callback.respond(ctx.t('kernel.updater.ignored_toast'))
-        try:
-            await callback.edit(f"<b>{ctx.t('kernel.updater.ignored')}</b>")
-        except Exception:
-            pass
-        _drop_surface(ctx, callback)
-
-    buttons = [
-        [
-            ctx.ui.button(ctx.t('kernel.updater.button_update'), update_handler, style="primary"),
-            ctx.ui.button(ctx.t('kernel.updater.button_ignore'), ignore_handler, style="danger"),
-        ]
-    ]
     text = _notify_text(ctx, current, latest, changelog)
     try:
-        message = await ctx.bot.send_message(owner, text, buttons=buttons)
+        form = await ctx.screens.send(owner, _offer(ctx, text, latest), actor=owner, command="upd")
     except Exception as exc:
         _emit(ctx, "poller_send_error", error=type(exc).__name__, detail=str(exc)[:200])
         return
-    sent: dict[str, Any] | None = None
-    message_body: Any
-    if isinstance(message, dict):
-        message_dict = cast('dict[str, Any]', message)
-        message_body = message_dict.get("result", message_dict)
-    else:
-        message_body = message
-    if isinstance(message_body, dict):
-        message_body = cast('dict[str, Any]', message_body)
-        updates = message_body.get("updates")
-        for upd in cast('list[Any]', updates) if isinstance(updates, list) else []:
-            msg = cast('dict[str, Any]', upd).get("message") if isinstance(upd, dict) else None
-            if isinstance(msg, dict) and isinstance(cast('dict[str, Any]', msg).get("id"), int):
-                sent = cast('dict[str, Any]', msg)
-                break
-        if sent is None and message_body.get("_") == "updateShortSentMessage" and isinstance(message_body.get("id"), int):
-            sent = message_body
-    if sent is not None:
-        _remember_surface(ctx, {"chat_id": int(owner), "message_id": int(sent["id"]), "own": False})
+    if form.message_id is not None:
+        _remember_surface(ctx, {"chat_id": int(owner), "message_id": int(form.message_id), "own": False})
     ctx.state.set("notified_commit", latest)
-    _emit(ctx, "poller_notified", latest=latest[:12], sent=bool(sent))
+    _emit(ctx, "poller_notified", latest=latest[:12], sent=form.message_id is not None)

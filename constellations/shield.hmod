@@ -1,0 +1,190 @@
+HOTARU = {
+    "id": "shield",
+    "version": "1.0.0",
+    "commands": ["shield", "suspend_api"],
+    "capabilities": ["mt", "state"],
+    "banner": "https://raw.githubusercontent.com/HotaruProject/Hotaru/develop/hotaru/assets/shield.mp4",
+    "about": "API flood and rate limit protection",
+    "lexicon": {
+        "en": {
+            "description": "API flood and rate limit protection",
+            "commands": {
+                "shield": {
+                    "usage": "",
+                    "description": "API flood protection management and statistics"
+                },
+                "suspend_api": {
+                    "usage": "<seconds>",
+                    "description": "Suspend API flood protection for specified duration"
+                }
+            }
+        },
+        "ru": {
+            "description": "Защита от флудвейта и перегрузки Telegram API",
+            "commands": {
+                "shield": {
+                    "usage": "",
+                    "description": "Управление и статистика защиты от флудвейта API"
+                },
+                "suspend_api": {
+                    "usage": "<секунды>",
+                    "description": "Приостановить защиту API на указанное время"
+                }
+            }
+        },
+        "uk": {
+            "description": "Захист від флудвейту та перевантаження Telegram API",
+            "commands": {
+                "shield": {
+                    "usage": "",
+                    "description": "Керування та статистика захисту від флудвейту API"
+                },
+                "suspend_api": {
+                    "usage": "<секунди>",
+                    "description": "Призупинити захист API на вказаний час"
+                }
+            }
+        },
+        "ja": {
+            "description": "Telegram APIフラッドおよびレート制限からの保護",
+            "commands": {
+                "shield": {
+                    "usage": "",
+                    "description": "APIフラッド保護の管理と統計"
+                },
+                "suspend_api": {
+                    "usage": "<秒>",
+                    "description": "指定された期間API保護を一時停止"
+                }
+            }
+        },
+        "kz": {
+            "description": "Telegram API флудвейті мен шамадан тыс жүктемеден қорғау",
+            "commands": {
+                "shield": {
+                    "usage": "",
+                    "description": "API флудвейт қорғанысын басқару және статистика"
+                },
+                "suspend_api": {
+                    "usage": "<секунд>",
+                    "description": "API қорғанысын көрсетілген уақытқа тоқтату"
+                }
+            }
+        },
+        "zh": {
+            "description": "Telegram API 泛洪与速率限制保护",
+            "commands": {
+                "shield": {
+                    "usage": "",
+                    "description": "API 洪水防护管理与统计"
+                },
+                "suspend_api": {
+                    "usage": "<秒数>",
+                    "description": "暂停指定时长的 API 保护"
+                }
+            }
+        }
+    }
+}
+
+from typing import Any
+import html
+
+
+def _status_screen(ctx: Any) -> Any:
+    k = ctx.screens
+    runtime = ctx.runtime
+    rl = getattr(runtime, "ratelimit", None)
+    if rl is None:
+        return k.screen(f'<tg-emoji emoji-id="5260342697075416641">❌</tg-emoji> <b>{ctx.t("kernel.shield.unavailable", "API protection unavailable")}</b>', [[k.close()]], banner=k.banner("shield"), rich=True)
+    st = rl.stats()
+    status_str = ctx.t("kernel.shield.enabled") if st["enabled"] else ctx.t("kernel.shield.disabled")
+    if st["suspended"]:
+        status_str += f" ({st['suspend_remaining']}s)"
+    name_str = ctx.t("kernel.shield.name", "API Flood Protection")
+    f_status = ctx.t("kernel.shield.field_status", "Status:")
+    f_window = ctx.t("kernel.shield.field_window", "Window:")
+    f_limit = ctx.t("kernel.shield.field_limit", "Limit:")
+    f_pause = ctx.t("kernel.shield.field_pause", "Pause:")
+    f_reqs = ctx.t("kernel.shield.field_requests", "Requests:")
+    f_trigs = ctx.t("kernel.shield.field_triggers", "Triggers:")
+    guard_footer = ctx.t("kernel.shield.footer_guard", "Telegram API flood & rate limit guard")
+    text = (
+        '<table bordered striped compact>'
+        f'<tr><th colspan="2" align="center"><tg-emoji emoji-id="5258476306152038031">🛡</tg-emoji> <b>{name_str}</b></th></tr>'
+        f'<tr><td><b>{f_status}</b></td><td align="right">{status_str}</td></tr>'
+        f'<tr><td><b>{f_window}</b></td><td align="right"><code>{int(st["time_sample"])}s</code></td></tr>'
+        f'<tr><td><b>{f_limit}</b></td><td align="right"><code>{st["threshold"]} req</code></td></tr>'
+        f'<tr><td><b>{f_pause}</b></td><td align="right"><code>{int(st["local_floodwait"])}s</code></td></tr>'
+        f'<tr><td><b>{f_reqs}</b></td><td align="right"><code>{st["recent_count"]}</code></td></tr>'
+        f'<tr><td><b>{f_trigs}</b></td><td align="right"><code>{st["total_cooldowns"]}</code></td></tr>'
+        '</table>'
+        f'<blockquote><tg-emoji emoji-id="5366045973988522066">✨</tg-emoji> <i>{guard_footer}</i></blockquote>'
+    )
+    buttons = [
+        [
+            k.button(ctx.t("kernel.shield.btn_toggle"), action_toggle, style="primary"),
+            k.button(ctx.t("kernel.shield.btn_stats"), action_stats),
+        ],
+        [k.close()],
+    ]
+    return k.screen(text, buttons, banner=k.banner("shield"), rich=True)
+
+
+async def action_toggle(ctx: Any, nav: Any) -> Any:
+    rl = getattr(ctx.runtime, "ratelimit", None)
+    if rl is not None:
+        rl.toggle()
+    return _status_screen(ctx)
+
+
+async def action_stats(ctx: Any, nav: Any) -> Any:
+    k = ctx.screens
+    rl = getattr(ctx.runtime, "ratelimit", None)
+    if rl is None:
+        return _status_screen(ctx)
+    st = rl.stats()
+    top = st.get("top_methods", [])
+    if top:
+        rows = "".join(f'<tr><td><code>{html.escape(m)}</code></td><td align="right"><code>{c}</code></td></tr>' for m, c in top)
+    else:
+        empty_str = ctx.t("kernel.shield.telemetry_empty", "No recent calls in sample window")
+        rows = f'<tr><td colspan="2" align="center"><i>{empty_str}</i></td></tr>'
+    title_str = ctx.t("kernel.shield.telemetry_title", "API Call Telemetry")
+    footer_str = ctx.t("kernel.shield.telemetry_footer", "Methods called during current window")
+    title = (
+        '<table bordered striped compact>'
+        f'<tr><th colspan="2" align="center"><tg-emoji emoji-id="5258476306152038031">🛡</tg-emoji> <b>{title_str}</b></th></tr>'
+        f'{rows}'
+        '</table>'
+        f'<blockquote><tg-emoji emoji-id="5366045973988522066">✨</tg-emoji> <i>{footer_str}</i></blockquote>'
+    )
+    buttons = [
+        [k.button(ctx.t("common.back", "Back"), action_back, icon="back")],
+        [k.close()],
+    ]
+    return k.screen(title, buttons, banner=k.banner("shield"), rich=True)
+
+
+async def action_back(ctx: Any, nav: Any) -> Any:
+    return _status_screen(ctx)
+
+
+async def command_shield(ctx: Any, invocation: Any) -> Any:
+    screen = _status_screen(ctx)
+    await ctx.screens.show(screen)
+
+
+async def command_suspend_api(ctx: Any, invocation: Any) -> Any:
+    prefix = ctx.runtime.config.prefix
+    args = invocation.args
+    if not args or not args[0].isdigit():
+        usage_str = ctx.t("kernel.shield.usage_suspend", prefix=prefix)
+        await ctx.respond(f'<tg-emoji emoji-id="5258476306152038031">🛡</tg-emoji> <b>{usage_str}</b>')
+        return
+    seconds = int(args[0])
+    rl = getattr(ctx.runtime, "ratelimit", None)
+    if rl is not None:
+        rl.suspend(seconds)
+    success_str = ctx.t("kernel.shield.suspended_success", seconds=seconds)
+    await ctx.respond(f'<tg-emoji emoji-id="5260726538302660868">✅</tg-emoji> <b>{success_str}</b>')

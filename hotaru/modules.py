@@ -41,6 +41,8 @@ class ModuleManifest:
     rise: str = ""
     fade: str = ""
     template_fields: dict[str, dict[str, Any]] | None = None
+    banner: str = ""
+    bot_commands: tuple[str, ...] = ()
 
     @property
     def description(self) -> str:
@@ -272,6 +274,17 @@ class HmodLoader:
             raise ModuleValidationError("manifest fade must be a string")
         if fade and not fade.isidentifier():
             raise ModuleValidationError("manifest fade is invalid")
+
+        banner = raw.get("banner", "")
+        if not isinstance(banner, str):
+            raise ModuleValidationError("manifest banner must be a string")
+        banner = banner.strip()
+
+        bot_commands = raw.get("bot_commands", [])
+        if not HmodLoader._strings(bot_commands):
+            raise ModuleValidationError("manifest bot_commands must contain strings")
+        if banner and not (banner.startswith("https://") or banner.startswith("http://")):
+            raise ModuleValidationError("manifest banner must be a valid URL")
         for language, translation in cast('dict[object, object]', translations).items():
             if not isinstance(language, str) or not re.fullmatch(r"[A-Za-z]{2,8}(?:[-_][A-Za-z0-9]{1,8})*", language) or not isinstance(translation, dict):
                 raise ModuleValidationError("manifest translations are invalid")
@@ -353,6 +366,8 @@ class HmodLoader:
             rise,
             fade,
             publications,
+            banner,
+            tuple(cast("list[str]", bot_commands)),
         )
 
     @staticmethod

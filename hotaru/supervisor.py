@@ -20,11 +20,21 @@ TRANSPORT_ERRORS = (ConnectionError, ConnectionClosedError, TimeoutError, asynci
 
 class ConnectionRecovery:
 
-    def __init__(self, mt: Any, observatory: Observatory | None, name: str, *, ready: asyncio.Event | None = None) -> None:
+    def __init__(
+        self,
+        mt: Any,
+        observatory: Observatory | None,
+        name: str,
+        *,
+        ready: asyncio.Event | None = None,
+        on_fatal: Callable[[BaseException], None] | None = None,
+    ) -> None:
         self.mt = mt
         self.observatory = observatory
         self.name = name
         self.ready = ready
+        self.on_fatal = on_fatal
+        self.rate_limiter: Callable[[str], Awaitable[None]] | None = None
         self.timeout = 45.0
         self.probe_timeout = 5.0
         self.interval = 0.25
@@ -98,8 +108,18 @@ class ConnectionRecovery:
             await asyncio.shield(self.recover())
 
     async def call(self, act: str, **kwargs: Any) -> Any:
+        try:
+            return await self._call(act, **kwargs)
+        except Exception as exc:
+            if self.on_fatal is not None:
+                self.on_fatal(exc)
+            raise
+
+    async def _call(self, act: str, **kwargs: Any) -> Any:
         if act == "ping":
             return await self._rpc(act, **kwargs)
+        if self.rate_limiter is not None:
+            await self.rate_limiter(act)
         await self.wait_ready()
         safe_read = act in {"users.getUsers", "updates.getState"}
         try:

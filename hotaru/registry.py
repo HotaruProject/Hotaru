@@ -37,6 +37,7 @@ class TaskSpec:
 class CommandRegistry:
     def __init__(self) -> None:
         self._items: dict[str, CommandSpec] = {}
+        self._bot_items: dict[str, CommandSpec] = {}
         self._watchers: list[WatcherSpec] = []
         self._aliases: dict[str, str] = {}
 
@@ -116,6 +117,40 @@ class CommandRegistry:
         if name in self._aliases:
             name = self._aliases[name].split(" ", 1)[0].casefold()
         return self._items.get(name)
+
+    def register_bot(
+        self,
+        name: str,
+        handler: Handler,
+        *,
+        kernel: bool = False,
+        module_id: str | None = None,
+        sandbox: bool = False,
+    ) -> None:
+        if not name.isidentifier():
+            raise ValueError("bot command name must be an identifier")
+        if not isinstance(module_id, str) or not module_id:
+            raise ValueError("every bot command must belong to a module")
+        key = name.casefold()
+        self._bot_items[key] = CommandSpec(name=key, handler=handler, kernel=kernel, module_id=module_id, sandbox=sandbox)
+
+    def unregister_bot(self, name: str, *, module_id: str | None = None) -> bool:
+        key = name.casefold()
+        current = self._bot_items.get(key)
+        if current is None or (module_id is not None and current.module_id != module_id):
+            return False
+        del self._bot_items[key]
+        return True
+
+    def resolve_bot(self, invocation: CommandInvocation) -> CommandSpec | None:
+        name = invocation.name.casefold()
+        return self._bot_items.get(name)
+
+    def resolve_bot_name(self, name: str) -> CommandSpec | None:
+        return self._bot_items.get(name.casefold())
+
+    def bot_names(self) -> tuple[str, ...]:
+        return tuple(self._bot_items)
 
     def spec_of(self, module_id: str) -> tuple[CommandSpec, ...]:
         return tuple(spec for spec in self._items.values() if spec.module_id == module_id)

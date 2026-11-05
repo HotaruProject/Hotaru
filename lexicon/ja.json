@@ -1,12 +1,15 @@
 {
   "meta": {
+    "code": "ja",
     "language": "ja",
-    "name": "日本語"
+    "name": "日本語",
+    "name_en": "Japanese",
+    "name_native": "日本語"
   },
   "commands": {
     "lang": {
       "description": "言語を表示または変更",
-      "usage": "{prefix}lang [言語]",
+      "usage": "{prefix}language [言語]",
       "invalid": "サポートされていない言語: {language}",
       "changed": "言語を {language} に変更しました",
       "unavailable": "サービスを利用できません",
@@ -79,13 +82,9 @@
     "help": {
       "description": "Hotaru ヘルプモジュール",
       "commands": {
-        "hlp": {
-          "description": "ヘルプカタログ",
-          "usage": "[モジュール]"
-        },
         "help": {
           "description": "ヘルプカタログ",
-          "usage": "[モジュール]"
+          "usage": "[module]"
         }
       }
     },
@@ -93,24 +92,36 @@
       "description": "電源管理",
       "commands": {
         "restart": {
-          "description": "ユーザーボット再起動"
+          "description": "ユーザーボット再起動",
+          "usage": "[-f|--force]"
         },
         "stop": {
-          "description": "ユーザーボット停止"
+          "description": "ユーザーボット停止",
+          "usage": "[-f|--force]"
         },
         "start": {
-          "description": "ユーザーボット再開"
+          "description": "ユーザーボット再開",
+          "usage": ""
+        },
+        "resume": {
+          "description": "ユーザーボットの実行を再開",
+          "usage": ""
         }
       },
-      "restarted": "ユーザーボットは{took}で正常に再起動されました",
-      "already_stopped": "ユーザーボットはすでに停止しています。",
-      "stopped": "ユーザーボットを停止しました。",
-      "stopped_details": "通常のモジュールは無効です。{prefix}start などのカーネルコマンドは動作します。",
-      "already_started": "ユーザーボットはすでに稼働中です。",
-      "started": "ユーザーボットを起動しました。すべてのコマンドが再開されました。",
-      "restarting": "ユーザーボットを再起動中…",
-      "running": "ユーザーボットは動作中です。",
-      "already_running": "ユーザーボットはすでに動作中です。"
+      "restarted": "<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> <b>Hotaruが正常に再起動しました</b>\n<blockquote><tg-emoji emoji-id=\"5258152182150077732\">⚡️</tg-emoji> <b>所要時間:</b> <code>{took}</code></blockquote>",
+      "already_stopped": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>ユーザーボットは既に停止しています。</b>",
+      "stopped": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>ユーザーボット一時停止中</b>",
+      "stopped_details": "<blockquote>一般モジュールは停止中ですが、カーネルコマンド（例: <code>{prefix}start</code>）は利用可能です。</blockquote>",
+      "already_started": "<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> <b>ユーザーボットはすでに実行中です。</b>",
+      "started": "<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> <b>ユーザーボット起動</b>\n<blockquote>コマンド処理を再開しました。</blockquote>",
+      "restarting": "<tg-emoji emoji-id=\"5258420634785947640\">🔄</tg-emoji> <b>Hotaruを再起動しています…</b>\n<blockquote>状態の保存とプロセスの再起動中</blockquote>",
+      "running": "<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> <b>ユーザーボット稼働中</b>",
+      "already_running": "<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> <b>ユーザーボットは既に稼働しています。</b>",
+      "stop_confirm": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>ユーザーボットを停止しますか？</b><br>通常のモジュールは {prefix}start まで応答しません。",
+      "stop_action": "停止する",
+      "restart_confirm": "<tg-emoji emoji-id=\"5258420634785947640\">🔄</tg-emoji> <b>Hotaruの再起動</b><blockquote><tg-emoji emoji-id=\"5258258882022612173\">⏳</tg-emoji> カーネルプロセスの再起動を確認してください。状態とセッションは保持されます。</blockquote>",
+      "restart_action": "再起動する",
+      "restoring": "<tg-emoji emoji-id=\"5258420634785947640\">🔄</tg-emoji> <b>モジュールを復元中…</b> <code>{done}/{total}</code>"
     },
     "updater": {
       "description": "Hotaru 自動更新",
@@ -129,22 +140,22 @@
           "description": "更新通知を有効化"
         }
       },
-      "restarted": "Hotaruは更新され、{took}で正常に再起動されました",
-      "restarting": "{commit}に更新しました。再起動中…",
+      "restarted": "<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> <b>Hotaruが正常に更新されました</b>\n<blockquote><tg-emoji emoji-id=\"5258152182150077732\">⚡️</tg-emoji> <b>再起動時間:</b> <code>{took}</code></blockquote>",
+      "restarting": "<tg-emoji emoji-id=\"5258420634785947640\">🔄</tg-emoji> <b><code>{commit}</code> に更新しました。再起動中…</b>",
       "updated": "Hotaruを{seconds}秒で更新しました",
-      "ignored": "更新を無視しました。",
+      "ignored": "<tg-emoji emoji-id=\"5258258882022612173\">⏳</tg-emoji> <b>アップデートは無視されました。</b>",
       "ignored_toast": "無視しました",
       "updating": "更新中…",
-      "notify_on": "更新通知を有効にしました",
-      "notify_off": "更新通知を無効にしました",
+      "notify_on": "<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> <b>更新通知を有効にしました</b>",
+      "notify_off": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>更新通知を無効にしました</b>",
       "unavailable": "実行環境を利用できません",
-      "up_to_date": "Hotaru は最新です",
+      "up_to_date": "<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> <b>Hotaruは既に最新です</b>",
       "update_available": "Hotaru の更新があります",
-      "downloading": "更新をダウンロード中…",
-      "syncing": "依存関係を同期中…",
-      "check_failed": "<b>更新の確認に失敗しました:</b> <i>{error}</i>",
-      "failed": "<b>更新に失敗しました:</b> <i>{error}</i>",
-      "conflicts": "<b>競合したローカル変更を保存しました:</b> <code>{path}</code>",
+      "downloading": "<tg-emoji emoji-id=\"5258420634785947640\">🔄</tg-emoji> <b>更新をダウンロード中…</b>",
+      "syncing": "<tg-emoji emoji-id=\"5258420634785947640\">🔄</tg-emoji> <b>依存関係を同期中…</b>",
+      "check_failed": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>アップデートの確認に失敗しました:</b>\n<blockquote><i>{error}</i></blockquote>",
+      "failed": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>アップデートに失敗しました:</b>\n<blockquote><i>{error}</i></blockquote>",
+      "conflicts": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>競合が保存されました:</b>\n<blockquote><code>{path}</code></blockquote>",
       "button_update": "更新",
       "button_ignore": "スキップ",
       "confirm": "<br><br>今すぐ更新しますか？"
@@ -152,22 +163,49 @@
     "translations": {
       "description": "翻訳設定",
       "commands": {
-        "lang": {
-          "description": "言語を表示または変更",
-          "usage": "[言語]"
-        },
         "language": {
           "description": "言語を表示または変更",
-          "usage": "[言語]"
+          "usage": "[language]"
+        },
+        "rmlex": {
+          "description": "カスタム言語パックを削除",
+          "usage": "<code>"
+        },
+        "loadlex": {
+          "description": "言語パックを読み込む",
+          "usage": "<url|path|file>"
+        },
+        "translate": {
+          "description": "テキストを翻訳",
+          "usage": "[language] <text|reply>"
         }
       },
       "native": {
         "ru": "Русский",
         "en": "English",
         "kz": "Қазақша",
+        "kk": "Қазақша",
         "uk": "Українська",
-        "ja": "日本語"
-      }
+        "ja": "日本語",
+        "zh": "中文"
+      },
+      "custom_packs": "カスタム言語パック",
+      "no_custom_packs": "インストールされたカスタム言語パックはありません",
+      "custom_title": "カスタム言語パック",
+      "removed": "カスタム言語パックを削除しました",
+      "not_found": "カスタム言語パックが見つかりません",
+      "cannot_remove_builtin": "システム言語パックは削除できません",
+      "usage_rm": "カスタムパックの2文字コードを指定してください: {prefix}rmlex <code>",
+      "code_len_error": "言語コードは正確に2文字である必要があります",
+      "code_collision": "言語コード「{code}」はすでに使用されています",
+      "name_collision": "言語パック名「{name}」はすでに使用されています",
+      "missing_keys": "言語パックがキーの100%をカバーしていません: {count}個のキーが不足しています",
+      "no_text": "翻訳するテキストが指定されていません",
+      "err_file_missing": "辞書ファイルが見つかりません: .jsonを添付するかメッセージに返信してください",
+      "err_file_doc": "メッセージにはJSONファイル（.json）が含まれている必要があります",
+      "err_json_syntax": "無効なJSON構文: {err} ({line}行目)",
+      "err_structure": "辞書構造エラー: {err}",
+      "err_load_failed": "辞書の読み込みに失敗しました: {err}"
     },
     "test-features": {
       "description": "Hotaru プロキシと機能のテストモジュール",
@@ -209,27 +247,39 @@
       "capabilities": "機能",
       "unavailable": "<b>サービスを利用できません</b>",
       "manager_unavailable": "<b>モジュール管理を利用できません</b>",
-      "usage": "<b>使い方:</b> <code>{prefix}hlp</code> または <code>{prefix}hlp &lt;モジュール&gt;</code>",
+      "usage": "<b>使い方:</b> <code>{prefix}help</code> または <code>{prefix}help &lt;モジュール&gt;</code>",
       "disabled": "<b>モジュールは無効です:</b> <code>{module}</code><br><i>エラー: {error}</i>",
-      "missing": "<b>モジュールが見つかりません:</b> <code>{module}</code>"
+      "missing": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>モジュールが見つかりません:</b> <code>{module}</code>",
+      "title": "Hotaru · ヘルプ",
+      "summary": "モジュール {count} 件 · プレフィックス <code>{prefix}</code>",
+      "pick": "モジュールをタップするとコマンドを表示します。",
+      "kernel_badge": "kernel",
+      "user_badge": "追加",
+      "no_commands": "コマンドなし",
+      "settings": "⚙️ 設定",
+      "search_prompt": "モジュールまたはコマンド",
+      "results": "「{query}」の結果",
+      "aliases": "エイリアス",
+      "count": "モジュール {count} 件",
+      "prefix": "プレフィックス {prefix}"
     },
     "accounts": {
       "description": "アカウント管理",
       "commands": {
-        "acc": {
+        "account": {
           "description": "アカウントの管理",
-          "usage": "[番号] [start|stop|restart|on|off|del]"
+          "usage": "[number] [start|stop|restart|del]"
         },
-        "acca": {
+        "addaccount": {
           "description": "アカウントの追加・ログイン",
-          "usage": "[ID|cancel|password] [パスワード]"
+          "usage": "[number|cancel]"
         },
-        "accs": {
+        "accounts": {
           "description": "アカウント一覧を開く",
-          "usage": "[番号]"
+          "usage": "[number]"
         }
       },
-      "usage": "<b>アカウント</b>\n<code>{prefix}acca [user_id]</code> · QR / 電話番号で追加\n<code>{prefix}acca cancel</code> · ログインをキャンセル\n<code>{prefix}accs [#]</code> · アカウントパネル\n<code>{prefix}acc [#]</code> · アカウントパネル\n<code>{prefix}acc 2 start|stop|restart|on|off|del</code>",
+      "usage": "<b>アカウント</b>\n<code>{prefix}addaccount [user_id]</code> · QR / 電話番号で追加\n<code>{prefix}addaccount cancel</code> · ログインをキャンセル\n<code>{prefix}accounts [#]</code> · アカウントパネル\n<code>{prefix}account [#]</code> · アカウントパネル\n<code>{prefix}account 2 start|stop|restart|on|off|del</code>",
       "empty": "登録されたアカウントはありません。",
       "no_self": "セッションの user id を特定できませんでした。",
       "not_registered": "アカウント #{n} は未登録です。",
@@ -253,7 +303,7 @@
       "button": {
         "add": "アカウント追加",
         "refresh": "更新",
-        "close": "閉じる",
+        "close": "✕ Close",
         "permissions": "権限",
         "start": "起動",
         "stop": "停止",
@@ -359,7 +409,11 @@
         "no_user": "ログインでユーザーを取得できませんでした。",
         "wrong_account": "アカウントが違います。ユーザー {uid} が必要です。",
         "unknown": "操作を完了できませんでした。"
-      }
+      },
+      "field": {
+        "autostart": "自動起動"
+      },
+      "title": "アカウント"
     },
     "acl": {
       "description": "権限管理",
@@ -370,11 +424,59 @@
         },
         "perm": {
           "description": "権限を付与・取り消し",
-          "usage": "[ID|@username|command/名前] [ロール] [remove]"
+          "usage": "<ID|@username> <admin|trusted|everyone> [remove]"
         },
         "whois": {
           "description": "ユーザーの権限",
-          "usage": "[ID|@username] [コマンド]"
+          "usage": "<ID|@username> [command]"
+        },
+        "owadd": {
+          "description": "オーナーを追加",
+          "usage": "<ID|@username|reply>"
+        },
+        "owrm": {
+          "description": "オーナーを削除",
+          "usage": "<ID|@username|reply>"
+        },
+        "owls": {
+          "description": "オーナー一覧",
+          "usage": ""
+        },
+        "sgnew": {
+          "description": "権限グループを作成",
+          "usage": "<name>"
+        },
+        "sgls": {
+          "description": "グループ一覧",
+          "usage": ""
+        },
+        "sg": {
+          "description": "グループのメンバーとルール",
+          "usage": "<name>"
+        },
+        "sgdel": {
+          "description": "グループを削除",
+          "usage": "<name>"
+        },
+        "sgadd": {
+          "description": "メンバーを追加",
+          "usage": "<name> <ID|@username|reply>"
+        },
+        "sgrm": {
+          "description": "メンバーを削除",
+          "usage": "<name> <ID|@username|reply>"
+        },
+        "rule": {
+          "description": "アクセスルールを追加",
+          "usage": "<user|chat|sgroup> <target> <command|module> [1h|forever]"
+        },
+        "rulerm": {
+          "description": "ルールを削除",
+          "usage": "<user|chat|sgroup> <target> <rule>"
+        },
+        "ruleclr": {
+          "description": "ルールを消去",
+          "usage": "<user|chat|sgroup> [target]"
         }
       },
       "bad_group": "グループ名: 英数字のみ、32文字まで。",
@@ -382,7 +484,10 @@
       "bad_rule": "ルール: command/名前 または module/名前。",
       "self_owner": "このユーザーはすでにアカウントのオーナーです。",
       "empty": "付与された権限はありません。!perm <user_id> <role> を使用。",
-      "bad_label": "不明な権限: {label}。"
+      "bad_label": "不明な権限: {label}。",
+      "usage": "使い方:\n!owadd <user_id|reply> — owner を付与\n!owrm <user_id|reply> — owner を取り消す\n!owls — オーナー一覧\n!sgnew <name> — 権限グループを作成\n!sgls — グループ一覧\n!sg <name> — グループのメンバーと権限\n!sgdel <name> — グループを削除\n!sgadd <name> <user_id|reply> — グループに追加\n!sgrm <name> <user_id|reply> — グループから除外\n!rule <user|chat|sgroup> <target> <command|module>/<name> [期限] — ルールを追加\n!rulerm — ルールを削除\n!ruleclr — 対象のルールを全消去\n!perm <user_id> <admin|trusted|everyone> [remove] — 権限の付与/取り消し\n!perms — 権限一覧\n!whois <user_id> — ユーザーの権限",
+      "no_groups": "権限グループはありません。作成: !sgnew <name>",
+      "no_owner_grant": "owner は !owadd で付与されます。"
     },
     "lg": "ログ末尾:\n{lines}",
     "commands": {
@@ -405,44 +510,71 @@
       "shared_uptime": "起動後の経過秒数",
       "template_syntax": "{{name}}、数値書式 {{name:.2f}}、通常の波括弧には {{{{ / }}}} を使います。値はHTMLエスケープされます。",
       "template_preview": "プレビュー（HTML、サンプル値）",
-      "directory_empty": "<b>設定</b>\n\n設定可能なモジュールはありません。",
-      "directory": "<b>設定</b>\n\nモジュールを選択してください：",
+      "directory_empty": "<b>設定</b><br>設定可能なモジュールはありません。",
+      "directory": "<b>設定</b><br>モジュールを選択してください：",
       "module_missing_error": "<b>エラー：</b> モジュール <code>{module}</code> が見つかりません。",
       "no_settings": "<b>エラー：</b> モジュール <code>{module}</code> には設定項目がありません。",
       "parameter_missing_error": "<b>エラー：</b> パラメーター <code>{parameter}</code> が見つかりません。",
-      "empty": "（空）",
-      "parameter_details": "• 値：<code>{value}</code>\n• 型：<code>{type}</code>\n• 既定値：<code>{default}</code>\n",
-      "parameter_description": "• 説明：<i>{description}</i>\n",
+      "empty": "設定を持つモジュールはまだありません。",
+      "parameter_details": "• 値：<code>{value}</code><br>• 型：<code>{type}</code><br>• 既定値：<code>{default}</code>",
+      "parameter_description": "• 説明：<i>{description}</i>",
       "template_unavailable": "テンプレート変数が利用できないか、公開されていません：{name}",
       "error": "エラー：{error}",
-      "boolean_true": "🔘 はい",
-      "boolean_false": "⚪️ いいえ",
+      "boolean_true": "[ ] はい",
+      "boolean_false": "[ ] いいえ",
       "minimum": "最小値：{value}",
       "maximum": "最大値：{value}",
-      "enter": "✏️ 入力",
-      "new_value": "{parameter} の新しい値",
-      "reset": "🔄 リセット",
+      "enter": "[e] 入力",
+      "new_value": "{name} の新しい値",
+      "reset": "[~] リセット",
       "module_missing": "モジュール <code>{module}</code> が見つかりません。",
       "parameter_missing": "パラメーター <code>{parameter}</code> が見つかりません。",
-      "error_html": "エラー：<code>{error}</code>"
+      "error_html": "エラー：<code>{error}</code>",
+      "title": "⚙️ 設定",
+      "title_short": "設定",
+      "pick": "モジュールを選択:",
+      "missing": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>モジュール <code>{module}</code> には設定がないか、読み込まれていません。</b>",
+      "param_missing": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>パラメータ <code>{name}</code> が見つかりません。</b>",
+      "reset_all": "↺ すべてリセット",
+      "reset_confirm": "<b>{module}</b> のすべてのパラメーターを既定値に戻しますか？",
+      "reset_yes": "リセット",
+      "reset_done": "既定値に戻しました",
+      "value": "値",
+      "default": "既定値",
+      "type": "型",
+      "restart": "再起動後に反映されます。",
+      "copy": "⧉ コピー",
+      "field_unavailable": "テンプレート項目が利用できないかエクスポートされていません: {name}",
+      "param": "パラメーター",
+      "about": "各パラメーターの説明",
+      "changed": "変更: {count}"
     },
     "settings": {
-      "description": "別名とプレフィックスの管理",
+      "description": "モジュール設定、プレフィックス、エイリアス",
       "commands": {
         "alias": {
           "description": "コマンドの別名を作成",
-          "usage": "[エイリアス] [コマンド]"
+          "usage": "<alias> <command>"
         },
         "rmalias": {
           "description": "コマンドの別名を削除",
-          "usage": "[エイリアス]"
+          "usage": "<alias>"
         },
         "lsalias": {
-          "description": "コマンドエイリアスの一覧を表示"
+          "description": "コマンドエイリアスの一覧を表示",
+          "usage": ""
         },
         "prefix": {
           "description": "コマンドのプレフィックスを変更",
-          "usage": "[プレフィックス]"
+          "usage": "<prefix>"
+        },
+        "settings": {
+          "description": "設定を開く",
+          "usage": "[module]"
+        },
+        "config": {
+          "description": "設定を開く",
+          "usage": "[module]"
         }
       }
     },
@@ -475,7 +607,11 @@
       "commands": {
         "logs": {
           "description": "ユーザーボットのログとファイル",
-          "usage": "[on|off|status|レベル] [件数] [コンポーネント]"
+          "usage": "[on|off|status|level] [count]"
+        },
+        "loglevel": {
+          "description": "ログレベルの変更または選択",
+          "usage": "[level]"
         }
       },
       "pending": "待機中",
@@ -488,14 +624,19 @@
         "level": "記録するログの最低レベル",
         "batch_size": "1つのメッセージにまとめるイベント数",
         "auto_topic": "フォーラムのログトピックを自動管理する"
-      }
+      },
+      "loglevel_menu_title": "ログレベル",
+      "loglevel_choose": "記録する最小ログレベルを選択してください:",
+      "loglevel_current": "現在のレベル:",
+      "invalid_level": "無効なログレベルです。使用可能: {levels}",
+      "logs_menu_title": "ログのエクスポート",
+      "logs_choose": "エクスポートするログレベルを選択してください:"
     },
     "executor": {
-      "heading": "<b>実行</b> | <code>{elapsed:.1f} ミリ秒</code>",
       "exit_code": "終了コード: {returncode}",
       "running": "実行中…",
-      "usage_sh": "<b>使い方:</b> <code>{prefix}sh &lt;コマンド&gt;</code>",
-      "usage_py": "<b>使い方:</b> <code>{prefix}py &lt;コード&gt;</code> またはコードに返信。-so で出力を非表示",
+      "usage_sh": "<b>使い方:</b> <code>{prefix}sh [コマンド] &lt;-so&gt;</code> — <i>シェルコマンドを実行</i>",
+      "usage_py": "<b>使い方:</b> <code>{prefix}py [コード] &lt;-so&gt;</code> — <i>Pythonコードを実行</i>",
       "cancelled": "実行をキャンセルしました",
       "done": "完了 ✓",
       "kill_reply": "<b>実行中の py/sh の出力メッセージに返信して停止してください。</b>",
@@ -513,43 +654,42 @@
       "commands": {
         "py": {
           "description": "Pythonコードを実行",
-          "usage": "[-so] [コード]"
+          "usage": "[-so] <code>"
         },
         "sh": {
           "description": "シェルコマンドを実行",
-          "usage": "[-so] [コマンド]"
+          "usage": "[-so] <command>"
         },
         "kill": {
-          "description": "実行中のコマンドを停止"
+          "description": "実行中のコマンドを停止",
+          "usage": ""
         }
-      }
+      },
+      "heading_sh": "<tg-emoji emoji-id=\"5298632983354291951\">🧑‍💻</tg-emoji> <b>実行</b> · <code>{elapsed:.1f} мс</code>",
+      "heading_py": "<tg-emoji emoji-id=\"5289608677244811430\">🐍</tg-emoji> <b>実行</b> · <code>{elapsed:.1f} мс</code>"
     },
     "catalyst": {
       "description": "モジュール管理",
       "commands": {
         "ld": {
           "description": "モジュールを読み込む",
-          "usage": "[URL|パス]"
+          "usage": "<url|path|reply>"
         },
         "ul": {
           "description": "モジュールを停止",
-          "usage": "[モジュール] [-p]"
+          "usage": "<module> [-p]"
         },
         "rl": {
           "description": "モジュールを再読み込み",
-          "usage": "[モジュール] [force]"
+          "usage": "[module] [force]"
         },
         "ex": {
           "description": "モジュールをエクスポート",
-          "usage": "[モジュール]"
-        },
-        "rs": {
-          "description": "モジュールのデータをリセット",
-          "usage": "[モジュール]"
+          "usage": "<module>"
         },
         "resetdb": {
           "description": "モジュールのデータをリセット",
-          "usage": "[モジュール]"
+          "usage": "<module>"
         }
       }
     },
@@ -561,13 +701,14 @@
       "inline": "インラインボットへの問い合わせと操作を行います",
       "modules": "モジュールの読み込み、停止、再読み込み、一覧表示と、ハッシュ・マニフェスト情報の確認を行います",
       "assets": "非公開の添付ファイル保存領域にアクセスします",
-      "shell": "モジュールのワークスペースでシェルコマンドを実行します。シェルは常に分離されたサンドボックス内で動作し、ワークスペース・そのツール・独立した /tmp のみが見えます。ネットワークには net capability、ホストファイルシステムには files capability が必要で、どちらもサンドボックスの外には出られません。タイムアウトと出力の制限は引き続き適用されます",
+      "shell": "HotaruプロセスのOS権限でシェルに完全アクセスします。ホストのファイル、認証情報、ネットワークを含み、モジュールの作業フォルダーには制限されません。コマンドのタイムアウトと返却する出力量の制限は引き続き適用されます",
       "logs": "構造化されたイベントをログに記録します。常に許可されます",
       "fetch": "メッセージ、ユーザー・チャット情報、返信元を読み取ります。読み取り専用で常に許可されます"
     },
     "ping": {
       "description": "ユーザーボットの応答確認",
-      "template": "<b> ping</b> <code>{latency} ms</code>\n<b>アップタイム</b> <code>{uptime}</code>",
+      "template": "<tg-emoji emoji-id=\"5258152182150077732\">⚡️</tg-emoji> <b>Ping:</b> <code>{latency} ms</code>\n<blockquote><tg-emoji emoji-id=\"5258258882022612173\">⏳</tg-emoji> <b>稼働時間:</b> <code>{uptime}</code></blockquote>",
+      "measuring": "<tg-emoji emoji-id=\"5258152182150077732\">⚡️</tg-emoji> <i>応答時間を測定中…</i>",
       "commands": {
         "ping": {
           "description": "ユーザーボットのpingを測定"
@@ -576,67 +717,231 @@
       "fields": {
         "latency": "応答時間（ミリ秒）",
         "uptime": "ユーザーボットの稼働時間（ゼロの単位を省略）",
-        "uptime_seconds": "ユーザーボットの稼働時間（秒）"
+        "uptime_seconds": "ユーザーボットの稼働時間（秒）",
+        "custom_message": "カスタムメッセージのテキスト"
       },
-      "example_uptime": "2時間 3分"
+      "example_uptime": "2時間 3分",
+      "config_fields": {
+        "template": "ping の返信テキスト",
+        "custom_message": "ping応答に追加するカスタムメッセージ"
+      },
+      "config": {
+        "custom_message": "ping応答に追加するカスタムメッセージ"
+      }
     },
     "info": {
       "description": "ユーザーボットの情報カード",
-      "template": "<b>Hotaru</b> <code>{version}</code>\n\n<b>アップタイム</b> · <code>{uptime}</code>\n<b>モジュール</b> · <code>{modules}</code>",
+      "template": "<tg-emoji emoji-id=\"5258503720928288433\">ℹ️</tg-emoji> <b>Hotaru Userbot</b> <code>v{version}</code>\n<blockquote expandable><tg-emoji emoji-id=\"5258258882022612173\">⏳</tg-emoji> <b>稼働時間:</b> <code>{uptime}</code>\n<tg-emoji emoji-id=\"5258514780469075716\">🧩</tg-emoji> <b>モジュール:</b> <code>{modules}</code></blockquote>",
       "commands": {
         "info": {
-          "description": "ユーザーボットの情報"
+          "description": "ユーザーボットの情報",
+          "usage": ""
+        },
+        "ping": {
+          "usage": ""
         }
       },
       "empty_template": "情報テンプレートが空です",
       "bad_placeholder": "無効なプレースホルダー: {error}",
       "config": {
-        "template": ".info のテンプレート。プレースホルダー: {version} {uptime} {modules}"
+        "template": ".info のテンプレート。プレースホルダー: {version} {uptime} {modules}",
+        "custom_message": "情報カードに表示されるカスタムメッセージ"
       },
       "config_fields": {
-        "template": ".info のテンプレート。プレースホルダー: {version} {uptime} {modules}"
+        "template": ".info のテンプレート。プレースホルダー: {version} {uptime} {modules}",
+        "custom_message": "情報カードに表示されるカスタムメッセージ"
       }
     },
     "singularity": {
       "description": "3DカーネルテレメトリとObservatoryストリーム (Singularity)",
-      "card_title": "🕳 <b>Hotaru // Singularity</b>",
+      "card_title": "<tg-emoji emoji-id=\"5985527717183888277\">⚡</tg-emoji><tg-emoji emoji-id=\"5985515480822061758\">⚡</tg-emoji><tg-emoji emoji-id=\"5985558606588681366\">⚡</tg-emoji><tg-emoji emoji-id=\"5985757321840565902\">⚡</tg-emoji> <b>// Singularity</b>",
       "card_subtitle": "<i>3D Event Horizon · Node.Probe · Read-Only Observatory Stream</i>",
       "open_button": "🕳 Singularityを開く",
       "commands": {
         "dash": {
-          "description": "Singularity Mini Appのインラインパネルを開く"
+          "description": "Singularity Mini App のインラインランチャーを開く"
         }
-      }
+      },
+      "inline_bot": "インラインボット",
+      "probe": "プローブ",
+      "relay": "リレー"
+    },
+    "backups": {
+      "description": "サービス用フォーラムにバックアップを送信",
+      "commands": {
+        "backup": {
+          "description": "バックアップを送信、または自動送信を設定",
+          "usage": "[send|now]"
+        },
+        "restore": {
+          "usage": "<archive>"
+        }
+      },
+      "config_fields": {
+        "enabled": "バックアップを自動送信する",
+        "interval_hours": "バックアップの送信間隔（時間）"
+      },
+      "heading": "{icon} <b>バックアップ</b>\n{status} · {hours}時間",
+      "enabled": "有効",
+      "disabled": "無効",
+      "last_sent": "最終送信: {date}",
+      "destination": "送信先: サービス用チャットの「{topic}」トピック。",
+      "encrypted": "セッションキーで暗号化されています。復元には同じキーが必要です。",
+      "send_now": "今すぐ送信",
+      "disable": "無効にする",
+      "enable": "有効にする",
+      "not_ready": "サービス用チャットの準備ができていません",
+      "caption": "<tg-emoji emoji-id=\"5325732612084351248\">📦</tg-emoji> <b>Hotaru バックアップ</b>\n<blockquote><tg-emoji emoji-id=\"5258476306152038031\">🔒</tg-emoji> 暗号化された状態、vault、セッションのスナップショット\n<tg-emoji emoji-id=\"5258105663359294787\">🗓</tg-emoji> <code>{name}</code></blockquote>",
+      "failed": "バックアップの送信に失敗しました: {error}",
+      "sent": "バックアップを送信しました",
+      "topic": "Backups",
+      "usage": "<code>{prefix}backup [now|on|off]</code>",
+      "restored_files": "復元されたファイル: {count}"
+    },
+    "intrusion": {
+      "alert": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>Hotaruセッションが外部で使用されています</b>\n\n{source}\n\n<blockquote><code>{detail}</code></blockquote>\n\n別のクライアントがHotaruのセッションに接続しました。安全のためHotaruを停止しました。",
+      "session": "別のクライアントが Hotaru のユーザーボットセッションキーを使用しています。",
+      "webhook": "Hotaru のインラインボットに外部の Webhook が設定されています。"
+    },
+    "flood": {
+      "notice": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>FloodWait — メッセージが転送されました</b>\n<code>{source}</code> 経由でチャット <code>{chat}</code> への配信に失敗しました:\n<blockquote>{text}</blockquote>"
+    },
+    "apifw": {
+      "name": "API Flood Protection",
+      "status_title": "<tg-emoji emoji-id=\"5291803847914698795\">🌐</tg-emoji> <b>API Flood Protection</b>",
+      "enabled": "<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> 有効",
+      "disabled": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> 無効",
+      "suspended_for": "<tg-emoji emoji-id=\"5280652390532395919\">🔋</tg-emoji> API保護が {seconds} 秒間一時停止されました。",
+      "status_text": "<tg-emoji emoji-id=\"5291803847914698795\">🌐</tg-emoji> <b>API Flood Protection</b>\n\nステータス: {status}\n計測ウィンドウ: <code>{sample}秒</code>\nしきい値: <code>{threshold} リクエスト</code>\nクールダウン一時停止: <code>{cooldown}秒</code>\n最近のリクエスト: <code>{recent}</code>\n保護発動回数: <code>{total}</code>",
+      "alert": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>API Flood Protectionが発動しました！</b>\n\nTelegram APIリクエスト数が <code>{sample}秒</code> 間に <code>{count}</code> 回に達しました（制限: {threshold}）。\nセッションの保護のため、APIリクエストを <code>{cooldown}秒</code> 間一時停止しました。",
+      "btn_toggle": "切り替え",
+      "btn_stats": "統計",
+      "btn_close": "閉じる"
+    },
+    "shield": {
+      "name": "API Flood Protection",
+      "status_title": "<tg-emoji emoji-id=\"5291803847914698795\">🌐</tg-emoji> <b>API Flood Protection</b>",
+      "enabled": "<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> 有効",
+      "disabled": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> 無効",
+      "suspended_for": "<tg-emoji emoji-id=\"5280652390532395919\">🔋</tg-emoji> API保護が {seconds} 秒間一時停止されました。",
+      "status_text": "<tg-emoji emoji-id=\"5291803847914698795\">🌐</tg-emoji> <b>API Flood Protection</b>\n\nステータス: {status}\n計測ウィンドウ: <code>{sample}秒</code>\nしきい値: <code>{threshold} リクエスト</code>\nクールダウン一時停止: <code>{cooldown}秒</code>\n最近のリクエスト: <code>{recent}</code>\n保護発動回数: <code>{total}</code>",
+      "alert": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>API Flood Protectionが発動しました！</b>\n\nTelegram APIリクエスト数が <code>{sample}秒</code> 間に <code>{count}</code> 回に達しました（制限: {threshold}）。\nセッションの保護のため、APIリクエストを <code>{cooldown}秒</code> 間一時停止しました。",
+      "btn_toggle": "切り替え",
+      "btn_stats": "統計",
+      "btn_close": "閉じる",
+      "description": "Telegram APIフラッドおよびレート制限からの保護",
+      "commands": {
+        "shield": {
+          "usage": ""
+        },
+        "suspend_api": {
+          "usage": "<seconds>"
+        }
+      },
+      "unavailable": "API保護は利用できません",
+      "field_status": "ステータス:",
+      "field_window": "ウィンドウ:",
+      "field_limit": "制限:",
+      "field_pause": "一時停止:",
+      "field_requests": "リクエスト数:",
+      "field_triggers": "トリガー回数:",
+      "footer_guard": "Telegram APIフラッドおよびレート制限ガード",
+      "telemetry_title": "API呼び出しテレメトリ",
+      "telemetry_empty": "サンプル期間内の最近の呼び出しはありません",
+      "telemetry_footer": "現在の期間内に呼び出されたメソッド",
+      "usage_suspend": "使用法: {prefix}suspend_api [秒]",
+      "suspended_success": "API保護: <code>{seconds}秒</code> 一時停止しました"
+    },
+    "genesis": {
+      "title": "初期セットアップ",
+      "welcome": "Hotaruへようこそ！初期設定ウィザード:",
+      "language": "言語",
+      "prefix": "プレフィックス",
+      "log_level": "ログレベル",
+      "backups": "バックアップ",
+      "start_wizard": "🚀 セットアップを開始",
+      "btn_language": "🌐 言語",
+      "btn_prefix": "💻 プレフィックス",
+      "btn_logs": "📔 ログレベル",
+      "btn_backups": "📂 バックアップ",
+      "btn_webapp": "🌐 WebAppを開く",
+      "step_lang_title": "ステップ 1/4 · 言語設定",
+      "step_lang_desc": "インターフェース言語を選択してください:",
+      "lang_applied": "言語が更新されました！",
+      "btn_next": "次へ: プレフィックス ›",
+      "step_prefix_title": "ステップ 2/4 · コマンドプレフィックス",
+      "step_prefix_desc": "コマンドプレフィックスを選択してください:",
+      "current": "現在:",
+      "enter_prefix": "新しいプレフィックスを入力:",
+      "prefix_applied": "プレフィックスが設定されました: {prefix}",
+      "btn_next_logs": "次へ: ログ ›",
+      "step_logs_title": "ステップ 3/4 · ログレベル",
+      "step_logs_desc": "記録する最小ログレベルを選択してください:",
+      "btn_next_backups": "次へ: バックアップ ›",
+      "step_backups_title": "ステップ 4/4 · バックアップスケジュール",
+      "step_backups_desc": "自動暗号化バックアップを設定:",
+      "backup_hours_applied": "バックアップ間隔が {hours} 時間に設定されました",
+      "btn_complete": "セットアップ完了 ✅",
+      "done_title": "セットアップが完了しました！",
+      "done_desc": "Hotaruは準備完了です。",
+      "btn_help": "📖 ヘルプ",
+      "btn_settings": "⚙️ 設定",
+      "description": "Hotaruの初期設定ウィザード",
+      "commands": {
+        "start": {
+          "description": "初期設定ウィザードを開く",
+          "usage": ""
+        },
+        "setup": {
+          "description": "初期設定ウィザードを開く",
+          "usage": ""
+        },
+        "genesis": {
+          "description": "初期設定ウィザードを開く",
+          "usage": ""
+        },
+        "quickstart": {
+          "description": "初期設定ウィザードを開く",
+          "usage": ""
+        }
+      },
+      "active_title": "稼働中・オンライン",
+      "active_desc": "Hotaru Userbotの設定が完了し稼働中です。コマンドはあなたのアカウントで直接実行してください。",
+      "links_title": "Hotaru リンク",
+      "links_desc": "Hotaru 公式プロジェクトリポジトリ、ドキュメント、ソースコード:",
+      "btn_github": "GitHub リポジトリ"
     }
   },
   "inline_commands_hint": "コマンドを選択 — 任意のチャットで @<bot> とコマンド名を入力",
   "settings": {
     "runtime_unavailable": "サービスを利用できません",
-    "usage_alias": "使い方: {prefix}alias <別名> <コマンドと引数>",
+    "usage_alias": "使い方: <code>{prefix}alias &lt;別名&gt; &lt;コマンド&gt;</code>",
     "alias_exists": "コマンドはすでに存在します: {alias}",
     "command_not_found": "コマンドが見つかりません: {command}\n使用可能: {known}",
     "alias_taken": "別名は使用中です: {alias} → {command}。{prefix}rmalias {alias} で削除できます。",
     "alias_set": "別名を設定しました: {alias} → {command}",
-    "usage_rmalias": "使い方: {prefix}rmalias <別名>",
+    "usage_rmalias": "使い方: <code>{prefix}rmalias &lt;別名&gt;</code>",
     "alias_removed": "別名を削除しました: {alias}",
     "alias_not_found": "別名が見つかりません: {alias}",
     "alias_list_empty": "エイリアスはまだありません",
     "alias_list_title": "<b>エイリアス</b>",
-    "prefix_current": "現在のプレフィックス: {prefix}。変更: {prefix}prefix <文字>",
+    "prefix_current": "現在のプレフィックス: <code>{prefix}</code> · 変更: <code>{prefix}prefix &lt;文字&gt;</code>",
     "prefix_invalid": "プレフィックスは空白を含まない1～8文字にしてください。",
-    "prefix_set": "プレフィックスを {prefix} に変更しました",
+    "prefix_set": "プレフィックスを <code>{prefix}</code> に変更しました",
     "description": "別名とプレフィックスの管理",
     "commands": {
       "alias": "コマンドの別名を作成",
       "rmalias": "コマンドの別名を削除",
       "lsalias": "コマンドエイリアスの一覧を表示",
       "prefix": "コマンドのプレフィックスを変更"
-    }
+    },
+    "alias_invalid": "別名は1～32文字で、各言語の文字、数字、_ が使用できます。数字で始めることはできません。"
   },
   "common": {
+    "brand": "<tg-emoji emoji-id=\"5985527717183888277\">⚡</tg-emoji><tg-emoji emoji-id=\"5985515480822061758\">⚡</tg-emoji><tg-emoji emoji-id=\"5985558606588681366\">⚡</tg-emoji><tg-emoji emoji-id=\"5985757321840565902\">⚡</tg-emoji>",
     "ok": "OK",
     "cancel": "キャンセル",
-    "close": "閉じる",
+    "close": "✕ Close",
     "back": "戻る",
     "unknown_error": "不明なエラー",
     "confirm": "確認",
@@ -652,14 +957,15 @@
     "en": "英語",
     "kz": "カザフ語",
     "uk": "ウクライナ語",
-    "ja": "日本語"
+    "ja": "日本語",
+    "zh": "中国語"
   },
   "runtime": {
     "modules_unavailable": "モジュールを利用できません",
     "modules_empty": "モジュールがありません",
     "modules": "モジュール:\n",
     "module_unavailable": "モジュールを利用できません",
-    "module_missing": "モジュールが見つかりません: {module_id}",
+    "module_missing": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>モジュールが見つかりません:</b> <code>{module_id}</code>",
     "module_info": "モジュール: {module}\nバージョン: {version}\nコマンド: {commands}\n機能: {capabilities}\n説明: {description}",
     "help_unavailable": "ヘルプを利用できません",
     "page_unavailable": "ヘルプページを利用できません",
@@ -667,27 +973,27 @@
     "next": "次へ",
     "bot_unavailable": "インラインボットを利用できません",
     "bot_failed": "インラインボットの作成に失敗しました: {error}",
-    "protected": "システムモジュールは保護されています: {module_id}",
-    "unload_failed": "モジュールの停止に失敗しました: {error}",
+    "protected": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>システムモジュールは保護されています:</b> <code>{module_id}</code>",
+    "unload_failed": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>アンロードに失敗しました:</b>\n<blockquote>{error}</blockquote>",
     "not_ready": "サービスの準備ができていません",
-    "purged": "モジュールを削除しました: {module}（データも削除）",
-    "unloaded": "モジュールを停止しました: {module}（データは保持）",
-    "reset_failed": "データをリセットしましたが、再読み込みに失敗しました: {error}",
-    "reset": "データをリセットしました: {module_id}",
+    "purged": "<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> <b>モジュールを削除しました:</b> <code>{module}</code>\n<blockquote>データは完全に消去されました。</blockquote>",
+    "unloaded": "<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> <b>モジュールをアンロードしました:</b> <code>{module}</code>\n<blockquote>データは保持されました。</blockquote>",
+    "reset_failed": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>リセット成功、再読み込み失敗:</b>\n<blockquote>{error}</blockquote>",
+    "reset": "<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> <b>データベースをリセットしました:</b> <code>{module_id}</code>",
     "id_mismatch": "モジュールIDが一致しません: {module_id}",
     "downgrade": "バージョンの引き下げは許可されていません: {old} → {new}",
     "rollback_failed": "再読み込みに失敗しました: {error}。元のバージョンの復元にも失敗しました",
     "rolled_back": "再読み込みに失敗しました: {error}。元のバージョンを復元しました",
-    "reloaded": "再読み込みしました: {module_id}",
-    "exported": "エクスポートしました: {file_name}",
+    "reloaded": "<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> <b>モジュールを再読み込みしました:</b> <code>{module_id}</code>",
+    "exported": "<tg-emoji emoji-id=\"5258514780469075716\">📂</tg-emoji> <b>モジュールをエクスポートしました:</b> <code>{file_name}</code>",
     "invalid_request": "無効なリクエストです",
     "cancelled": "キャンセルしました",
     "module_cancelled": "キャンセルしました: {module_id}",
     "source_missing": "ソースコードがありません",
     "activation_failed": "モジュールの読み込みに失敗しました",
     "module_loaded": "モジュールを読み込みました",
-    "loaded": "読み込みました: {module_id} {version}",
-    "backup_failed": "バックアップに失敗しました: {error}",
+    "loaded": "<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> <b>読み込み完了:</b> <code>{module_id}</code> <code>v{version}</code>",
+    "backup_failed": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>バックアップに失敗しました:</b>\n<blockquote>{error}</blockquote>",
     "backup_created": "バックアップを作成しました: {name}",
     "backups_empty": "バックアップがありません",
     "backups": "バックアップ:\n",
@@ -699,24 +1005,24 @@
     "invalid_page": "無効なヘルプページです",
     "invalid_restore": "無効な復元リクエストです",
     "restore_failed": "復元に失敗しました",
-    "restore_error": "復元に失敗しました: {error}",
+    "restore_error": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>復元に失敗しました:</b>\n<blockquote>{error}</blockquote>",
     "restore_done": "復元しました",
     "callback_failed": "操作に失敗しました",
     "callback_denied": "ボタンの有効期限が切れているか、利用できません。",
-    "load_error": "読み込みに失敗しました: {error}: {detail}",
+    "load_error": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>モジュールの読み込みに失敗しました:</b>\n<blockquote>{error}: {detail}</blockquote>",
     "load_failed": "読み込みに失敗しました: {error}",
     "load_screen": "読み込みに失敗しました: {module_id} {version}\n{screen}",
-    "updated": "更新しました: {module_id} {version}",
+    "updated": "<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> <b>更新完了:</b> <code>{module_id}</code> <code>v{version}</code>",
     "caps_request": "モジュール {module_id} v{version} が次の機能を要求しています:",
     "caps_retry": "確認するには読み込みコマンドを再実行してください",
-    "usage_mi": "使い方: {prefix}mi <module>",
-    "usage_help": "使い方: {prefix}hlp [page] | {prefix}hlp <module>",
-    "usage_reload": "使い方: {prefix}rl <module> [force]",
-    "usage_unload": "使い方: {prefix}ul [-c] <module>",
-    "usage_reset": "使い方: {prefix}rs <module>",
-    "usage_export": "使い方: {prefix}ex <module>",
-    "usage_backup": "使い方: {prefix}bk | {prefix}bk list | {prefix}bk test <archive> | {prefix}bk restore <archive>",
-    "usage_load": "使い方: {prefix}ld <raw-url> または .hmod ファイルに返信",
+    "usage_mi": "<b>使い方:</b> <code>{prefix}mi [module]</code> — <i>モジュール情報</i>",
+    "usage_help": "<b>使い方:</b> <code>{prefix}help &lt;page|module&gt;</code> — <i>ヘルプ表示</i>",
+    "usage_reload": "<b>使い方:</b> <code>{prefix}rl [module] &lt;force&gt;</code> — <i>モジュール再読み込み</i>",
+    "usage_unload": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>モジュールを指定してください:</b> <code>{prefix}ul &lt;モジュール&gt;</code>",
+    "usage_reset": "<b>使い方:</b> <code>{prefix}rs [module]</code> — <i>状態リセット</i>",
+    "usage_export": "<b>使い方:</b> <code>{prefix}ex [module]</code> — <i>エクスポート</i>",
+    "usage_backup": "<b>使い方:</b> <code>{prefix}bk &lt;list|test|restore&gt; &lt;archive&gt;</code> — <i>バックアップ管理</i>",
+    "usage_load": "<b>使い方:</b> <code>{prefix}ld [raw-url|ファイル]</code> — <i>モジュール読み込み</i>",
     "bot_status": "インラインボット: @{name}（{status}）",
     "health": "状態: {status}",
     "last_error": "最後のエラー: {error}",
@@ -742,7 +1048,12 @@
     },
     "file_missing": "モジュールファイルが見つかりません",
     "file_document": "モジュールをファイルとして送信してください",
-    "unknown_capability": "不明な機能（拒否）"
+    "unknown_capability": "不明な機能（拒否）",
+    "loading_module": "{module_id} を読み込み中…",
+    "export_caption": "<tg-emoji emoji-id=\"5258514780469075716\">📂</tg-emoji> <b>{module}</b> <code>v{version}</code>\n<blockquote><tg-emoji emoji-id=\"5258134813302332906\">📦</tg-emoji> Hotaruモジュールエクスポート</blockquote>",
+    "usage_load_source": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>リンク、パスを指定するか、モジュールファイル (.hmod) に返信してください</b>",
+    "unloading": "<tg-emoji emoji-id=\"5258130763148172425\">🗑</tg-emoji> <i><code>{module}</code> をアンロード中...</i>",
+    "invalid_path": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>指定されたファイルまたはパスが見つかりません。</b>"
   },
   "acl": {
     "owners": "<b>オーナー</b><br>",
@@ -761,9 +1072,9 @@
     "bad_group": "グループ名は32文字以内の英数字で入力してください。",
     "bad_duration": "1m、1h、1d、1w または forever。最大100年。",
     "bad_rule": "ルールは command/名前 または module/名前 を指定してください。",
-    "empty": "付与された権限がありません。{prefix}perm <user_id> <ロール> を使ってください。",
+    "empty": "付与された権限はありません。{prefix}perm &lt;user_id&gt; &lt;role&gt; を使用してください。",
     "bad_label": "不明な権限: {label}",
-    "no_owner_grant": "オーナー権限の付与には {prefix}perms を使ってください。",
+    "no_owner_grant": "オーナー権限の付与には {prefix}owadd を使ってください。",
     "owner_confirm": "<code>{user_id}</code> に全権限を付与しますか？",
     "confirm": "承認",
     "clear_confirm": "<code>{scope}</code> のルールを消去しますか？",
@@ -824,9 +1135,45 @@
     "syntax": {
       "perms": "<code>{prefix}perms [ID|@username]</code>",
       "whois": "<code>{prefix}whois [ID|@username] [command]</code>",
-      "perm": "<code>{prefix}perm [ID|@username|command/name] &lt;role&gt; [remove]</code>"
+      "perm": "<code>{prefix}perm [ID|@username|command/name] &lt;role&gt; [remove]</code>",
+      "owadd": "<code>{prefix}owadd [ID|@username]</code>",
+      "owrm": "<code>{prefix}owrm [ID|@username]</code>",
+      "owls": "<code>{prefix}owls</code>",
+      "sgnew": "<code>{prefix}sgnew &lt;name&gt;</code>",
+      "sgdel": "<code>{prefix}sgdel &lt;name&gt;</code>",
+      "sgls": "<code>{prefix}sgls</code>",
+      "sg": "<code>{prefix}sg &lt;name&gt;</code>",
+      "sgadd": "<code>{prefix}sgadd &lt;name&gt; [ID|@username]</code>",
+      "sgrm": "<code>{prefix}sgrm &lt;name&gt; [ID|@username]</code>",
+      "rule": "<code>{prefix}rule &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;command/name|module/name&gt; [1h|forever]</code>",
+      "rulerm": "<code>{prefix}rulerm &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;command/name|module/name|*&gt;</code>",
+      "ruleclr": "<code>{prefix}ruleclr &lt;user|chat|sgroup&gt; [target]</code>"
     },
-    "all_chats": "すべてのチャットで全員が利用できます。"
+    "all_chats": "すべてのチャットで全員が利用できます。",
+    "account": " · アカウント",
+    "protected": " · 保護済み",
+    "failed": "<b>エラー:</b> <i>{error}</i>",
+    "owner_added": "<code>{user_id}</code> <b>にオーナー権限を付与しました</b>",
+    "owner_exists": "<code>{user_id}</code> はすでにオーナーです",
+    "owner_removed": "<code>{user_id}</code> <b>のオーナー権限を取り消しました</b>",
+    "owner_missing": "<code>{user_id}</code> は追加のオーナーではありません",
+    "group_created": "<b>グループを作成しました:</b> <code>{name}</code>",
+    "group_deleted": "<b>グループを削除しました:</b> <code>{name}</code>",
+    "group_detail": "<b>グループ {name}</b><br><b>ユーザー</b><br>{users}<br><b>ルール</b><br>{rules}",
+    "member_exists": "<code>{user_id}</code> はすでに <code>{name}</code> に所属しています",
+    "member_missing": "<code>{user_id}</code> は <code>{name}</code> に所属していません",
+    "member_added": "<code>{user_id}</code> を <code>{name}</code> <b>に追加しました</b>",
+    "member_removed": "<code>{user_id}</code> を <code>{name}</code> <b>から削除しました</b>",
+    "duration": "（期間: {duration}）",
+    "rule_added": "<b>ルールを追加しました:</b> {kind} <code>{target}</code> → {type}/{rule}{until}",
+    "rule_removed": "<b>ルールを削除しました</b>",
+    "nothing_remove": "削除するものがありません",
+    "rules_cleared": "<b>ルールを消去しました</b>",
+    "nothing_clear": "消去するものがありません",
+    "self_owner": "このユーザーはすでにアカウントの所有者です。",
+    "no_groups": "アクセスグループがありません。作成: {prefix}sgnew &lt;name&gt;",
+    "usage": "<code>{prefix}owadd &lt;user_id|reply&gt;</code> — オーナーを追加\n<code>{prefix}owrm &lt;user_id|reply&gt;</code> — オーナーを削除\n<code>{prefix}owls</code> — オーナー一覧\n<code>{prefix}sgnew &lt;name&gt;</code> — 権限グループを作成\n<code>{prefix}sgls</code> — グループ一覧\n<code>{prefix}sg &lt;name&gt;</code> — グループのメンバーとルール\n<code>{prefix}sgdel &lt;name&gt;</code> — グループを削除\n<code>{prefix}sgadd &lt;name&gt; &lt;user_id|reply&gt;</code> — メンバーを追加\n<code>{prefix}sgrm &lt;name&gt; &lt;user_id|reply&gt;</code> — メンバーを削除\n<code>{prefix}rule &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;command|module&gt;/&lt;name&gt; [expiry]</code> — アクセスルールを追加\n<code>{prefix}rulerm &lt;user|chat|sgroup&gt; &lt;target&gt; &lt;rule&gt;</code> — ルールを削除\n<code>{prefix}ruleclr &lt;user|chat|sgroup&gt; [target]</code> — ルールを消去\n<code>{prefix}perm &lt;user_id&gt; &lt;admin|trusted|everyone&gt; [remove]</code> — 権限を付与・取り消し\n<code>{prefix}perms</code> — 権限一覧\n<code>{prefix}whois &lt;user_id&gt;</code> — ユーザーの権限",
+    "account_owner": "アカウントの所有者は削除できません。"
   },
   "inline": {
     "command_open": "{command} を開く",
@@ -838,6 +1185,42 @@
       "403": "アクセスが拒否されました",
       "404": "見つかりません",
       "500": "内部エラーです"
+    }
+  },
+  "ui": {
+    "close": "✕ Close",
+    "back": "‹ 戻る",
+    "expired": "このメニューは期限切れです。コマンドをもう一度実行してください。",
+    "stale": "メニューが更新されました。もう一度押してください。",
+    "denied": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> このボタンは操作できません。",
+    "failed": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>エラーが発生しました:</b>\n<blockquote>{error}</blockquote>",
+    "flood": "Telegram から {seconds} 秒待つよう求められました。",
+    "slow_down": "操作が速すぎます。少し待ってください。",
+    "inline_unavailable": "<i>このチャットではインラインメニューを使えないため、テキストで表示しています。</i>",
+    "input_send_secret": "送信（{count} 文字・非表示）",
+    "search": "🔍 検索",
+    "edit": "✎ 編集",
+    "reset": "↺ 既定値",
+    "on": "オン",
+    "off": "オフ",
+    "error": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> {error}",
+    "saved": "保存しました",
+    "empty": "空",
+    "nothing_found": "「{query}」に一致するものはありません。"
+  },
+  "translations": {
+    "translating": "翻訳中…",
+    "empty_text": "翻訳するテキストが空です",
+    "text_too_large": "テキストが1回のリクエストに対して大きすぎます",
+    "failed": "テキストの翻訳に失敗しました",
+    "error_title": "翻訳エラー",
+    "usage_file": "リンク、パスを指定するか、JSONファイル（.json）に返信してください"
+  },
+  "info": {
+    "commands": {
+      "ping": {
+        "description": "ユーザーボットのpingを測定"
+      }
     }
   }
 }

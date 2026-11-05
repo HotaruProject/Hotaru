@@ -749,6 +749,7 @@ _ENV_MAPPINGS: dict[str, tuple[str, ...]] = {
     "log-level": ("HOTARU_LOG_LEVEL", "LOG_LEVEL"),
     "environment": ("HOTARU_ENV", "ENVIRONMENT", "NODE_ENV"),
     "sandbox": ("HOTARU_SANDBOX", "SANDBOX"),
+    "log-chat": ("HOTARU_LOG_CHAT", "LOG_CHAT", "LOG_GROUP", "LOG_CHANNEL"),
     "singularity-enabled": ("HOTARU_DASHBOARD_ENABLED", "DASHBOARD_ENABLED"),
     "singularity-port": ("HOTARU_DASHBOARD_PORT", "DASHBOARD_PORT"),
     "singularity-mode": ("HOTARU_DASHBOARD_MODE", "DASHBOARD_MODE"),
@@ -779,6 +780,7 @@ class RuntimeConfig:
     state_path: Path
     backup_keep: int
     inline_enabled: bool = True
+    log_chat: int | None = None
     log_level: str = "INFO"
     environment: str = "production"
     sandbox: str = "auto"
@@ -788,6 +790,7 @@ class RuntimeConfig:
     singularity_tunnel: bool = True
     singularity_auto_botfather: bool = True
     singularity_short_name: str = "dashboard"
+    weboff: bool = False
 
     @classmethod
     def from_database(cls, path: str | Path | None = None, *, discover: bool = True) -> "RuntimeConfig":
@@ -798,7 +801,7 @@ class RuntimeConfig:
         state = StateStore(path)
         try:
             values: dict[str, Any] = {}
-            for setting_key in ("api-id", "api-hash", "bot-token", "owner-id", "prefix", "session-name", "session-dir", "backup-keep", "inline-enabled", "log-level", "environment", "sandbox", "singularity-enabled", "singularity-port", "singularity-mode", "singularity-tunnel", "singularity-auto-botfather"):
+            for setting_key in ("api-id", "api-hash", "bot-token", "owner-id", "log-chat", "prefix", "session-name", "session-dir", "backup-keep", "inline-enabled", "log-level", "environment", "sandbox", "singularity-enabled", "singularity-port", "singularity-mode", "singularity-tunnel", "singularity-auto-botfather"):
                 raw_env = _resolve_env(setting_key, dotenv) if discover else None
                 if raw_env is not None:
                     if setting_key == "api-id":
@@ -806,7 +809,7 @@ class RuntimeConfig:
                             val = int(raw_env)
                         except ValueError:
                             val = None
-                    elif setting_key in {"owner-id", "backup-keep", "singularity-port"}:
+                    elif setting_key in {"owner-id", "log-chat", "backup-keep", "singularity-port"}:
                         try:
                             val = int(raw_env)
                         except ValueError:
@@ -875,6 +878,7 @@ class RuntimeConfig:
                 state_path=Path(path),
                 backup_keep=int(values["backup-keep"]),
                 inline_enabled=bool(values["inline-enabled"]),
+                log_chat=int(values["log-chat"]) if values.get("log-chat") is not None else None,
                 log_level=str(values["log-level"]),
                 environment=str(values["environment"]),
                 sandbox=str(values.get("sandbox") or "auto"),
@@ -898,7 +902,7 @@ class RuntimeConfig:
             raise ValueError("configure MTProto credentials or bot token in the database")
         from .commands import valid_prefix
         if not valid_prefix(self.prefix):
-            raise ValueError("prefix must contain 1–8 visible non-whitespace characters")
+            raise ValueError("prefix must contain 1-8 visible non-whitespace characters")
         if self.owner_id is not None and self.owner_id == 0:
             raise ValueError("owner ID must be nonzero")
         if self.backup_keep < 1:
@@ -920,6 +924,7 @@ class RuntimeConfig:
             "state_path": str(self.state_path),
             "backup_keep": self.backup_keep,
             "inline_enabled": self.inline_enabled,
+            "log_chat": self.log_chat,
             "log_level": self.log_level,
             "environment": self.environment,
             "singularity_enabled": self.singularity_enabled,
