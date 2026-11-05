@@ -91,51 +91,47 @@ def _fmt(ctx: Any, payload: Mapping[str, Any]) -> str:
     return html.escape(" ".join(str(p) for p in parts if p), quote=False)
 
 
-def _level_icon(level: str) -> str:
-    lvl = str(level or "").lower()
-    if lvl in ("error", "critical", "fatal"):
-        return '<tg-emoji emoji-id="5260342697075416641">❌</tg-emoji>'
-    if lvl in ("warn", "warning"):
-        return '<tg-emoji emoji-id="5355133243773435190">⚠️</tg-emoji>'
-    if lvl == "debug":
-        return '<tg-emoji emoji-id="5258152182150077732">⚡️</tg-emoji>'
-    return '<tg-emoji emoji-id="5258503720928288433">ℹ️</tg-emoji>'
-
-
 def _rich(ctx: Any, batch: List[Mapping[str, Any]]) -> dict[str, Any]:
-    from relay.emoji import to_rich
-    from relay.toolkit import wordmark
-    wm = wordmark()
-    sources = sorted({str(p.get("module") or p.get("component") or "-") for p in batch})
-    sources_text = ", ".join(sources[:3]) + (f" +{len(sources)-3}" if len(sources) > 3 else "")
-    lines: List[str] = [
-        f'{wm} · <tg-emoji emoji-id="5310285203858535580">📔</tg-emoji> <b>{html.escape(ctx.t("kernel.logger.log", "Log Mirror"))}</b>',
-        f'<blockquote><tg-emoji emoji-id="5258514780469075716">📂</tg-emoji> <b>{html.escape(ctx.t("kernel.logger.events", "Events"))}:</b> <code>{len(batch)}</code> · <b>{html.escape(ctx.t("kernel.logger.sources", "Sources"))}:</b> <code>{html.escape(sources_text)}</code></blockquote>',
-        '',
-        '<blockquote expandable>',
+    sources = {str(p.get("module") or p.get("component") or "-") for p in batch}
+    blocks: List[dict[str, Any]] = [
+        {"_": "pageBlockHeading1", "text": {"_": "textPlain", "text": "Hotaru · " + ctx.t("kernel.logger.log", "Log")}},
+        {"_": "pageBlockTable", "title": {"_": "textPlain", "text": ""}, "rows": [
+            {"_": "pageTableRow", "cells": [
+                {"_": "pageTableCell", "header": index == 0, "text": {"_": "textPlain", "text": str(value)}}
+                for value in row
+            ]}
+            for index, row in enumerate(((ctx.t("kernel.logger.metric", "Metric"), ctx.t("kernel.logger.count", "Count")),
+                                         (ctx.t("kernel.logger.events", "Events"), len(batch)),
+                                         (ctx.t("kernel.logger.sources", "Sources"), len(sources))))
+        ]},
+        {"_": "pageBlockHeading2", "text": {"_": "textPlain", "text": ctx.t("kernel.logger.log", "Log")}},
     ]
+    log_blocks: List[dict[str, Any]] = []
+    blocks.append({"_": "pageBlockDetails", "title": {
+        "_": "textPlain", "text": ctx.t("kernel.logger.log", "Log"),
+    }, "blocks": log_blocks})
+    group_start = None
     for payload in batch:
-        stamp_val = float(payload.get("ts") or 0)
-        time_str = ctx.tools.timestamp(stamp_val, ctx.i18n.language) if hasattr(ctx, "tools") else time.strftime("%H:%M:%S", time.gmtime(stamp_val))
+        stamp = float(payload.get("ts") or 0)
+        if group_start is None or not 0 <= stamp - group_start <= 3:
+            group_start = stamp
+            log_blocks.append({"_": "pageBlockBlockquote", "text": {
+                "_": "textPlain", "text": ctx.tools.timestamp(stamp, ctx.i18n.language) if hasattr(ctx, "tools") else time.strftime("%H:%M:%S", time.gmtime(stamp)),
+            }, "caption": {"_": "textPlain", "text": ""}})
         source = str(payload.get("component") or "-")
         if payload.get("module") and payload["module"] != source:
-            source += f"/{payload['module']}"
-        lvl = str(payload.get("level") or "info").lower()
-        icon = _level_icon(lvl)
-        event = str(payload.get("event") or "-")
-        lines.append(f'{icon} <b>[{html.escape(time_str)}] {lvl.upper()}</b> · <code>{html.escape(source)}</code> · <b>{html.escape(event)}</b>')
-        extras: list[str] = []
+            source += f" / {payload['module']}"
+        level = str(payload.get("level") or "info").upper()
+        lines = [f"{level} · {source} · {payload.get('event') or '-'}"]
         if payload.get("msg") is not None:
-            extras.append(str(payload["msg"]))
+            lines.append(str(payload["msg"]))
         for key in sorted(set(payload) - {"ts", "time", "level", "component", "module", "event", "msg"}):
-            val = payload.get(key)
-            if val is not None:
-                extras.append(f"{key}={val}")
-        if extras:
-            lines.append(f'<code>{html.escape(" ".join(extras)[:800])}</code>')
-        lines.append('')
-    lines.append('</blockquote>')
-    return {"_": "inputRichMessageHTML", **to_rich("\n".join(lines).strip())}
+            if payload.get(key) is not None:
+                lines.append(f"{key}={payload[key]}")
+        log_blocks.append({
+            "_": "pageBlockPreformatted", "text": {"_": "textPlain", "text": "\n".join(lines)}, "language": "",
+        })
+    return {"_": "inputRichMessage", "blocks": blocks}
 
 
 def _sink(payload: Any) -> Any:
