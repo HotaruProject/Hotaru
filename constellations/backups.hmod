@@ -146,7 +146,8 @@ async def command_restore(ctx: Any, invocation: Any) -> None:
         notice = f'<tg-emoji emoji-id="5260726538302660868">✅</tg-emoji> <b>{ctx.t("runtime.restore_done")}</b><blockquote><tg-emoji emoji-id="5258514780469075716">📂</tg-emoji> <b>{ctx.t("kernel.backups.restored_files", count=len(plan.files))}</b></blockquote>'
         await ctx.respond(notice, parse_mode="HTML", output="edit")
     except Exception as exc:
-        log_lines.append(f" !     {type(exc).__name__}: {html.escape(str(exc))}")
+        from hotaru.plainfmt import to_plain_text
+        log_lines.append(f" !     {type(exc).__name__}: {html.escape(to_plain_text(str(exc)), quote=False)}")
         await ctx.respond(f"<pre>{chr(10).join(log_lines)}</pre>", parse_mode="HTML", output="edit")
     finally:
         if temporary is not None:

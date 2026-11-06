@@ -26,16 +26,14 @@ async def command_ld(ctx: Any, invocation: Any) -> Any:
 
     inv_msg: Any = invocation.message
     reply: Any = None
-    ctx_reply: Any = getattr(ctx, "reply", None)
-    if callable(ctx_reply):
+    if hasattr(inv_msg, "get_reply") and callable(inv_msg.get_reply):
         try:
-            reply = await cast('Awaitable[Any]', ctx_reply())
+            reply = await inv_msg.get_reply()
         except Exception:
             reply = None
-    inv_reply: Any = getattr(invocation, "reply", None)
-    if reply is None and callable(inv_reply):
+    if reply is None and hasattr(ctx, "reply_msg") and callable(getattr(ctx, "reply_msg", None)):
         try:
-            reply = await cast('Awaitable[Any]', inv_reply())
+            reply = await ctx.reply_msg()
         except Exception:
             reply = None
     if reply is None:
@@ -49,11 +47,14 @@ async def command_ld(ctx: Any, invocation: Any) -> Any:
     reply_id = reply_message_id(inv_msg)
     if reply is None and reply_id is not None:
         chat_id = invocation.chat_id or (cast('dict[str, Any]', inv_msg).get("chat_id") if isinstance(inv_msg, dict) else None)
-        if chat_id is not None and callable(getattr(ctx, "msg", None)):
-            try:
-                reply = await ctx.msg(chat_id, reply_id)
-            except Exception:
-                reply = None
+        app = getattr(runtime, "app", None)
+        if app is not None and hasattr(app, "get_msg") and chat_id is not None:
+            from relay.firewall import trusted_scope
+            with trusted_scope():
+                try:
+                    reply = await app.get_msg(chat_id, reply_id)
+                except Exception:
+                    reply = None
         if reply is None:
             cap_host = getattr(runtime, "cap_host", None)
             if cap_host is not None:
@@ -117,7 +118,9 @@ async def command_ld(ctx: Any, invocation: Any) -> Any:
             err_msg = ctx.t("runtime.invalid_module") + f": {err_raw}"
         else:
             err_msg = ctx.t("runtime.activation_failed") + f": {err_raw}"
-        log_lines.append(f" !     {html.escape(err_msg, quote=False)}")
+        from hotaru.plainfmt import to_plain_text
+        err_msg_plain = to_plain_text(err_msg)
+        log_lines.append(f" !     {html.escape(err_msg_plain, quote=False)}")
         await ctx.respond(f"<pre>{chr(10).join(log_lines)}</pre>", parse_mode="HTML", output="edit")
         return
     finally:

@@ -68,6 +68,9 @@ class CallbackContext:
     async def respond(self, text: str | None = None, **kwargs: Any) -> Any:
         kwargs.pop("show_alert", None)
         alert = kwargs.pop("alert", False)
+        if text is not None:
+            from hotaru.plainfmt import to_plain_text
+            text = to_plain_text(str(text))
         return await self._callback.answer(text, alert=alert, **kwargs)
 
     def get_memory(self) -> Any:

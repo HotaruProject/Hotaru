@@ -486,7 +486,14 @@ class CapabilityHost:
             msg_id = payload.get("id")
             if not isinstance(msg_id, int) or peer_value is None:
                 raise PermissionError("fetch message requires peer and id")
-            for message in await _history(peer_value, msg_id + 1, 3):
+            if hasattr(app, "get_msg"):
+                try:
+                    msg = await app.get_msg(peer_value, msg_id)
+                    if isinstance(msg, dict) and msg.get("_") != "messageEmpty":
+                        return msg
+                except Exception as exc:
+                    log.debug("fetch op get_msg failed: %s", exc)
+            for message in await _history(peer_value, msg_id + 1, 10):
                 if message.get("id") == msg_id:
                     return message
             return None
@@ -498,7 +505,14 @@ class CapabilityHost:
             reply_id = header_dict.get("reply_to_msg_id") or header_dict.get("reply_to_id") if header_dict is not None else None
             if not isinstance(reply_id, int):
                 return None
-            for message in await _history(payload.get("peer"), reply_id + 1, 3):
+            if hasattr(app, "get_msg"):
+                try:
+                    msg = await app.get_msg(payload.get("peer"), reply_id)
+                    if isinstance(msg, dict) and msg.get("_") != "messageEmpty":
+                        return msg
+                except Exception as exc:
+                    log.debug("fetch op reply get_msg failed: %s", exc)
+            for message in await _history(payload.get("peer"), reply_id + 1, 10):
                 if message.get("id") == reply_id:
                     return message
             return None

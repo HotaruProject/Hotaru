@@ -400,7 +400,8 @@ async def command_loadlex(ctx: Any, invocation: Any) -> Any:
             err_msg = ctx.t("kernel.translations.err_structure", "Dictionary structure error: {err}", err=err_raw)
         else:
             err_msg = ctx.t("kernel.translations.err_load_failed", "Failed to load dictionary: {err}", err=err_raw)
-        log_lines.append(f" !     {html.escape(err_msg, quote=False)}")
+        from hotaru.plainfmt import to_plain_text
+        log_lines.append(f" !     {html.escape(to_plain_text(err_msg), quote=False)}")
         await ctx.respond(f"<pre>{chr(10).join(log_lines)}</pre>", parse_mode="HTML", output="edit")
     finally:
         if temporary is not None:
