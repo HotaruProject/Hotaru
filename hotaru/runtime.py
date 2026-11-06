@@ -2500,7 +2500,7 @@ class Runtime:
                 screen: Any = card_fn(ctx, module_id, nav.actor, None)
                 notice = self.t("runtime." + action, module_id=module_id, version=loaded.manifest.version)
                 screen_obj: Any = screen
-                return screen_obj.with_notice(f"<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> {notice}")
+                return screen_obj.with_notice(notice)
         return Screen(self.t('runtime.loaded', module_id=module_id, version=loaded.manifest.version))
 
     def create_backup(self) -> Path:
