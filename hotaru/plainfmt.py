@@ -126,3 +126,14 @@ def rich_to_plain(html: str) -> str:
     while lines and not lines[0]:
         lines.pop(0)
     return "\n".join(lines)
+
+
+def to_plain_text(text: str) -> str:
+    if not text:
+        return ""
+    import html as _html
+    import re as _re
+    clean = _re.sub(r"<tg-emoji[^>]*>(.*?)</tg-emoji>", r"\1", str(text))
+    clean = _re.sub(r"<[^>]+>", "", clean)
+    return _html.unescape(clean).strip()
+

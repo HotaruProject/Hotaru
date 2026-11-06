@@ -257,8 +257,9 @@ def _decorate(item: dict[str, Any], style: Optional[str], icon: Optional[str]) -
 def _clip(text: Optional[str], limit: int = _toast) -> Optional[str]:
     if text is None:
         return None
-    text = str(text)
-    return text if len(text) <= limit else text[: limit - 1] + "…"
+    from hotaru.plainfmt import to_plain_text
+    plain = to_plain_text(str(text))
+    return plain if len(plain) <= limit else plain[: limit - 1] + "…"
 
 
 def _inline_key(value: Any) -> Any:

@@ -2058,15 +2058,30 @@ class Runtime:
         if source is not None and not (source.get("document") or source.get("media")):
             candidate = source.get("reply_to_message") or source.get("reply")
             source = candidate if candidate is not None and hasattr(candidate, "get") and (candidate.get("document") or candidate.get("media")) else None
-        if (source is None or not hasattr(source, "get")) and message is not None and hasattr(message, "get"):
-            reply_to = message.get("reply_to")
-            reply_id = cast('dict[str, Any]', reply_to).get("reply_to_msg_id") if isinstance(reply_to, dict) else None
-            if isinstance(reply_id, int) and getattr(message, "src", None) != "bot":
-                cap_host = getattr(self, "cap_host", None)
-                if cap_host is not None:
-                    with trusted_scope():
-                        peer = getattr(message, "chat_id", None) or message.get("chat_id")
-                        source = await cap_host.call("loader", "fetch", {"op": "message", "peer": peer, "id": reply_id})
+        if (source is None or not hasattr(source, "get")) and message is not None:
+            if hasattr(message, "get_reply"):
+                try:
+                    rep_obj = await message.get_reply()
+                    if rep_obj is not None:
+                        source = rep_obj.raw if hasattr(rep_obj, "raw") else rep_obj
+                except Exception:
+                    pass
+            if source is None or not hasattr(source, "get"):
+                from hotaru.response import reply_message_id
+                reply_id = reply_message_id(message)
+                if isinstance(reply_id, int) and getattr(message, "src", None) != "bot":
+                    peer = getattr(message, "chat_id", None) or (message.get("chat_id") if hasattr(message, "get") else None)
+                    if peer is not None and self.app is not None and hasattr(self.app, "get_msg"):
+                        with trusted_scope():
+                            try:
+                                source = await self.app.get_msg(peer, reply_id)
+                            except Exception as exc:
+                                log.debug("download message get_msg failed: %s", exc)
+                    if source is None or not hasattr(source, "get"):
+                        cap_host = getattr(self, "cap_host", None)
+                        if cap_host is not None:
+                            with trusted_scope():
+                                source = await cap_host.call("loader", "fetch", {"op": "message", "peer": peer, "id": reply_id})
         if source is None or not hasattr(source, "get"):
             raise ValueError(self.t('runtime.file_missing'))
         media = source.get("document") if isinstance(source.get("document"), dict) else source.get("media")
