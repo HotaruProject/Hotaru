@@ -21,8 +21,6 @@ from typing import TYPE_CHECKING, Any, Callable, cast
 
 from .denylist import is_blocked_host, is_blocked_peer, is_readonly_peer, payload_hits_blocked, payload_hits_readonly
 from .firewall import trusted_scope
-from hotaru.plainfmt import rich_to_plain
-from hotaru.capabilities import BehaviorEnvelope
 from .emoji import to_entities
 from .rpc import rpcname
 
@@ -328,6 +326,7 @@ class CapabilityHost:
         self.jobs: dict[tuple[str, str, str], Job] = {}
 
     def _envelope(self, module_id: str, side_effect: str) -> Any:
+        from hotaru.capabilities import BehaviorEnvelope
         return BehaviorEnvelope(
             actor=None,
             module_id=module_id,
@@ -641,6 +640,7 @@ class CapabilityHost:
                 html_text = cast('dict[str, Any]', rich_message).get("html") if isinstance(rich_message, dict) else None
                 kwargs.pop("rich_message", None)
                 if isinstance(html_text, str) and lowered.startswith(("messages.send", "messages.edit")):
+                    from hotaru.plainfmt import rich_to_plain
                     plain_html = rich_to_plain(html_text)
                     plain, entities = to_entities(plain_html)
                     kwargs["message"] = (kwargs.get("message") or "") + plain

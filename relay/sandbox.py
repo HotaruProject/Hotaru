@@ -21,7 +21,6 @@ from . import toolkit as _toolkit
 from . import context as _context
 from . import translation as _translation
 from . import denylist as _denylist
-from hotaru.callbacks import CallbackBinding
 from relay.firewall import trusted_scope
 
 _CONTEXT_SOURCE = Path(_context.__file__).read_text(encoding="utf-8")
@@ -2266,7 +2265,11 @@ class ModuleSandbox:
                     reply = {"kind": "op_result", "cid": message.get("cid"), "ok": True, "result": result}
                 except Exception as exc:
                     reply = {"kind": "op_result", "cid": message.get("cid"), "ok": False, "error_type": type(exc).__name__, "error": f"{type(exc).__name__}: {exc}"}
-                    log.error("sandbox op failed (module=%s request=%r): %s: %s\n%s", module_id, message, type(exc).__name__, exc, traceback.format_exc())
+                    import goygram.errors as ge
+                    if isinstance(exc, (ge.GoyGramError, asyncio.TimeoutError, TimeoutError, OSError)):
+                        log.warning("sandbox op %s failed (module=%s): %s", method, module_id, exc)
+                    else:
+                        log.error("sandbox op failed (module=%s request=%r): %s: %s\n%s", module_id, message, type(exc).__name__, exc, traceback.format_exc())
             if process is self._workers.get(module_id) and process is not None and process.poll() is None and process.stdin is not None:
                 await self._write_reply(process, reply)
 
@@ -2426,6 +2429,7 @@ class ModuleSandbox:
 
     def _sandbox_buttons(self, module_id: str, buttons: Any, chat_id: Any, actor: Any = None) -> Any:
         with trusted_scope():
+            from hotaru.callbacks import CallbackBinding
             router = getattr(self.runtime, "callbacks", None)
             owner = actor or getattr(getattr(self.runtime, "kernel", None), "owner_id", None)
             normalized: list[list[dict[str, Any]]] = []
