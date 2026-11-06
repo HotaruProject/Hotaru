@@ -41,13 +41,21 @@ def decode(name: str, raw: str, limit: int) -> str:
     except (ValueError, RecursionError):
         raise TranslationError("provider returned invalid JSON") from None
     if name == "google":
-        if not isinstance(data, list) or not data or not isinstance(data[0], list) or not data[0]:
+        if not isinstance(data, list) or not data:
             raise TranslationError("invalid Google translation response")
         parts: list[str] = []
-        for segment in cast("list[Any]", data[0]):
-            if not isinstance(segment, list) or not segment or not isinstance(segment[0], str):
-                raise TranslationError("incomplete Google translation response")
-            parts.append(segment[0])
+        if isinstance(data[0], list) and data[0] and isinstance(data[0][0], list):
+            for segment in cast("list[Any]", data[0]):
+                if isinstance(segment, list) and segment and isinstance(segment[0], str):
+                    parts.append(segment[0])
+        elif isinstance(data[0], list) and data[0] and isinstance(data[0][0], str):
+            for segment in cast("list[Any]", data):
+                if isinstance(segment, list) and segment and isinstance(segment[0], str):
+                    parts.append(segment[0])
+        elif isinstance(data[0], str):
+            parts.append(data[0])
+        if not parts:
+            raise TranslationError("incomplete Google translation response")
         return result("".join(parts), limit)
     if not isinstance(data, dict):
         raise TranslationError("invalid MyMemory translation response")
@@ -99,7 +107,6 @@ async def translate(
             choices.append("google")
             if source != "auto" and size <= 500:
                 choices.append("mymemory")
-        choices = choices[:2]
         if not choices:
             raise ValueError("translation requires request or telegram callback")
     else:
@@ -124,16 +131,21 @@ async def translate(
                     return result(await asyncio.wait_for(telegram(text, to_lang, source), budget), max_bytes)
                 if request is None:
                     raise TranslationError("request callback unavailable")
+                headers: dict[str, str] | None = None
                 if name == "google":
-                    url = "https://translate.googleapis.com/translate_a/single?" + urlencode(
-                        {"client": "gtx", "sl": source, "tl": to_lang, "dt": "t", "q": text}
+                    url = "https://clients5.google.com/translate_a/t?" + urlencode(
+                        {"client": "dict-chrome-ex", "sl": source, "tl": to_lang, "q": text}
                     )
+                    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
                 else:
                     url = "https://api.mymemory.translated.net/get?" + urlencode(
                         {"q": text, "langpair": source + "|" + to_lang}
                     )
+                req_payload: dict[str, Any] = {"url": url, "timeout": budget, "max_bytes": max_bytes, "allow_redirects": False}
+                if headers:
+                    req_payload["headers"] = headers
                 response = await asyncio.wait_for(
-                    request({"url": url, "timeout": budget, "max_bytes": max_bytes, "allow_redirects": False}),
+                    request(req_payload),
                     budget,
                 )
                 if response.get("status") != 200:

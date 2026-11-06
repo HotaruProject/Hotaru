@@ -15,7 +15,6 @@ from .firewall import trusted_scope
 from goygram.sugar import extract_sent_message
 from . import emoji
 from .emoji import to_entities, to_rich
-from hotaru.markup import kbd_to_tl
 
 
 def _data(value: object) -> dict[str, Any] | None:
@@ -476,6 +475,7 @@ class BotGateway:
         markup_data = _data(markup)
         if markup_data is not None and markup_data.get("_") in {"replyInlineMarkup", "replyKeyboardMarkup"}:
             return markup_data
+        from hotaru.markup import kbd_to_tl
         tl_markup = kbd_to_tl(markup_data) if markup_data is not None else None
         return tl_markup if isinstance(tl_markup, dict) else None
 
