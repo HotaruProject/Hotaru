@@ -29,9 +29,11 @@ Third-party modules (`.hmod`) execute inside dedicated Linux namespaces (`CLONE_
 ### Explicit capability permissions
 
 Modules declare required capabilities in their metadata:
-- `mt`: Telegram API requests via GoyGram
-- `state`: module-scoped key-value storage
-- `net`: outbound network traffic
+- `mt`: direct raw Telegram MTProto calls via `ctx.tg.call` (standard messaging and all 292 contextual methods require no capabilities)
+- `state`: module-scoped persistent SQLite key-value storage
+- `net`: outbound network traffic (HTTP, WebSocket, TCP)
+- `files`: isolated temporary workspace filesystem access
+- `shell`: sandboxed command execution in namespace jail
 
 If a module does not declare the `net` capability, the kernel network namespace blocks all outbound sockets for that process.
 
