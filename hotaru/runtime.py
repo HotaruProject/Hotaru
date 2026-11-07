@@ -251,6 +251,9 @@ class Runtime:
         )
         self.kernel.security = self.security
         self.state = StateStore(self.config.state_path)
+        from .provenance import MessageProvenance
+        self.kernel.provenance = MessageProvenance(self.state.connection)
+        self.kernel.provenance.install(self.app)
         self.lexicon = Lexicon(self.lexicon_dir)
         from .accounts import AccountManager
         self.account_manager = AccountManager.open(self.state, self.config.session_dir)
@@ -2906,7 +2909,27 @@ class Runtime:
                 source.unlink()
                 linked = False
             else:
-                os.replace(source, target)
+                try:
+                    os.replace(source, target)
+                except OSError as exc:
+                    import errno
+                    import shutil
+                    if exc.errno != errno.EXDEV:
+                        raise
+                    temporary = None
+                    try:
+                        with tempfile.NamedTemporaryFile(prefix=f".{target.name}.", suffix=".tmp", dir=target.parent, delete=False) as output:
+                            temporary = Path(output.name)
+                            os.fchmod(output.fileno(), 0o600)
+                            with source.open("rb") as incoming:
+                                shutil.copyfileobj(incoming, output)
+                            output.flush()
+                            os.fsync(output.fileno())
+                        os.replace(temporary, target)
+                    finally:
+                        if temporary is not None:
+                            temporary.unlink(missing_ok=True)
+                    source.unlink()
                 linked = False
         try:
             self.state.set_setting("session-name", name)
@@ -2918,6 +2941,8 @@ class Runtime:
         self.app.core.session_name = session.name
         if self.state.path.resolve() != dest_db.resolve():
             self.state.relocate(dest_db)
+            if self.kernel is not None and self.kernel.provenance is not None:
+                self.kernel.provenance.connection = self.state.connection
             self.state.set_setting("session-name", name)
             self.state.set_setting("active-account", userid)
             self.config = replace(self.config, session_name=name, state_path=dest_db)
