@@ -1260,7 +1260,6 @@ class ScreenEngine:
 
     async def dispatch(self, callback: Any) -> None:
         expired = self._t("ui.expired", "This menu has expired. Open it again.")
-        denied = self._t("ui.denied", "This button is not for you.")
         decoded = self.decode(getattr(callback, "data", None))
         form = self.load(decoded[0]) if decoded is not None else None
         log.info(
