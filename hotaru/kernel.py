@@ -53,6 +53,7 @@ class Kernel:
         self._seen_limit = seen_limit
         self._running: dict[tuple[int | str | None, int], asyncio.Task[Any]] = {}
         self.suspended = False
+        self.provenance: Any = None
 
     def attach(self, app: Any) -> None:
         app.on_edit(self._on_edit)
@@ -66,6 +67,8 @@ class Kernel:
         return await self.dispatch(message, source="new")
 
     async def dispatch_watchers(self, message: Any) -> None:
+        if self.provenance is not None and await self.provenance.generated(message):
+            return
         if self._is_blocked_peer(message) or self._is_secret_peer(message):
             return
         if self.suspended:
@@ -135,6 +138,8 @@ class Kernel:
         return spec.name if spec is not None else None
 
     async def dispatch(self, message: Any, *, source: str) -> object | None:
+        if self.provenance is not None and await self.provenance.generated(message):
+            return None
         if self._is_blocked_peer(message) or self._is_secret_peer(message):
             return None
         message_id = self._message_id(message)
@@ -192,6 +197,8 @@ class Kernel:
         task.add_done_callback(lambda t: self._running.pop(task_key, None) if self._running.get(task_key) is t else None)
 
     async def dispatch_bot(self, message: Any) -> object | None:
+        if self.provenance is not None and await self.provenance.generated(message):
+            return None
         text = str(getattr(message, "text", "") or "").strip()
         if not text or not text.startswith("/"):
             return None

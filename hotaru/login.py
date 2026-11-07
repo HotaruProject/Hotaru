@@ -1534,7 +1534,7 @@ async def _authorize_via_bot(app: Any, api_id: int, api_hash: str, bot: Any) -> 
 
 
 def install_daemon_prompt(runtime: Any = None) -> None:
-    from .daemon import DaemonError, detect_init_system, install_daemon, is_root
+    from .daemon import DaemonError, detect_init_system, install_daemon
 
     state = getattr(runtime, "state", None) if runtime is not None else None
     if state is not None and state.get_setting("daemon-install-offered"):
@@ -1542,9 +1542,6 @@ def install_daemon_prompt(runtime: Any = None) -> None:
     if state is not None:
         state.set_setting("daemon-install-offered", True)
     init = detect_init_system()
-    if init is None:
-        note("No supported service manager found on this system, the daemon stays manual.", "daemon")
-        return
     scope = init.scope_name()
     answer = select(
         f"Install the Hotaru daemon ({init.display_name}, {scope} scope) so it starts automatically?",
