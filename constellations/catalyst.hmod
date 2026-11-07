@@ -6,7 +6,7 @@ HOTARU = {
     "banner": "https://raw.githubusercontent.com/HotaruProject/Hotaru/develop/hotaru/assets/catalyst.mp4",
 }
 
-from typing import Any, Awaitable, Tuple, cast
+from typing import Any, Awaitable, Callable, Tuple, cast
 from pathlib import Path
 from types import SimpleNamespace
 import html
@@ -28,7 +28,7 @@ async def command_ld(ctx: Any, invocation: Any) -> Any:
     reply: Any = None
     if hasattr(inv_msg, "get_reply") and callable(inv_msg.get_reply):
         try:
-            reply = await inv_msg.get_reply()
+            reply = await cast(Callable[[], Awaitable[Any]], inv_msg.get_reply)()
         except Exception:
             reply = None
     if reply is None and hasattr(ctx, "reply_msg") and callable(getattr(ctx, "reply_msg", None)):
@@ -87,7 +87,7 @@ async def command_ld(ctx: Any, invocation: Any) -> Any:
                     return
                 source = Path(source).read_text(encoding="utf-8")
         else:
-            source_msg: Any = reply if reply is not None else cast(object, inv_msg)
+            source_msg = cast(Any, reply if reply is not None else inv_msg)
             if source_msg is None:
                 await ctx.respond(f"<pre> !     Error: reply to a file or provide a url</pre>", parse_mode="HTML", output="edit")
                 return

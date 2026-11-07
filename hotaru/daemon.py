@@ -5,7 +5,6 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any
 
 UNIT_NAME = "hotaru.service"
 SERVICE_NAME = "hotaru"
@@ -530,7 +529,7 @@ class LaunchdInit(BaseInitSystem):
         return path
 
     def status(self) -> str:
-        code, detail = _run(["launchctl", "list"])
+        _, detail = _run(["launchctl", "list"])
         lines = [line for line in detail.splitlines() if "com.hotaru.userbot" in line]
         return "\n".join(lines) if lines else "not loaded"
 

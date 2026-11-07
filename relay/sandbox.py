@@ -21,7 +21,7 @@ from . import toolkit as _toolkit
 from . import context as _context
 from . import translation as _translation
 from . import denylist as _denylist
-from relay.firewall import trusted_scope
+from relay.firewall import module_scope, trusted_scope
 
 _CONTEXT_SOURCE = Path(_context.__file__).read_text(encoding="utf-8")
 _TRANSLATION_SOURCE = Path(_translation.__file__).read_text(encoding="utf-8")
@@ -299,10 +299,11 @@ def install_seccomp():
         raise OSError("seccomp filter installation failed")
 
 
-def install_firewall(protected, namespaces=False, deps_root=""):
+def install_firewall(protected, namespaces=False, deps_root="", workspace=""):
     roots = [str(Path(item).resolve()) for item in protected]
     native_root = str((Path(os.__file__).resolve().parent / "lib-dynload").resolve()) + os.sep
     module_deps = str(Path(deps_root).resolve()) + os.sep if deps_root else ""
+    workspace = str(Path(workspace).resolve()) if workspace else ""
 
     def deny_process(*args, **kwargs):
         raise PermissionError("module process escape is denied")
@@ -328,7 +329,11 @@ def install_firewall(protected, namespaces=False, deps_root=""):
             if not namespaces and args[1] is None and not os.path.isabs(args[0]):
                 raise PermissionError("portable sandbox requires absolute paths for descriptor opens")
             value = str(Path(os.fsdecode(args[0])).resolve())
-            if value.endswith((".vault", ".session")) or any(value == root or value.startswith(root + os.sep) for root in roots):
+            mode = args[1] if len(args) > 1 else None
+            flags = args[2] if len(args) > 2 else 0
+            reading_dep = bool(module_deps) and value.startswith(module_deps) and not (isinstance(mode, str) and any(char in mode for char in "wax+")) and not (isinstance(flags, int) and flags & (os.O_WRONLY | os.O_RDWR | os.O_CREAT | os.O_TRUNC | os.O_APPEND))
+            own_workspace = bool(workspace) and (value == workspace or value.startswith(workspace + os.sep))
+            if value.endswith((".vault", ".session")) or any((value == root or value.startswith(root + os.sep)) and not ((reading_dep or own_workspace) and (module_deps.startswith(root + os.sep) or workspace.startswith(root + os.sep))) for root in roots):
                 raise PermissionError("module access to Telegram session storage is denied")
         if event in {"os.remove", "os.rmdir", "os.truncate", "shutil.rmtree", "os.rename", "os.link", "os.symlink"}:
             count = 2 if event in {"os.rename", "os.link", "os.symlink"} else 1
@@ -338,7 +343,8 @@ def install_firewall(protected, namespaces=False, deps_root=""):
                 if not namespaces and not os.path.isabs(path) and any(isinstance(fd, int) and fd != -1 for fd in args[count:]):
                     raise PermissionError("portable sandbox requires absolute paths for descriptor operations")
                 value = str(Path(os.fsdecode(path)).resolve())
-                if value.endswith((".vault", ".session")) or any(value == root or value.startswith(root + os.sep) or root.startswith(value.rstrip(os.sep) + os.sep) for root in roots):
+                own_workspace = bool(workspace) and (value == workspace or value.startswith(workspace + os.sep))
+                if value.endswith((".vault", ".session")) or any((value == root or value.startswith(root + os.sep) or root.startswith(value.rstrip(os.sep) + os.sep)) and not (own_workspace and workspace.startswith(root + os.sep)) for root in roots):
                     raise PermissionError("module access to Telegram session storage is denied")
         if event in {"subprocess.Popen", "os.system", "os.posix_spawn", "os.exec", "os.fork", "os.forkpty", "multiprocessing.Process"}:
             raise PermissionError("module process escape is denied")
@@ -1242,7 +1248,7 @@ def main():
             if _exc.errno != _errno.EPERM:
                 sys.stderr.write(f"seccomp self-test failed: splice errno={_exc.errno}\n")
                 sys.exit(1)
-    install_firewall(cfg.get("protected", []), cfg.get("namespaces", False), cfg.get("deps_root", ""))
+    install_firewall(cfg.get("protected", []), cfg.get("namespaces", False), cfg.get("deps_root", ""), cfg.get("workspace", ""))
     apply_policy(cfg.get("net_blocked", True))
     install_output_capture()
     context_ns = {"__name__": "hotaru_context"}
@@ -1723,7 +1729,7 @@ class ModuleSandbox:
         if observatory is not None:
             observatory.emit("sandbox", "pids_cap", status=self._pids_cap)
 
-    def _make_preexec(self, namespaces: bool = True, deps: str | None = None) -> Any:
+    def _make_preexec(self, namespaces: bool = True, deps: str | None = None, workspace: str | None = None) -> Any:
         if not namespaces:
             nproc = self.nproc
 
@@ -1845,6 +1851,11 @@ class ModuleSandbox:
             tmp_dir = os.path.join(newroot, "tmp")
             os.makedirs(tmp_dir, exist_ok=True)
             mount(b"tmpfs", tmp_dir.encode(), b"tmpfs", MS_NOSUID | MS_NODEV, b"mode=1777,size=64m")
+            if workspace:
+                target = os.path.join(newroot, workspace.lstrip("/"))
+                os.makedirs(target, exist_ok=True)
+                mount(workspace.encode(), target.encode(), None, MS_BIND | MS_REC)
+                mount(workspace.encode(), target.encode(), None, MS_BIND | MS_REC | MS_REMOUNT | MS_NOSUID | MS_NODEV)
             os.makedirs(os.path.join(newroot, "old_root"), exist_ok=True)
             os.chdir(newroot)
             if libc.pivot_root(b".", b"./old_root") != 0:
@@ -1853,6 +1864,8 @@ class ModuleSandbox:
             if libc.umount2(b"/old_root", MNT_DETACH) != 0:
                 raise OSError(ctypes.get_errno(), "old root detach failed")
             os.rmdir("/old_root")
+            if workspace:
+                os.chdir(workspace)
             os.umask(0o077)
             resource.setrlimit(resource.RLIMIT_NPROC, (nproc, nproc))
             resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
@@ -1867,6 +1880,16 @@ class ModuleSandbox:
         if namespaces is None:
             namespaces = self._namespaces
         deps = self._module_deps.get(module_id)
+        workspace_root = (self.runtime.config.state_path.parent / "workspaces").resolve()
+        if not module_id or Path(module_id).name != module_id or module_id in {".", ".."}:
+            raise PermissionError("invalid module workspace")
+        workspace = workspace_root / module_id
+        if workspace.is_symlink():
+            raise PermissionError("invalid module workspace")
+        workspace.mkdir(parents=True, exist_ok=True)
+        os.chmod(workspace, 0o700)
+        if namespaces and not self._rootless:
+            os.chown(workspace, SANDBOX_UID, SANDBOX_GID)
         hello = {
             "module_id": module_id,
             "source": source,
@@ -1879,7 +1902,8 @@ class ModuleSandbox:
             "seccomp": SECCOMP_POLICY,
             "seccomp_required": namespaces,
             "namespaces": namespaces,
-            "deps_root": deps or "",
+            "deps_root": "/opt/pkgs" if namespaces and deps else deps or "",
+            "workspace": str(workspace),
             "protected": [
                 str(self.runtime.config.session_dir),
                 str(self.runtime.config.session_dir / f"{self.runtime.config.session_name}.vault"),
@@ -1899,20 +1923,20 @@ class ModuleSandbox:
         }
         if namespaces:
             argv = ["/usr/bin/python3", "-s", "-c", WORKER_SOURCE]
-            env = {"PATH": "/usr/bin:/bin", "HOME": "/tmp", "PYTHONPATH": "/opt/pkgs" if deps else "", "PYTHONHOME": "/opt/py", **cli_config}
+            env = {"PATH": "/usr/bin:/bin", "HOME": str(workspace), "TMPDIR": str(workspace), "PYTHONPATH": "/opt/pkgs" if deps else "", "PYTHONHOME": "/opt/py", **cli_config}
             cwd = "/"
         else:
             argv = [self._python, "-s", "-S", "-c", WORKER_SOURCE]
             env = {
                 "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
-                "HOME": self._sandbox_base,
+                "HOME": str(workspace),
                 "PYTHONPATH": deps or "",
                 "PYTHONDONTWRITEBYTECODE": "1",
-                "TMPDIR": self._sandbox_base,
+                "TMPDIR": str(workspace),
                 "LANG": "C.UTF-8",
                 **cli_config,
             }
-            cwd = self._sandbox_base
+            cwd = str(workspace)
         process = subprocess.Popen(
             argv,
             stdin=subprocess.PIPE,
@@ -1920,7 +1944,7 @@ class ModuleSandbox:
             stderr=subprocess.PIPE,
             cwd=cwd,
             env=env,
-            preexec_fn=self._make_preexec(namespaces, deps),
+            preexec_fn=self._make_preexec(namespaces, deps, str(workspace)),
         )
         assert process.stdin is not None and process.stdout is not None
         process.stdin.write((_proto_dumps(hello) + "\n").encode("utf-8"))
@@ -2281,7 +2305,8 @@ class ModuleSandbox:
             source = self._respond_sources.get((module_id, message.get("rid")))
             reply = {"kind": "respond_result", "cid": message.get("cid"), "ok": False, "error": "respond failed"}
             try:
-                result = await self._trusted_respond(module_id, source, payload, rid=message.get("rid"))
+                with module_scope(module_id):
+                    result = await self._trusted_respond(module_id, source, payload, rid=message.get("rid"))
                 reply = {"kind": "respond_result", "cid": message.get("cid"), "ok": True, "result": result}
             except Exception as exc:
                 reply = {"kind": "respond_result", "cid": message.get("cid"), "ok": False, "error_type": type(exc).__name__, "error": f"{type(exc).__name__}: {exc}"}
@@ -2303,7 +2328,7 @@ class ModuleSandbox:
                     raise PermissionError("callback context is unavailable")
                 action = data.get("action")
                 if action == "respond":
-                    with trusted_scope():
+                    with module_scope(module_id), trusted_scope():
                         value = await callback.respond(str(data.get("text", "")), alert=bool(data.get("alert", False)))
                 elif action == "edit":
                     kwargs: dict[str, Any] = {}
@@ -2320,10 +2345,10 @@ class ModuleSandbox:
                                 kwargs["buttons"] = self._sandbox_buttons(module_id, markup["inline_keyboard"], getattr(callback, "chat_id", None), getattr(callback, "from_id", None))
                         else:
                             kwargs["reply_markup"] = markup
-                    with trusted_scope():
+                    with module_scope(module_id), trusted_scope():
                         value = await callback.edit(str(data.get("text", "")), **kwargs)
                 elif action == "delete":
-                    with trusted_scope():
+                    with module_scope(module_id), trusted_scope():
                         value = await callback.delete()
                 else:
                     raise PermissionError("unknown callback action")

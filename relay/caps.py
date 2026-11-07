@@ -6,6 +6,7 @@ import http.client
 import ipaddress
 import socket
 import asyncio
+import logging
 import os
 import secrets
 import shutil
@@ -489,10 +490,10 @@ class CapabilityHost:
             if hasattr(app, "get_msg"):
                 try:
                     msg = await app.get_msg(peer_value, msg_id)
-                    if isinstance(msg, dict) and msg.get("_") != "messageEmpty":
-                        return msg
+                    if isinstance(msg, dict) and cast(dict[str, Any], msg).get("_") != "messageEmpty":
+                        return cast(dict[str, Any], msg)
                 except Exception as exc:
-                    log.debug("fetch op get_msg failed: %s", exc)
+                    logging.getLogger(__name__).debug("fetch op get_msg failed: %s", exc)
             for message in await _history(peer_value, msg_id + 1, 10):
                 if message.get("id") == msg_id:
                     return message
@@ -508,10 +509,10 @@ class CapabilityHost:
             if hasattr(app, "get_msg"):
                 try:
                     msg = await app.get_msg(payload.get("peer"), reply_id)
-                    if isinstance(msg, dict) and msg.get("_") != "messageEmpty":
-                        return msg
+                    if isinstance(msg, dict) and cast(dict[str, Any], msg).get("_") != "messageEmpty":
+                        return cast(dict[str, Any], msg)
                 except Exception as exc:
-                    log.debug("fetch op reply get_msg failed: %s", exc)
+                    logging.getLogger(__name__).debug("fetch op reply get_msg failed: %s", exc)
             for message in await _history(payload.get("peer"), reply_id + 1, 10):
                 if message.get("id") == reply_id:
                     return message
@@ -670,8 +671,10 @@ class CapabilityHost:
         timeout = payload.get("timeout")
         if timeout is not None and (isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or not 0 < timeout <= 60):
             raise ValueError("MT timeout must be between 0 and 60 seconds")
-        request = getattr(app, rpcname(method))(**kwargs)
-        result = await request if timeout is None else await asyncio.wait_for(request, float(timeout))
+        from .firewall import module_scope
+        with module_scope(module_id):
+            request = getattr(app, rpcname(method))(**kwargs)
+            result = await request if timeout is None else await asyncio.wait_for(request, float(timeout))
         return scrub_blocked_peers(_result_body(result))
 
     def _audit_mt(self, module_id: str, method: str, payload: dict[str, Any]) -> None:

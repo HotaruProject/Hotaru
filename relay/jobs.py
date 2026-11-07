@@ -12,7 +12,7 @@ import socket
 import ssl
 import urllib.parse
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any, Callable, cast
 from uuid import uuid4
 
 import aiohttp
@@ -42,7 +42,7 @@ class Job:
         return Job.jail_preexec(workspace, net_blocked)
 
     @staticmethod
-    def jail_preexec(workspace: str, net_blocked: bool) -> None:
+    def jail_preexec(workspace: str, net_blocked: bool, cwd: str | None = None) -> None:
         if os.name == "nt":
             return
         import ctypes
@@ -136,7 +136,7 @@ class Job:
             _os.rmdir("/old_root")
         except OSError:
             pass
-        _os.chdir(ws_abs)
+        _os.chdir(cwd or ws_abs)
         _os.umask(0o077)
         try:
             _resource.setrlimit(_resource.RLIMIT_CORE, (0, 0))
@@ -180,8 +180,10 @@ class Job:
     def send(self, data: Any, binary: bool = False) -> None:
         if self.done:
             raise ValueError("request is closed")
-        if binary:
-            payload: Any = base64.b64decode(data) if isinstance(data, str) else bytes(data)
+        if self.kind != "net" and data is None:
+            payload = None
+        elif binary:
+            payload = base64.b64decode(data) if isinstance(data, str) else bytes(data)
         else:
             payload = data if isinstance(data, str) else json.dumps(data, ensure_ascii=False, default=str)
         if self.out.full():
@@ -313,15 +315,26 @@ class Job:
     async def shell(self) -> dict[str, Any]:
         data = self.data
         self.workspace.mkdir(parents=True, exist_ok=True)
-        cwd = str(Path(data.get("cwd") or self.workspace).expanduser().resolve())
+        self.workspace = self.workspace.resolve()
+        requested_cwd = Path(data.get("cwd") or self.workspace).expanduser()
+        cwd = str((self.workspace / requested_cwd).resolve())
+        if not Path(cwd).is_relative_to(self.workspace):
+            raise PermissionError("shell cwd escapes the module workspace")
         result: dict[str, Any] = {"stdout": "", "stderr": "", "cwd": cwd, "truncated": False, "returncode": None}
         self.result = result
         env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "HOME": str(self.workspace), "LANG": "C.UTF-8"}
         if os.name == "nt":
             env.update({key: os.environ[key] for key in ("SystemRoot", "COMSPEC", "PATHEXT") if key in os.environ})
+        supplied_env: object = data.get("env", {})
+        if not isinstance(supplied_env, dict):
+            raise ValueError("shell env requires a mapping")
+        for key, value in cast(dict[object, object], supplied_env).items():
+            if not isinstance(key, str) or not isinstance(value, str) or not key or "=" in key or "\0" in key or "\0" in value:
+                raise ValueError("shell env requires string keys and values")
+            env[key] = value
         preexec = None
         if os.name != "nt":
-            preexec = lambda: Job._jail_preexec(str(self.workspace), self.net_blocked)
+            preexec = lambda: Job.jail_preexec(str(self.workspace), self.net_blocked, cwd)
         spawn = asyncio.create_task(asyncio.create_subprocess_shell(str(data["command"]), cwd=cwd, env=env,
                     stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
                     preexec_fn=preexec, start_new_session=os.name != "nt"))
@@ -345,6 +358,7 @@ class Job:
                     if not chunk:
                         break
                     handle.write(chunk)
+                    self.emit(name, base64.b64encode(chunk).decode(), binary=True)
                     raw.extend(chunk)
                     if len(raw) > self.inline_tail:
                         del raw[:-self.inline_tail]
@@ -361,15 +375,23 @@ class Job:
             if proc.stdin is None:
                 return
             try:
-                proc.stdin.write(str(data.get("stdin", "")).encode())
+                initial = data.get("stdin", "")
+                proc.stdin.write(initial if isinstance(initial, bytes) else str(initial).encode())
                 await proc.stdin.drain()
+                if data.get("stream"):
+                    while True:
+                        payload, binary = await self.out.get()
+                        if payload is None:
+                            break
+                        proc.stdin.write(payload if binary else payload.encode())
+                        await proc.stdin.drain()
             except (BrokenPipeError, ConnectionResetError):
                 pass
             finally:
                 proc.stdin.close()
 
         tasks = [asyncio.create_task(read(proc.stdout, "stdout")), asyncio.create_task(read(proc.stderr, "stderr")), asyncio.create_task(write())]
-        completion = asyncio.gather(proc.wait(), *tasks)
+        completion = asyncio.gather(proc.wait(), *tasks[:2])
         try:
             requested = data.get("timeout")
             await asyncio.wait_for(completion, max(1.0, float(requested)) if requested is not None else None)

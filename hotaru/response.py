@@ -950,10 +950,12 @@ class ModuleContext(ContextOperations):
         return result
 
     async def respond(self, content: Any = None, **kwargs: Any) -> Any:
-        if any(key in kwargs for key in ("peer", "chat_id", "message_id", "target")):
-            return await self._ctx_operation("respond", content, **kwargs)
-        async with self._response_lock:
-            return await self._respond(content, **kwargs)
+        from relay.firewall import module_scope
+        with module_scope(self.module_id):
+            if any(key in kwargs for key in ("peer", "chat_id", "message_id", "target")):
+                return await self._ctx_operation("respond", content, **kwargs)
+            async with self._response_lock:
+                return await self._respond(content, **kwargs)
 
     async def _respond(self, content: Any = None, **kwargs: Any) -> Any:
         callback = kwargs.pop("callback", None)
