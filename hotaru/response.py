@@ -520,7 +520,7 @@ class ModuleContext(ContextOperations):
 
     module_id: str
     _source: Any
-    state: StateNamespace
+    _state: StateNamespace = field(repr=False)
     responses: ResponseService
     cap_host: Any = None
     callback_router: Any = None
@@ -531,6 +531,17 @@ class ModuleContext(ContextOperations):
     _response_source: Any = None
     _response_form: Any = None
     _response_lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False)
+
+    @property
+    def state(self) -> StateNamespace:
+        runtime_state = getattr(self.runtime, "state", None)
+        if runtime_state is not None:
+            return runtime_state.namespace(self.module_id)
+        return self._state
+
+    @state.setter
+    def state(self, value: StateNamespace) -> None:
+        self._state = value
 
     def __repr__(self) -> str:
         return f"ModuleContext({self.module_id!r})"

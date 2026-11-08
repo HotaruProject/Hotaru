@@ -219,12 +219,13 @@ class BackupService:
         nonce = data[len(magic):len(magic) + NONCE_SIZE]
         ciphertext = data[len(magic) + NONCE_SIZE:]
         plaintext: bytes | None = None
-        if key is not None:
+        if key:
             try:
                 plaintext = aes_gcm_decrypt(self._key(key), nonce, ciphertext, magic)
-            except Exception:
-                plaintext = None
-        if plaintext is None:
+            except Exception as exc:
+                log.error("backup decryption failed for %s: %s: %s", archive, type(exc).__name__, exc)
+                raise BackupError(f"backup decryption failed: {type(exc).__name__}: {exc}") from exc
+        else:
             try:
                 plaintext = aes_gcm_decrypt(self._key(None), nonce, ciphertext, magic)
             except Exception as exc:

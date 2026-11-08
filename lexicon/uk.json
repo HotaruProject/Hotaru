@@ -809,7 +809,11 @@
       "usage": "<code>{prefix}backup [now|on|off]</code>",
       "restored_files": "Відновлено файлів: {count}",
       "restore_confirm": "<tg-emoji emoji-id=\"5325732612084351248\">📦</tg-emoji> <b>Відновлення бекапу</b><blockquote><tg-emoji emoji-id=\"5258258882022612173\">⏳</tg-emoji> Підтвердьте повне відновлення файлової системи, стану БД та модулів. Поточні дані будуть замінені.</blockquote>",
-      "restore_action": "Відновити"
+      "restore_action": "Відновити",
+      "key_invalid": "Невірний ключ шифрування",
+      "restoring": "Відновлюємо резервну копію...",
+      "archive_missing": "Резервну копію не знайдено. Дайте відповідь на .hbk файл або вкажіть шлях",
+      "restore_failed": "Помилка відновлення: {error}"
     },
     "intrusion": {
       "alert": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>Сесія Hotaru використовується ззовні</b>\n\n{source}\n\n<blockquote><code>{detail}</code></blockquote>\n\nІнший клієнт підключився до сесії Hotaru. Hotaru зупинився для безпеки. Якщо це були не ви, завершіть чужу сесію.",

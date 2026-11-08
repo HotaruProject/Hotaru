@@ -809,7 +809,11 @@
       "usage": "<code>{prefix}backup [now|on|off]</code>",
       "restored_files": "Қалпына келтірілген файлдар: {count}",
       "restore_confirm": "<tg-emoji emoji-id=\"5325732612084351248\">📦</tg-emoji> <b>Резервтік көшірмені қалпына келтіру</b><blockquote><tg-emoji emoji-id=\"5258258882022612173\">⏳</tg-emoji> Файлдық жүйені, деректер қорын және модульдерді толық қалпына келтіруді растаңыз.</blockquote>",
-      "restore_action": "Қалпына келтіру"
+      "restore_action": "Қалпына келтіру",
+      "key_invalid": "Қате шифрлеу кілті",
+      "restoring": "Резервтік көшірмені қалпына келтіруде...",
+      "archive_missing": "Резервтік көшірме табылмады. .hbk файлына жауап беріңіз немесе жолды көрсетіңіз",
+      "restore_failed": "Қалпына келтіру қатесі: {error}"
     },
     "intrusion": {
       "alert": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>Hotaru сессиясы сырттан пайдаланылуда</b>\n\n{source}\n\n<blockquote><code>{detail}</code></blockquote>\n\nБасқа клиент Hotaru сессиясына қосылды. Hotaru қауіпсіздік үшін тоқтатылды.",
