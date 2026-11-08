@@ -24,8 +24,8 @@ def _msg_field(value: Any, key: str, default: Any = None) -> Any:
 
 
 class MTLayerInfo(int):
-    _methods: int
-    _constructors: int
+    _methods: int = 0
+    _constructors: int = 0
 
     def __new__(cls, number: int, methods: int = 0, constructors: int = 0) -> MTLayerInfo:
         value = cast(MTLayerInfo, int.__new__(cls, number))

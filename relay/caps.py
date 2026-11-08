@@ -18,7 +18,7 @@ import urllib.parse
 import urllib.request
 from functools import partial
 from types import SimpleNamespace
-from typing import TYPE_CHECKING, Any, Callable, cast
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, cast
 
 from .denylist import is_blocked_host, is_blocked_peer, is_readonly_peer, payload_hits_blocked, payload_hits_readonly
 from .firewall import trusted_scope
@@ -225,19 +225,71 @@ def describe(capabilities: tuple[str, ...], t: Callable[..., str] | None = None)
     return "\n".join(lines)
 
 
-def _result_body(value: Any) -> dict[str, Any]:
+def _result_body(value: Any) -> Any:
+    if isinstance(value, list):
+        return cast(Any, value)
     if not isinstance(value, dict):
         return {}
     payload = cast('dict[str, Any]', value)
     result = payload.get("result")
-    return cast('dict[str, Any]', result) if isinstance(result, dict) else payload
+    if isinstance(result, (dict, list)):
+        return cast(Any, result)
+    return cast(Any, payload)
+
+
+def _resolve_public_addresses(hostname: str, port: int) -> list[tuple[Any, ...]]:
+    try:
+        addresses = socket.getaddrinfo(hostname, port, type=socket.SOCK_STREAM, proto=socket.IPPROTO_TCP)
+    except Exception:
+        addresses = []
+    valid: list[tuple[Any, ...]] = []
+    for info in addresses:
+        try:
+            addr = ipaddress.ip_address(info[4][0])
+            if addr.is_global and not addr.is_multicast:
+                valid.append(info)
+        except Exception:
+            pass
+    if valid:
+        return valid
+    if "." in hostname and not any(hostname.endswith(s) for s in (".localhost", ".local", ".internal", ".arpa", ".test", ".example")):
+        try:
+            ipaddress.ip_address(hostname)
+            is_ip = True
+        except ValueError:
+            is_ip = False
+        if not is_ip:
+            for doh_url in ("https://1.1.1.1/dns-query", "https://8.8.8.8/resolve"):
+                try:
+                    q_url = f"{doh_url}?name={urllib.parse.quote(hostname)}&type=A"
+                    req = urllib.request.Request(q_url, headers={"Accept": "application/dns-json", "User-Agent": "Hotaru/1.0"})
+                    with urllib.request.urlopen(req, timeout=3.0) as resp:
+                        data = json.loads(resp.read().decode("utf-8", errors="replace"))
+                        data_dict = cast('dict[str, Any]', data) if isinstance(data, dict) else None
+                        answers = cast('list[Any]', data_dict.get("Answer", [])) if data_dict is not None else []
+                        for ans in answers:
+                            if isinstance(ans, dict) and cast('dict[str, Any]', ans).get("type") == 1:
+                                ip_str = str(cast('dict[str, Any]', ans).get("data", "")).strip()
+                                try:
+                                    ip_obj = ipaddress.ip_address(ip_str)
+                                    if ip_obj.is_global and not ip_obj.is_multicast:
+                                        valid.append((socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, "", (ip_str, port)))
+                                except Exception:
+                                    pass
+                        if valid:
+                            return valid
+                except Exception:
+                    pass
+    if addresses:
+        return addresses
+    return [(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, "", (hostname, port))]
 
 
 def _public_connection(address: tuple[str, int], timeout: Any = None, source_address: Any = None) -> socket.socket:
     hostname, port = address
     if is_blocked_host(hostname):
         raise PermissionError("net url targets a denied host")
-    addresses = socket.getaddrinfo(hostname, port, type=socket.SOCK_STREAM, proto=socket.IPPROTO_TCP)
+    addresses = _resolve_public_addresses(hostname, port)
     for _, _, _, _, target in addresses:
         addr = ipaddress.ip_address(target[0])
         if not addr.is_global or addr.is_multicast:
@@ -320,6 +372,68 @@ def _workspace_open(root: Path, name: str, flags: int) -> int:
         return fd
     finally:
         os.close(directory)
+
+
+async def _resolve_mt_peer_arg(app: Any, value: Any) -> Any:
+    if isinstance(value, (bytes, bytearray, memoryview)):
+        return bytes(cast(Any, value))
+    if isinstance(value, dict):
+        d_val = cast('dict[Any, Any]', value)
+        tag = str(d_val.get("_") or "")
+        if tag.startswith(("inputPeer", "inputUser", "inputChannel")):
+            return cast(Any, value)
+    if isinstance(value, list):
+        return [await _resolve_mt_peer_arg(app, item) for item in cast('list[Any]', value)]
+    if isinstance(value, (str, int)) and not isinstance(value, bool):
+        mt_transport = getattr(app, "mt", None)
+        if mt_transport is not None and hasattr(mt_transport, "resolve_peer"):
+            try:
+                return await mt_transport.resolve_peer(value)
+            except Exception:
+                pass
+        resolve_un = getattr(app, "mt_contacts_resolve_username", None)
+        if callable(resolve_un) and isinstance(value, str):
+            try:
+                resolved = await cast(Callable[..., Awaitable[Any]], resolve_un)(username=value.lstrip("@"))
+                resolved_dict = cast('dict[str, Any]', resolved) if isinstance(resolved, dict) else None
+                body_val: Any = resolved_dict.get("result") if resolved_dict is not None and "result" in resolved_dict else resolved_dict
+                body_dict: dict[str, Any] | None = cast('dict[str, Any]', body_val) if isinstance(body_val, dict) else None
+                users = cast('list[Any]', body_dict.get("users", [])) if body_dict is not None else []
+                if users and isinstance(users[0], dict):
+                    u_dict = cast('dict[str, Any]', users[0])
+                    return {"_": "inputPeerUser", "user_id": int(cast(int | str, u_dict.get("id", 0))), "access_hash": int(cast(int | str, u_dict.get("access_hash", 0)))}
+                chats = cast('list[Any]', body_dict.get("chats", [])) if body_dict is not None else []
+                if chats and isinstance(chats[0], dict):
+                    c_dict = cast('dict[str, Any]', chats[0])
+                    return {"_": "inputPeerChannel", "channel_id": int(cast(int | str, c_dict.get("id", 0))), "access_hash": int(cast(int | str, c_dict.get("access_hash", 0)))}
+            except Exception:
+                pass
+    return cast(Any, value)
+
+
+async def _resolve_nested_peers(app: Any, obj: Any) -> Any:
+    if isinstance(obj, dict):
+        d_obj = cast('dict[Any, Any]', obj)
+        ctor = cast(Any, d_obj.get("_"))
+        if ctor in ("inputNotifyPeer", "inputFolderPeer", "inputDialogPeer", "inputDialogPeerCommunity", "botCommandScopePeer", "botCommandScopePeerAdmins", "inputPeerPhotoFileLocation", "inputSavedStarGiftChat", "paidReactionPrivacyPeer") and "peer" in d_obj:
+            peer_val = d_obj["peer"]
+            if isinstance(peer_val, (str, int)) and not isinstance(peer_val, bool):
+                d_obj = dict(d_obj, peer=await _resolve_mt_peer_arg(app, peer_val))
+        elif ctor == "botCommandScopePeerUser" and "user_id" in d_obj:
+            user_val = d_obj["user_id"]
+            if isinstance(user_val, (str, int)) and not isinstance(user_val, bool):
+                d_obj = dict(d_obj, user_id=await _resolve_mt_peer_arg(app, user_val))
+        res: dict[Any, Any] = {}
+        for k, v in list(d_obj.items()):
+            if isinstance(v, (dict, list)):
+                res[k] = await _resolve_nested_peers(app, v)
+            else:
+                res[k] = v
+        return cast(Any, res)
+    if isinstance(obj, list):
+        l_obj = cast('list[Any]', obj)
+        return cast(Any, [await _resolve_nested_peers(app, item) for item in l_obj])
+    return obj
 
 
 class CapabilityHost:
@@ -632,6 +746,10 @@ class CapabilityHost:
             raise PermissionError("mt capability requires a namespaced RPC method")
         if canonical.startswith(("auth.", "phone.") + MT_BLOCKED_PREFIXES) or canonical in MT_BLOCKED:
             raise PermissionError(f"mt method is blocked by policy: {method}")
+        if lowered in ("messages.getbotcallbackanswer", "messages.setbotcallbackanswer"):
+            cb_data = str(payload.get("kwargs") or "") + str(payload.get("data") or "")
+            if "caps_confirm" in cb_data or "caps_cancel" in cb_data:
+                raise PermissionError("modules are forbidden from interacting with consent screens")
         if payload_hits_blocked(payload):
             raise PermissionError("mt payload targets a denied peer")
         if payload_hits_readonly(payload):
@@ -669,6 +787,10 @@ class CapabilityHost:
             limit = kwargs.get("limit", 100)
             if isinstance(limit, (int, float)) and int(limit) > 500:
                 kwargs = dict(kwargs, limit=500)
+        for key in ("peer", "id", "bot", "user_id", "participant", "send_as", "join_as", "community"):
+            if key in kwargs:
+                kwargs = dict(kwargs, **{key: await _resolve_mt_peer_arg(app, kwargs[key])})
+        kwargs = await _resolve_nested_peers(app, kwargs)
         timeout = payload.get("timeout")
         if timeout is not None and (isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or not 0 < timeout <= 60):
             raise ValueError("MT timeout must be between 0 and 60 seconds")
@@ -740,7 +862,7 @@ class CapabilityHost:
         if not port:
             raise PermissionError("net url must contain a port")
         try:
-            for info in socket.getaddrinfo(hostname, port, proto=socket.IPPROTO_TCP):
+            for info in _resolve_public_addresses(hostname, port):
                 addr = ipaddress.ip_address(info[4][0])
                 if not addr.is_global or addr.is_multicast:
                     raise PermissionError("net url resolves to a non-public address")
@@ -924,8 +1046,108 @@ class CapabilityHost:
         value = sources[0]
         if not (value.startswith("https://") or "\n" in value or value.lstrip().startswith("HOTARU")):
             raise PermissionError("modules load requires an https url or module source text")
-        loaded, action = await runtime.load_module(value)
+        loaded, action = await runtime.load_module(value, caller_id=caller_id)
         module_id = loaded.manifest.module_id
+        if action == "confirm" and caller_id != "catalyst":
+            chat_id = payload.get("chat_id") or payload.get("peer")
+            message_id = payload.get("message_id")
+            edit = bool(payload.get("edit", False))
+            reply_to = payload.get("reply_to")
+            notice = payload.get("notice")
+            form_id = payload.get("form_id")
+
+            source_obj = None
+            active_nav_form = None
+            if hasattr(runtime, "sandbox") and getattr(runtime.sandbox, "_screen_calls", None):
+                calls = [binding for (m, _), binding in runtime.sandbox._screen_calls.items() if m == caller_id]
+                if calls:
+                    active_nav = calls[-1][1]
+                    active_nav_form = getattr(active_nav, "form", None)
+            if hasattr(runtime, "sandbox") and getattr(runtime.sandbox, "_respond_sources", None):
+                sources = [s for (m, _), s in runtime.sandbox._respond_sources.items() if m == caller_id and s is not None]
+                if sources:
+                    source_obj = sources[-1]
+            if form_id is not None and runtime.screens is not None:
+                try:
+                    active_nav_form = runtime.screens.load(int(form_id))
+                except Exception:
+                    pass
+
+            target_chat = chat_id or (getattr(source_obj, "chat_id", None) if source_obj else None) or getattr(getattr(runtime, "kernel", None), "owner_id", None) or "me"
+            target_msg = message_id or (getattr(source_obj, "id", None) if source_obj else None) or (getattr(source_obj, "message_id", None) if source_obj else None) or 0
+
+            rendered = await runtime._render_caps_screen(module_id, loaded.manifest, loaded.source, target_chat, int(target_msg), caller_id=caller_id, notice=notice)
+            from hotaru.screens import Screen
+            screen = Screen(cast(Any, rendered[0]), cast(Any, rendered[1])) if isinstance(rendered, tuple) else Screen(str(rendered), [])
+
+            displayed = False
+            if edit and active_nav_form is not None and runtime.screens is not None:
+                try:
+                    await runtime.screens.render(active_nav_form, screen)
+                    displayed = True
+                except Exception:
+                    pass
+
+            if edit and not displayed and runtime.screens is not None and target_chat is not None and target_msg:
+                try:
+                    db = runtime.screens._ensure()
+                    row = db.execute("SELECT id FROM screen_forms WHERE chat = ? AND message_id = ? ORDER BY touched DESC LIMIT 1", (str(target_chat), int(target_msg))).fetchone()
+                    if row:
+                        found_form = runtime.screens.load(int(row[0]))
+                        if found_form is not None:
+                            await runtime.screens.render(found_form, screen)
+                            displayed = True
+                except Exception:
+                    pass
+
+            if edit and not displayed and runtime.screens is not None:
+                if source_obj is not None:
+                    try:
+                        await runtime.screens.open("catalyst", source_obj, screen)
+                        displayed = True
+                    except Exception:
+                        pass
+                elif target_chat is not None and target_msg:
+                    try:
+                        from types import SimpleNamespace
+                        synthetic = SimpleNamespace(chat_id=target_chat, id=int(target_msg), message_id=int(target_msg), src="mt")
+                        await runtime.screens.open("catalyst", synthetic, screen)
+                        displayed = True
+                    except Exception:
+                        pass
+
+            if not displayed and runtime.screens is not None and target_chat is not None:
+                try:
+                    await runtime.screens.send("catalyst", target_chat, screen, reply_to=int(reply_to) if reply_to is not None else None)
+                    displayed = True
+                except Exception:
+                    pass
+
+            if not displayed and source_obj is not None and runtime.screens is not None:
+                try:
+                    await runtime.screens.open("catalyst", source_obj, screen)
+                    displayed = True
+                except Exception:
+                    pass
+
+            pending_consents: dict[str, Any] = cast('dict[str, Any]', getattr(runtime, "_pending_caps_consents", None) or {})
+            setattr(runtime, "_pending_caps_consents", pending_consents)
+            fut: asyncio.Future[Any] = asyncio.get_running_loop().create_future()
+            pending_consents[module_id] = fut
+            try:
+                loaded, action = await asyncio.wait_for(fut, timeout=300.0)
+            except TimeoutError:
+                pending_consents.pop(module_id, None)
+                raise PermissionError("module approval timed out")
+            except Exception as exc:
+                pending_consents.pop(module_id, None)
+                return {
+                    "module_id": module_id,
+                    "version": loaded.manifest.version,
+                    "action": "cancelled",
+                    "error": str(exc),
+                }
+
         return {
             "module_id": module_id,
             "version": loaded.manifest.version,

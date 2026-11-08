@@ -491,7 +491,6 @@ class InlineManager:
                 if self.runtime.observatory is not None:
                     self.runtime.observatory.emit("inline", "configure_failed", username=info.username)
         asyncio.create_task(self._tune_bot(info), name="hotaru:tune-bot")
-        asyncio.create_task(self._start_bot_chat(info.username), name="hotaru:bot-chat")
         if hasattr(self.runtime, "sync_web_app"):
             asyncio.create_task(self.runtime.sync_web_app(clean_bot=info.username), name="hotaru:sync-webapp")
         return info
@@ -553,20 +552,82 @@ class InlineManager:
         key = f"brand-avatar-bot-{info.bot_id}"
         if state is not None and state.get_setting(key) == digest:
             return
+        uploaded_file = None
+        from relay.files import document, put
         try:
             with trusted_scope():
-                peer = await app.mt.resolve_peer("@" + info.username)
-                peer_dict = cast('dict[str, Any]', peer.to_dict() if hasattr(peer, "to_dict") else peer if isinstance(peer, dict) else {})
-                access_hash = peer_dict.get("access_hash") or 0
-                bot = {"_": "inputUser", "user_id": int(info.bot_id), "access_hash": int(access_hash)}
-                from relay.files import document, put
+                bot = None
+                if hasattr(app, "_typed_peer"):
+                    try:
+                        bot = await app._typed_peer("@" + info.username, "user")
+                    except Exception:
+                        bot = None
+                if bot is None:
+                    resolve_un = getattr(app, "mt_contacts_resolve_username", None)
+                    if callable(resolve_un):
+                        try:
+                            resolved = await cast(Callable[..., Awaitable[Any]], resolve_un)(username=info.username.lstrip("@"))
+                            resolved_dict = cast('dict[str, Any]', resolved) if isinstance(resolved, dict) else None
+                            body_val: Any = resolved_dict.get("result") if resolved_dict is not None and "result" in resolved_dict else resolved_dict
+                            body_dict: dict[str, Any] | None = cast('dict[str, Any]', body_val) if isinstance(body_val, dict) else None
+                            users = cast('list[Any]', body_dict.get("users", [])) if body_dict is not None else []
+                            if users and isinstance(users[0], dict):
+                                u_dict = cast('dict[str, Any]', users[0])
+                                bot = {"_": "inputUser", "user_id": int(cast(int | str, u_dict.get("id", info.bot_id))), "access_hash": int(cast(int | str, u_dict.get("access_hash", 0)))}
+                        except Exception:
+                            bot = None
+                if bot is None:
+                    from goygram import ext
+                    peer: Any = await app.mt.resolve_peer("@" + info.username)
+                    if isinstance(peer, (bytes, bytearray, memoryview)):
+                        peer_dict: dict[str, Any] = cast('dict[str, Any]', ext.deserialize_constructor(bytes(cast(Any, peer))))
+                    elif isinstance(peer, dict):
+                        peer_dict = cast('dict[str, Any]', peer)
+                    elif hasattr(peer, "to_dict"):
+                        peer_dict = cast('dict[str, Any]', getattr(peer, "to_dict")())
+                    else:
+                        peer_dict = {}
+                    access_val: Any = peer_dict.get("access_hash")
+                    access_hash: int = int(access_val) if access_val else 0
+                    bot = {"_": "inputUser", "user_id": int(info.bot_id), "access_hash": access_hash}
                 up = await put(app, str(logo_path), file_name=str(logo_path.name))
                 uploaded_file = document(up)["file"]
                 await app.mt_photos_upload_profile_photo(bot=bot, file=uploaded_file)
             if state is not None:
                 state.set_setting(key, digest)
+            return
         except Exception as exc:
-            if self.runtime.observatory is not None:
+            bf_ok = False
+            try:
+                with trusted_scope():
+                    if uploaded_file is None:
+                        up = await put(app, str(logo_path), file_name=str(logo_path.name))
+                        uploaded_file = document(up)["file"]
+                    async with BotFatherGuard(app), BotFatherConversation(app) as conv:
+                        try:
+                            await conv.say("/cancel")
+                            await conv.response()
+                        except Exception:
+                            pass
+                        await conv.say("/setuserpic")
+                        await conv.response()
+                        await conv.say("@" + info.username.lstrip("@"))
+                        await conv.response()
+                        peer = await app.mt.resolve_peer(BOTFATHER)
+                        await app.mt_messages_send_media(
+                            peer=peer,
+                            media={"_": "inputMediaUploadedPhoto", "file": uploaded_file},
+                            message="",
+                            random_id=secrets.randbits(63),
+                        )
+                        await conv.response()
+                        bf_ok = True
+                if bf_ok and state is not None:
+                    state.set_setting(key, digest)
+                return
+            except Exception:
+                pass
+            if not bf_ok and self.runtime.observatory is not None:
                 self.runtime.observatory.emit("inline", "avatar_failed", error=type(exc).__name__, detail=str(exc)[:140])
 
     async def _start_bot_chat(self, username: str, *, force: bool = False) -> bool:
@@ -846,6 +907,11 @@ class InlineManager:
         async with self._start_lock:
             if self._task is not None and not self._task.done():
                 return
+            main = getattr(self.runtime, "app", None)
+            main_mt = getattr(main, "mt", None) if main is not None else None
+            auth_ready = getattr(main_mt, "auth_ready", None)
+            if main is None or main_mt is None or auth_ready is None or not auth_ready.is_set():
+                raise RuntimeError("cannot start inline bot without active MTProto user session")
             if self.info is None:
                 await self.ensure_bot(allow_create=True)
             self._stop.clear()
@@ -936,6 +1002,11 @@ class InlineManager:
         while not self._stop.is_set():
             app = None
             try:
+                main = getattr(self.runtime, "app", None)
+                main_mt = getattr(main, "mt", None) if main is not None else None
+                auth_ready = getattr(main_mt, "auth_ready", None)
+                if main is None or main_mt is None or auth_ready is None or not auth_ready.is_set():
+                    break
                 if self.info is None:
                     await self.ensure_bot(allow_create=True)
                 app = self.bot_app = self._new_app()
@@ -996,6 +1067,19 @@ class InlineManager:
                 self.runtime.observatory.emit("inline", "ready_set", self_id=app.session.self_id, dc=app.session.dc)
             warm = asyncio.create_task(self._warm_owner_peer(app), name="hotaru:inline-warm")
             tasks.append(asyncio.create_task(self._watch_bot(app), name="hotaru:inline-health"))
+            async def _watch_user_session() -> None:
+                while not self._stop.is_set():
+                    await asyncio.sleep(2.0)
+                    main_ref = getattr(self.runtime, "app", None)
+                    main_mt = getattr(main_ref, "mt", None) if main_ref is not None else None
+                    if main_ref is None or main_mt is None:
+                        break
+                    auth_ready = getattr(main_mt, "auth_ready", None)
+                    stop_ev = getattr(main_mt, "stop_ev", None)
+                    if auth_ready is None or not auth_ready.is_set() or (stop_ev is not None and stop_ev.is_set()):
+                        break
+                self._stop.set()
+            tasks.append(asyncio.create_task(_watch_user_session(), name="hotaru:inline-user-guard"))
             stop = asyncio.create_task(self._stop.wait(), name="hotaru:inline-stop")
             tasks.append(stop)
             done, _ = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
@@ -1135,32 +1219,58 @@ class InlineManager:
                 pass
 
     def _allows_form(self, event: Any, *, chosen: bool = False) -> bool:
-        text = str(getattr(event, "query", "") or "").strip()
-        actor = getattr(event, "from_id", None)
-        if type(actor) is not int or actor <= 0:
+        if isinstance(event, dict):
+            d_event: dict[str, Any] = cast('dict[str, Any]', event)
+            text: str = str(d_event.get("query") or "").strip()
+            actor: Any = d_event.get("from_id")
+            if actor is None:
+                from_u: Any = d_event.get("from")
+                if isinstance(from_u, dict):
+                    actor = cast('dict[str, Any]', from_u).get("id")
+            if actor is None:
+                actor = cast(Any, d_event.get("user_id")) or cast(Any, d_event.get("sender_id"))
+            event_msg_id: Any = d_event.get("msg_id")
+        else:
+            text = str(getattr(event, "query", "") or "").strip()
+            actor = getattr(event, "from_id", None)
+            if actor is None:
+                from_user: Any = getattr(event, "from_user", None)
+                if from_user is not None:
+                    actor = getattr(from_user, "id", None)
+            if actor is None:
+                actor = getattr(event, "user_id", None) or getattr(event, "sender_id", None)
+            event_msg_id = getattr(event, "msg_id", None)
+
+        if not isinstance(actor, int) or actor <= 0:
             return False
         if text.startswith("hotaru-input:"):
             token = text.partition(" ")[0].split(":", 1)[1]
             request = self.runtime._input_request(token)
+            req_item: Any = request[2] if request is not None and len(request) > 2 else None
             return bool(
                 request is not None
                 and (request[3] is None or request[3] > time.monotonic())
-                and actor == getattr(request[2], "_hotaru_actor_id", getattr(request[2], "from_id", None))
+                and actor == getattr(req_item, "_hotaru_actor_id", getattr(req_item, "from_id", None))
                 and token not in self._chosen_pending
             )
         if text.startswith("hotaru-form:"):
             nonce = text.split(":", 1)[1]
             forms: dict[str, Any] = getattr(self.runtime, "_inline_forms", None) or {}
-            if actor != self._owner_id() or nonce not in forms:
+            owner = self._owner_id()
+            if (owner is not None and actor != owner) or nonce not in forms:
                 return False
             if chosen:
                 pending: dict[str, asyncio.Event] = getattr(self.runtime, "_form_chosen", None) or {}
                 ready = pending.get(nonce)
-                return ready is not None and not ready.is_set() and getattr(event, "msg_id", None) is not None
+                return ready is not None and not ready.is_set() and event_msg_id is not None
         return True
 
     async def _dispatch_inline(self, query: Any) -> None:
         if not self._allows_form(query):
+            try:
+                await query.answer(results=[], cache_time=0, is_personal=True)
+            except Exception:
+                pass
             return
         text = str(getattr(query, "query", ""))
         if self.runtime.observatory is not None:

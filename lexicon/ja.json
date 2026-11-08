@@ -93,11 +93,11 @@
       "commands": {
         "restart": {
           "description": "ユーザーボット再起動",
-          "usage": "[-f|--force]"
+          "usage": "<-f|--force>"
         },
         "stop": {
           "description": "ユーザーボット停止",
-          "usage": "[-f|--force]"
+          "usage": "<-f|--force>"
         },
         "start": {
           "description": "ユーザーボット再開",
@@ -128,16 +128,19 @@
       "commands": {
         "upd": {
           "description": "更新の確認と適用",
-          "usage": "[force]"
+          "usage": "<-f|--force>"
         },
         "updlog": {
-          "description": "変更ログ表示"
+          "description": "変更ログ表示",
+          "usage": ""
         },
         "updoff": {
-          "description": "更新通知を無効化"
+          "description": "更新通知を無効化",
+          "usage": ""
         },
         "updon": {
-          "description": "更新通知を有効化"
+          "description": "更新通知を有効化",
+          "usage": ""
         }
       },
       "restarted": "<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> <b>Hotaruが正常に更新されました</b>\n<blockquote><tg-emoji emoji-id=\"5258152182150077732\">⚡️</tg-emoji> <b>再起動時間:</b> <code>{took}</code></blockquote>",
@@ -560,11 +563,11 @@
       "commands": {
         "alias": {
           "description": "コマンドの別名を作成",
-          "usage": "<alias> <command>"
+          "usage": "[alias] [command]"
         },
         "rmalias": {
           "description": "コマンドの別名を削除",
-          "usage": "<alias>"
+          "usage": "[alias]"
         },
         "lsalias": {
           "description": "コマンドエイリアスの一覧を表示",
@@ -572,7 +575,7 @@
         },
         "prefix": {
           "description": "コマンドのプレフィックスを変更",
-          "usage": "<prefix>"
+          "usage": "[prefix]"
         },
         "settings": {
           "description": "設定を開く",
@@ -580,7 +583,7 @@
         },
         "config": {
           "description": "設定を開く",
-          "usage": "[module]"
+          "usage": "<module> <parameter|reset> <value>"
         }
       }
     },
@@ -660,11 +663,11 @@
       "commands": {
         "py": {
           "description": "Pythonコードを実行",
-          "usage": "[-so] <code>"
+          "usage": "<-so> [code]"
         },
         "sh": {
           "description": "シェルコマンドを実行",
-          "usage": "[-so] <command>"
+          "usage": "<-so> [command]"
         },
         "kill": {
           "description": "実行中のコマンドを停止",
@@ -679,23 +682,23 @@
       "commands": {
         "ld": {
           "description": "モジュールを読み込む",
-          "usage": "<url|path|reply>"
+          "usage": "[url|path|reply]"
         },
         "ul": {
           "description": "モジュールを停止",
-          "usage": "<module> [-p]"
+          "usage": "[module] <-p>"
         },
         "rl": {
           "description": "モジュールを再読み込み",
-          "usage": "[module] [force]"
+          "usage": "<module> <-f>"
         },
         "ex": {
           "description": "モジュールをエクスポート",
-          "usage": "<module>"
+          "usage": "[module]"
         },
         "resetdb": {
           "description": "モジュールのデータをリセット",
-          "usage": "<module>"
+          "usage": "[module]"
         }
       }
     },
@@ -744,7 +747,8 @@
           "usage": ""
         },
         "ping": {
-          "usage": ""
+          "usage": "",
+          "description": "Measure userbot ping"
         }
       },
       "empty_template": "情報テンプレートが空です",
@@ -777,10 +781,11 @@
       "commands": {
         "backup": {
           "description": "バックアップを送信、または自動送信を設定",
-          "usage": "[send|now]"
+          "usage": "<send|now>"
         },
         "restore": {
-          "usage": "<archive>"
+          "usage": "<-f|--force> <archive>",
+          "description": "Restore from backup archive"
         }
       },
       "config_fields": {
@@ -802,7 +807,13 @@
       "sent": "バックアップを送信しました",
       "topic": "Backups",
       "usage": "<code>{prefix}backup [now|on|off]</code>",
-      "restored_files": "復元されたファイル: {count}"
+      "restored_files": "復元されたファイル: {count}",
+      "restore_confirm": "<tg-emoji emoji-id=\"5325732612084351248\">📦</tg-emoji> <b>バックアップ復元</b><blockquote><tg-emoji emoji-id=\"5258258882022612173\">⏳</tg-emoji> ファイルシステム、DB状態、モジュールの完全復元を確認してください。</blockquote>",
+      "restore_action": "復元",
+      "key_invalid": "無効な暗号化キー",
+      "restoring": "バックアップを復元中...",
+      "archive_missing": "バックアップアーカイブが見つかりません。.hbkファイルに返信するかパスを指定してください",
+      "restore_failed": "復元エラー: {error}"
     },
     "intrusion": {
       "alert": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>Hotaruセッションが外部で使用されています</b>\n\n{source}\n\n<blockquote><code>{detail}</code></blockquote>\n\n別のクライアントがHotaruのセッションに接続しました。安全のためHotaruを停止しました。",
@@ -838,10 +849,12 @@
       "description": "Telegram APIフラッドおよびレート制限からの保護",
       "commands": {
         "shield": {
-          "usage": ""
+          "usage": "",
+          "description": "API flood protection management"
         },
         "suspend_api": {
-          "usage": "<seconds>"
+          "usage": "[seconds]",
+          "description": "Suspend API flood protection"
         }
       },
       "unavailable": "API保護は利用できません",
@@ -908,6 +921,10 @@
         },
         "quickstart": {
           "description": "初期設定ウィザードを開く",
+          "usage": ""
+        },
+        "github": {
+          "description": "Hotaru GitHub repository",
           "usage": ""
         }
       },

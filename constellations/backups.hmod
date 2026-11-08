@@ -1,6 +1,6 @@
 HOTARU = {
     "id": "backups",
-    "version": "1.1.0",
+    "version": "1.2.0",
     "commands": ["backup", "restore"],
     "capabilities": ["mt", "state", "files", "modules"],
     "banner": "https://raw.githubusercontent.com/HotaruProject/Hotaru/develop/hotaru/assets/backups.mp4",
@@ -16,7 +16,7 @@ import html
 import tempfile
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 _lock = asyncio.Lock()
 TOPIC_EMOJI_ID = 5258514780469075716
@@ -27,21 +27,53 @@ def home(ctx: Any, nav: Any = None) -> Any:
     enabled = ctx.config.get("enabled", True)
     hours = ctx.config.get("interval_hours", 24)
     last = ctx.state.get("last_sent", 0)
+    scope = ctx.state.get("scope", "all")
+    custom_key = ctx.state.get("custom_key", "")
     status = ctx.t("kernel.backups.enabled" if enabled else "kernel.backups.disabled")
     text = ctx.t("kernel.backups.heading", icon='<tg-emoji emoji-id="5257969839313526622">📁</tg-emoji>', status=status, hours=hours)
     if last:
         text += "\n" + ctx.t("kernel.backups.last_sent", date=time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime(last)))
     text += "\n" + ctx.t("kernel.backups.destination", topic=html.escape(ctx.t("kernel.backups.topic")))
+    scope_name = ctx.t(f"kernel.backups.scope_{scope}")
+    text += "\n" + ctx.t("kernel.backups.current_scope", scope=scope_name)
+    key_desc = ctx.t("kernel.backups.key_custom") if custom_key else ctx.t("kernel.backups.key_default")
+    text += "\n" + ctx.t("kernel.backups.key_info", status=key_desc)
     text += "\n" + ctx.t("kernel.backups.encrypted")
-    return k.screen(text, [
+    buttons = [
         [k.button(ctx.t("kernel.backups.send_now"), send_now)],
-        [k.button(ctx.t("kernel.backups.disable" if enabled else "kernel.backups.enable"), toggle)],
-        k.footer(),
-    ], banner=k.banner("backups"))
+        [k.button(ctx.t("kernel.backups.scope_btn", scope=scope_name), cycle_scope)],
+        [k.input(ctx.t("kernel.backups.custom_key_btn"), set_custom_key, ctx.t("kernel.backups.custom_key_hint"))],
+    ]
+    if custom_key:
+        buttons.append([k.button(ctx.t("kernel.backups.reset_key_btn"), reset_custom_key)])
+    buttons.append([k.button(ctx.t("kernel.backups.disable" if enabled else "kernel.backups.enable"), toggle)])
+    buttons.append(k.footer())
+    return k.screen(text, buttons, banner=k.banner("backups"))
 
 
 def toggle(ctx: Any, nav: Any) -> Any:
     ctx.config.set("enabled", not ctx.config.get("enabled", True))
+    return home(ctx)
+
+
+def cycle_scope(ctx: Any, nav: Any) -> Any:
+    curr = ctx.state.get("scope", "all")
+    nxt = {"all": "modules", "modules": "state", "state": "all"}.get(curr, "all")
+    ctx.state.set("scope", nxt)
+    return home(ctx)
+
+
+def set_custom_key(ctx: Any, nav: Any) -> Any:
+    val = str(getattr(nav, "value", None) or getattr(nav, "text", None) or nav.arg("val") or "").strip()
+    if val:
+        ctx.state.set("custom_key", val)
+    else:
+        ctx.state.delete("custom_key")
+    return home(ctx)
+
+
+def reset_custom_key(ctx: Any, nav: Any) -> Any:
+    ctx.state.delete("custom_key")
     return home(ctx)
 
 
@@ -53,11 +85,20 @@ async def _send(ctx: Any, *, automatic: bool = False) -> bool:
                 return False
             if now - ctx.state.get("last_sent", 0) < ctx.config.get("interval_hours", 24) * 3600:
                 return False
+            scope = "all"
+            custom_key = None
+        else:
+            scope = ctx.state.get("scope", "all")
+            custom_key = ctx.state.get("custom_key", "") or None
         topic = await ctx.forum.ensure_topic(ctx.t("kernel.backups.topic"), icon_emoji_id=TOPIC_EMOJI_ID)
         if topic is None:
             raise RuntimeError(ctx.t("kernel.backups.not_ready"))
-        archive = ctx.runtime.create_backup()
-        caption = ctx.t("kernel.backups.caption", name=archive.name)
+        archive = ctx.runtime.create_backup(scope=scope, custom_key=custom_key)
+        if custom_key:
+            caption = ctx.t("kernel.backups.caption_custom_key", name=archive.name)
+            ctx.state.delete("custom_key")
+        else:
+            caption = ctx.t("kernel.backups.caption", name=archive.name)
         await ctx.forum.send_file(topic, str(archive), caption, file_name=archive.name)
         ctx.state.set("last_sent", time.time())
         return True
@@ -78,80 +119,254 @@ async def task_send(ctx: Any) -> None:
     await _send(ctx, automatic=True)
 
 
+async def _locate_archive(ctx: Any, target: str | None, reply_id: int | None, inv_obj: Any = None, nav: Any = None) -> tuple[Path | None, Path | None, str | None]:
+    runtime = ctx.runtime
+    if runtime is None:
+        return None, None, ctx.t("kernel.kernel.runtime_unavailable")
+    temporary: Path | None = None
+    if target:
+        target_str = str(target).strip()
+        if target_str.startswith("https://") or target_str.startswith("http://"):
+            from hotaru.modules import fetch_url_content, ModuleStager
+            url = ModuleStager.normalize_url(target_str)
+            with tempfile.NamedTemporaryFile(suffix=".hbk", delete=False) as handle:
+                temporary = Path(handle.name)
+            try:
+                temporary.write_bytes(fetch_url_content(url, timeout=30.0))
+                return temporary, temporary, None
+            except Exception as exc:
+                temporary.unlink(missing_ok=True)
+                return None, None, str(exc)
+        else:
+            p = Path(target_str)
+            if not p.is_file():
+                return None, None, ctx.t("kernel.backups.archive_missing")
+            return p, None, None
+    msg_raw: Any = getattr(inv_obj, "message", None) if inv_obj is not None else None
+    d_msg: dict[str, Any] | None = cast('dict[str, Any]', msg_raw) if isinstance(msg_raw, dict) else None
+    raw_obj: Any = cast(Any, msg_raw)
+    doc_msg: Any = getattr(inv_obj, "reply_message", None) if inv_obj is not None else None
+    if doc_msg is None and raw_obj is not None:
+        if d_msg is not None:
+            doc_msg = d_msg.get("reply_to_message")
+        else:
+            doc_msg = getattr(raw_obj, "reply_to_message", None)
+    if callable(cast(object, doc_msg)):
+        doc_msg = None
+    if doc_msg is None:
+        from hotaru.response import reply_message_id
+        target_reply_id = reply_id or (reply_message_id(raw_obj) if raw_obj is not None else None)
+        if target_reply_id:
+            chat_id: Any = getattr(ctx, "chat_id", None) or (d_msg.get("chat_id") if d_msg is not None else (getattr(inv_obj, "chat_id", None) if inv_obj is not None else (getattr(getattr(nav, "form", None), "chat", None) if nav is not None else None)))
+            app: Any = getattr(runtime, "app", None)
+            if app is not None and hasattr(app, "get_msg") and chat_id is not None:
+                from relay.firewall import trusted_scope
+                with trusted_scope():
+                    try:
+                        doc_msg = await app.get_msg(chat_id, target_reply_id)
+                    except Exception:
+                        doc_msg = None
+            if doc_msg is None and chat_id is not None:
+                cap_host: Any = getattr(runtime, "cap_host", None)
+                if cap_host is not None:
+                    from relay.firewall import trusted_scope
+                    with trusted_scope():
+                        try:
+                            doc_msg = await cap_host.call("loader", "fetch", {"op": "message", "peer": chat_id, "id": target_reply_id})
+                        except Exception:
+                            doc_msg = None
+    if doc_msg is None and raw_obj is not None:
+        if d_msg is not None:
+            if d_msg.get("media") or d_msg.get("document"):
+                doc_msg = cast(Any, d_msg)
+        elif getattr(raw_obj, "media", None) or getattr(raw_obj, "document", None):
+            doc_msg = raw_obj
+    if doc_msg is not None:
+        with tempfile.NamedTemporaryFile(suffix=".hbk", delete=False) as handle:
+            temporary = Path(handle.name)
+        try:
+            await runtime._download_module_message(doc_msg, temporary)
+            return temporary, temporary, None
+        except Exception:
+            temporary.unlink(missing_ok=True)
+            temporary = None
+    directory = runtime.config.state_path.parent / "backups"
+    if directory.is_dir():
+        candidates = sorted([p for p in directory.glob("*.hbk") if p.is_file()], key=lambda p: p.stat().st_mtime, reverse=True)
+        if candidates:
+            return candidates[0], None, None
+    return None, None, ctx.t("kernel.backups.archive_missing")
+
+
+async def _execute_restore(ctx: Any, plan: Any, temporary: Path | None, *, scope: str = "all", key: str | bytes | None = None, engine: Any = None, form: Any = None) -> None:
+    runtime = ctx.runtime
+    try:
+        await runtime.restore_filesystem(plan, runtime.relay_dir, only=scope, key=key)
+        notice = f'<tg-emoji emoji-id="5260726538302660868">✅</tg-emoji> <b>{ctx.t("runtime.restore_done")}</b><blockquote><tg-emoji emoji-id="5258514780469075716">📂</tg-emoji> <b>{ctx.t("kernel.backups.restored_files", count=len(plan.files))}</b></blockquote>'
+        if form is not None and engine is not None:
+            try:
+                await engine._edit(form, notice, [], True)
+                return
+            except Exception:
+                pass
+        await ctx.respond(notice, parse_mode="HTML", output="edit")
+    except Exception as exc:
+        fail_notice = f'<tg-emoji emoji-id="5260342697075416641">❌</tg-emoji> <b>{ctx.t("kernel.backups.restore_failed", error=html.escape(str(exc)))}</b>'
+        if form is not None and engine is not None:
+            try:
+                await engine._edit(form, fail_notice, [], True)
+                return
+            except Exception:
+                pass
+        await ctx.respond(fail_notice, parse_mode="HTML", output="edit")
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+
+
+async def _perform_restore(ctx: Any, target: str | None, reply_id: int | None, inv_obj: Any = None, *, only: str = "all", key: str | bytes | None = None) -> None:
+    runtime = ctx.runtime
+    if runtime is None:
+        await ctx.respond(ctx.t('kernel.kernel.runtime_unavailable'))
+        return
+    archive_path, temporary, error_msg = await _locate_archive(ctx, target, reply_id, inv_obj=inv_obj)
+    if archive_path is None or error_msg is not None:
+        err = error_msg or ctx.t("kernel.backups.archive_missing")
+        await ctx.respond(f'<tg-emoji emoji-id="5260342697075416641">❌</tg-emoji> <b>{html.escape(err)}</b>', parse_mode="HTML", output="edit")
+        return
+    try:
+        plan = runtime.backups.plan(archive_path, key=key)
+    except Exception:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+        await ctx.respond(f'<tg-emoji emoji-id="5260342697075416641">❌</tg-emoji> <b>{ctx.t("kernel.backups.key_invalid")}</b>', parse_mode="HTML", output="edit")
+        return
+    restoring_text = f'<tg-emoji emoji-id="5258514780469075716">📁</tg-emoji> <b>{ctx.t("kernel.backups.restoring")}</b>'
+    await ctx.respond(restoring_text, parse_mode="HTML", output="edit")
+    await _execute_restore(ctx, plan, temporary, scope=only, key=key, form=None)
+
+
+def _render_restore_screen(ctx: Any, target: str | None, reply_id: int | None, scope: str = "all", key: str | None = None) -> Any:
+    k = ctx.screens
+    btn_args: dict[str, Any] = {"scope": scope}
+    if target:
+        btn_args["target"] = target
+    if reply_id:
+        btn_args["reply_id"] = reply_id
+    if key:
+        btn_args["key"] = key
+    scope_name = ctx.t(f"kernel.backups.scope_{scope}")
+    text = ctx.t('kernel.backups.restore_confirm')
+    text += "\n" + ctx.t('kernel.backups.restore_scope', scope=scope_name)
+    key_status = key if key else ctx.t('kernel.backups.key_default')
+    text += "\n" + ctx.t('kernel.backups.restore_custom_key', key_name=key_status)
+    key_btn_text = ctx.t('kernel.backups.restore_key_btn', key_name=key if key else ctx.t('kernel.backups.key_default'))
+    return k.screen(
+        text,
+        [
+            [k.primary(ctx.t('kernel.backups.restore_action'), confirm_restore, **btn_args)],
+            [k.button(ctx.t('kernel.backups.scope_btn', scope=scope_name), cycle_restore_scope, **btn_args)],
+            [k.input(key_btn_text, set_restore_key, ctx.t('kernel.backups.custom_key_hint'), **btn_args)],
+            [k.close()],
+        ],
+        rich=True,
+    )
+
+
+async def cycle_restore_scope(ctx: Any, nav: Any) -> Any:
+    curr = nav.arg("scope") or "all"
+    nxt = {"all": "modules", "modules": "state", "state": "all"}.get(curr, "all")
+    target = nav.arg("target")
+    reply_id = nav.arg("reply_id")
+    key = nav.arg("key")
+    return _render_restore_screen(ctx, target, reply_id, scope=nxt, key=key)
+
+
+async def set_restore_key(ctx: Any, nav: Any) -> Any:
+    val = str(getattr(nav, "value", None) or getattr(nav, "text", None) or nav.arg("val") or "").strip()
+    target = nav.arg("target")
+    reply_id = nav.arg("reply_id")
+    scope = nav.arg("scope") or "all"
+    return _render_restore_screen(ctx, target, reply_id, scope=scope, key=val or None)
+
+
+async def confirm_restore(ctx: Any, nav: Any) -> Any:
+    target = nav.arg("target")
+    reply_id = nav.arg("reply_id")
+    scope = nav.arg("scope") or "all"
+    key = nav.arg("key")
+    runtime = ctx.runtime
+    if runtime is None:
+        await nav.answer(ctx.t('kernel.kernel.runtime_unavailable'), alert=True)
+        return None
+    archive_path, temporary, error_msg = await _locate_archive(ctx, target, reply_id, nav=nav)
+    if archive_path is None or error_msg is not None:
+        err = error_msg or ctx.t("kernel.backups.archive_missing")
+        await nav.answer(err, alert=True)
+        return _render_restore_screen(ctx, target, reply_id, scope=scope, key=key).with_notice(
+            f'<tg-emoji emoji-id="5260342697075416641">❌</tg-emoji> <b>{html.escape(err)}</b>'
+        )
+    try:
+        plan = runtime.backups.plan(archive_path, key=key)
+    except Exception:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+        await nav.answer(ctx.t("kernel.backups.key_invalid"), alert=True)
+        return _render_restore_screen(ctx, target, reply_id, scope=scope, key=key).with_notice(
+            f'<tg-emoji emoji-id="5260342697075416641">❌</tg-emoji> <b>{ctx.t("kernel.backups.key_invalid")}</b>'
+        )
+    await nav.answer()
+    restoring_text = f'<tg-emoji emoji-id="5258514780469075716">📁</tg-emoji> <b>{ctx.t("kernel.backups.restoring")}</b>'
+    try:
+        await nav.engine._edit(nav.form, restoring_text, [], True)
+    except Exception:
+        pass
+    nav.engine.drop(nav.form)
+    await _execute_restore(ctx, plan, temporary, scope=scope, key=key, engine=nav.engine, form=nav.form)
+    return None
+
+
 async def command_restore(ctx: Any, invocation: Any) -> None:
     runtime = ctx.runtime
     if runtime is None:
         await ctx.respond(ctx.t('kernel.kernel.runtime_unavailable'))
         return
-    temporary = None
-    log_lines = ["-----> Locating backup archive..."]
-    await ctx.respond(f"<pre>{chr(10).join(log_lines)}</pre>", parse_mode="HTML")
-    try:
-        archive_path = None
-        args = [a for a in invocation.args if a != "restore"]
-        if args:
-            target = str(args[0]).strip()
-            if target.startswith("https://") or target.startswith("http://"):
-                import urllib.request
-                with tempfile.NamedTemporaryFile(suffix=".hbk", delete=False) as handle:
-                    temporary = Path(handle.name)
-                req = urllib.request.Request(target, headers={"User-Agent": "HotaruBackupRestore/1.0"})
-                with urllib.request.urlopen(req, timeout=15) as resp:
-                    temporary.write_bytes(resp.read())
-                archive_path = temporary
-            else:
-                p = Path(target)
-                if not p.is_file():
-                    await ctx.respond(f"<pre> !     Error: backup archive not found: {html.escape(target)}</pre>", parse_mode="HTML", output="edit")
-                    return
-                archive_path = p
-        else:
-            msg = invocation.message
-            doc_msg = None
-            if msg is not None:
-                if hasattr(msg, "reply_to_msg") and getattr(msg.reply_to_msg, "media", None):
-                    doc_msg = msg.reply_to_msg
-                elif getattr(msg, "media", None) or getattr(msg, "document", None):
-                    doc_msg = msg
-            if doc_msg is None:
-                await ctx.respond(f"<pre> !     Error: reply to an .hbk file or provide an archive path/url</pre>", parse_mode="HTML", output="edit")
-                return
-            with tempfile.NamedTemporaryFile(suffix=".hbk", delete=False) as handle:
-                temporary = Path(handle.name)
-            await runtime._download_module_message(doc_msg, temporary)
-            archive_path = temporary
-
-        log_lines[-1] += " done"
-        log_lines.append("-----> Decrypting HBK container with sanctuary vault key...")
-        await ctx.respond(f"<pre>{chr(10).join(log_lines)}</pre>", parse_mode="HTML", output="edit")
-
-        plan = runtime.backups.plan(archive_path)
-
-        log_lines[-1] += " done"
-        log_lines.append(f"-----> Verifying manifest integrity ({len(plan.files)} entries)...")
-        await ctx.respond(f"<pre>{chr(10).join(log_lines)}</pre>", parse_mode="HTML", output="edit")
-
-        log_lines[-1] += " done"
-        log_lines.append("-----> Restoring database state snapshot...")
-        await ctx.respond(f"<pre>{chr(10).join(log_lines)}</pre>", parse_mode="HTML", output="edit")
-
-        modules_dir = runtime.constellations_dir
-        await runtime.restore_filesystem(plan, modules_dir)
-
-        log_lines[-1] += " done"
-        log_lines.append("-----> Unpacking and activating modules...")
-        log_lines.append("-----> Done! System restored successfully.")
-        await ctx.respond(f"<pre>{chr(10).join(log_lines)}</pre>", parse_mode="HTML", output="edit")
-
-        notice = f'<tg-emoji emoji-id="5260726538302660868">✅</tg-emoji> <b>{ctx.t("runtime.restore_done")}</b><blockquote><tg-emoji emoji-id="5258514780469075716">📂</tg-emoji> <b>{ctx.t("kernel.backups.restored_files", count=len(plan.files))}</b></blockquote>'
-        await ctx.respond(notice, parse_mode="HTML", output="edit")
-    except Exception as exc:
-        from hotaru.plainfmt import to_plain_text
-        log_lines.append(f" !     {type(exc).__name__}: {html.escape(to_plain_text(str(exc)), quote=False)}")
-        await ctx.respond(f"<pre>{chr(10).join(log_lines)}</pre>", parse_mode="HTML", output="edit")
-    finally:
-        if temporary is not None:
-            temporary.unlink(missing_ok=True)
+    raw_args = [str(a) for a in getattr(invocation, "args", []) if str(a) != "restore"]
+    flags = {"-f", "--force", "force", "f"}
+    is_forced = any(a.casefold() in flags for a in raw_args)
+    clean_args = [a for a in raw_args if a.casefold() not in flags]
+    scope = "all"
+    custom_key: str | None = None
+    target: str | None = None
+    scope_keywords = {"all": "all", "full": "all", "modules": "modules", "module": "modules", "mods": "modules", "mod": "modules", "state": "state", "db": "state", "database": "state"}
+    idx = 0
+    while idx < len(clean_args):
+        item = clean_args[idx]
+        item_cf = item.casefold()
+        if item_cf.startswith("--key="):
+            custom_key = item.split("=", 1)[1]
+        elif item_cf.startswith("-k="):
+            custom_key = item.split("=", 1)[1]
+        elif item_cf in ("--key", "-k") and idx + 1 < len(clean_args):
+            idx += 1
+            custom_key = clean_args[idx]
+        elif item_cf in scope_keywords and target is not None:
+            scope = scope_keywords[item_cf]
+        elif item_cf in scope_keywords and idx == 0 and len(clean_args) > 1 and not clean_args[1].casefold().startswith("-"):
+            scope = scope_keywords[item_cf]
+        elif item_cf in scope_keywords and len(clean_args) == 1:
+            scope = scope_keywords[item_cf]
+        elif not item.startswith("-"):
+            target = item.strip()
+        idx += 1
+    from hotaru.response import reply_message_id
+    raw_msg = getattr(invocation, "message", None)
+    reply_id = reply_message_id(raw_msg) if raw_msg is not None else None
+    if is_forced:
+        await _perform_restore(ctx, target, reply_id, invocation, only=scope, key=custom_key)
+        return
+    screen = _render_restore_screen(ctx, target, reply_id, scope=scope, key=custom_key)
+    await ctx.screens.show(screen)
 
 
 async def command_backup(ctx: Any, invocation: Any) -> None:
@@ -159,10 +374,17 @@ async def command_backup(ctx: Any, invocation: Any) -> None:
     if args and args[0] == "restore":
         await command_restore(ctx, invocation)
         return
-    if args == ["now"]:
+    if args and args[0] == "now":
+        if len(args) > 1 and args[1].casefold() in ("modules", "module", "mods", "mod", "state", "db", "database", "all", "full"):
+            scope_map = {"modules": "modules", "module": "modules", "mods": "modules", "mod": "modules", "state": "state", "db": "state", "database": "state"}
+            ctx.state.set("scope", scope_map.get(args[1].casefold(), "all"))
         screen = await send_now(ctx, None)
     elif args in (["on"], ["off"]):
         ctx.config.set("enabled", args[0] == "on")
+        screen = home(ctx)
+    elif args and args[0].casefold() in ("modules", "module", "mods", "mod", "state", "db", "database", "all", "full"):
+        scope_map = {"modules": "modules", "module": "modules", "mods": "modules", "mod": "modules", "state": "state", "db": "state", "database": "state"}
+        ctx.state.set("scope", scope_map.get(args[0].casefold(), "all"))
         screen = home(ctx)
     elif not args:
         screen = home(ctx)

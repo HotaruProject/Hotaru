@@ -108,7 +108,7 @@ def home(ctx: Any, nav: Any = None) -> Any:
         title = ctx.t("kernel.help_ui.kernel_modules" if kernel else "kernel.help_ui.user_modules")
         icon = '<tg-emoji emoji-id="4974681956907221809">▪️</tg-emoji>' if kernel else '<tg-emoji emoji-id="4974508259839836856">▪️</tg-emoji>'
         summary = f"{icon} <b>{_escape(title)}</b> · {kernel_count if kernel else user_count}"
-        lines.append(k.details(summary, "\n".join(entries), open=not kernel or user_count == 0))
+        lines.append(k.details(summary, "\n".join(entries), open=True))
     rows = [k.pager(home, page, pages)]
     rows.append([k.input(ctx.t("ui.search"), search, ctx.t("kernel.help_ui.search_prompt")), k.close()])
     help_mod = runtime.modules.get("help") if runtime.modules is not None else None
@@ -162,20 +162,17 @@ def _card(ctx: Any, module_id: str, actor: Any, back: Any, **back_args: Any) -> 
         line = f"<code>{_escape(shown)}</code> " + k.tap_copy("", f"{cmd_prefix}{command}") + bot_badge
         desc = details.get("description", "")
         if desc:
-            line += f" - <i>{_escape(desc)}</i>"
+            line += f" – <i>{_escape(desc)}</i>"
         aliases = _aliases(runtime, command)
         if aliases:
             line += "\n   " + _escape(ctx.t("kernel.help_ui.aliases")) + ": " + " · ".join(f"<code>{alias}</code>" for alias in aliases)
         commands.append(line)
     title = f"{k.icon('text')} <b>{_escape(ctx.t('kernel.help_ui.commands'))}</b> · {len(commands)}"
     body = "\n".join(commands) or f"<i>{_escape(ctx.t('kernel.help_ui.no_commands'))}</i>"
-    if len(commands) > _open_limit:
-        lines[-1] += k.details(title, body)
-    else:
-        lines.append(f"{title}\n{body}")
+    lines.append(f"{title}\n{body}")
     if manifest.capabilities:
         capabilities = "\n".join(f"• {_escape(ctx.t(f'kernel.capabilities.{item}', item))}" for item in manifest.capabilities)
-        lines[-1] += k.details(f"{k.icon('lock')} <b>{_escape(ctx.t('kernel.help_ui.capabilities'))}</b> · {len(manifest.capabilities)}", capabilities)
+        lines.append(f"{k.icon('lock')} <b>{_escape(ctx.t('kernel.help_ui.capabilities'))}</b> · {len(manifest.capabilities)}\n{capabilities}")
     rows: List[List[Any]] = []
     if getattr(manifest, "config_schema", None) and runtime.modules.get("settings") is not None and runtime.access.is_owner(actor):
         rows.append([k.link(ctx.t("kernel.help_ui.settings"), "settings", "module", style="primary", id=module_id, origin="help")])
@@ -222,10 +219,20 @@ async def _show_help(ctx: Any, invocation: Any) -> Any:
         await ctx.screens.show(home(ctx))
         return
     query = " ".join(invocation.args).casefold()
+    prefix = getattr(runtime.config, "prefix", ".").casefold()
+    if query.startswith(prefix):
+        query = query[len(prefix):].strip()
+    elif query.startswith("/"):
+        query = query[1:].strip()
     actor = getattr(invocation.message, "from_id", None)
     if runtime.modules.get(query) is not None:
         await ctx.screens.show(_card(ctx, query, actor, home))
         return
+    for item in runtime.modules.items():
+        m_manifest = item.loaded.manifest
+        if query in [c.casefold() for c in m_manifest.commands] or query in [bc.casefold() for bc in getattr(m_manifest, "bot_commands", ())]:
+            await ctx.screens.show(_card(ctx, m_manifest.module_id, actor, home))
+            return
     hits = await _matches(ctx, query)
     if hits:
         await ctx.screens.show(_card(ctx, hits[0]["value"][0], actor, home))

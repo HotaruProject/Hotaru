@@ -1654,7 +1654,7 @@ class ModulesHelper:
     async def hashes(self) -> Any:
         return await self._host.cap("modules", {"op": "hashes"})
 
-    async def load(self, source: str | None = None, *, url: str | None = None, text: str | None = None) -> Any:
+    async def load(self, source: str | None = None, *, url: str | None = None, text: str | None = None, chat_id: Any = None, message_id: Any = None, edit: bool = False, reply_to: Any = None, notice: str | None = None, form_id: Any = None) -> Any:
         payload: dict[str, Any] = {"op": "load"}
         if url is not None:
             payload["url"] = url
@@ -1662,6 +1662,18 @@ class ModulesHelper:
             payload["text"] = text
         if source is not None:
             payload["source"] = source
+        if chat_id is not None:
+            payload["chat_id"] = chat_id
+        if message_id is not None:
+            payload["message_id"] = message_id
+        if edit:
+            payload["edit"] = True
+        if reply_to is not None:
+            payload["reply_to"] = reply_to
+        if notice is not None:
+            payload["notice"] = notice
+        if form_id is not None:
+            payload["form_id"] = form_id
         return await self._host.cap("modules", payload)
 
     async def unload(self, module_id: str, purge: bool = False) -> Any:

@@ -104,7 +104,7 @@ command_start = command_resume
 
 async def command_restart(ctx: Any, invocation: Any) -> Any:
     args = [str(a).casefold() for a in getattr(invocation, "args", [])]
-    if "-f" in args or "--force" in args:
+    if any(flag in args for flag in ("-f", "--force", "force", "f")):
         runtime = ctx.runtime
         chat_id = getattr(ctx, "chat_id", None)
         orig_msg_id = getattr(ctx, "message_id", None)

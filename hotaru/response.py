@@ -520,7 +520,7 @@ class ModuleContext(ContextOperations):
 
     module_id: str
     _source: Any
-    state: StateNamespace
+    _state: StateNamespace = field(repr=False)
     responses: ResponseService
     cap_host: Any = None
     callback_router: Any = None
@@ -531,6 +531,17 @@ class ModuleContext(ContextOperations):
     _response_source: Any = None
     _response_form: Any = None
     _response_lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False)
+
+    @property
+    def state(self) -> StateNamespace:
+        runtime_state = getattr(self.runtime, "state", None)
+        if runtime_state is not None:
+            return runtime_state.namespace(self.module_id)
+        return self._state
+
+    @state.setter
+    def state(self, value: StateNamespace) -> None:
+        self._state = value
 
     def __repr__(self) -> str:
         return f"ModuleContext({self.module_id!r})"
@@ -581,7 +592,7 @@ class ModuleContext(ContextOperations):
             raise ResponseError("translation runtime is unavailable")
         return self.runtime.translator()
 
-    def t(self, key: str, default: str | None = None, **params: Any) -> str:
+    def t(self, key: str, /, default: str | None = None, **params: Any) -> str:
         try:
             value = self.i18n.t(key, default, **params)
         except Exception:
@@ -638,8 +649,8 @@ class ModuleContext(ContextOperations):
     def assets(self) -> Any:
             return AssetsHelper(self)
 
-    async def load_module(self, source: str) -> Any:
-        return await self.modules.load(source)
+    async def load_module(self, source: str, **kwargs: Any) -> Any:
+        return await self.modules.load(source, **kwargs)
 
     async def unload_module(self, module_id: str, *, purge: bool = False) -> Any:
         return await self.modules.unload(module_id, purge=purge)
