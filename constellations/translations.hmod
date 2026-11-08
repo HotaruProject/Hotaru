@@ -203,15 +203,17 @@ async def command_translate(ctx: Any, invocation: Any) -> Any:
     src_obj: Any = source_msg
     if not target_text and src_obj is not None:
         doc: Any = getattr(cast(object, src_obj), "document", None) or (cast('dict[str, Any]', src_obj).get("document") if isinstance(src_obj, dict) else None)
-        if doc is None and getattr(cast(object, src_obj), "media", None):
-            media: Any = getattr(cast(object, src_obj), "media")
+        if doc is None:
+            media: Any = getattr(cast(object, src_obj), "media", None) or (cast('dict[str, Any]', src_obj).get("media") if isinstance(src_obj, dict) else None)
             doc = getattr(cast(object, media), "document", None) or (cast('dict[str, Any]', media).get("document") if isinstance(media, dict) else None)
         if doc is not None and getattr(ctx.runtime, "_download_module_message", None) is not None:
             with tempfile.NamedTemporaryFile(suffix=".txt", delete=False) as handle:
                 tmp_path = Path(handle.name)
             try:
                 await ctx.runtime._download_module_message(src_obj, tmp_path)
-                target_text = tmp_path.read_text(encoding="utf-8", errors="replace")
+                file_text = tmp_path.read_text(encoding="utf-8", errors="replace")
+                caption = ctx.tools.message_text(src_obj) if hasattr(ctx, "tools") else ""
+                target_text = "\n\n".join(part for part in (caption, file_text) if part)
             except Exception as exc:
                 log.error("translate file fetch failed: %s", exc)
             finally:
