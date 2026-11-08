@@ -374,7 +374,7 @@ async def command_backup(ctx: Any, invocation: Any) -> None:
     if args and args[0] == "restore":
         await command_restore(ctx, invocation)
         return
-    if args and args[0] == "now":
+    if args and args[0] in ("send", "now"):
         if len(args) > 1 and args[1].casefold() in ("modules", "module", "mods", "mod", "state", "db", "database", "all", "full"):
             scope_map = {"modules": "modules", "module": "modules", "mods": "modules", "mod": "modules", "state": "state", "db": "state", "database": "state"}
             ctx.state.set("scope", scope_map.get(args[1].casefold(), "all"))
