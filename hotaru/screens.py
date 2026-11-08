@@ -1237,6 +1237,28 @@ class ScreenEngine:
         else:
             active = self.runtime.modules.get(module_id) if self.runtime.modules is not None else None
             namespace = getattr(getattr(active, "context", None), "namespace", None)
+            if isinstance(namespace, dict) and cast("dict[str, Any]", namespace).get("__sandbox__") and name.isidentifier() and not name.startswith("__"):
+                sandbox = self.runtime.sandbox
+                if sandbox is None or module_id != form.module:
+                    raise ScreenError(f"screen handler is unavailable: {module_id}.{name}")
+
+                async def sandbox_handler(ctx: Any, nav: Nav) -> Any:
+                    if self.runtime.modules is None or self.runtime.modules.get(module_id) is not active:
+                        raise ScreenError(f"screen handler is unavailable: {module_id}.{name}")
+                    source = SimpleNamespace(from_id=nav.actor, chat_id=form.chat, message_id=form.message_id, id=form.message_id, _hotaru_command=form.command)
+                    payload: dict[str, Any] = {"chat_id": form.chat, "message_id": form.message_id, "source": "screen", "language": form.language}
+                    if self.runtime.lexicon is not None:
+                        payload["translations"] = self.runtime.lexicon.bundle(form.language or self.runtime.language())
+                    result = await sandbox.call(module_id, form.command or name, [], payload, source=source, target=name, context=ctx, nav=nav)
+                    if isinstance(result, dict):
+                        result = cast("dict[str, Any]", result)
+                        if isinstance(result.get("text"), str) and isinstance(result.get("rows", []), list):
+                            normalize = cast(Callable[..., Any], getattr(sandbox, "_sandbox_buttons"))
+                            rows = normalize(module_id, result.get("rows") or [], form.chat, nav.actor)
+                            return Screen(result["text"], rows, toast=result.get("toast"), alert=bool(result.get("alert")), rich=bool(result.get("rich")), notice=result.get("notice"), banner=str(result.get("banner") or ""))
+                    return cast(Any, result)
+
+                return sandbox_handler
             handler = cast('dict[str, Any]', namespace).get(name) if isinstance(namespace, dict) and not name.startswith("__") else None
         if not callable(handler):
             raise ScreenError(f"screen handler is unavailable: {module_id}.{name}")
