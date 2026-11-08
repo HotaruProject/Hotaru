@@ -564,17 +564,18 @@ class InlineManager:
                         bot = None
                 if bot is None:
                     from goygram import ext
-                    peer = await app.mt.resolve_peer("@" + info.username)
+                    peer: Any = await app.mt.resolve_peer("@" + info.username)
                     if isinstance(peer, (bytes, bytearray, memoryview)):
-                        peer_dict = cast('dict[str, Any]', ext.deserialize_constructor(peer))
+                        peer_dict: dict[str, Any] = cast('dict[str, Any]', ext.deserialize_constructor(bytes(cast(Any, peer))))
                     elif isinstance(peer, dict):
-                        peer_dict = peer
+                        peer_dict = cast('dict[str, Any]', peer)
                     elif hasattr(peer, "to_dict"):
-                        peer_dict = cast('dict[str, Any]', peer.to_dict())
+                        peer_dict = cast('dict[str, Any]', getattr(peer, "to_dict")())
                     else:
                         peer_dict = {}
-                    access_hash = peer_dict.get("access_hash") or 0
-                    bot = {"_": "inputUser", "user_id": int(info.bot_id), "access_hash": int(access_hash)}
+                    access_val: Any = peer_dict.get("access_hash")
+                    access_hash: int = int(access_val) if access_val else 0
+                    bot = {"_": "inputUser", "user_id": int(info.bot_id), "access_hash": access_hash}
                 up = await put(app, str(logo_path), file_name=str(logo_path.name))
                 uploaded_file = document(up)["file"]
                 await app.mt_photos_upload_profile_photo(bot=bot, file=uploaded_file)
@@ -1176,32 +1177,58 @@ class InlineManager:
                 pass
 
     def _allows_form(self, event: Any, *, chosen: bool = False) -> bool:
-        text = str(getattr(event, "query", "") or "").strip()
-        actor = getattr(event, "from_id", None)
-        if type(actor) is not int or actor <= 0:
+        if isinstance(event, dict):
+            d_event: dict[str, Any] = cast('dict[str, Any]', event)
+            text: str = str(d_event.get("query") or "").strip()
+            actor: Any = d_event.get("from_id")
+            if actor is None:
+                from_u: Any = d_event.get("from")
+                if isinstance(from_u, dict):
+                    actor = cast('dict[str, Any]', from_u).get("id")
+            if actor is None:
+                actor = cast(Any, d_event.get("user_id")) or cast(Any, d_event.get("sender_id"))
+            event_msg_id: Any = d_event.get("msg_id")
+        else:
+            text = str(getattr(event, "query", "") or "").strip()
+            actor = getattr(event, "from_id", None)
+            if actor is None:
+                from_user: Any = getattr(event, "from_user", None)
+                if from_user is not None:
+                    actor = getattr(from_user, "id", None)
+            if actor is None:
+                actor = getattr(event, "user_id", None) or getattr(event, "sender_id", None)
+            event_msg_id = getattr(event, "msg_id", None)
+
+        if not isinstance(actor, int) or actor <= 0:
             return False
         if text.startswith("hotaru-input:"):
             token = text.partition(" ")[0].split(":", 1)[1]
             request = self.runtime._input_request(token)
+            req_item: Any = request[2] if request is not None and len(request) > 2 else None
             return bool(
                 request is not None
                 and (request[3] is None or request[3] > time.monotonic())
-                and actor == getattr(request[2], "_hotaru_actor_id", getattr(request[2], "from_id", None))
+                and actor == getattr(req_item, "_hotaru_actor_id", getattr(req_item, "from_id", None))
                 and token not in self._chosen_pending
             )
         if text.startswith("hotaru-form:"):
             nonce = text.split(":", 1)[1]
             forms: dict[str, Any] = getattr(self.runtime, "_inline_forms", None) or {}
-            if actor != self._owner_id() or nonce not in forms:
+            owner = self._owner_id()
+            if (owner is not None and actor != owner) or nonce not in forms:
                 return False
             if chosen:
                 pending: dict[str, asyncio.Event] = getattr(self.runtime, "_form_chosen", None) or {}
                 ready = pending.get(nonce)
-                return ready is not None and not ready.is_set() and getattr(event, "msg_id", None) is not None
+                return ready is not None and not ready.is_set() and event_msg_id is not None
         return True
 
     async def _dispatch_inline(self, query: Any) -> None:
         if not self._allows_form(query):
+            try:
+                await query.answer(results=[], cache_time=0, is_personal=True)
+            except Exception:
+                pass
             return
         text = str(getattr(query, "query", ""))
         if self.runtime.observatory is not None:

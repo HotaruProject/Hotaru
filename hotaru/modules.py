@@ -3,6 +3,8 @@ from __future__ import annotations
 import __future__
 import ast
 import hashlib
+import html
+import json
 import os
 import re
 import tempfile
@@ -379,6 +381,106 @@ class ModuleFetchError(ValueError):
     pass
 
 
+def extract_blob_content(content_bytes: bytes, url: str | None = None) -> bytes:
+    try:
+        text = content_bytes.decode("utf-8", errors="replace")
+    except Exception:
+        return content_bytes
+    if not any(token in text[:500].lower() for token in ("<!doctype", "<html", "<head", "<body")):
+        return content_bytes
+
+    scripts = re.findall(r"<script[^>]*type=[\"']application/json[\"'][^>]*>(.*?)</script>", text, re.DOTALL)
+    for s in scripts:
+        if "rawLines" in s or "rawBlobUrl" in s or "raw_path" in s:
+            try:
+                d = cast('dict[str, Any]', json.loads(s))
+                def find_key(obj: Any, key: str) -> Any:
+                    if isinstance(obj, dict):
+                        for k, v in cast('dict[str, Any]', obj).items():
+                            if k == key:
+                                return v
+                            res = find_key(v, key)
+                            if res is not None:
+                                return res
+                    elif isinstance(obj, list):
+                        for v in cast('list[Any]', obj):
+                            res = find_key(v, key)
+                            if res is not None:
+                                return res
+                    return None
+                rl = find_key(d, "rawLines")
+                if isinstance(rl, list) and rl:
+                    return "\n".join(str(line) for line in cast('list[Any]', rl)).encode("utf-8")
+                ru = find_key(d, "rawBlobUrl") or find_key(d, "raw_path")
+                if isinstance(ru, str) and ru:
+                    target_ru = ru
+                    if url and target_ru.startswith("/"):
+                        target_ru = urllib.parse.urljoin(url, target_ru)
+                    return fetch_url_content(target_ru)
+            except Exception:
+                pass
+
+    match_url = re.search(r'["\'](?:rawBlobUrl|raw_path)["\']\s*:\s*["\']([^"\']+)["\']', text)
+    if match_url:
+        target_url = match_url.group(1).replace("\\/", "/")
+        if url and target_url.startswith("/"):
+            target_url = urllib.parse.urljoin(url, target_url)
+        try:
+            return fetch_url_content(target_url)
+        except Exception:
+            pass
+
+    for tag in ("textarea", "code", "pre"):
+        matches = re.findall(rf"<{tag}[^>]*>(.*?)</{tag}>", text, re.DOTALL | re.IGNORECASE)
+        for m in matches:
+            decoded = html.unescape(m).strip()
+            if "HOTARU = " in decoded or decoded.startswith("{") or decoded.startswith("import ") or decoded.startswith("from "):
+                return decoded.encode("utf-8")
+
+    return content_bytes
+
+
+def fetch_url_content(url: str, *, timeout: float = 15.0, max_bytes: int = 20 * 1024 * 1024) -> bytes:
+    current_url = ModuleStager.normalize_url(url)
+    data = b""
+    for _ in range(10):
+        req = urllib.request.Request(
+            current_url,
+            headers={
+                "Accept": "*/*",
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 Hotaru/1.0",
+            },
+            method="GET",
+        )
+        with trusted_scope():
+            try:
+                with urllib.request.urlopen(req, timeout=timeout) as response:
+                    final_url = str(response.geturl())
+                    if final_url != current_url:
+                        norm = ModuleStager.normalize_url(final_url)
+                        if norm != final_url:
+                            current_url = norm
+                            continue
+                    content_length = response.headers.get("Content-Length")
+                    if content_length is not None and int(content_length) > max_bytes:
+                        raise ModuleFetchError("download exceeds the size limit")
+                    data = response.read(max_bytes + 1)
+                    if len(data) > max_bytes:
+                        raise ModuleFetchError("download exceeds the size limit")
+                    break
+            except urllib.error.HTTPError as exc:
+                if exc.code in (301, 302, 303, 307, 308):
+                    location = exc.headers.get("Location")
+                    if location:
+                        current_url = ModuleStager.normalize_url(urllib.parse.urljoin(current_url, location))
+                        continue
+                raise ModuleFetchError(f"download failed with status {exc.code}") from exc
+            except (OSError, urllib.error.URLError) as exc:
+                raise ModuleFetchError("download failed") from exc
+
+    return extract_blob_content(data, current_url)
+
+
 class ModuleStager:
     def __init__(self, loader: HmodLoader | None = None) -> None:
         self.loader = loader or HmodLoader()
@@ -387,7 +489,7 @@ class ModuleStager:
     def normalize_url(value: str) -> str:
         parsed = urllib.parse.urlparse(value)
         try:
-            port = parsed.port
+            _ = parsed.port
         except ValueError as exc:
             raise ModuleFetchError("module URL must be a valid URL") from exc
         if parsed.scheme not in ("https", "http") or parsed.username or parsed.password:
@@ -401,27 +503,24 @@ class ModuleStager:
         if host == "github.com" and len(parts) >= 4 and parts[2] in ("blob", "raw"):
             owner, repo, _, *rest = parts
             return "https://raw.githubusercontent.com/" + "/".join([owner, repo, *rest])
+        if host == "gist.github.com" and len(parts) >= 2 and parts[-1] != "raw":
+            return f"https://gist.githubusercontent.com/{'/'.join(parts)}/raw"
+        if host in ("gitlab.com", "invent.kde.org") or "gitlab" in host:
+            if "-/blob" in parsed.path:
+                return value.replace("-/blob/", "-/raw/")
+        if host == "bitbucket.org" and len(parts) >= 4 and parts[2] == "src":
+            owner, repo, _, *rest = parts
+            return "https://bitbucket.org/" + "/".join([owner, repo, "raw", *rest])
+        if host == "pastebin.com" and len(parts) == 1 and parts[0] != "raw":
+            return f"https://pastebin.com/raw/{parts[0]}"
+        if host == "rentry.co" and len(parts) == 1 and parts[0] != "raw":
+            return f"https://rentry.co/{parts[0]}/raw"
         return value
 
     def stage_url(self, value: str, destination: str | Path, *, timeout: float = 10.0) -> LoadedModule:
         if timeout <= 0:
             raise ValueError("timeout must be positive")
-        url = self.normalize_url(value)
-        try:
-            request = urllib.request.Request(url, headers={"Accept": "*/*", "User-Agent": "HotaruModuleCatalyst/1.0"}, method="GET")
-            with trusted_scope():
-                with urllib.request.urlopen(request, timeout=timeout) as response:
-                    final = urllib.parse.urlparse(cast(str, response.geturl()))
-                    if final.scheme not in ("https", "http"):
-                        raise ModuleFetchError("module URL redirected to an invalid scheme")
-                    content_length = response.headers.get("Content-Length")
-                    if content_length is not None and int(content_length) > self.loader.max_bytes:
-                        raise ModuleFetchError("module download exceeds the size limit")
-                    data = response.read(self.loader.max_bytes + 1)
-        except (OSError, urllib.error.URLError) as exc:
-            raise ModuleFetchError("module download failed") from exc
-        if len(data) > self.loader.max_bytes:
-            raise ModuleFetchError("module download exceeds the size limit")
+        data = fetch_url_content(value, timeout=timeout, max_bytes=self.loader.max_bytes)
         fd, temporary = tempfile.mkstemp(prefix=".hotaru-source-", suffix=".hmod")
         path = Path(temporary)
         try:

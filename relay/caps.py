@@ -227,14 +227,14 @@ def describe(capabilities: tuple[str, ...], t: Callable[..., str] | None = None)
 
 def _result_body(value: Any) -> Any:
     if isinstance(value, list):
-        return value
+        return cast(Any, value)
     if not isinstance(value, dict):
         return {}
     payload = cast('dict[str, Any]', value)
     result = payload.get("result")
     if isinstance(result, (dict, list)):
-        return result
-    return payload
+        return cast(Any, result)
+    return cast(Any, payload)
 
 
 def _public_connection(address: tuple[str, int], timeout: Any = None, source_address: Any = None) -> socket.socket:
@@ -328,38 +328,44 @@ def _workspace_open(root: Path, name: str, flags: int) -> int:
 
 async def _resolve_mt_peer_arg(app: Any, value: Any) -> Any:
     if isinstance(value, (bytes, bytearray, memoryview)):
-        return bytes(value)
+        return bytes(cast(Any, value))
     if isinstance(value, dict):
-        if value.get("_", "").startswith(("inputPeer", "inputUser", "inputChannel")):
-            return value
+        d_val = cast('dict[Any, Any]', value)
+        tag = str(d_val.get("_") or "")
+        if tag.startswith(("inputPeer", "inputUser", "inputChannel")):
+            return cast(Any, value)
     if isinstance(value, (str, int)) and not isinstance(value, bool):
         mt_transport = getattr(app, "mt", None)
         if mt_transport is not None and hasattr(mt_transport, "resolve_peer"):
             try:
                 return await mt_transport.resolve_peer(value)
             except Exception:
-                return value
-    return value
+                return cast(Any, value)
+    return cast(Any, value)
 
 
 async def _resolve_nested_peers(app: Any, obj: Any) -> Any:
     if isinstance(obj, dict):
-        ctor = obj.get("_")
-        if ctor in ("inputNotifyPeer", "inputFolderPeer", "inputDialogPeer", "inputDialogPeerCommunity", "botCommandScopePeer", "botCommandScopePeerAdmins", "inputPeerPhotoFileLocation", "inputSavedStarGiftChat", "paidReactionPrivacyPeer") and "peer" in obj:
-            if isinstance(obj["peer"], (str, int)) and not isinstance(obj["peer"], bool):
-                obj = dict(obj, peer=await _resolve_mt_peer_arg(app, obj["peer"]))
-        elif ctor == "botCommandScopePeerUser" and "user_id" in obj:
-            if isinstance(obj["user_id"], (str, int)) and not isinstance(obj["user_id"], bool):
-                obj = dict(obj, user_id=await _resolve_mt_peer_arg(app, obj["user_id"]))
-        res = {}
-        for k, v in obj.items():
+        d_obj = cast('dict[Any, Any]', obj)
+        ctor = cast(Any, d_obj.get("_"))
+        if ctor in ("inputNotifyPeer", "inputFolderPeer", "inputDialogPeer", "inputDialogPeerCommunity", "botCommandScopePeer", "botCommandScopePeerAdmins", "inputPeerPhotoFileLocation", "inputSavedStarGiftChat", "paidReactionPrivacyPeer") and "peer" in d_obj:
+            peer_val = d_obj["peer"]
+            if isinstance(peer_val, (str, int)) and not isinstance(peer_val, bool):
+                d_obj = dict(d_obj, peer=await _resolve_mt_peer_arg(app, peer_val))
+        elif ctor == "botCommandScopePeerUser" and "user_id" in d_obj:
+            user_val = d_obj["user_id"]
+            if isinstance(user_val, (str, int)) and not isinstance(user_val, bool):
+                d_obj = dict(d_obj, user_id=await _resolve_mt_peer_arg(app, user_val))
+        res: dict[Any, Any] = {}
+        for k, v in list(d_obj.items()):
             if isinstance(v, (dict, list)):
                 res[k] = await _resolve_nested_peers(app, v)
             else:
                 res[k] = v
-        return res
+        return cast(Any, res)
     if isinstance(obj, list):
-        return [await _resolve_nested_peers(app, item) for item in obj]
+        l_obj = cast('list[Any]', obj)
+        return cast(Any, [await _resolve_nested_peers(app, item) for item in l_obj])
     return obj
 
 
@@ -673,6 +679,10 @@ class CapabilityHost:
             raise PermissionError("mt capability requires a namespaced RPC method")
         if canonical.startswith(("auth.", "phone.") + MT_BLOCKED_PREFIXES) or canonical in MT_BLOCKED:
             raise PermissionError(f"mt method is blocked by policy: {method}")
+        if lowered in ("messages.getbotcallbackanswer", "messages.setbotcallbackanswer"):
+            cb_data = str(payload.get("kwargs") or "") + str(payload.get("data") or "")
+            if "caps_confirm" in cb_data or "caps_cancel" in cb_data:
+                raise PermissionError("modules are forbidden from interacting with consent screens")
         if payload_hits_blocked(payload):
             raise PermissionError("mt payload targets a denied peer")
         if payload_hits_readonly(payload):
@@ -993,15 +1003,24 @@ class CapabilityHost:
 
             rendered = await runtime._render_caps_screen(module_id, loaded.manifest, loaded.source, chat_id, message_id or 0)
             from hotaru.screens import Screen
-            screen = Screen(rendered[0], rendered[1]) if isinstance(rendered, tuple) else Screen(str(rendered), [])
+            screen = Screen(cast(Any, rendered[0]), cast(Any, rendered[1])) if isinstance(rendered, tuple) else Screen(str(rendered), [])
 
             displayed = False
-            if edit and source_obj is not None and runtime.screens is not None:
-                try:
-                    await runtime.screens.open("catalyst", source_obj, screen)
-                    displayed = True
-                except Exception:
-                    pass
+            if edit and runtime.screens is not None:
+                if source_obj is not None:
+                    try:
+                        await runtime.screens.open("catalyst", source_obj, screen)
+                        displayed = True
+                    except Exception:
+                        pass
+                if not displayed and chat_id is not None and message_id is not None:
+                    try:
+                        from types import SimpleNamespace
+                        synthetic = SimpleNamespace(chat_id=chat_id, id=int(message_id), message_id=int(message_id), src="mt")
+                        await runtime.screens.open("catalyst", synthetic, screen)
+                        displayed = True
+                    except Exception:
+                        pass
             if not displayed and runtime.screens is not None and chat_id is not None:
                 try:
                     await runtime.screens.send("catalyst", chat_id, screen)
@@ -1015,17 +1034,17 @@ class CapabilityHost:
                 except Exception:
                     pass
 
-            if not hasattr(runtime, "_pending_caps_consents"):
-                runtime._pending_caps_consents = {}
-            fut = asyncio.get_running_loop().create_future()
-            runtime._pending_caps_consents[module_id] = fut
+            pending_consents: dict[str, Any] = cast('dict[str, Any]', getattr(runtime, "_pending_caps_consents", None) or {})
+            setattr(runtime, "_pending_caps_consents", pending_consents)
+            fut: asyncio.Future[Any] = asyncio.get_running_loop().create_future()
+            pending_consents[module_id] = fut
             try:
                 loaded, action = await asyncio.wait_for(fut, timeout=300.0)
             except TimeoutError:
-                runtime._pending_caps_consents.pop(module_id, None)
+                pending_consents.pop(module_id, None)
                 raise PermissionError("module approval timed out")
             except Exception as exc:
-                runtime._pending_caps_consents.pop(module_id, None)
+                pending_consents.pop(module_id, None)
                 return {
                     "module_id": module_id,
                     "version": loaded.manifest.version,
