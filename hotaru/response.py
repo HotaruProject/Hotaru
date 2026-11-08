@@ -581,7 +581,7 @@ class ModuleContext(ContextOperations):
             raise ResponseError("translation runtime is unavailable")
         return self.runtime.translator()
 
-    def t(self, key: str, default: str | None = None, **params: Any) -> str:
+    def t(self, key: str, /, default: str | None = None, **params: Any) -> str:
         try:
             value = self.i18n.t(key, default, **params)
         except Exception:

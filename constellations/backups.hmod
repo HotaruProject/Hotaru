@@ -42,7 +42,7 @@ def home(ctx: Any, nav: Any = None) -> Any:
     buttons = [
         [k.button(ctx.t("kernel.backups.send_now"), send_now)],
         [k.button(ctx.t("kernel.backups.scope_btn", scope=scope_name), cycle_scope)],
-        [k.input(ctx.t("kernel.backups.custom_key_btn"), set_custom_key, placeholder=ctx.t("kernel.backups.custom_key_hint"))],
+        [k.input(ctx.t("kernel.backups.custom_key_btn"), set_custom_key, ctx.t("kernel.backups.custom_key_hint"))],
     ]
     if custom_key:
         buttons.append([k.button(ctx.t("kernel.backups.reset_key_btn"), reset_custom_key)])
@@ -64,9 +64,11 @@ def cycle_scope(ctx: Any, nav: Any) -> Any:
 
 
 def set_custom_key(ctx: Any, nav: Any) -> Any:
-    val = str(getattr(nav, "text", "") or "").strip()
+    val = str(getattr(nav, "value", None) or getattr(nav, "text", None) or nav.arg("val") or "").strip()
     if val:
         ctx.state.set("custom_key", val)
+    else:
+        ctx.state.delete("custom_key")
     return home(ctx)
 
 
@@ -252,14 +254,14 @@ def _render_restore_screen(ctx: Any, target: str | None, reply_id: int | None, s
     text = ctx.t('kernel.backups.restore_confirm')
     text += "\n" + ctx.t('kernel.backups.restore_scope', scope=scope_name)
     key_status = key if key else ctx.t('kernel.backups.key_default')
-    text += "\n" + ctx.t('kernel.backups.restore_custom_key', key=key_status)
-    key_btn_text = ctx.t('kernel.backups.restore_key_btn', key=key if key else ctx.t('kernel.backups.key_default'))
+    text += "\n" + ctx.t('kernel.backups.restore_custom_key', key_name=key_status)
+    key_btn_text = ctx.t('kernel.backups.restore_key_btn', key_name=key if key else ctx.t('kernel.backups.key_default'))
     return k.screen(
         text,
         [
             [k.primary(ctx.t('kernel.backups.restore_action'), confirm_restore, **btn_args)],
             [k.button(ctx.t('kernel.backups.scope_btn', scope=scope_name), cycle_restore_scope, **btn_args)],
-            [k.input(key_btn_text, set_restore_key, placeholder=ctx.t('kernel.backups.custom_key_hint'), **btn_args)],
+            [k.input(key_btn_text, set_restore_key, ctx.t('kernel.backups.custom_key_hint'), **btn_args)],
             [k.close()],
         ],
         rich=True,
@@ -276,7 +278,7 @@ async def cycle_restore_scope(ctx: Any, nav: Any) -> Any:
 
 
 async def set_restore_key(ctx: Any, nav: Any) -> Any:
-    val = str(getattr(nav, "text", "") or "").strip()
+    val = str(getattr(nav, "value", None) or getattr(nav, "text", None) or nav.arg("val") or "").strip()
     target = nav.arg("target")
     reply_id = nav.arg("reply_id")
     scope = nav.arg("scope") or "all"

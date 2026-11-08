@@ -14,7 +14,7 @@ HOTARU = {
                     "description": "API flood protection management and statistics"
                 },
                 "suspend_api": {
-                    "usage": "<seconds>",
+                    "usage": "[seconds]",
                     "description": "Suspend API flood protection for specified duration"
                 }
             }
@@ -27,7 +27,7 @@ HOTARU = {
                     "description": "Управление и статистика защиты от флудвейта API"
                 },
                 "suspend_api": {
-                    "usage": "<секунды>",
+                    "usage": "[секунды]",
                     "description": "Приостановить защиту API на указанное время"
                 }
             }
@@ -40,7 +40,7 @@ HOTARU = {
                     "description": "Керування та статистика захисту від флудвейту API"
                 },
                 "suspend_api": {
-                    "usage": "<секунди>",
+                    "usage": "[секунди]",
                     "description": "Призупинити захист API на вказаний час"
                 }
             }
@@ -53,7 +53,7 @@ HOTARU = {
                     "description": "APIフラッド保護の管理と統計"
                 },
                 "suspend_api": {
-                    "usage": "<秒>",
+                    "usage": "[秒]",
                     "description": "指定された期間API保護を一時停止"
                 }
             }
@@ -66,7 +66,7 @@ HOTARU = {
                     "description": "API флудвейт қорғанысын басқару және статистика"
                 },
                 "suspend_api": {
-                    "usage": "<секунд>",
+                    "usage": "[секунд]",
                     "description": "API қорғанысын көрсетілген уақытқа тоқтату"
                 }
             }
@@ -79,7 +79,7 @@ HOTARU = {
                     "description": "API 洪水防护管理与统计"
                 },
                 "suspend_api": {
-                    "usage": "<秒数>",
+                    "usage": "[秒数]",
                     "description": "暂停指定时长的 API 保护"
                 }
             }

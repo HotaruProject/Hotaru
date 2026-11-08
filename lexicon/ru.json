@@ -88,12 +88,12 @@
       "description": "Управление юзерботом",
       "commands": {
         "restart": {
-          "description": "Перезапуск юзербота (опционально: -f / --force без подтверждения)",
-          "usage": "[-f|--force]"
+          "description": "Перезапуск юзербота",
+          "usage": "<-f|--force>"
         },
         "stop": {
-          "description": "Приостановить юзербота (опционально: -f / --force без подтверждения)",
-          "usage": "[-f|--force]"
+          "description": "Приостановить юзербота",
+          "usage": "<-f|--force>"
         },
         "start": {
           "description": "Возобновить юзербота",
@@ -124,17 +124,20 @@
       "description": "Автообновление Hotaru",
       "commands": {
         "upd": {
-          "description": "Проверить и применить обновление (опционально: -f / --force без подтверждения)",
-          "usage": "[-f|--force]"
+          "description": "Проверить и применить обновление",
+          "usage": "<-f|--force>"
         },
         "updlog": {
-          "description": "Показать ченджлог"
+          "description": "Показать список изменений",
+          "usage": ""
         },
         "updoff": {
-          "description": "Выключить уведомления об обновлениях"
+          "description": "Выключить уведомления об обновлениях",
+          "usage": ""
         },
         "updon": {
-          "description": "Включить уведомления об обновлениях"
+          "description": "Включить уведомления об обновлениях",
+          "usage": ""
         }
       },
       "restarted": "<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> <b>Hotaru успешно обновлён</b><blockquote><tg-emoji emoji-id=\"5258152182150077732\">⚡</tg-emoji> <b>Перезапущен за:</b> <code>{took}</code><br><tg-emoji emoji-id=\"5289589186683222806\">📶</tg-emoji> <b>Система:</b> <code>online</code></blockquote>",
@@ -216,7 +219,7 @@
       "commands": {
         "help": {
           "description": "Каталог помощи",
-          "usage": "[module]"
+          "usage": "<модуль>"
         }
       }
     },
@@ -226,19 +229,19 @@
       "commands": {
         "language": {
           "description": "Язык интерфейса",
-          "usage": "[language]"
+          "usage": "<язык>"
         },
         "translate": {
           "description": "Перевести текст",
-          "usage": "[language] <text|reply>"
+          "usage": "<язык> [текст|reply]"
         },
         "loadlex": {
           "description": "Загрузить языковой пакет",
-          "usage": "<url|path|file>"
+          "usage": "[url|путь|файл]"
         },
         "rmlex": {
           "description": "Удалить кастомный языковой пакет",
-          "usage": "<code>"
+          "usage": "[код]"
         }
       },
       "native": {
@@ -334,15 +337,15 @@
       "commands": {
         "account": {
           "description": "Управление аккаунтом",
-          "usage": "[number] [start|stop|restart|del]"
+          "usage": "<номер> <start|stop|restart|del>"
         },
         "addaccount": {
           "description": "Добавить аккаунт или войти",
-          "usage": "[number|cancel]"
+          "usage": "<номер|cancel>"
         },
         "accounts": {
           "description": "Открыть панель аккаунтов",
-          "usage": "[number]"
+          "usage": "<номер>"
         }
       },
       "usage": "<b>Аккаунты</b>\n<code>{prefix}addaccount [user_id]</code> · добавить по QR / номеру\n<code>{prefix}addaccount cancel</code> · отменить вход\n<code>{prefix}accounts [#]</code> · панель аккаунтов\n<code>{prefix}account [#]</code> · панель аккаунтов\n<code>{prefix}account 2 start|stop|restart|on|off|del</code>",
@@ -486,23 +489,23 @@
       "commands": {
         "perms": {
           "description": "Список прав",
-          "usage": "[ID|@username]"
+          "usage": "<ID|@username>"
         },
         "perm": {
           "description": "Выдать или отозвать права",
-          "usage": "<ID|@username> <admin|trusted|everyone> [remove]"
+          "usage": "[ID|@username] [admin|trusted|everyone] <remove>"
         },
         "whois": {
           "description": "Права пользователя",
-          "usage": "<ID|@username> [command]"
+          "usage": "<ID|@username> <команда>"
         },
         "owadd": {
           "description": "Добавить владельца",
-          "usage": "<ID|@username|reply>"
+          "usage": "[ID|@username|reply]"
         },
         "owrm": {
           "description": "Удалить владельца",
-          "usage": "<ID|@username|reply>"
+          "usage": "[ID|@username|reply]"
         },
         "owls": {
           "description": "Список владельцев",
@@ -510,7 +513,7 @@
         },
         "sgnew": {
           "description": "Создать группу прав",
-          "usage": "<name>"
+          "usage": "[имя]"
         },
         "sgls": {
           "description": "Список групп",
@@ -518,31 +521,31 @@
         },
         "sg": {
           "description": "Участники и правила группы",
-          "usage": "<name>"
+          "usage": "[имя]"
         },
         "sgdel": {
           "description": "Удалить группу",
-          "usage": "<name>"
+          "usage": "[имя]"
         },
         "sgadd": {
           "description": "Добавить участника",
-          "usage": "<name> <ID|@username|reply>"
+          "usage": "[имя] [ID|@username|reply]"
         },
         "sgrm": {
           "description": "Удалить участника",
-          "usage": "<name> <ID|@username|reply>"
+          "usage": "[имя] [ID|@username|reply]"
         },
         "rule": {
           "description": "Добавить правило доступа",
-          "usage": "<user|chat|sgroup> <target> <command|module> [1h|forever]"
+          "usage": "[user|chat|sgroup] [цель] [команда|модуль] <1h|forever>"
         },
         "rulerm": {
           "description": "Удалить правило",
-          "usage": "<user|chat|sgroup> <target> <rule>"
+          "usage": "[user|chat|sgroup] [цель] [правило]"
         },
         "ruleclr": {
           "description": "Очистить правила",
-          "usage": "<user|chat|sgroup> [target]"
+          "usage": "[user|chat|sgroup] <цель>"
         }
       },
       "bad_group": "Имя группы: только буквы и цифры, до 32 символов.",
@@ -576,11 +579,11 @@
       "commands": {
         "logs": {
           "description": "Логи юзербота с файлом",
-          "usage": "[on|off|status|level] [count]"
+          "usage": "<on|off|status|level> <кол-во>"
         },
         "loglevel": {
           "description": "Изменить или выбрать уровень логирования",
-          "usage": "[level]"
+          "usage": "<уровень>"
         }
       },
       "pending": "ожидание",
@@ -609,11 +612,11 @@
       "commands": {
         "alias": {
           "description": "Создать алиас команды",
-          "usage": "<alias> <command>"
+          "usage": "[алиас] [команда]"
         },
         "rmalias": {
           "description": "Удалить алиас команды",
-          "usage": "<alias>"
+          "usage": "[алиас]"
         },
         "lsalias": {
           "description": "Показать алиасы команд",
@@ -621,7 +624,7 @@
         },
         "prefix": {
           "description": "Сменить префикс команд",
-          "usage": "<prefix>"
+          "usage": "[префикс]"
         },
         "settings": {
           "description": "Открыть настройки",
@@ -629,7 +632,7 @@
         },
         "config": {
           "description": "Открыть настройки",
-          "usage": "[module]"
+          "usage": "<модуль> <параметр|reset> <значение>"
         }
       }
     },
@@ -655,11 +658,11 @@
       "commands": {
         "py": {
           "description": "Выполнить код Python",
-          "usage": "[-so] <code>"
+          "usage": "<-so> [код]"
         },
         "sh": {
           "description": "Выполнить команду оболочки",
-          "usage": "[-so] <command>"
+          "usage": "<-so> [команда]"
         },
         "kill": {
           "description": "Остановить выполняющуюся команду",
@@ -674,23 +677,23 @@
       "commands": {
         "ld": {
           "description": "Загрузить модуль",
-          "usage": "<url|path|reply>"
+          "usage": "[url|путь|reply]"
         },
         "ul": {
           "description": "Выгрузить модуль",
-          "usage": "<module> [-p]"
+          "usage": "[модуль] <-p>"
         },
         "rl": {
           "description": "Перезагрузить модуль",
-          "usage": "[module] [force]"
+          "usage": "<модуль> <-f>"
         },
         "ex": {
           "description": "Экспортировать модуль",
-          "usage": "<module>"
+          "usage": "[модуль]"
         },
         "resetdb": {
           "description": "Очистить данные модуля",
-          "usage": "<module>"
+          "usage": "[модуль]"
         }
       }
     },
@@ -739,6 +742,7 @@
           "usage": ""
         },
         "ping": {
+          "description": "Замер пинга юзербота",
           "usage": ""
         }
       },
@@ -763,7 +767,8 @@
       "open_button": "Открыть Singularity",
       "commands": {
         "dash": {
-          "description": "Открыть инлайн-запускатель Mini App Singularity"
+          "description": "Открыть инлайн-запускатель Mini App Singularity",
+          "usage": ""
         }
       }
     },
@@ -771,11 +776,12 @@
       "description": "Отправка бекапов в служебный чат",
       "commands": {
         "backup": {
-          "description": "Отправить бекап или настроить автоотправку",
-          "usage": "[send|now]"
+          "description": "Отправить бэкап или настроить автоотправку",
+          "usage": "<send|now>"
         },
         "restore": {
-          "usage": "<archive>"
+          "description": "Восстановить из резервной копии",
+          "usage": "<-f|--force> <архив>"
         }
       },
       "config_fields": {
@@ -812,8 +818,8 @@
       "key_default": "Стандартный ключ vault",
       "key_info": "Ключ: <b>{status}</b>",
       "restore_scope": "Объём: <b>{scope}</b>",
-      "restore_custom_key": "Ключ: <b>{key}</b>",
-      "restore_key_btn": "Ключ: {key}",
+      "restore_custom_key": "Ключ: <b>{key_name}</b>",
+      "restore_key_btn": "Ключ: {key_name}",
       "caption_custom_key": "<tg-emoji emoji-id=\"5325732612084351248\">📦</tg-emoji> <b>Резервная копия Hotaru (Свой ключ)</b>\n<blockquote><tg-emoji emoji-id=\"5258476306152038031\">🔒</tg-emoji> Защищено пользовательским ключом шифрования\n<tg-emoji emoji-id=\"5258105663359294787\">🗓</tg-emoji> <code>{name}</code></blockquote>"
     },
     "intrusion": {
@@ -850,10 +856,12 @@
       "description": "Защита от флудвейта и перегрузки Telegram API",
       "commands": {
         "shield": {
+          "description": "Управление и статистика защиты от флудвейта API",
           "usage": ""
         },
         "suspend_api": {
-          "usage": "<seconds>"
+          "description": "Приостановить защиту API на указанное время",
+          "usage": "[секунды]"
         }
       },
       "unavailable": "Защита API недоступна",
@@ -920,6 +928,10 @@
         },
         "quickstart": {
           "description": "Открыть мастер первоначальной настройки",
+          "usage": ""
+        },
+        "github": {
+          "description": "GitHub репозиторий Hotaru",
           "usage": ""
         }
       },
