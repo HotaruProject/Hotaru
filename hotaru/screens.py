@@ -468,7 +468,7 @@ class Kit:
         return self.button(text or self._t("common.back", "Back"), fn, icon="back", **args)
 
     def footer(self, back: Any = None, **args: Any) -> list[dict[str, Any]]:
-        return ([self.back(back, **args)] if back is not None else []) + [self.close()]
+        return [self.back(back, **args), self.close()] if back is not None else []
 
     @staticmethod
     def grid(items: list[dict[str, Any]], columns: int = 2) -> list[list[dict[str, Any]]]:
@@ -825,6 +825,14 @@ class ScreenEngine:
                 current.append(button)
             if current:
                 rows.append(current)
+        has_other_buttons = any(
+            any(spec.get("k") != "close" for spec in row)
+            for row in screen.rows
+            if row
+        ) or bool(_tap.search(screen.text))
+        if not has_other_buttons:
+            rows = []
+            actions = []
         if screen.banner:
             banner_prefix = screen.banner if screen.banner.endswith("\n") else (screen.banner + "\n")
             stripped_text = screen.text.lstrip("\n")
@@ -1054,6 +1062,16 @@ class ScreenEngine:
         if screen.banner:
             screen.rich = True
         text, rows, actions, gen = self._compile(form, screen)
+        if not rows and not _tap.search(text):
+            self.drop(form)
+            if respond is not None:
+                await respond(text, parse_mode="HTML", output="edit")
+                return None
+            if hasattr(source, "edit"):
+                plain, entities = to_entities(text)
+                await source.edit(plain, entities=entities)
+                return None
+            return None
         try:
             try:
                 sent, nonce = await runtime.deliver_inline(source, text, rows, rich=screen.rich, reply_to=reply_to)

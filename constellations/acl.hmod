@@ -360,7 +360,7 @@ async def confirm_clear(ctx: Any, nav: Any) -> Any:
         return ctx.t("acl.no_permission")
     removed = ctx.access_admin.remove_tsec_all(nav.arg("kind"), nav.arg("target"))
     k = ctx.screens
-    return k.screen(ctx.t('acl.rules_cleared') if removed else ctx.t('acl.nothing_clear'), [k.footer()])
+    return k.screen(ctx.t('acl.rules_cleared') if removed else ctx.t('acl.nothing_clear'), [])
 
 
 def _overview(ctx: Any) -> str:
