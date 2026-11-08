@@ -331,7 +331,7 @@ class _PublicHTTPSHandler(urllib.request.HTTPSHandler):
         return self.do_open(_PublicHTTPSConnection, req)
 
 
-def _workspace_open(root: Path, name: str, flags: int) -> int:
+def _workspace_open(root: Path, name: str, flags: int, *, owner: tuple[int, int] | None = None) -> int:
     root = root.absolute()
     target = Path(name)
     if target.is_absolute():
@@ -343,20 +343,26 @@ def _workspace_open(root: Path, name: str, flags: int) -> int:
         raise PermissionError("file path escapes the module workspace")
     directory = os.open(root.anchor, os.O_RDONLY | os.O_DIRECTORY)
     try:
-        for part in (*root.parts[1:], *target.parts[:-1]):
+        for index, part in enumerate((*root.parts[1:], *target.parts[:-1])):
+            created = False
             try:
                 child = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=directory)
             except FileNotFoundError:
                 if not flags & os.O_CREAT:
                     raise
                 try:
-                    os.mkdir(part, 0o755, dir_fd=directory)
+                    os.mkdir(part, 0o700 if owner is not None and index >= len(root.parts) - 1 else 0o755, dir_fd=directory)
+                    created = True
                 except FileExistsError:
                     pass
                 child = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=directory)
             os.close(directory)
             directory = child
-        fd = os.open(target.name or ".", (flags & ~os.O_TRUNC) | os.O_NOFOLLOW | os.O_NONBLOCK, 0o644, dir_fd=directory)
+            if created and owner is not None and index >= len(root.parts) - 1:
+                info = os.fstat(directory)
+                if (info.st_uid, info.st_gid) != owner:
+                    os.fchown(directory, *owner)
+        fd = os.open(target.name or ".", (flags & ~os.O_TRUNC) | os.O_NOFOLLOW | os.O_NONBLOCK, 0o600 if owner is not None else 0o644, dir_fd=directory)
         try:
             info = os.fstat(fd)
             if flags & os.O_DIRECTORY:
@@ -364,6 +370,8 @@ def _workspace_open(root: Path, name: str, flags: int) -> int:
                     raise PermissionError("workspace directory required")
             elif not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
                 raise PermissionError("workspace file must be regular and unlinked elsewhere")
+            if owner is not None and flags & os.O_CREAT and (info.st_uid, info.st_gid) != owner:
+                os.fchown(fd, *owner)
             if flags & os.O_TRUNC:
                 os.ftruncate(fd, 0)
         except BaseException:
@@ -1212,12 +1220,12 @@ class CapabilityHost:
     async def _assets_op(self, module_id: str, payload: dict[str, Any], meta: dict[str, Any]) -> Any:
         if payload_hits_blocked(payload):
             raise PermissionError("assets payload targets a denied peer")
-        import os
-        from .sandbox import SANDBOX_BASE_ROOT
         op = payload.get("op")
-        sandbox_root = os.path.join(SANDBOX_BASE_ROOT, module_id)
-        if os.path.realpath(sandbox_root) != sandbox_root:
-            raise PermissionError("invalid module workspace")
+        sandbox = self.runtime.sandbox
+        if sandbox is None:
+            raise PermissionError("module workspace is not ready")
+        workspace = Path(sandbox.workspace(module_id))
+        sandbox_root = str(workspace)
         
         if op == "upload":
             file_path = str(payload.get("file", ""))
@@ -1255,7 +1263,8 @@ class CapabilityHost:
             from relay.files import take
             if dest_path.endswith(os.sep) or os.path.isdir(dest_path):
                 dest_path = os.path.join(dest_path, secrets.token_hex(12) + ".bin")
-            fd = _workspace_open(Path(sandbox_root), dest_path, os.O_RDWR | os.O_CREAT | os.O_TRUNC)
+            info = workspace.stat()
+            fd = _workspace_open(workspace, dest_path, os.O_RDWR | os.O_CREAT | os.O_TRUNC, owner=(info.st_uid, info.st_gid))
             with os.fdopen(fd, "w+b") as handle:
                 await take(app, (chat_id, msg_id), handle)
             return os.path.relpath(dest_path, sandbox_root)
