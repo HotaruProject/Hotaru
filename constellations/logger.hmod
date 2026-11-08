@@ -32,6 +32,7 @@ HOTARU = {
 }
 
 from typing import Any, Dict, List, Mapping, Optional, cast
+from types import SimpleNamespace
 
 
 import asyncio
@@ -292,6 +293,7 @@ def logs_menu(ctx: Any, nav: Any = None) -> Any:
 
 async def send_logs_screen(ctx: Any, nav: Any) -> Any:
     level = str(nav.arg("level") or "debug").lower()
+    ctx.retarget(SimpleNamespace(chat_id=nav.form.chat, id=nav.form.message_id, from_id=nav.actor, src="mt", app=ctx.runtime.app))
     await _export_logs(ctx, level=level, count=100, component=None)
     screen = logs_menu(ctx, nav)
     screen.toast = f"✅ {level.upper()}"
