@@ -139,7 +139,7 @@ class Lexicon:
     def has(self, language: str, key: str) -> bool:
         return self._lookup(self.load(language), key) is not None
 
-    def get(self, locale: str, key: str, default: Any = None, **params: Any) -> str:
+    def get(self, locale: str, key: str, /, default: Any = None, **params: Any) -> str:
         if not key:
             raise TranslationError("translation key must be a non-empty string")
         languages: list[str] = [locale.casefold()]
@@ -219,7 +219,7 @@ class Translator:
         self.lexicon = lexicon
         self.language = lexicon.validate_language(language)
 
-    def t(self, key: str, default: str | None = None, **params: Any) -> str:
+    def t(self, key: str, /, default: str | None = None, **params: Any) -> str:
         return self.lexicon.get(self.language, key, default, **params)
 
     def __call__(self, key: str, default: str | None = None, **params: Any) -> str:

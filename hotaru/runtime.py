@@ -2041,7 +2041,7 @@ class Runtime:
             self.lexicon = Lexicon(self.lexicon_dir)
         return Translator(self.lexicon, language or self.language())
 
-    def t(self, key: str, default: str | None = None, *, locale: str | None = None, **params: Any) -> str:
+    def t(self, key: str, /, default: str | None = None, *, locale: str | None = None, **params: Any) -> str:
         return self.translator(locale).t(key, default, **params)
 
     @property

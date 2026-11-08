@@ -320,6 +320,7 @@ class Nav:
         self.form = form
         self.call = call
         self.value = value
+        self.text = value or ""
         self.actor = actor if actor is not None else form.actor
         self.args: dict[str, Any] = dict(action.get("a") or {})
         self._answered = False

@@ -89,11 +89,11 @@
       "commands": {
         "restart": {
           "description": "重启用户机器人",
-          "usage": "[-f|--force]"
+          "usage": "<-f|--force>"
         },
         "stop": {
           "description": "暂停用户机器人",
-          "usage": "[-f|--force]"
+          "usage": "<-f|--force>"
         },
         "start": {
           "description": "恢复用户机器人",
@@ -125,16 +125,19 @@
       "commands": {
         "upd": {
           "description": "检查并应用更新",
-          "usage": "[force]"
+          "usage": "<-f|--force>"
         },
         "updlog": {
-          "description": "显示更新日志"
+          "description": "显示更新日志",
+          "usage": ""
         },
         "updoff": {
-          "description": "关闭更新通知"
+          "description": "关闭更新通知",
+          "usage": ""
         },
         "updon": {
-          "description": "开启更新通知"
+          "description": "开启更新通知",
+          "usage": ""
         }
       },
       "restarted": "<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> <b>Hotaru 更新成功</b>\n<blockquote><tg-emoji emoji-id=\"5258152182150077732\">⚡️</tg-emoji> <b>重启耗时:</b> <code>{took}</code></blockquote>",
@@ -564,11 +567,11 @@
       "commands": {
         "alias": {
           "description": "创建命令别名",
-          "usage": "<alias> <command>"
+          "usage": "[alias] [command]"
         },
         "rmalias": {
           "description": "删除命令别名",
-          "usage": "<alias>"
+          "usage": "[alias]"
         },
         "lsalias": {
           "description": "列出命令别名",
@@ -576,7 +579,7 @@
         },
         "prefix": {
           "description": "更改命令前缀",
-          "usage": "<prefix>"
+          "usage": "[prefix]"
         },
         "settings": {
           "description": "打开统一设置",
@@ -584,7 +587,7 @@
         },
         "config": {
           "description": "配置模块参数",
-          "usage": "[module]"
+          "usage": "<module> <parameter|reset> <value>"
         }
       }
     },
@@ -655,11 +658,11 @@
       "commands": {
         "py": {
           "description": "运行 Python 代码",
-          "usage": "[-so] <code>"
+          "usage": "<-so> [code]"
         },
         "sh": {
           "description": "运行 Shell 命令",
-          "usage": "[-so] <command>"
+          "usage": "<-so> [command]"
         },
         "kill": {
           "description": "停止正在运行的命令",
@@ -674,23 +677,23 @@
       "commands": {
         "ld": {
           "description": "加载模块",
-          "usage": "<url|path|reply>"
+          "usage": "[url|path|reply]"
         },
         "ul": {
           "description": "卸载模块",
-          "usage": "<module> [-p]"
+          "usage": "[module] <-p>"
         },
         "rl": {
           "description": "重新加载模块",
-          "usage": "[module] [force]"
+          "usage": "<module> <-f>"
         },
         "ex": {
           "description": "导出模块",
-          "usage": "<module>"
+          "usage": "[module]"
         },
         "resetdb": {
           "description": "重置模块数据",
-          "usage": "<module>"
+          "usage": "[module]"
         }
       }
     },
@@ -739,7 +742,8 @@
           "usage": ""
         },
         "ping": {
-          "usage": ""
+          "usage": "",
+          "description": "Measure userbot ping"
         }
       },
       "empty_template": "信息模板为空",
@@ -801,10 +805,12 @@
       "description": "Telegram API 泛洪与速率限制保护",
       "commands": {
         "shield": {
-          "usage": ""
+          "usage": "",
+          "description": "API flood protection management"
         },
         "suspend_api": {
-          "usage": "<seconds>"
+          "usage": "[seconds]",
+          "description": "Suspend API flood protection"
         }
       },
       "unavailable": "API 保护不可用",
@@ -826,10 +832,11 @@
       "commands": {
         "backup": {
           "description": "发送备份或管理自动备份",
-          "usage": "[send|now]"
+          "usage": "<send|now>"
         },
         "restore": {
-          "usage": "<archive>"
+          "usage": "<-f|--force> <archive>",
+          "description": "Restore from backup archive"
         }
       },
       "config_fields": {
@@ -905,6 +912,10 @@
         },
         "quickstart": {
           "description": "打开初始设置向导",
+          "usage": ""
+        },
+        "github": {
+          "description": "Hotaru GitHub repository",
           "usage": ""
         }
       },

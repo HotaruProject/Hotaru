@@ -650,7 +650,7 @@ class SandboxContext(ContextOperations):
     def i18n(self):
         return SimpleNamespace(language=self._msg.get("language", "en"), t=self.t)
 
-    def t(self, key, default=None, **params):
+    def t(self, key, /, default=None, **params):
         value = self._msg.get("translations") or {}
         for part in str(key).split("."):
             if not isinstance(value, dict) or part not in value:
@@ -874,6 +874,7 @@ class SandboxNav:
     def __init__(self, data):
         self.args = dict(data.get("args") or {})
         self.value = data.get("value")
+        self.text = data.get("value") or ""
         self.actor = data.get("actor")
 
     def arg(self, name, default=None):

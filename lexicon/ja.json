@@ -93,11 +93,11 @@
       "commands": {
         "restart": {
           "description": "ユーザーボット再起動",
-          "usage": "[-f|--force]"
+          "usage": "<-f|--force>"
         },
         "stop": {
           "description": "ユーザーボット停止",
-          "usage": "[-f|--force]"
+          "usage": "<-f|--force>"
         },
         "start": {
           "description": "ユーザーボット再開",
@@ -128,16 +128,19 @@
       "commands": {
         "upd": {
           "description": "更新の確認と適用",
-          "usage": "[force]"
+          "usage": "<-f|--force>"
         },
         "updlog": {
-          "description": "変更ログ表示"
+          "description": "変更ログ表示",
+          "usage": ""
         },
         "updoff": {
-          "description": "更新通知を無効化"
+          "description": "更新通知を無効化",
+          "usage": ""
         },
         "updon": {
-          "description": "更新通知を有効化"
+          "description": "更新通知を有効化",
+          "usage": ""
         }
       },
       "restarted": "<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> <b>Hotaruが正常に更新されました</b>\n<blockquote><tg-emoji emoji-id=\"5258152182150077732\">⚡️</tg-emoji> <b>再起動時間:</b> <code>{took}</code></blockquote>",
@@ -560,11 +563,11 @@
       "commands": {
         "alias": {
           "description": "コマンドの別名を作成",
-          "usage": "<alias> <command>"
+          "usage": "[alias] [command]"
         },
         "rmalias": {
           "description": "コマンドの別名を削除",
-          "usage": "<alias>"
+          "usage": "[alias]"
         },
         "lsalias": {
           "description": "コマンドエイリアスの一覧を表示",
@@ -572,7 +575,7 @@
         },
         "prefix": {
           "description": "コマンドのプレフィックスを変更",
-          "usage": "<prefix>"
+          "usage": "[prefix]"
         },
         "settings": {
           "description": "設定を開く",
@@ -580,7 +583,7 @@
         },
         "config": {
           "description": "設定を開く",
-          "usage": "[module]"
+          "usage": "<module> <parameter|reset> <value>"
         }
       }
     },
@@ -660,11 +663,11 @@
       "commands": {
         "py": {
           "description": "Pythonコードを実行",
-          "usage": "[-so] <code>"
+          "usage": "<-so> [code]"
         },
         "sh": {
           "description": "シェルコマンドを実行",
-          "usage": "[-so] <command>"
+          "usage": "<-so> [command]"
         },
         "kill": {
           "description": "実行中のコマンドを停止",
@@ -679,23 +682,23 @@
       "commands": {
         "ld": {
           "description": "モジュールを読み込む",
-          "usage": "<url|path|reply>"
+          "usage": "[url|path|reply]"
         },
         "ul": {
           "description": "モジュールを停止",
-          "usage": "<module> [-p]"
+          "usage": "[module] <-p>"
         },
         "rl": {
           "description": "モジュールを再読み込み",
-          "usage": "[module] [force]"
+          "usage": "<module> <-f>"
         },
         "ex": {
           "description": "モジュールをエクスポート",
-          "usage": "<module>"
+          "usage": "[module]"
         },
         "resetdb": {
           "description": "モジュールのデータをリセット",
-          "usage": "<module>"
+          "usage": "[module]"
         }
       }
     },
@@ -744,7 +747,8 @@
           "usage": ""
         },
         "ping": {
-          "usage": ""
+          "usage": "",
+          "description": "Measure userbot ping"
         }
       },
       "empty_template": "情報テンプレートが空です",
@@ -777,10 +781,11 @@
       "commands": {
         "backup": {
           "description": "バックアップを送信、または自動送信を設定",
-          "usage": "[send|now]"
+          "usage": "<send|now>"
         },
         "restore": {
-          "usage": "<archive>"
+          "usage": "<-f|--force> <archive>",
+          "description": "Restore from backup archive"
         }
       },
       "config_fields": {
@@ -840,10 +845,12 @@
       "description": "Telegram APIフラッドおよびレート制限からの保護",
       "commands": {
         "shield": {
-          "usage": ""
+          "usage": "",
+          "description": "API flood protection management"
         },
         "suspend_api": {
-          "usage": "<seconds>"
+          "usage": "[seconds]",
+          "description": "Suspend API flood protection"
         }
       },
       "unavailable": "API保護は利用できません",
@@ -910,6 +917,10 @@
         },
         "quickstart": {
           "description": "初期設定ウィザードを開く",
+          "usage": ""
+        },
+        "github": {
+          "description": "Hotaru GitHub repository",
           "usage": ""
         }
       },
