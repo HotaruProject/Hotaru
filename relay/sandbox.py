@@ -15,6 +15,7 @@ import threading
 import time
 import traceback
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Sequence, cast
 
 from . import toolkit as _toolkit
@@ -869,6 +870,32 @@ class _RichProxy:
         return await self.send(html, **kwargs)
 
 
+class SandboxNav:
+    def __init__(self, data):
+        self.args = dict(data.get("args") or {})
+        self.value = data.get("value")
+        self.actor = data.get("actor")
+
+    def arg(self, name, default=None):
+        return self.args.get(name, default)
+
+    def int(self, name, default=0):
+        try:
+            return int(self.args.get(name, default))
+        except (TypeError, ValueError):
+            return default
+
+    @property
+    def is_input(self):
+        return self.value is not None
+
+    async def answer(self, text=None, *, alert=False):
+        return _cb_respond_call({"action": "respond", "text": text or "", "alert": alert})
+
+    async def toast(self, text):
+        return await self.answer(text)
+
+
 class _ScreensProxy:
     @staticmethod
     def screen(text, rows=None, **options):
@@ -1251,8 +1278,14 @@ def main():
     install_firewall(cfg.get("protected", []), cfg.get("namespaces", False), cfg.get("deps_root", ""), cfg.get("workspace", ""))
     apply_policy(cfg.get("net_blocked", True))
     install_output_capture()
-    context_ns = {"__name__": "hotaru_context"}
-    exec(compile(cfg.get("denylist_source", ""), "hotaru_denylist", "exec"), context_ns, context_ns)
+    import types as _types
+    package = _types.ModuleType("_hotaru_shared")
+    package.__path__ = []
+    denylist = _types.ModuleType("_hotaru_shared.denylist")
+    sys.modules[package.__name__] = package
+    sys.modules[denylist.__name__] = denylist
+    exec(compile(cfg.get("denylist_source", ""), "hotaru_denylist", "exec"), denylist.__dict__, denylist.__dict__)
+    context_ns = {"__name__": "_hotaru_shared.context", "__package__": package.__name__}
     exec(compile(cfg["context_source"], "hotaru_context", "exec"), context_ns, context_ns)
     SandboxContext.__bases__ = (context_ns["ContextOperations"],)
     translation_ns = {}
@@ -1421,7 +1454,9 @@ def main():
                         message_id=payload.get("message_id"),
                         chat_id=payload.get("chat_id"),
                     )
-                    if payload.get("source") in ("lifecycle", "template", "task"):
+                    if "screen_nav" in req:
+                        result = handler(ctx, SandboxNav(req["screen_nav"]))
+                    elif payload.get("source") in ("lifecycle", "template", "task"):
                         result = _invoke_lifecycle(handler, ctx)
                     else:
                         result = handler(ctx, invocation)
@@ -1693,6 +1728,7 @@ class ModuleSandbox:
         self._ensure_locks: dict[str, asyncio.Lock] = {}
         self._respond_sources: dict[Any, Any] = {}
         self._respond_contexts: dict[Any, Any] = {}
+        self._screen_calls: dict[tuple[str, int], Any] = {}
         self._cb_waiters: dict[tuple[str, str], asyncio.Future[Any]] = {}
         self._active_callback: dict[Any, Any] = {}
         self._cb_respond_pending: dict[str, list[dict[str, Any]]] = {}
@@ -2025,7 +2061,7 @@ class ModuleSandbox:
         await loop.run_in_executor(None, lambda: self._spawn_worker(module_id, source, commands))
         return True
 
-    async def call(self, module_id: str, command: str, args: list[str], payload: dict[str, Any], source: Any = None, target: str | None = None, context: Any = None) -> Any:
+    async def call(self, module_id: str, command: str, args: list[str], payload: dict[str, Any], source: Any = None, target: str | None = None, context: Any = None, nav: Any = None) -> Any:
         context = context or self.runtime.context_factory.create(module_id, source)
         config = context.config
         payload = dict(payload, version=context.version, started_at=self.runtime.started_at, mt_layer=_mt_layer_payload(self.runtime), config={
@@ -2042,17 +2078,36 @@ class ModuleSandbox:
         self._respond_contexts[(module_id, rid)] = context
         if source is not None:
             self._respond_sources[(module_id, rid)] = source
+        request: dict[str, Any] = {"command": command, "args": args, "payload": payload, "target": target}
+        if nav is not None:
+            self._screen_calls[(module_id, rid)] = (self.runtime.modules.get(module_id), nav, nav.form.gen)
+            request["screen_nav"] = {"args": nav.args, "value": nav.value, "actor": nav.actor}
+            self._active_callback[(module_id, rid)] = SimpleNamespace(respond=nav.answer)
         try:
-            result = await self._roundtrip(module_id, {"command": command, "args": args, "payload": payload, "target": target}, rid)
+            self._check_screen_call(module_id, rid)
+            result = await self._roundtrip(module_id, request, rid)
+            self._check_screen_call(module_id, rid)
         finally:
             self._respond_contexts.pop((module_id, rid), None)
             self._respond_sources.pop((module_id, rid), None)
+            self._screen_calls.pop((module_id, rid), None)
+            if nav is not None:
+                self._active_callback.pop((module_id, rid), None)
         if not isinstance(result, dict) or not result.get("ok"):
             detail = result.get("error", "malformed") if isinstance(result, dict) else "malformed"
             trace = (result.get("trace") or "") if isinstance(result, dict) else ""
             log.error("sandbox call error module=%s cmd=%s error=%s trace=%s", module_id, command, detail, trace)
             raise SandboxError(f"sandbox call failed: {detail}", trace)
         return result.get("result")
+
+    def _check_screen_call(self, module_id: str, rid: Any) -> None:
+        binding = self._screen_calls.get((module_id, rid))
+        if binding is None:
+            return
+        active, nav, generation = binding
+        form = self.runtime.screens.load(nav.form.id)
+        if active is None or self.runtime.modules.get(module_id) is not active or form is not nav.form or form.gen != generation or not self.runtime.screens._allowed(form, nav.actor, {"m": module_id}):
+            raise PermissionError("screen invocation is no longer authorized")
 
     async def cap_call(self, module_id: str, capability: str, payload: dict[str, Any]) -> Any:
         result = await self._roundtrip(module_id, {"command": "$cap." + capability, "args": [], "payload": payload})
@@ -2237,6 +2292,7 @@ class ModuleSandbox:
             reply = {"kind": "cap_result", "cid": message.get("cid"), "ok": False, "error": "capability host is unavailable"}
             if cap_host is not None or name in ("$template", "$sys"):
                 try:
+                    self._check_screen_call(module_id, rid)
                     if name == "$sys":
                         op = payload.get("op")
                         if op in ("memory", "ram"):
@@ -2284,6 +2340,7 @@ class ModuleSandbox:
             reply = {"kind": "op_result", "cid": message.get("cid"), "ok": False, "error": "capability host is unavailable"}
             if cap_host is not None:
                 try:
+                    self._check_screen_call(module_id, message.get("rid"))
                     with trusted_scope():
                         result = await cap_host._mt_call(module_id, {"method": method, "kwargs": kwargs}, {})
                     reply = {"kind": "op_result", "cid": message.get("cid"), "ok": True, "result": result}
@@ -2305,6 +2362,7 @@ class ModuleSandbox:
             source = self._respond_sources.get((module_id, message.get("rid")))
             reply = {"kind": "respond_result", "cid": message.get("cid"), "ok": False, "error": "respond failed"}
             try:
+                self._check_screen_call(module_id, message.get("rid"))
                 with module_scope(module_id):
                     result = await self._trusted_respond(module_id, source, payload, rid=message.get("rid"))
                 reply = {"kind": "respond_result", "cid": message.get("cid"), "ok": True, "result": result}
@@ -2324,6 +2382,7 @@ class ModuleSandbox:
             callback = self._active_callback.get((module_id, message.get("rid")))
             result = {"ok": False, "error": "callback context is unavailable"}
             try:
+                self._check_screen_call(module_id, message.get("rid"))
                 if callback is None:
                     raise PermissionError("callback context is unavailable")
                 action = data.get("action")
