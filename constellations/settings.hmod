@@ -38,7 +38,7 @@ async def command_alias(ctx: Any, invocation: Any) -> Any:
     if alias in aliases:
         await ctx.respond(f'<tg-emoji emoji-id="5260342697075416641">❌</tg-emoji> {_escape(ctx.t("settings.alias_taken", alias=alias, command=aliases[alias], prefix=runtime.config.prefix))}', parse_mode="HTML", output="edit")
         return
-    command = " ".join([target.name] + words[1:])
+    command = " ".join([runtime.kernel.registry.alias_map().get(command, target.name)] + words[1:])
     aliases[alias] = command
     runtime.state.set_setting("user_aliases", aliases)
     runtime.kernel.registry.register_alias(alias, command)
