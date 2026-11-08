@@ -3,6 +3,8 @@ from __future__ import annotations
 import __future__
 import ast
 import hashlib
+import html
+import json
 import os
 import re
 import tempfile
@@ -43,6 +45,7 @@ class ModuleManifest:
     template_fields: dict[str, dict[str, Any]] | None = None
     banner: str = ""
     bot_commands: tuple[str, ...] = ()
+    name: str = ""
 
     @property
     def description(self) -> str:
@@ -50,6 +53,8 @@ class ModuleManifest:
         return value if isinstance(value, str) else ""
 
     def __post_init__(self) -> Any:
+        if not self.name:
+            object.__setattr__(self, "name", self.module_id)
         if self.tasks is None:
             object.__setattr__(self, "tasks", {})
         if self.aliases is None:
@@ -207,16 +212,21 @@ class HmodLoader:
         required = ("id", "version", "commands", "capabilities")
         if any(key not in raw for key in required):
             raise ModuleValidationError("manifest is missing required fields")
-        module_id = raw["id"]
+        module_id = str(raw["id"]).strip()
         version = raw["version"]
         commands = raw["commands"]
         capabilities = raw["capabilities"]
-        if not isinstance(module_id, str) or not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,63}", module_id):
+        name_val = raw.get("name")
+        name = str(name_val).strip() if isinstance(name_val, str) and name_val.strip() else module_id
+        if not module_id or len(module_id) > 128 or "/" in module_id or "\\" in module_id or "\x00" in module_id:
             raise ModuleValidationError("manifest id is invalid")
         if not isinstance(version, str) or not version:
             raise ModuleValidationError("manifest version is invalid")
         if not HmodLoader._strings(commands) or not HmodLoader._strings(capabilities):
             raise ModuleValidationError("manifest lists must contain strings")
+        for cmd in cast('list[str]', commands):
+            if not cmd or any(c.isspace() for c in cmd):
+                raise ModuleValidationError(f"manifest command is invalid: {cmd}")
 
         watchers = raw.get("watchers", [])
         if not HmodLoader._strings(watchers):
@@ -253,26 +263,26 @@ class HmodLoader:
         if not HmodLoader._strings(after):
             raise ModuleValidationError("manifest after must contain module ids")
         for dep in cast('list[str]', after):
-            if not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,63}", dep):
+            if not dep or "/" in dep or "\\" in dep:
                 raise ModuleValidationError(f"manifest after entry is invalid: {dep}")
 
         inline_commands = raw.get("inline_commands", [])
         if not HmodLoader._strings(inline_commands):
             raise ModuleValidationError("manifest inline_commands must contain strings")
         for inline_name in cast('list[str]', inline_commands):
-            if not inline_name.isidentifier():
+            if not inline_name or any(c.isspace() for c in inline_name):
                 raise ModuleValidationError(f"manifest inline command is invalid: {inline_name}")
 
         rise = raw.get("rise", "")
         if not isinstance(rise, str):
             raise ModuleValidationError("manifest rise must be a string")
-        if rise and not rise.isidentifier():
+        if rise and any(c.isspace() for c in rise):
             raise ModuleValidationError("manifest rise is invalid")
 
         fade = raw.get("fade", "")
         if not isinstance(fade, str):
             raise ModuleValidationError("manifest fade must be a string")
-        if fade and not fade.isidentifier():
+        if fade and any(c.isspace() for c in fade):
             raise ModuleValidationError("manifest fade is invalid")
 
         banner = raw.get("banner", "")
@@ -330,7 +340,7 @@ class HmodLoader:
                 raise ModuleValidationError("template scope must be private/shared/global")
             consumers = cast("list[object]", consumers)
             if scope == "shared":
-                if not consumers or len(consumers) > 64 or any(not isinstance(item, str) or not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,63}", item) for item in consumers):
+                if not consumers or len(consumers) > 64 or any(not isinstance(item, str) or not item or "/" in item or "\\" in item for item in consumers):
                     raise ModuleValidationError("shared template fields require module IDs")
             elif consumers:
                 raise ModuleValidationError("modules requires shared scope")
@@ -368,6 +378,7 @@ class HmodLoader:
             publications,
             banner,
             tuple(cast("list[str]", bot_commands)),
+            name=name,
         )
 
     @staticmethod
@@ -379,6 +390,123 @@ class ModuleFetchError(ValueError):
     pass
 
 
+def extract_blob_content(content_bytes: bytes, url: str | None = None) -> bytes:
+    try:
+        text = content_bytes.decode("utf-8", errors="replace")
+    except Exception:
+        return content_bytes
+    if not any(token in text[:500].lower() for token in ("<!doctype", "<html", "<head", "<body")):
+        return content_bytes
+
+    scripts = re.findall(r"<script[^>]*type=[\"']application/json[\"'][^>]*>(.*?)</script>", text, re.DOTALL)
+    for s in scripts:
+        if "rawLines" in s or "rawBlobUrl" in s or "raw_path" in s:
+            try:
+                d = cast('dict[str, Any]', json.loads(s))
+                def find_key(obj: Any, key: str) -> Any:
+                    if isinstance(obj, dict):
+                        for k, v in cast('dict[str, Any]', obj).items():
+                            if k == key:
+                                return v
+                            res = find_key(v, key)
+                            if res is not None:
+                                return res
+                    elif isinstance(obj, list):
+                        for v in cast('list[Any]', obj):
+                            res = find_key(v, key)
+                            if res is not None:
+                                return res
+                    return None
+                rl = find_key(d, "rawLines")
+                if isinstance(rl, list) and rl:
+                    return "\n".join(str(line) for line in cast('list[Any]', rl)).encode("utf-8")
+                ru = find_key(d, "rawBlobUrl") or find_key(d, "raw_path")
+                if isinstance(ru, str) and ru:
+                    target_ru = ru
+                    if url and target_ru.startswith("/"):
+                        target_ru = urllib.parse.urljoin(url, target_ru)
+                    return fetch_url_content(target_ru)
+            except Exception:
+                pass
+
+    match_url = re.search(r'["\'](?:rawBlobUrl|raw_path)["\']\s*:\s*["\']([^"\']+)["\']', text)
+    if match_url:
+        target_url = match_url.group(1).replace("\\/", "/")
+        if url and target_url.startswith("/"):
+            target_url = urllib.parse.urljoin(url, target_url)
+        try:
+            return fetch_url_content(target_url)
+        except Exception:
+            pass
+
+    match_raw_link = re.search(r'<a[^>]+href="([^"]+/(?:raw|plain)/[^"]+)"', text, re.IGNORECASE)
+    if match_raw_link:
+        target_link = match_raw_link.group(1)
+        if url and target_link.startswith("/"):
+            target_link = urllib.parse.urljoin(url, target_link)
+        try:
+            return fetch_url_content(target_link)
+        except Exception:
+            pass
+
+    td_lines = re.findall(r'<td[^>]*class="[^"]*blob-code[^"]*"[^>]*>(.*?)</td>', text, re.DOTALL)
+    if td_lines:
+        clean_lines = [html.unescape(re.sub(r'<[^>]+>', '', line)).rstrip("\r\n") for line in td_lines]
+        combined = "\n".join(clean_lines).strip()
+        if "HOTARU = " in combined or combined.startswith("{") or combined.startswith("import ") or combined.startswith("from "):
+            return combined.encode("utf-8")
+
+    for tag in ("textarea", "code", "pre"):
+        matches = re.findall(rf"<{tag}[^>]*>(.*?)</{tag}>", text, re.DOTALL | re.IGNORECASE)
+        for m in matches:
+            decoded = html.unescape(m).strip()
+            if "HOTARU = " in decoded or decoded.startswith("{") or decoded.startswith("import ") or decoded.startswith("from "):
+                return decoded.encode("utf-8")
+
+    return content_bytes
+
+
+def fetch_url_content(url: str, *, timeout: float = 15.0, max_bytes: int = 20 * 1024 * 1024) -> bytes:
+    current_url = ModuleStager.normalize_url(url)
+    data = b""
+    for _ in range(10):
+        req = urllib.request.Request(
+            current_url,
+            headers={
+                "Accept": "*/*",
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 Hotaru/1.0",
+            },
+            method="GET",
+        )
+        with trusted_scope():
+            try:
+                with urllib.request.urlopen(req, timeout=timeout) as response:
+                    final_url = str(response.geturl())
+                    if final_url != current_url:
+                        norm = ModuleStager.normalize_url(final_url)
+                        if norm != final_url:
+                            current_url = norm
+                            continue
+                    content_length = response.headers.get("Content-Length")
+                    if content_length is not None and int(content_length) > max_bytes:
+                        raise ModuleFetchError("download exceeds the size limit")
+                    data = response.read(max_bytes + 1)
+                    if len(data) > max_bytes:
+                        raise ModuleFetchError("download exceeds the size limit")
+                    break
+            except urllib.error.HTTPError as exc:
+                if exc.code in (301, 302, 303, 307, 308):
+                    location = exc.headers.get("Location")
+                    if location:
+                        current_url = ModuleStager.normalize_url(urllib.parse.urljoin(current_url, location))
+                        continue
+                raise ModuleFetchError(f"download failed with status {exc.code}") from exc
+            except (OSError, urllib.error.URLError) as exc:
+                raise ModuleFetchError("download failed") from exc
+
+    return extract_blob_content(data, current_url)
+
+
 class ModuleStager:
     def __init__(self, loader: HmodLoader | None = None) -> None:
         self.loader = loader or HmodLoader()
@@ -387,43 +515,44 @@ class ModuleStager:
     def normalize_url(value: str) -> str:
         parsed = urllib.parse.urlparse(value)
         try:
-            port = parsed.port
+            _ = parsed.port
         except ValueError as exc:
-            raise ModuleFetchError("module URL must be a plain HTTPS URL") from exc
-        if parsed.scheme != "https" or parsed.username or parsed.password or port or parsed.query or parsed.fragment:
-            raise ModuleFetchError("module URL must be a plain HTTPS URL")
+            raise ModuleFetchError("module URL must be a valid URL") from exc
+        if parsed.scheme not in ("https", "http") or parsed.username or parsed.password:
+            raise ModuleFetchError("module URL must be a valid HTTP or HTTPS URL")
         host = (parsed.hostname or "").casefold()
+        if not host:
+            raise ModuleFetchError("module URL must contain a host")
         parts = [urllib.parse.unquote(part) for part in parsed.path.split("/") if part]
         if any(part in {".", ".."} or "\\" in part for part in parts):
             raise ModuleFetchError("module URL path is unsafe")
-        if host == "github.com" and len(parts) >= 5 and parts[2] == "blob":
-            owner, repo, _, ref, *filename = parts
-            if not filename or not filename[-1].endswith(".hmod"):
-                raise ModuleFetchError("module URL must target a .hmod file")
-            return "https://raw.githubusercontent.com/" + "/".join([owner, repo, ref, *filename])
-        if host == "raw.githubusercontent.com" and len(parts) >= 4 and parts[-1].endswith(".hmod"):
-            return urllib.parse.urlunparse(("https", host, "/" + "/".join(parts), "", "", ""))
-        raise ModuleFetchError("module URL host or path is not allowed")
+        if host == "github.com" and len(parts) >= 4 and parts[2] in ("blob", "raw"):
+            owner, repo, _, *rest = parts
+            return "https://raw.githubusercontent.com/" + "/".join([owner, repo, *rest])
+        if host == "gist.github.com" and len(parts) >= 2 and parts[-1] != "raw":
+            return f"https://gist.githubusercontent.com/{'/'.join(parts)}/raw"
+        if host in ("gitlab.com", "invent.kde.org") or "gitlab" in host:
+            if "-/blob" in parsed.path:
+                return value.replace("-/blob/", "-/raw/")
+        if host == "bitbucket.org" and len(parts) >= 4 and parts[2] == "src":
+            owner, repo, _, *rest = parts
+            return "https://bitbucket.org/" + "/".join([owner, repo, "raw", *rest])
+        if host == "pastebin.com" and len(parts) == 1 and parts[0] != "raw":
+            return f"https://pastebin.com/raw/{parts[0]}"
+        if host == "rentry.co" and len(parts) == 1 and parts[0] != "raw":
+            return f"https://rentry.co/{parts[0]}/raw"
+        if host in ("hastebin.com", "haste.tunnels.msm.io") and len(parts) >= 1 and parts[0] != "raw":
+            return f"https://hastebin.com/raw/{parts[0]}"
+        if host in ("ghostbin.com", "ghostbin.me") and len(parts) >= 1 and parts[-1] != "raw":
+            return f"https://ghostbin.com/{parts[0]}/raw"
+        if host == "dpaste.org" and len(parts) >= 1 and not parts[0].endswith(".txt"):
+            return f"https://dpaste.org/{parts[0]}.txt"
+        return value
 
     def stage_url(self, value: str, destination: str | Path, *, timeout: float = 10.0) -> LoadedModule:
         if timeout <= 0:
             raise ValueError("timeout must be positive")
-        url = self.normalize_url(value)
-        try:
-            request = urllib.request.Request(url, headers={"Accept": "text/plain"}, method="GET")
-            with trusted_scope():
-                with urllib.request.urlopen(request, timeout=timeout) as response:
-                    final = urllib.parse.urlparse(cast(str, response.geturl()))
-                    if final.scheme != "https" or (final.hostname or "").casefold() != "raw.githubusercontent.com":
-                        raise ModuleFetchError("module URL redirected to an unsafe host")
-                    content_length = response.headers.get("Content-Length")
-                    if content_length is not None and int(content_length) > self.loader.max_bytes:
-                        raise ModuleFetchError("module download exceeds the size limit")
-                    data = response.read(self.loader.max_bytes + 1)
-        except (OSError, urllib.error.URLError) as exc:
-            raise ModuleFetchError("module download failed") from exc
-        if len(data) > self.loader.max_bytes:
-            raise ModuleFetchError("module download exceeds the size limit")
+        data = fetch_url_content(value, timeout=timeout, max_bytes=self.loader.max_bytes)
         fd, temporary = tempfile.mkstemp(prefix=".hotaru-source-", suffix=".hmod")
         path = Path(temporary)
         try:

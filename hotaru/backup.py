@@ -60,19 +60,24 @@ class BackupService:
         self,
         output: str | Path,
         *,
-        state_path: str | Path,
-        module_paths: Sequence[str | Path],
+        state_path: str | Path | None = None,
+        module_paths: Sequence[str | Path] = (),
         metadata: dict[str, object] | None = None,
+        key: str | bytes | None = None,
     ) -> Path:
         files: list[tuple[str, Path]] = []
-        state = self._regular(Path(state_path))
-        snapshot = self._snapshot_state(state)
-        files.append(("state/state.sqlite3", snapshot))
+        snapshot: Path | None = None
+        if state_path is not None:
+            state = self._regular(Path(state_path))
+            snapshot = self._snapshot_state(state)
+            files.append(("state/state.sqlite3", snapshot))
         for path in sorted((Path(item) for item in module_paths), key=lambda item: str(item)):
             module = self._regular(path)
             if module.suffix != ".hmod":
                 raise BackupError("backup accepts only .hmod modules")
             files.append((f"modules/{module.name}", module))
+        if not files:
+            raise BackupError("backup requires state or modules")
         self._validate_metadata(metadata or {})
         manifest = {
             "format": 1,
@@ -94,7 +99,7 @@ class BackupService:
                 raise BackupError("backup exceeds the size limit")
             nonce = secrets.token_bytes(NONCE_SIZE)
             try:
-                ciphertext = aes_gcm_encrypt(self._key(), nonce, packed, MAGIC)
+                ciphertext = aes_gcm_encrypt(self._key(key), nonce, packed, MAGIC)
             except Exception as exc:
                 log.error("backup encryption failed for %s: %s: %s", destination, type(exc).__name__, exc)
                 raise BackupError(f"backup encryption failed: {type(exc).__name__}: {exc}") from exc
@@ -107,7 +112,8 @@ class BackupService:
             return destination
         finally:
             sealed_path.unlink(missing_ok=True)
-            snapshot.unlink(missing_ok=True)
+            if snapshot is not None:
+                snapshot.unlink(missing_ok=True)
 
     @staticmethod
     def _pack_container(manifest: Mapping[str, object], files: Sequence[tuple[str, bytes]]) -> bytes:
@@ -160,18 +166,18 @@ class BackupService:
             files[name] = decomp
         return manifest, files
 
-    def dry_run(self, archive_path: str | Path) -> DryRunResult:
+    def dry_run(self, archive_path: str | Path, key: str | bytes | None = None) -> DryRunResult:
         archive = self._regular(Path(archive_path))
         if archive.suffix != ".hbk":
             raise BackupError("backup must use the .hbk extension")
         if archive.stat().st_size > self.max_bytes:
             raise BackupError("backup exceeds the size limit")
-        fmt, payload = self._unseal(archive)
+        fmt, payload = self._unseal(archive, key=key)
         if fmt == 3:
             manifest, files = self._unpack_container(payload)
             records_value = manifest.get("files")
-            if not isinstance(records_value, dict) or "state/state.sqlite3" not in files:
-                raise BackupError("backup manifest or state is missing")
+            if not isinstance(records_value, dict) or not files:
+                raise BackupError("backup manifest or files are missing")
             for name, data in files.items():
                 if name == "state/state.sqlite3":
                     self._validate_state(data)
@@ -198,7 +204,7 @@ class BackupService:
             finally:
                 plain.unlink(missing_ok=True)
 
-    def _unseal(self, archive: Path) -> tuple[int, bytes]:
+    def _unseal(self, archive: Path, key: str | bytes | None = None) -> tuple[int, bytes]:
         data = archive.read_bytes()
         if data.startswith(MAGIC):
             magic = MAGIC
@@ -211,17 +217,29 @@ class BackupService:
         if len(data) <= len(magic) + NONCE_SIZE:
             raise BackupError("backup is truncated")
         nonce = data[len(magic):len(magic) + NONCE_SIZE]
-        try:
-            plaintext = aes_gcm_decrypt(self._key(), nonce, data[len(magic) + NONCE_SIZE:], magic)
-        except Exception as exc:
-            log.error("backup decryption failed for %s: %s: %s", archive, type(exc).__name__, exc)
-            raise BackupError(f"backup decryption failed: {type(exc).__name__}: {exc}") from exc
+        ciphertext = data[len(magic) + NONCE_SIZE:]
+        plaintext: bytes | None = None
+        if key:
+            try:
+                plaintext = aes_gcm_decrypt(self._key(key), nonce, ciphertext, magic)
+            except Exception as exc:
+                log.error("backup decryption failed for %s: %s: %s", archive, type(exc).__name__, exc)
+                raise BackupError(f"backup decryption failed: {type(exc).__name__}: {exc}") from exc
+        else:
+            try:
+                plaintext = aes_gcm_decrypt(self._key(None), nonce, ciphertext, magic)
+            except Exception as exc:
+                log.error("backup decryption failed for %s: %s: %s", archive, type(exc).__name__, exc)
+                raise BackupError(f"backup decryption failed: {type(exc).__name__}: {exc}") from exc
         if len(plaintext) > self.max_bytes:
             raise BackupError("backup exceeds the expanded size limit")
         return fmt, plaintext
 
     @staticmethod
-    def _key() -> bytes:
+    def _key(custom_key: str | bytes | None = None) -> bytes:
+        if custom_key:
+            raw = custom_key.encode("utf-8") if isinstance(custom_key, str) else custom_key
+            return hashlib.sha256(raw).digest()
         from .state import master_key
 
         return hmac.new(master_key(), KEY_CONTEXT, hashlib.sha256).digest()
@@ -230,8 +248,8 @@ class BackupService:
         names = source.namelist()
         if len(names) != len(set(names)):
             raise BackupError("backup contains duplicate paths")
-        if "manifest.json" not in names or "state/state.sqlite3" not in names:
-            raise BackupError("backup manifest or state is missing")
+        if "manifest.json" not in names or not any(name == "state/state.sqlite3" or name.startswith("modules/") for name in names):
+            raise BackupError("backup manifest or content is missing")
         if sum(info.file_size for info in source.infolist()) > self.max_bytes:
             raise BackupError("backup exceeds the expanded size limit")
         for info in source.infolist():
@@ -313,16 +331,16 @@ class BackupService:
             removed.append(path)
         return tuple(removed)
 
-    def plan(self, archive_path: str | Path) -> RestorePlan:
+    def plan(self, archive_path: str | Path, key: str | bytes | None = None) -> RestorePlan:
         archive = self._regular(Path(archive_path))
-        result = self.dry_run(archive)
+        result = self.dry_run(archive, key=key)
         return RestorePlan(archive, result["files"], result["metadata"])
 
-    def stage(self, archive_path: str | Path, directory: str | Path | None = None) -> Path:
+    def stage(self, archive_path: str | Path, directory: str | Path | None = None, key: str | bytes | None = None) -> Path:
         archive = self._regular(Path(archive_path))
         if archive.suffix != ".hbk" or archive.stat().st_size > self.max_bytes:
             raise BackupError("backup extension or size is invalid")
-        fmt, payload = self._unseal(archive)
+        fmt, payload = self._unseal(archive, key=key)
         destination = Path(directory) if directory is not None else Path(tempfile.mkdtemp(prefix="hotaru-restore-"))
         if destination.is_symlink():
             raise BackupError("restore destination is a symlink")
@@ -373,68 +391,102 @@ class BackupService:
         self,
         staged: str | Path,
         *,
-        state_path: str | Path,
-        modules_path: str | Path,
+        state_path: str | Path | None = None,
+        modules_path: str | Path | None = None,
+        only: str = "all",
     ) -> None:
         source = Path(staged)
-        state_source = self._regular(source / "state/state.sqlite3")
+        scope = only.casefold()
+        restore_state = scope in ("all", "full", "state", "db", "database")
+        restore_modules = scope in ("all", "full", "modules", "module", "mods", "mod")
+
+        state_source = source / "state/state.sqlite3"
         modules_source = source / "modules"
-        if not state_source.is_file():
-            raise BackupError("staged restore is incomplete")
-        if modules_source.is_symlink() or (modules_source.exists() and not modules_source.is_dir()):
-            raise BackupError("staged module tree is invalid")
-        modules_source.mkdir(parents=True, exist_ok=True)
-        target_state = Path(state_path)
-        target_modules = Path(modules_path)
-        target_state.parent.mkdir(parents=True, exist_ok=True)
-        target_modules.parent.mkdir(parents=True, exist_ok=True)
-        self._validate_state(state_source.read_bytes())
-        state_fd, state_temp_name = tempfile.mkstemp(prefix=".hotaru-activate-", suffix=".sqlite3", dir=target_state.parent)
-        os.close(state_fd)
-        state_temp = Path(state_temp_name)
-        modules_temp = Path(tempfile.mkdtemp(prefix=".hotaru-modules-", dir=target_modules.parent))
-        state_backup = target_state.with_name(f".{target_state.name}.rollback")
-        modules_backup = target_modules.with_name(f".{target_modules.name}.rollback")
+
+        if restore_state and state_path is not None and state_source.is_file():
+            self._validate_state(state_source.read_bytes())
+        elif restore_state and scope in ("state", "db", "database"):
+            raise BackupError("staged restore is missing state database")
+        else:
+            restore_state = False
+
+        if restore_modules and modules_path is not None and modules_source.is_dir():
+            pass
+        elif restore_modules and scope in ("modules", "module", "mods", "mod"):
+            raise BackupError("staged restore is missing modules")
+        else:
+            restore_modules = False
+
+        if not restore_state and not restore_modules:
+            raise BackupError("staged restore has no matching components")
+
+        target_state = Path(state_path) if restore_state and state_path is not None else None
+        target_modules = Path(modules_path) if restore_modules and modules_path is not None else None
+
+        state_temp: Path | None = None
+        modules_temp: Path | None = None
+        state_backup: Path | None = None
+        modules_backup: Path | None = None
         state_replaced = False
         modules_replaced = False
+
         try:
-            shutil.copy2(state_source, state_temp)
-            state_temp.chmod(0o600)
-            for item in modules_source.iterdir():
-                if item.is_symlink() or not item.is_file() or item.suffix != ".hmod":
-                    raise BackupError("staged module tree contains an unsafe file")
-                shutil.copy2(item, modules_temp / item.name)
-                (modules_temp / item.name).chmod(0o600)
-            if target_state.exists():
-                rollback_state = self._snapshot_state(self._regular(target_state))
-                os.replace(rollback_state, state_backup)
-                self._remove_sqlite_sidecars(target_state)
-            else:
-                self._remove_sqlite_sidecars(target_state)
-            if target_modules.exists():
-                if target_modules.is_symlink():
-                    raise BackupError("module target is a symlink")
-                os.replace(target_modules, modules_backup)
-            os.replace(state_temp, target_state)
-            state_replaced = True
-            os.replace(modules_temp, target_modules)
-            modules_replaced = True
+            if restore_state and target_state is not None:
+                target_state.parent.mkdir(parents=True, exist_ok=True)
+                state_fd, state_temp_name = tempfile.mkstemp(prefix=".hotaru-activate-", suffix=".sqlite3", dir=target_state.parent)
+                os.close(state_fd)
+                state_temp = Path(state_temp_name)
+                state_backup = target_state.with_name(f".{target_state.name}.rollback")
+                shutil.copy2(state_source, state_temp)
+                state_temp.chmod(0o600)
+
+            if restore_modules and target_modules is not None:
+                target_modules.parent.mkdir(parents=True, exist_ok=True)
+                modules_temp = Path(tempfile.mkdtemp(prefix=".hotaru-modules-", dir=target_modules.parent))
+                modules_backup = target_modules.with_name(f".{target_modules.name}.rollback")
+                for item in modules_source.iterdir():
+                    if item.is_symlink() or not item.is_file() or item.suffix != ".hmod":
+                        raise BackupError("staged module tree contains an unsafe file")
+                    shutil.copy2(item, modules_temp / item.name)
+                    (modules_temp / item.name).chmod(0o600)
+
+            if restore_state and target_state is not None and state_temp is not None:
+                if target_state.exists():
+                    rollback_state = self._snapshot_state(self._regular(target_state))
+                    if state_backup is not None:
+                        os.replace(rollback_state, state_backup)
+                    self._remove_sqlite_sidecars(target_state)
+                else:
+                    self._remove_sqlite_sidecars(target_state)
+                os.replace(state_temp, target_state)
+                state_replaced = True
+
+            if restore_modules and target_modules is not None and modules_temp is not None:
+                if target_modules.exists():
+                    if target_modules.is_symlink():
+                        raise BackupError("module target is a symlink")
+                    if modules_backup is not None:
+                        os.replace(target_modules, modules_backup)
+                os.replace(modules_temp, target_modules)
+                modules_replaced = True
         except Exception as exc:
-            if modules_replaced:
+            if modules_replaced and target_modules is not None:
                 shutil.rmtree(target_modules, ignore_errors=True)
-            if modules_backup.exists():
+            if modules_backup is not None and modules_backup.exists() and target_modules is not None:
                 os.replace(modules_backup, target_modules)
-            if state_replaced:
+            if state_replaced and target_state is not None:
                 target_state.unlink(missing_ok=True)
-            if state_backup.exists():
+            if state_backup is not None and state_backup.exists() and target_state is not None:
                 os.replace(state_backup, target_state)
             raise BackupError("atomic restore activation failed") from exc
         finally:
-            state_temp.unlink(missing_ok=True)
-            if modules_temp.exists():
+            if state_temp is not None:
+                state_temp.unlink(missing_ok=True)
+            if modules_temp is not None and modules_temp.exists():
                 shutil.rmtree(modules_temp, ignore_errors=True)
-            state_backup.unlink(missing_ok=True)
-            if modules_backup.exists():
+            if state_backup is not None:
+                state_backup.unlink(missing_ok=True)
+            if modules_backup is not None and modules_backup.exists():
                 shutil.rmtree(modules_backup, ignore_errors=True)
 
     async def restore(
@@ -444,11 +496,12 @@ class BackupService:
         *,
         rollback: Callable[[], object | Awaitable[object]] | None = None,
         timeout: float = 10.0,
+        key: str | bytes | None = None,
     ) -> T:
         if timeout <= 0:
             raise ValueError("timeout must be positive")
-        plan = archive_path if isinstance(archive_path, RestorePlan) else self.plan(archive_path)
-        staged = self.stage(plan.archive)
+        plan = archive_path if isinstance(archive_path, RestorePlan) else self.plan(archive_path, key=key)
+        staged = self.stage(plan.archive, key=key)
         try:
             result = activate(staged)
             if inspect.isawaitable(result):

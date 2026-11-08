@@ -88,12 +88,12 @@
       "description": "Power management",
       "commands": {
         "restart": {
-          "description": "Restart userbot (optional: -f / --force to skip confirmation)",
-          "usage": "[-f|--force]"
+          "description": "Restart userbot",
+          "usage": "<-f|--force>"
         },
         "stop": {
-          "description": "Suspend userbot (optional: -f / --force to skip confirmation)",
-          "usage": "[-f|--force]"
+          "description": "Suspend userbot",
+          "usage": "<-f|--force>"
         },
         "start": {
           "description": "Resume userbot",
@@ -124,17 +124,20 @@
       "description": "Hotaru self-updater",
       "commands": {
         "upd": {
-          "description": "Check and apply update (optional: -f / --force to skip confirmation)",
-          "usage": "[-f|--force]"
+          "description": "Check and apply update",
+          "usage": "<-f|--force>"
         },
         "updlog": {
-          "description": "Show update changelog"
+          "description": "Show update changelog",
+          "usage": ""
         },
         "updoff": {
-          "description": "Disable update notifications"
+          "description": "Disable update notifications",
+          "usage": ""
         },
         "updon": {
-          "description": "Enable update notifications"
+          "description": "Enable update notifications",
+          "usage": ""
         }
       },
       "restarted": "<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> <b>Hotaru updated successfully</b><blockquote><tg-emoji emoji-id=\"5258152182150077732\">⚡</tg-emoji> <b>Restarted in:</b> <code>{took}</code><br><tg-emoji emoji-id=\"5289589186683222806\">📶</tg-emoji> <b>Status:</b> <code>online</code></blockquote>",
@@ -216,7 +219,7 @@
       "commands": {
         "help": {
           "description": "Show help catalog",
-          "usage": "[module]"
+          "usage": "<module>"
         }
       }
     },
@@ -226,19 +229,19 @@
       "commands": {
         "language": {
           "description": "Interface language",
-          "usage": "[language]"
+          "usage": "<language>"
         },
         "translate": {
           "description": "Translate text",
-          "usage": "[language] <text|reply>"
+          "usage": "<language> [text|reply]"
         },
         "loadlex": {
           "description": "Load language pack",
-          "usage": "<url|path|file>"
+          "usage": "[url|path|file]"
         },
         "rmlex": {
           "description": "Remove custom language pack",
-          "usage": "<code>"
+          "usage": "[code]"
         }
       },
       "native": {
@@ -334,15 +337,15 @@
       "commands": {
         "account": {
           "description": "Manage an account",
-          "usage": "[number] [start|stop|restart|del]"
+          "usage": "<number> <start|stop|restart|del>"
         },
         "addaccount": {
           "description": "Add or log in to an account",
-          "usage": "[number|cancel]"
+          "usage": "<number|cancel>"
         },
         "accounts": {
           "description": "Open account panel",
-          "usage": "[number]"
+          "usage": "<number>"
         }
       },
       "usage": "<b>Accounts</b>\n<code>{prefix}addaccount [user_id]</code> · add via QR / Phone\n<code>{prefix}addaccount cancel</code> · cancel login\n<code>{prefix}accounts [#]</code> · account panel\n<code>{prefix}account [#]</code> · account panel\n<code>{prefix}account 2 start|stop|restart|on|off|del</code>",
@@ -486,23 +489,23 @@
       "commands": {
         "perms": {
           "description": "List permissions",
-          "usage": "[ID|@username]"
+          "usage": "<ID|@username>"
         },
         "perm": {
           "description": "Grant or revoke permission",
-          "usage": "<ID|@username> <admin|trusted|everyone> [remove]"
+          "usage": "[ID|@username] [admin|trusted|everyone] <remove>"
         },
         "whois": {
           "description": "Show user permissions",
-          "usage": "<ID|@username> [command]"
+          "usage": "<ID|@username> <command>"
         },
         "owadd": {
           "description": "Add owner",
-          "usage": "<ID|@username|reply>"
+          "usage": "[ID|@username|reply]"
         },
         "owrm": {
           "description": "Remove owner",
-          "usage": "<ID|@username|reply>"
+          "usage": "[ID|@username|reply]"
         },
         "owls": {
           "description": "List owners",
@@ -510,7 +513,7 @@
         },
         "sgnew": {
           "description": "Create permission group",
-          "usage": "<name>"
+          "usage": "[name]"
         },
         "sgls": {
           "description": "List groups",
@@ -518,31 +521,31 @@
         },
         "sg": {
           "description": "Show group members and rules",
-          "usage": "<name>"
+          "usage": "[name]"
         },
         "sgdel": {
           "description": "Delete group",
-          "usage": "<name>"
+          "usage": "[name]"
         },
         "sgadd": {
           "description": "Add group member",
-          "usage": "<name> <ID|@username|reply>"
+          "usage": "[name] [ID|@username|reply]"
         },
         "sgrm": {
           "description": "Remove group member",
-          "usage": "<name> <ID|@username|reply>"
+          "usage": "[name] [ID|@username|reply]"
         },
         "rule": {
           "description": "Add access rule",
-          "usage": "<user|chat|sgroup> <target> <command|module> [1h|forever]"
+          "usage": "[user|chat|sgroup] [target] [command|module] <1h|forever>"
         },
         "rulerm": {
           "description": "Remove rule",
-          "usage": "<user|chat|sgroup> <target> <rule>"
+          "usage": "[user|chat|sgroup] [target] [rule]"
         },
         "ruleclr": {
           "description": "Clear rules",
-          "usage": "<user|chat|sgroup> [target]"
+          "usage": "[user|chat|sgroup] <target>"
         }
       },
       "bad_group": "Group name: letters and digits only, up to 32 characters.",
@@ -564,11 +567,11 @@
       "commands": {
         "alias": {
           "description": "Create a command alias",
-          "usage": "<alias> <command>"
+          "usage": "[alias] [command]"
         },
         "rmalias": {
           "description": "Remove a command alias",
-          "usage": "<alias>"
+          "usage": "[alias]"
         },
         "lsalias": {
           "description": "List command aliases",
@@ -576,7 +579,7 @@
         },
         "prefix": {
           "description": "Change command prefix",
-          "usage": "<prefix>"
+          "usage": "[prefix]"
         },
         "settings": {
           "description": "Open settings",
@@ -584,7 +587,7 @@
         },
         "config": {
           "description": "Open settings",
-          "usage": "[module]"
+          "usage": "<module> <parameter|reset> <value>"
         }
       }
     },
@@ -608,11 +611,11 @@
       "commands": {
         "logs": {
           "description": "Userbot logs with a file",
-          "usage": "[on|off|status|level] [count]"
+          "usage": "<on|off|status|level> <count>"
         },
         "loglevel": {
           "description": "Change or select logging level",
-          "usage": "[level]"
+          "usage": "<level>"
         }
       },
       "pending": "pending",
@@ -655,14 +658,14 @@
       "commands": {
         "py": {
           "description": "Run Python code",
-          "usage": "[-so] <code>"
+          "usage": "<-so> [code]"
         },
         "sh": {
           "description": "Run a shell command",
-          "usage": "[-so] <command>"
+          "usage": "<-so> [command]"
         },
         "kill": {
-          "description": "Stop a running command",
+          "description": "Stop running command",
           "usage": ""
         }
       },
@@ -674,23 +677,23 @@
       "commands": {
         "ld": {
           "description": "Load a module",
-          "usage": "<url|path|reply>"
+          "usage": "[url|path|reply]"
         },
         "ul": {
           "description": "Unload a module",
-          "usage": "<module> [-p]"
+          "usage": "[module] <-p>"
         },
         "rl": {
           "description": "Reload a module",
-          "usage": "[module] [force]"
+          "usage": "<module> <-f>"
         },
         "ex": {
           "description": "Export a module",
-          "usage": "<module>"
+          "usage": "[module]"
         },
         "resetdb": {
           "description": "Reset module data",
-          "usage": "<module>"
+          "usage": "[module]"
         }
       }
     },
@@ -739,6 +742,7 @@
           "usage": ""
         },
         "ping": {
+          "description": "Measure userbot ping",
           "usage": ""
         }
       },
@@ -763,7 +767,8 @@
       "open_button": "Open Singularity",
       "commands": {
         "dash": {
-          "description": "Open inline launcher for the Singularity Mini App"
+          "description": "Open inline launcher for the Singularity Mini App",
+          "usage": ""
         }
       }
     },
@@ -772,10 +777,11 @@
       "commands": {
         "backup": {
           "description": "Send a backup or manage automatic backups",
-          "usage": "[send|now]"
+          "usage": "<send|now>"
         },
         "restore": {
-          "usage": "<archive>"
+          "description": "Restore from backup archive",
+          "usage": "<-f|--force> <archive>"
         }
       },
       "config_fields": {
@@ -797,7 +803,28 @@
       "sent": "Backup sent",
       "topic": "Backups",
       "usage": "<code>{prefix}backup [now|on|off]</code>",
-      "restored_files": "Restored files: {count}"
+      "restored_files": "Restored files: {count}",
+      "restore_confirm": "<tg-emoji emoji-id=\"5325732612084351248\">📦</tg-emoji> <b>Restore Backup</b><blockquote><tg-emoji emoji-id=\"5258258882022612173\">⏳</tg-emoji> Confirm full restore of filesystem, database state snapshot, and modules. Current data will be replaced.</blockquote>",
+      "restore_action": "Restore",
+      "scope_all": "All (State + Modules)",
+      "scope_modules": "Modules only",
+      "scope_state": "Database state only",
+      "scope_btn": "Scope: {scope}",
+      "current_scope": "Scope: <b>{scope}</b>",
+      "custom_key_btn": "Set Custom Key",
+      "custom_key_hint": "Enter encryption key / passphrase",
+      "reset_key_btn": "Reset Custom Key",
+      "key_custom": "Custom key active",
+      "key_default": "Default vault key",
+      "key_info": "Key: <b>{status}</b>",
+      "restore_scope": "Scope: <b>{scope}</b>",
+      "restore_custom_key": "Key: <b>{key_name}</b>",
+      "restore_key_btn": "Key: {key_name}",
+      "caption_custom_key": "<tg-emoji emoji-id=\"5325732612084351248\">📦</tg-emoji> <b>Hotaru Backup (Custom Key)</b>\n<blockquote><tg-emoji emoji-id=\"5258476306152038031\">🔒</tg-emoji> Protected with custom encryption passphrase\n<tg-emoji emoji-id=\"5258105663359294787\">🗓</tg-emoji> <code>{name}</code></blockquote>",
+      "key_invalid": "Invalid encryption key",
+      "restoring": "Restoring backup...",
+      "archive_missing": "Backup archive not found. Reply to an .hbk file or provide path",
+      "restore_failed": "Restore failed: {error}"
     },
     "intrusion": {
       "alert": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>Hotaru session is being used externally</b>\n\n{source}\n\n<blockquote><code>{detail}</code></blockquote>\n\nAnother client connected using Hotaru's own session. Hotaru stopped to prevent unauthorized actions. If this was not you, terminate the foreign session and revoke the bot token.",
@@ -833,10 +860,12 @@
       "description": "API flood and rate limit protection",
       "commands": {
         "shield": {
+          "description": "API flood protection management and statistics",
           "usage": ""
         },
         "suspend_api": {
-          "usage": "<seconds>"
+          "description": "Suspend API flood protection for specified duration",
+          "usage": "[seconds]"
         }
       },
       "unavailable": "API protection unavailable",
@@ -903,6 +932,10 @@
         },
         "quickstart": {
           "description": "Open initial setup wizard",
+          "usage": ""
+        },
+        "github": {
+          "description": "Hotaru GitHub repository",
           "usage": ""
         }
       },

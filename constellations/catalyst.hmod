@@ -80,8 +80,11 @@ async def command_ld(ctx: Any, invocation: Any) -> Any:
     await ctx.respond(f"<pre>{chr(10).join(log_lines)}</pre>", parse_mode="HTML")
     try:
         if invocation.args:
-            source = str(invocation.args[0])
-            if not (source.startswith("https://") or "\n" in source or source.lstrip().startswith("HOTARU")):
+            source = str(invocation.args[0]).strip()
+            if source.startswith(("https://", "http://")):
+                from hotaru.modules import ModuleStager
+                source = ModuleStager.normalize_url(source)
+            elif not ("\n" in source or source.lstrip().startswith("HOTARU")):
                 if not Path(source).is_file():
                     await ctx.respond(f"<pre> !     Error: invalid path or url</pre>", parse_mode="HTML", output="edit")
                     return

@@ -285,7 +285,7 @@ class StateStore:
         return len(pending)
 
     def namespace(self, module_id: str) -> StateNamespace:
-        if not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,63}", module_id):
+        if not module_id or len(module_id) > 128 or "/" in module_id or "\\" in module_id or "\x00" in module_id:
             raise StateError("module id is invalid")
         return StateNamespace(self.connection, module_id)
 

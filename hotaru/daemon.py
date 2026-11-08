@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import os
 import shutil
+import signal
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 UNIT_NAME = "hotaru.service"
@@ -119,6 +121,28 @@ def _current_user() -> str:
     return os.environ.get("USER") or os.environ.get("LOGNAME") or "hotaru"
 
 
+def is_hotaru_running() -> list[int]:
+    current_pid = os.getpid()
+    pids: list[int] = []
+    try:
+        proc_path = Path("/proc")
+        for entry in proc_path.iterdir():
+            if not entry.name.isdigit():
+                continue
+            pid = int(entry.name)
+            if pid == current_pid:
+                continue
+            try:
+                cmdline = (entry / "cmdline").read_bytes().replace(b"\x00", b" ").decode(errors="replace")
+                if "hotaru" in cmdline and ("-m hotaru" in cmdline or "hotaru-service" in cmdline):
+                    pids.append(pid)
+            except Exception:
+                continue
+    except Exception:
+        pass
+    return pids
+
+
 class BaseInitSystem:
     id: str = "base"
     display_name: str = "Base Init"
@@ -172,9 +196,19 @@ class SystemdInit(BaseInitSystem):
         if code != 0:
             raise DaemonError(f"enable failed: {detail}")
         if start:
+            for pid in is_hotaru_running():
+                try:
+                    os.kill(pid, signal.SIGTERM)
+                except Exception:
+                    pass
+            time.sleep(0.5)
             code, detail = _run(base + ["restart", SERVICE_NAME])
             if code != 0:
-                raise DaemonError(f"restart failed: {detail}")
+                _run(base + ["reset-failed", SERVICE_NAME])
+                code, detail = _run(base + ["restart", SERVICE_NAME])
+                if code != 0:
+                    clean_msg = detail.splitlines()[0] if detail else "service start failed"
+                    raise DaemonError(f"daemon restart failed: {clean_msg}")
         return path
 
     def status(self) -> str:

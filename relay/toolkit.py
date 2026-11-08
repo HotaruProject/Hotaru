@@ -442,7 +442,7 @@ def template_names(template: str, fields: dict[str, Any] | None = None, *, legac
     except ValueError:
         if not legacy_braces:
             raise
-        return list(dict.fromkeys(re.findall(r"\{([a-z0-9][a-z0-9-]{0,63}/[A-Za-z][A-Za-z0-9_]{0,63})\}", template)))
+        return list(dict.fromkeys(re.findall(r"\{([^/\s]{1,64}/[A-Za-z0-9_]{1,64})\}", template)))
 
 
 def template_validate(template: object, fields: object) -> str:
@@ -450,7 +450,7 @@ def template_validate(template: object, fields: object) -> str:
     if not isinstance(template, str) or len(template) > 4096:
         raise ValueError("Template must be text of at most 4096 characters")
     for _, name, spec, conversion in string.Formatter().parse(template):
-        if name is not None and name not in declared and re.fullmatch(r"[a-z0-9][a-z0-9-]{0,63}/[A-Za-z][A-Za-z0-9_]{0,63}", name):
+        if name is not None and name not in declared and re.fullmatch(r"[^/\s]{1,64}/[A-Za-z0-9_]{1,64}", name):
             if conversion is not None:
                 raise ValueError("Template conversions are not allowed")
             declared[name] = {"type": "int" if spec else "str", "example": 0 if spec else "", "description": name}
@@ -462,7 +462,7 @@ def template_fields(raw: object) -> dict[str, dict[str, Any]]:
         raise ValueError("template_fields must declare between 1 and 64 fields")
     result: dict[str, dict[str, Any]] = {}
     for name, entry in cast('dict[object, object]', raw).items():
-        if not isinstance(name, str) or not re.fullmatch(r"(?:[a-z0-9][a-z0-9-]{0,63}/)?[A-Za-z][A-Za-z0-9_]{0,63}", name):
+        if not isinstance(name, str) or not re.fullmatch(r"(?:[^/\s]{1,64}/)?[A-Za-z0-9_]{1,64}", name):
             raise ValueError("Invalid template field name")
         if not isinstance(entry, dict):
             raise ValueError(f"{name}: field metadata must be a mapping")
@@ -526,7 +526,7 @@ def template_render(template: object, fields: object, values: object = None, *, 
                 formatted = _template_format(value, spec or meta.get("format", ""))
             except ValueError as exc:
                 raise ValueError(f"{name}: {exc}") from exc
-            piece += _html_mod.escape(formatted, quote=True)
+            piece += escape_smart(formatted)
         size += len(piece)
         if size > 16000:
             raise ValueError("Rendered template exceeds 16000 characters")

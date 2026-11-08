@@ -93,11 +93,11 @@
       "commands": {
         "restart": {
           "description": "Юзерботты қайта қосу",
-          "usage": "[-f|--force]"
+          "usage": "<-f|--force>"
         },
         "stop": {
           "description": "Юзерботты тоқтату",
-          "usage": "[-f|--force]"
+          "usage": "<-f|--force>"
         },
         "start": {
           "description": "Юзерботты жалғастыру",
@@ -128,16 +128,19 @@
       "commands": {
         "upd": {
           "description": "Жаңартуды тексеру және қолдану",
-          "usage": "[force]"
+          "usage": "<-f|--force>"
         },
         "updlog": {
-          "description": "Өзгерістер тізімі"
+          "description": "Өзгерістер тізімі",
+          "usage": ""
         },
         "updoff": {
-          "description": "Жаңарту хабарламаларын өшіру"
+          "description": "Жаңарту хабарламаларын өшіру",
+          "usage": ""
         },
         "updon": {
-          "description": "Жаңарту хабарламаларын қосу"
+          "description": "Жаңарту хабарламаларын қосу",
+          "usage": ""
         }
       },
       "restarted": "<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> <b>Hotaru сәтті жаңартылды</b>\n<blockquote><tg-emoji emoji-id=\"5258152182150077732\">⚡️</tg-emoji> <b>Қайта қосылды:</b> <code>{took}</code></blockquote>",
@@ -560,11 +563,11 @@
       "commands": {
         "alias": {
           "description": "Командаға бүркеншік ат беру",
-          "usage": "<alias> <command>"
+          "usage": "[alias] [command]"
         },
         "rmalias": {
           "description": "Команданың бүркеншік атын жою",
-          "usage": "<alias>"
+          "usage": "[alias]"
         },
         "lsalias": {
           "description": "Команда бүркеншік аттарының тізімі",
@@ -572,7 +575,7 @@
         },
         "prefix": {
           "description": "Команда префиксін өзгерту",
-          "usage": "<prefix>"
+          "usage": "[prefix]"
         },
         "settings": {
           "description": "Параметрлерді ашу",
@@ -580,7 +583,7 @@
         },
         "config": {
           "description": "Параметрлерді ашу",
-          "usage": "[module]"
+          "usage": "<module> <parameter|reset> <value>"
         }
       }
     },
@@ -660,11 +663,11 @@
       "commands": {
         "py": {
           "description": "Python кодын орындау",
-          "usage": "[-so] <code>"
+          "usage": "<-so> [code]"
         },
         "sh": {
           "description": "Қабықша командасын орындау",
-          "usage": "[-so] <command>"
+          "usage": "<-so> [command]"
         },
         "kill": {
           "description": "Орындалып жатқан команданы тоқтату",
@@ -679,23 +682,23 @@
       "commands": {
         "ld": {
           "description": "Модульді жүктеу",
-          "usage": "<url|path|reply>"
+          "usage": "[url|path|reply]"
         },
         "ul": {
           "description": "Модульді тоқтату",
-          "usage": "<module> [-p]"
+          "usage": "[module] <-p>"
         },
         "rl": {
           "description": "Модульді қайта жүктеу",
-          "usage": "[module] [force]"
+          "usage": "<module> <-f>"
         },
         "ex": {
           "description": "Модульді экспорттау",
-          "usage": "<module>"
+          "usage": "[module]"
         },
         "resetdb": {
           "description": "Модуль деректерін тазарту",
-          "usage": "<module>"
+          "usage": "[module]"
         }
       }
     },
@@ -744,7 +747,8 @@
           "usage": ""
         },
         "ping": {
-          "usage": ""
+          "usage": "",
+          "description": "Measure userbot ping"
         }
       },
       "empty_template": "Ақпарат үлгісі бос",
@@ -777,10 +781,11 @@
       "commands": {
         "backup": {
           "description": "Сақтық көшірмені жіберу немесе автоматты жіберуді баптау",
-          "usage": "[send|now]"
+          "usage": "<send|now>"
         },
         "restore": {
-          "usage": "<archive>"
+          "usage": "<-f|--force> <archive>",
+          "description": "Restore from backup archive"
         }
       },
       "config_fields": {
@@ -802,7 +807,13 @@
       "sent": "Сақтық көшірме жіберілді",
       "topic": "Backups",
       "usage": "<code>{prefix}backup [now|on|off]</code>",
-      "restored_files": "Қалпына келтірілген файлдар: {count}"
+      "restored_files": "Қалпына келтірілген файлдар: {count}",
+      "restore_confirm": "<tg-emoji emoji-id=\"5325732612084351248\">📦</tg-emoji> <b>Резервтік көшірмені қалпына келтіру</b><blockquote><tg-emoji emoji-id=\"5258258882022612173\">⏳</tg-emoji> Файлдық жүйені, деректер қорын және модульдерді толық қалпына келтіруді растаңыз.</blockquote>",
+      "restore_action": "Қалпына келтіру",
+      "key_invalid": "Қате шифрлеу кілті",
+      "restoring": "Резервтік көшірмені қалпына келтіруде...",
+      "archive_missing": "Резервтік көшірме табылмады. .hbk файлына жауап беріңіз немесе жолды көрсетіңіз",
+      "restore_failed": "Қалпына келтіру қатесі: {error}"
     },
     "intrusion": {
       "alert": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>Hotaru сессиясы сырттан пайдаланылуда</b>\n\n{source}\n\n<blockquote><code>{detail}</code></blockquote>\n\nБасқа клиент Hotaru сессиясына қосылды. Hotaru қауіпсіздік үшін тоқтатылды.",
@@ -838,10 +849,12 @@
       "description": "Telegram API флудвейті мен шамадан тыс жүктемеден қорғау",
       "commands": {
         "shield": {
-          "usage": ""
+          "usage": "",
+          "description": "API flood protection management"
         },
         "suspend_api": {
-          "usage": "<seconds>"
+          "usage": "[seconds]",
+          "description": "Suspend API flood protection"
         }
       },
       "unavailable": "API қорғанысы қолжетімсіз",
@@ -908,6 +921,10 @@
         },
         "quickstart": {
           "description": "Бастапқы баптау шеберін ашу",
+          "usage": ""
+        },
+        "github": {
+          "description": "Hotaru GitHub repository",
           "usage": ""
         }
       },

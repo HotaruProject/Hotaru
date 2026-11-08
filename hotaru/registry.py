@@ -50,8 +50,8 @@ class CommandRegistry:
         module_id: str | None = None,
         sandbox: bool = False,
     ) -> None:
-        if not name.isidentifier():
-            raise ValueError("command name must be an identifier")
+        if not name or any(c.isspace() for c in name):
+            raise ValueError("command name cannot be empty or contain whitespace")
         if not isinstance(module_id, str) or not module_id:
             raise ValueError("every command must belong to a module")
         key = name.casefold()
@@ -127,8 +127,8 @@ class CommandRegistry:
         module_id: str | None = None,
         sandbox: bool = False,
     ) -> None:
-        if not name.isidentifier():
-            raise ValueError("bot command name must be an identifier")
+        if not name or any(c.isspace() for c in name):
+            raise ValueError("bot command name cannot be empty or contain whitespace")
         if not isinstance(module_id, str) or not module_id:
             raise ValueError("every bot command must belong to a module")
         key = name.casefold()

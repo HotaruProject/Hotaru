@@ -320,6 +320,7 @@ class Nav:
         self.form = form
         self.call = call
         self.value = value
+        self.text = value or ""
         self.actor = actor if actor is not None else form.actor
         self.args: dict[str, Any] = dict(action.get("a") or {})
         self._answered = False
@@ -560,6 +561,10 @@ class Kit:
         if self.engine is None:
             raise ScreenError("screens are unavailable")
         return await self.engine.send(str(getattr(self.ctx, "module_id", "") or ""), chat_id, screen, **options)
+
+    def drop(self, form: Any) -> None:
+        if self.engine is not None:
+            self.engine.drop(form)
 
 
 class _ReentrantLock:
@@ -937,8 +942,24 @@ class ScreenEngine:
         async with _banner_lock:
             for media_id, kind, path_or_url, is_web in needed:
                 key = (id(app), media_id)
-                cached = _banner_cache.get(key)
-                if cached is not None and time.monotonic() - cached[0] < 1800:
+                cached: tuple[float, dict[str, Any]] | None = _banner_cache.get(key)
+                state_obj: Any = getattr(self.runtime, "state", None)
+                if cached is None and state_obj is not None:
+                    try:
+                        state_val: Any = state_obj.get_setting("banner:" + media_id)
+                        if isinstance(state_val, dict):
+                            entry_stored: dict[str, Any] = dict(cast('dict[str, Any]', state_val))
+                            for sub in ("photo", "document"):
+                                sub_dict = entry_stored.get(sub)
+                                if isinstance(sub_dict, dict):
+                                    ref_b64 = cast('dict[str, Any]', sub_dict).get("file_reference")
+                                    if isinstance(ref_b64, str):
+                                        cast('dict[str, Any]', sub_dict)["file_reference"] = base64.b64decode(ref_b64.encode("ascii"))
+                            cached = (time.monotonic(), entry_stored)
+                            _banner_cache[key] = cached
+                    except Exception:
+                        pass
+                if cached is not None and time.monotonic() - cached[0] < 86400:
                     files.append(cached[1])
                     if is_web:
                         tag = "video" if kind == "video" else "img"
@@ -985,8 +1006,17 @@ class ScreenEngine:
                             actual_path = temp_p
                     else:
                         actual_path = cast('Path', path_or_url)
-                    entry = await _upload_asset(app, media_id, kind, actual_path)
+                    entry = await asyncio.wait_for(_upload_asset(app, media_id, kind, actual_path), timeout=2.5)
                     _banner_cache[key] = (time.monotonic(), entry)
+                    state_obj = getattr(self.runtime, "state", None)
+                    if state_obj is not None:
+                        try:
+                            def _enc(o: Any) -> Any:
+                                return base64.b64encode(bytes(o)).decode("ascii") if isinstance(o, (bytes, bytearray)) else str(o)
+                            save_entry = json.loads(json.dumps(entry, default=_enc))
+                            state_obj.set_setting("banner:" + media_id, save_entry)
+                        except Exception:
+                            pass
                     files.append(entry)
                     if is_web:
                         tag = "video" if kind == "video" else "img"
@@ -996,7 +1026,7 @@ class ScreenEngine:
                             payload.get("html", "")
                         )
                 except Exception as exc:
-                    log.error("screen banner upload failed for %s (%s): %s: %s", media_id, path_or_url, type(exc).__name__, exc)
+                    log.warning("screen banner upload failed for %s (%s): %s: %s", media_id, path_or_url, type(exc).__name__, exc)
                     tag = "video" if kind == "video" else "img"
                     if "html" in payload:
                         payload["html"] = payload["html"].replace(f'<{tag} src="tg://{kind}?id={media_id}"/>', "")
@@ -1034,7 +1064,7 @@ class ScreenEngine:
             except Exception as exc:
                 if not screen.banner:
                     raise
-                log.error("screen banner failed for module %s: %s: %s", module_id, type(exc).__name__, exc)
+                log.warning("screen banner failed for module %s: %s: %s", module_id, type(exc).__name__, exc)
                 if runtime.observatory is not None:
                     runtime.observatory.emit("screens", "banner_failed", module=module_id, error=type(exc).__name__, detail=str(exc))
                 screen.banner = ""
@@ -1067,13 +1097,15 @@ class ScreenEngine:
                 except Exception as exc:
                     log.error("screen repaint failed: %s: %s\n%s", type(exc).__name__, exc, traceback.format_exc())
 
-    async def send(self, module_id: str, chat_id: Any, screen: Screen, *, actor: Optional[int] = None, command: Optional[str] = None) -> Form:
+    async def send(self, module_id: str, chat_id: Any, screen: Screen, *, actor: Optional[int] = None, command: Optional[str] = None, reply_to: Optional[int] = None) -> Form:
         app = self._bot_app()
         owner = getattr(getattr(self.runtime, "kernel", None), "owner_id", None)
         form = self._create(module_id, int(actor or owner or 0), command, chat_id, bot=True)
         text, rows, actions, gen = self._compile(form, screen)
         async def _send() -> Any:
             data: dict[str, Any] = {"peer": chat_id, "random_id": secrets.randbits(63), "no_webpage": True}
+            if reply_to is not None:
+                data["reply_to"] = {"_": "inputReplyToMessage", "reply_to_msg_id": int(reply_to)}
             plain, entities = to_entities(text)
             data["message"] = plain
             if entities:
@@ -1107,7 +1139,7 @@ class ScreenEngine:
             except Exception as exc:
                 if not screen.banner:
                     raise
-                log.error("screen banner failed for module %s: %s: %s", module_id, type(exc).__name__, exc)
+                log.warning("screen banner failed for module %s: %s: %s", module_id, type(exc).__name__, exc)
                 if self.runtime.observatory is not None:
                     self.runtime.observatory.emit("screens", "banner_failed", module=module_id, error=type(exc).__name__, detail=str(exc))
                 screen.banner = ""
@@ -1134,7 +1166,7 @@ class ScreenEngine:
         except Exception as exc:
             if not screen.banner:
                 raise
-            log.error("screen banner failed for module %s: %s: %s", form.module, type(exc).__name__, exc)
+            log.warning("screen banner failed for module %s: %s: %s", form.module, type(exc).__name__, exc)
             if self.runtime.observatory is not None:
                 self.runtime.observatory.emit("screens", "banner_failed", module=form.module, error=type(exc).__name__, detail=str(exc))
             screen.banner = ""
@@ -1237,7 +1269,7 @@ class ScreenEngine:
         else:
             active = self.runtime.modules.get(module_id) if self.runtime.modules is not None else None
             namespace = getattr(getattr(active, "context", None), "namespace", None)
-            if isinstance(namespace, dict) and cast("dict[str, Any]", namespace).get("__sandbox__") and name.isidentifier() and not name.startswith("__"):
+            if isinstance(namespace, dict) and cast("dict[str, Any]", namespace).get("__sandbox__") and name and not any(c.isspace() for c in name) and not name.startswith("__"):
                 sandbox = self.runtime.sandbox
                 if sandbox is None or module_id != form.module:
                     raise ScreenError(f"screen handler is unavailable: {module_id}.{name}")

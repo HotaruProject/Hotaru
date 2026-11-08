@@ -129,15 +129,12 @@ def handle_account_critical_failure(session_dir: str | Path, user_id: int, reaso
     print("\n" + "=" * 70, file=sys.stderr)
     print(f"[HOTARU CRITICAL RESTRICTION] Account {user_id} encountered restriction: {reason}", file=sys.stderr)
     print("Cannot proceed with userbot operations. Session and keys securely wiped with zeros.", file=sys.stderr)
-    print("Please restart Hotaru to authorize a new account.", file=sys.stderr)
+    print("Rolling back to login state to authorize an account.", file=sys.stderr)
     print("=" * 70 + "\n", file=sys.stderr)
     secure_wipe_account(root, user_id)
-    if runtime is not None:
-        try:
-            asyncio.create_task(runtime.close())
-        except Exception:
-            pass
-    sys.exit(0)
+    if runtime is not None and getattr(runtime, "observatory", None) is not None:
+        runtime.observatory.emit("accounts", "critical_restriction", user_id=user_id, reason=reason)
+    return False
 
 
 @dataclass(frozen=True)
@@ -171,6 +168,20 @@ class AccountError(RuntimeError):
         super().__init__(code)
         self.code = code
         self.params = params
+
+    def __str__(self) -> str:
+        if self.code == "running":
+            pid = self.params.get("pid")
+            return f"daemon is already running (PID: {pid})" if pid else "daemon is already running"
+        if self.code == "login_busy":
+            return "login process is already active"
+        if self.code == "not_found":
+            return f"account #{self.params.get('n')} not found"
+        if self.code == "disabled":
+            return f"account #{self.params.get('n')} is disabled"
+        if self.code == "no_permission":
+            return "permission denied"
+        return self.code
 
 
 def account_config(config: Any, profile: AccountProfile) -> Any:
@@ -217,9 +228,58 @@ class AccountLock:
             fcntl.flock(self.fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
             self.set_pid(os.getpid())
         except BlockingIOError:
-            os.close(self.fd)
-            self.fd = -1
-            raise AccountError('running') from None
+            resolved = False
+            other_pid = None
+            try:
+                raw_pid = path.read_text().strip()
+                if raw_pid.isdigit():
+                    other_pid = int(raw_pid)
+            except Exception:
+                pass
+            if other_pid and other_pid != os.getpid():
+                import shutil
+                import signal
+                import subprocess
+                import time
+                if shutil.which("systemctl"):
+                    try:
+                        base = ["systemctl"] if hasattr(os, "geteuid") and os.geteuid() == 0 else ["systemctl", "--user"]
+                        res = subprocess.run(base + ["is-active", "hotaru"], capture_output=True, text=True, timeout=2)
+                        if res.stdout.strip() == "active":
+                            subprocess.run(base + ["stop", "hotaru"], capture_output=True, timeout=5)
+                    except Exception:
+                        pass
+                try:
+                    os.kill(other_pid, signal.SIGTERM)
+                    for _ in range(25):
+                        time.sleep(0.1)
+                        try:
+                            fcntl.flock(self.fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                            self.set_pid(os.getpid())
+                            resolved = True
+                            break
+                        except BlockingIOError:
+                            pass
+                    if not resolved:
+                        try:
+                            os.kill(other_pid, signal.SIGKILL)
+                            time.sleep(0.2)
+                            fcntl.flock(self.fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                            self.set_pid(os.getpid())
+                            resolved = True
+                        except Exception:
+                            pass
+                except (ProcessLookupError, PermissionError):
+                    try:
+                        fcntl.flock(self.fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                        self.set_pid(os.getpid())
+                        resolved = True
+                    except Exception:
+                        pass
+            if not resolved:
+                os.close(self.fd)
+                self.fd = -1
+                raise AccountError('running', pid=other_pid) from None
         except BaseException:
             os.close(self.fd)
             self.fd = -1

@@ -93,11 +93,11 @@
       "commands": {
         "restart": {
           "description": "Перезапуск юзербота",
-          "usage": "[-f|--force]"
+          "usage": "<-f|--force>"
         },
         "stop": {
           "description": "Призупинити юзербота",
-          "usage": "[-f|--force]"
+          "usage": "<-f|--force>"
         },
         "start": {
           "description": "Відновити юзербота",
@@ -128,16 +128,19 @@
       "commands": {
         "upd": {
           "description": "Перевірити і застосувати оновлення",
-          "usage": "[force]"
+          "usage": "<-f|--force>"
         },
         "updlog": {
-          "description": "Показати ченджлог"
+          "description": "Показати ченджлог",
+          "usage": ""
         },
         "updoff": {
-          "description": "Вимкнути повідомлення про оновлення"
+          "description": "Вимкнути повідомлення про оновлення",
+          "usage": ""
         },
         "updon": {
-          "description": "Увімкнути повідомлення про оновлення"
+          "description": "Увімкнути повідомлення про оновлення",
+          "usage": ""
         }
       },
       "restarted": "<tg-emoji emoji-id=\"5260726538302660868\">✅</tg-emoji> <b>Hotaru успішно оновлено</b>\n<blockquote><tg-emoji emoji-id=\"5258152182150077732\">⚡️</tg-emoji> <b>Перезапущено за:</b> <code>{took}</code></blockquote>",
@@ -560,11 +563,11 @@
       "commands": {
         "alias": {
           "description": "Створити аліас команди",
-          "usage": "<alias> <command>"
+          "usage": "[alias] [command]"
         },
         "rmalias": {
           "description": "Видалити аліас команди",
-          "usage": "<alias>"
+          "usage": "[alias]"
         },
         "lsalias": {
           "description": "Показати аліаси команд",
@@ -572,7 +575,7 @@
         },
         "prefix": {
           "description": "Змінити префікс команд",
-          "usage": "<prefix>"
+          "usage": "[prefix]"
         },
         "settings": {
           "description": "Відкрити налаштування",
@@ -580,7 +583,7 @@
         },
         "config": {
           "description": "Відкрити налаштування",
-          "usage": "[module]"
+          "usage": "<module> <parameter|reset> <value>"
         }
       }
     },
@@ -660,11 +663,11 @@
       "commands": {
         "py": {
           "description": "Виконати код Python",
-          "usage": "[-so] <code>"
+          "usage": "<-so> [code]"
         },
         "sh": {
           "description": "Виконати команду оболонки",
-          "usage": "[-so] <command>"
+          "usage": "<-so> [command]"
         },
         "kill": {
           "description": "Зупинити активну команду",
@@ -679,23 +682,23 @@
       "commands": {
         "ld": {
           "description": "Завантажити модуль",
-          "usage": "<url|path|reply>"
+          "usage": "[url|path|reply]"
         },
         "ul": {
           "description": "Вивантажити модуль",
-          "usage": "<module> [-p]"
+          "usage": "[module] <-p>"
         },
         "rl": {
           "description": "Перезавантажити модуль",
-          "usage": "[module] [force]"
+          "usage": "<module> <-f>"
         },
         "ex": {
           "description": "Експортувати модуль",
-          "usage": "<module>"
+          "usage": "[module]"
         },
         "resetdb": {
           "description": "Очистити дані модуля",
-          "usage": "<module>"
+          "usage": "[module]"
         }
       }
     },
@@ -744,7 +747,8 @@
           "usage": ""
         },
         "ping": {
-          "usage": ""
+          "usage": "",
+          "description": "Measure userbot ping"
         }
       },
       "empty_template": "Шаблон інформації порожній",
@@ -777,10 +781,11 @@
       "commands": {
         "backup": {
           "description": "Надіслати резервну копію або налаштувати автоматичне надсилання",
-          "usage": "[send|now]"
+          "usage": "<send|now>"
         },
         "restore": {
-          "usage": "<archive>"
+          "usage": "<-f|--force> <archive>",
+          "description": "Restore from backup archive"
         }
       },
       "config_fields": {
@@ -802,7 +807,13 @@
       "sent": "Резервну копію надіслано",
       "topic": "Backups",
       "usage": "<code>{prefix}backup [now|on|off]</code>",
-      "restored_files": "Відновлено файлів: {count}"
+      "restored_files": "Відновлено файлів: {count}",
+      "restore_confirm": "<tg-emoji emoji-id=\"5325732612084351248\">📦</tg-emoji> <b>Відновлення бекапу</b><blockquote><tg-emoji emoji-id=\"5258258882022612173\">⏳</tg-emoji> Підтвердьте повне відновлення файлової системи, стану БД та модулів. Поточні дані будуть замінені.</blockquote>",
+      "restore_action": "Відновити",
+      "key_invalid": "Невірний ключ шифрування",
+      "restoring": "Відновлюємо резервну копію...",
+      "archive_missing": "Резервну копію не знайдено. Дайте відповідь на .hbk файл або вкажіть шлях",
+      "restore_failed": "Помилка відновлення: {error}"
     },
     "intrusion": {
       "alert": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>Сесія Hotaru використовується ззовні</b>\n\n{source}\n\n<blockquote><code>{detail}</code></blockquote>\n\nІнший клієнт підключився до сесії Hotaru. Hotaru зупинився для безпеки. Якщо це були не ви, завершіть чужу сесію.",
@@ -838,10 +849,12 @@
       "description": "Захист від флудвейту та перевантаження Telegram API",
       "commands": {
         "shield": {
-          "usage": ""
+          "usage": "",
+          "description": "API flood protection management"
         },
         "suspend_api": {
-          "usage": "<seconds>"
+          "usage": "[seconds]",
+          "description": "Suspend API flood protection"
         }
       },
       "unavailable": "Захист API недоступний",
@@ -908,6 +921,10 @@
         },
         "quickstart": {
           "description": "Відкрити майстер початкового налаштування",
+          "usage": ""
+        },
+        "github": {
+          "description": "Hotaru GitHub repository",
           "usage": ""
         }
       },

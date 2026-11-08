@@ -686,9 +686,14 @@ class Runtime:
         entry = (self._forms or {}).get(key)
         if entry is None:
             return
-        handle, _, text, buttons, options = entry
+        handle, source, text, buttons, options = entry
         if options.get("rich"):
             return
+        inline_form = getattr(source, "src", None) == "inline" or str(handle.key).startswith("inline:")
+        if inline_form:
+            inline_id = getattr(source, "inline_message_id", None) or (self._form_inline_ids or {}).get(str(handle.key).split(":", 1)[-1])
+            if inline_id is None:
+                return
         try:
             await self.edit_form(handle, text, buttons=buttons)
         except Exception as exc:
@@ -1139,27 +1144,25 @@ class Runtime:
         with trusted_scope():
             bot = await self.app.mt.resolve_peer("@" + self.inline.info.username)
             peer = await self.app.mt.resolve_peer(chat_id)
-        result: Any
-        try:
-            result = await self.app.mt_messages_get_inline_bot_results(
-                bot=bot,
-                peer=peer,
-                query="hotaru-form:" + nonce,
-                offset="",
-            )
-        except Exception as exc:
-            if "BOT_RESPONSE_TIMEOUT" in str(exc):
-                if self.observatory is not None:
-                    self.observatory.emit("inline", "get_results_timeout_retry", nonce=nonce)
-                await asyncio.sleep(0.5)
+        result: Any = None
+        for attempt in range(3):
+            try:
                 result = await self.app.mt_messages_get_inline_bot_results(
                     bot=bot,
                     peer=peer,
                     query="hotaru-form:" + nonce,
                     offset="",
                 )
-            else:
+                break
+            except Exception as exc:
+                if "BOT_RESPONSE_TIMEOUT" in str(exc) and attempt < 2:
+                    if self.observatory is not None:
+                        self.observatory.emit("inline", "get_results_timeout_retry", nonce=nonce, attempt=attempt)
+                    await asyncio.sleep(0.5 * (attempt + 1))
+                    continue
                 raise
+        if result is None:
+            raise RuntimeError("inline bot returned no form result")
         body: Any = cast('dict[str, Any]', result).get("result", result) if isinstance(result, dict) else result
         if isinstance(body, dict) and isinstance(cast('dict[str, Any]', body).get("bot_results"), dict):
             body = cast('dict[str, Any]', body)["bot_results"]
@@ -2038,7 +2041,7 @@ class Runtime:
             self.lexicon = Lexicon(self.lexicon_dir)
         return Translator(self.lexicon, language or self.language())
 
-    def t(self, key: str, default: str | None = None, *, locale: str | None = None, **params: Any) -> str:
+    def t(self, key: str, /, default: str | None = None, *, locale: str | None = None, **params: Any) -> str:
         return self.translator(locale).t(key, default, **params)
 
     @property
@@ -2099,12 +2102,12 @@ class Runtime:
         with trusted_scope():
             await take(app, media, str(destination))
 
-    async def load_module(self, source: str | Path, *, consent_screen: Any = None) -> tuple[Any, str]:
+    async def load_module(self, source: str | Path, *, consent_screen: Any = None, caller_id: str | None = None) -> tuple[Any, str]:
         if self.stager is None or self.state is None:
             raise RuntimeError(self.t('runtime.not_ready'))
         with trusted_scope():
             with tempfile.TemporaryDirectory(prefix=".hotaru-candidate-") as candidate_dir:
-                if isinstance(source, str) and source.startswith("https://"):
+                if isinstance(source, str) and source.startswith(("https://", "http://")):
                     candidate = self.stage_module_url(source, candidate_dir)
                 elif isinstance(source, str) and ("\n" in source or source.lstrip().startswith("HOTARU")):
                     candidate = self.stager.stage_text(source, candidate_dir)
@@ -2113,11 +2116,11 @@ class Runtime:
         unloading = self._unload_tasks.get(candidate.manifest.module_id)
         if unloading is not None:
             await asyncio.shield(unloading)
-        task = asyncio.create_task(self._load_candidate(candidate))
+        task = asyncio.create_task(self._load_candidate(candidate, caller_id=caller_id))
         task.add_done_callback(lambda done: done.cancelled() or done.exception())
         return await asyncio.shield(task)
 
-    async def _load_candidate(self, candidate: Any) -> tuple[Any, str]:
+    async def _load_candidate(self, candidate: Any, caller_id: str | None = None) -> tuple[Any, str]:
         module_id = candidate.manifest.module_id
         with trusted_scope():
             async with self._module_locks.setdefault(module_id, asyncio.Lock()):
@@ -2129,7 +2132,18 @@ class Runtime:
                 if self._is_kernel_module(module_id):
                     raise PermissionError(self.t("runtime.protected", module_id=module_id))
                 caps = list(candidate.manifest.capabilities)
-                if not self._caps_consented(module_id, candidate.manifest, candidate.digest):
+                child_caps = set(caps)
+                is_consented = self._caps_consented(module_id, candidate.manifest, candidate.digest)
+                if not is_consented and caller_id and caller_id != "catalyst":
+                    caller_mod = self.modules.get(caller_id) if self.modules is not None else None
+                    caller_caps = set(caller_mod.loaded.manifest.capabilities if caller_mod and caller_mod.loaded and caller_mod.loaded.manifest else ())
+                    if self._is_kernel_module(caller_id) or caller_id in ("system", "kernel", "loader"):
+                        is_consented = True
+                    elif child_caps.issubset(caller_caps):
+                        is_consented = True
+                    if is_consented:
+                        self._mark_caps_consent(module_id, caps, candidate.digest)
+                if not is_consented:
                     return candidate, "confirm"
                 source_text = candidate.source
                 old_path = self.relay_dir / f"{module_id}.hmod"
@@ -2434,7 +2448,7 @@ class Runtime:
             approved = self._approved_caps(module_id) | set(capabilities)
             self.state.namespace(module_id).set("caps-consent", {"digest": digest, "capabilities": sorted(approved)})
 
-    async def _render_caps_screen(self, module_id: str, manifest: Any, source: str, chat_id: int | str | None, message_id: int) -> tuple[str, list[list[dict[str, Any]]]] | str:
+    async def _render_caps_screen(self, module_id: str, manifest: Any, source: str, chat_id: int | str | None, message_id: int, *, caller_id: str | None = None, notice: str | None = None) -> tuple[str, list[list[dict[str, Any]]]] | str:
         capabilities = sorted(set(manifest.capabilities) - self._approved_caps(module_id))
         cap_icons = {
             "mt": '<tg-emoji emoji-id="5258152182150077732">⚡️</tg-emoji>',
@@ -2461,15 +2475,21 @@ class Runtime:
             caps_blocks.append(f"{c_icon} <b>{html.escape(title)}</b> (<code>{html.escape(cap)}</code>)<br><i>{html.escape(detail)}</i>")
         caps_body = "<br><br>".join(caps_blocks) if caps_blocks else f"<i>{html.escape(self.t('common.none'))}</i>"
         req_title = "Запрашиваемые права:" if getattr(self.config, "language", "en") == "ru" else "Requested capabilities:"
+        loader_row = f'<tr><td><tg-emoji emoji-id="5258514780469075716">📥</tg-emoji> <b>Loader:</b></td><td align="right"><code>{html.escape(caller_id)}</code></td></tr>' if caller_id and caller_id != "catalyst" else ""
+        notice_block = f'<blockquote expandable><b>ℹ️ Notice:</b><br>{html.escape(notice)}</blockquote>\n' if notice else ""
         card = (
             f'<table bordered striped compact>'
             f'<tr><th colspan="2" align="center"><tg-emoji emoji-id="5258476306152038031">🛡</tg-emoji> <b>Capability Consent</b></th></tr>'
             f'<tr><td><tg-emoji emoji-id="5226513232549664618">🧩</tg-emoji> <b>Module:</b></td><td align="right"><code>{html.escape(module_id)} v{html.escape(str(manifest.version))}</code></td></tr>'
+            f'{loader_row}'
             f'<tr><td><tg-emoji emoji-id="5258476306152038031">🔒</tg-emoji> <b>Permissions:</b></td><td align="right"><code>{len(capabilities)}</code></td></tr>'
             f'</table>\n'
+            f'{notice_block}'
             f'<blockquote expandable><b>{req_title}</b><br>{caps_body}</blockquote>'
         )
-        if self.screens is None or self.kernel is None or self.kernel.owner_id is None or chat_id is None:
+        owner_id = getattr(getattr(self, "kernel", None), "owner_id", None)
+        chat_id = chat_id or owner_id or "me"
+        if self.screens is None or self.kernel is None or owner_id is None or chat_id is None:
             return f"{card}\n{self.t('runtime.caps_retry')}"
         return (
             card,
@@ -2482,13 +2502,26 @@ class Runtime:
         )
 
     async def _caps_cancel(self, nav: Any) -> object:
+        owner_id = getattr(getattr(self, "kernel", None), "owner_id", None)
+        if owner_id is not None and getattr(nav, "actor", None) != owner_id:
+            raise PermissionError("only the human owner can cancel module consent")
         module_id = str(nav.arg("module", "")).casefold()
+        waiter = getattr(self, "_pending_caps_consents", {}).pop(module_id, None)
+        if waiter is not None and not waiter.done():
+            waiter.set_exception(PermissionError("module installation cancelled by user"))
         return Screen(self.t('runtime.module_cancelled', module_id=module_id), toast=self.t('runtime.cancelled'))
 
     async def _caps_confirm(self, nav: Any) -> object:
         if self.modules is None or self.state is None or self.stager is None:
             return self.t('runtime.invalid_request')
+        owner_id = getattr(getattr(self, "kernel", None), "owner_id", None)
+        if owner_id is not None and getattr(nav, "actor", None) != owner_id:
+            raise PermissionError("only the human owner can confirm capabilities")
         module_id = str(nav.arg("module", "")).casefold()
+        form_mod = getattr(getattr(nav, "form", None), "module", None)
+        pending: dict[str, Any] = getattr(self, "_pending_caps_consents", {}) or {}
+        if form_mod not in ("catalyst", "kernel") and module_id not in pending and (not isinstance(form_mod, str) or self.modules.get(form_mod) is None):
+            raise PermissionError("invalid consent form")
         source = nav.arg("source")
         if not isinstance(source, str):
             return Screen(self.t('runtime.module_missing', module_id=module_id), toast=self.t('runtime.source_missing'), alert=True)
@@ -2503,7 +2536,13 @@ class Runtime:
             loaded, action = await self.load_module(candidate.source)
             if action not in {"loaded", "updated"}:
                 raise RuntimeError(action)
+            waiter = getattr(self, "_pending_caps_consents", {}).pop(module_id, None)
+            if waiter is not None and not waiter.done():
+                waiter.set_result((loaded, action))
         except Exception as exc:
+            waiter = getattr(self, "_pending_caps_consents", {}).pop(module_id, None)
+            if waiter is not None and not waiter.done():
+                waiter.set_exception(exc)
             if self.observatory is not None:
                 self.observatory.emit("modules", "activation_error", module=module_id, error=type(exc).__name__, detail=str(exc)[:240])
             return Screen(self.t('runtime.load_error', error=type(exc).__name__, detail=str(exc)[:120]))
@@ -2521,17 +2560,28 @@ class Runtime:
                 return screen_obj.with_notice(notice)
         return Screen(self.t('runtime.loaded', module_id=module_id, version=loaded.manifest.version))
 
-    def create_backup(self) -> Path:
+    def create_backup(self, *, scope: str = "all", custom_key: str | bytes | None = None) -> Path:
         if self.backups is None or self.state is None or self.modules is None:
             raise RuntimeError("backup services are not ready")
-        module_paths = [active.loaded.path for active in self.modules.items()]
+        scope_cf = scope.casefold()
+        include_modules = scope_cf in ("all", "full", "modules", "module", "mods", "mod")
+        include_state = scope_cf in ("all", "full", "state", "db", "database")
+        module_paths = [active.loaded.path for active in self.modules.items()] if include_modules else []
+        state_path = self.config.state_path if include_state else None
         stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ")
         destination = self.config.state_path.parent / "backups" / f"{stamp}.hbk"
         with trusted_scope():
-            result = self.backups.create(destination, state_path=self.config.state_path, module_paths=module_paths, metadata={"reason": "operator"})
+            result = self.backups.create(
+                destination,
+                state_path=state_path,
+                module_paths=module_paths,
+                metadata={"reason": "operator", "scope": scope_cf},
+                key=custom_key,
+            )
             removed = self.backups.prune(destination.parent, keep=self.config.backup_keep)
         if self.observatory is not None:
-            self.observatory.emit("backup", "created", files=len(module_paths) + 1, removed=len(removed))
+            total_files = len(module_paths) + (1 if include_state else 0)
+            self.observatory.emit("backup", "created", files=total_files, removed=len(removed))
         return result
 
     async def _command_bk(self, invocation: Any) -> tuple[str, list[dict[str, str]]] | str:
@@ -2694,41 +2744,79 @@ class Runtime:
             raise RuntimeError("backup service is not ready")
         return await self.backups.restore(plan, activate, rollback=rollback, timeout=timeout)
 
-    async def restore_filesystem(self, plan: Any, modules_path: str | Path) -> None:
+    async def restore_filesystem(self, plan: Any, modules_path: str | Path, *, only: str = "all", key: str | bytes | None = None) -> None:
         backups = self.backups
         if backups is None or self.state is None or self.modules is None:
             raise RuntimeError(self.t('runtime.not_ready'))
-        if self.modules.items():
-            raise RuntimeError("unload modules before filesystem restore")
-        state = self.state
-        self.state = None
-        state.close()
+        caller = asyncio.current_task()
+        scope = only.casefold()
+        for active in list(self.modules.items()):
+            try:
+                await self.deactivate_module(active.loaded.manifest.module_id, caller=caller)
+            except Exception as exc:
+                log.warning("restore: module %s deactivation failed: %s", active.loaded.manifest.module_id, exc)
+        if self._forms is not None:
+            self._forms.clear()
+        if self._inline_forms is not None:
+            self._inline_forms.clear()
+        restore_state = scope in ("all", "full", "state", "db", "database")
+        restore_modules = scope in ("all", "full", "modules", "module", "mods", "mod")
+        if restore_state:
+            state = self.state
+            self.state = None
+            state.close()
         try:
             def activate_staged(staged: str | Path) -> None:
                 backups.activate_staged(
                     staged,
-                    state_path=self.config.state_path,
-                    modules_path=modules_path,
+                    state_path=self.config.state_path if restore_state else None,
+                    modules_path=modules_path if restore_modules else None,
+                    only=only,
                 )
 
             await backups.restore(
                 plan,
                 activate_staged,
+                key=key,
             )
         finally:
-            self.state = StateStore(self.config.state_path)
-            from .flood import FloodFallback
-            responses = self.responses if self.responses is not None else ResponseService()
-            responses.flood = FloodFallback(self)
-            self.context_factory = ModuleContextFactory(self.state, responses, self)
-            self.context_factory.cap_host = self.cap_host
-            self.context_factory.callback_router = self.callbacks
-            self.context_factory.inline_manager = self.inline
-            if self.kernel is not None:
-                self.kernel.context_factory = self.context_factory
+            if restore_state:
+                self.state = StateStore(self.config.state_path)
+                from .flood import FloodFallback
+                responses = self.responses if self.responses is not None else ResponseService()
+                responses.flood = FloodFallback(self)
+                self.context_factory = ModuleContextFactory(self.state, responses, self)
+                self.context_factory.cap_host = self.cap_host
+                self.context_factory.callback_router = self.callbacks
+                self.context_factory.inline_manager = self.inline
+                if self.kernel is not None:
+                    self.kernel.context_factory = self.context_factory
             self.modules = ModuleManager(tasks=self.tasks)
             self.modules.form_cleanup = self.unload_module_forms
             self.stager = ModuleStager(self.modules.loader)
+            if self.screens is not None:
+                self.screens.runtime = self
+            if self.constellations_dir.is_dir():
+                hmod_paths = sorted(self.constellations_dir.glob("*.hmod"))
+                if hasattr(self.modules, "begin_boot"):
+                    self.modules.begin_boot()
+                for hmod_path in hmod_paths:
+                    try:
+                        candidate = self.modules.loader.load(hmod_path)
+                        if self.modules.get(candidate.manifest.module_id) is None:
+                            await self.activate_module(str(hmod_path))
+                    except Exception as exc:
+                        if self.observatory is not None:
+                            self.observatory.emit("modules", "kernel_load_error", path=hmod_path.name, error=type(exc).__name__, detail=str(exc)[:240])
+            if self.state is not None:
+                for relay_hmod in sorted(self.relay_dir.glob("*.hmod")):
+                    mid = relay_hmod.stem
+                    ns = self.state.namespace(mid)
+                    ns.set("sourcepath", str(relay_hmod))
+            if self.kernel is not None:
+                await self.restore_enabled_modules()
+            if hasattr(self.modules, "end_boot"):
+                await self.modules.end_boot()
 
     def status(self) -> dict[str, Any]:
         return {
@@ -3036,6 +3124,8 @@ class Runtime:
     async def _kernel_setup(self) -> None:
         if self.inline is None:
             raise RuntimeError("inline bot is required")
+        if self.app is None or self.app.mt is None or not getattr(self.app.mt, "auth_ready", None) or not self.app.mt.auth_ready.is_set():
+            raise RuntimeError("cannot start inline bot without an active user session")
         with trusted_scope():
             try:
                 await self.inline.start()
@@ -3202,34 +3292,69 @@ class Runtime:
             except Exception as exc:
                 log.debug("Singularity stop error: %s", exc)
 
+    def _on_fatal_connection(self, exc: BaseException) -> None:
+        if self.intrusion is not None:
+            self.intrusion.inspect(exc)
+        exc_str = str(exc).upper()
+        if any(err in exc_str for err in ("USER_DEACTIVATED", "USER_DEACTIVATED_BAN", "ACCOUNT_RESTRICTED", "FROZEN_METHOD_NOT_AVAILABLE", "PRIVACY_RESTRICTED", "AUTH_KEY_UNREGISTERED", "SESSION_REVOKED", "AUTH_KEY_INVALID", "SESSION_EXPIRED")):
+            if self.inline is not None:
+                asyncio.create_task(self.inline.stop())
+            from hotaru.accounts import handle_account_critical_failure
+            owner = self.config.owner_id or getattr(getattr(self.app, "session", None), "self_id", None) or 0
+            _ = handle_account_critical_failure(self.config.session_dir, owner, f"Runtime session failure: {type(exc).__name__} ({exc})", self)
+            self.request_restart()
+            if self.app is not None:
+                self.app.stop()
+
     async def run(self) -> None:
+        self._start_loop_guard()
+        while not self.closed:
+            if self.app is None:
+                self.build()
+            app = self.app
+            assert app is not None
+            try:
+                await self.authorize()
+                session_user = getattr(getattr(app, "session", None), "data", {}).get("user", {})
+                set_premium(bool(session_user.get("premium")))
+                self._premium_task = asyncio.create_task(self._init_premium(), name="hotaru:init-premium")
+                if app.mt is not None:
+                    self._connection = ConnectionRecovery(
+                        app.mt,
+                        self.observatory,
+                        "user",
+                        on_fatal=self._on_fatal_connection,
+                    )
+                    if self.ratelimit is not None:
+                        self._connection.rate_limiter = self.ratelimit.check
+                    self._connection_task = asyncio.create_task(self._connection.watch(), name="hotaru:user-health")
+                break
+            except BaseException as exc:
+                if self.inline is not None:
+                    try:
+                        await self.inline.stop()
+                    except Exception:
+                        pass
+                exc_str = str(exc).upper()
+                if any(err in exc_str for err in ("USER_DEACTIVATED", "USER_DEACTIVATED_BAN", "ACCOUNT_RESTRICTED", "FROZEN_METHOD_NOT_AVAILABLE", "PRIVACY_RESTRICTED", "AUTH_KEY_UNREGISTERED", "SESSION_REVOKED", "AUTH_KEY_INVALID", "SESSION_EXPIRED")):
+                    from hotaru.accounts import handle_account_critical_failure
+                    owner = self.config.owner_id or getattr(getattr(app, "session", None), "self_id", None) or 0
+                    switched = handle_account_critical_failure(self.config.session_dir, owner, f"Session authorization restricted: {type(exc).__name__} ({exc})", self)
+                    if switched:
+                        self.request_restart()
+                        return
+                    if app.mt is not None:
+                        try:
+                            await app.mt.close()
+                        except Exception:
+                            pass
+                    continue
+                await self.close()
+                raise
         if self.app is None:
             self.build()
-        assert self.app is not None
-        self._start_loop_guard()
-        try:
-            await self.authorize()
-            session_user = getattr(getattr(self.app, "session", None), "data", {}).get("user", {})
-            set_premium(bool(session_user.get("premium")))
-            self._premium_task = asyncio.create_task(self._init_premium(), name="hotaru:init-premium")
-            if self.app.mt is not None:
-                self._connection = ConnectionRecovery(
-                    self.app.mt,
-                    self.observatory,
-                    "user",
-                    on_fatal=self.intrusion.inspect if self.intrusion is not None else None,
-                )
-                if self.ratelimit is not None:
-                    self._connection.rate_limiter = self.ratelimit.check
-                self._connection_task = asyncio.create_task(self._connection.watch(), name="hotaru:user-health")
-        except BaseException as exc:
-            await self.close()
-            exc_str = str(exc).upper()
-            if any(err in exc_str for err in ("USER_DEACTIVATED_BAN", "ACCOUNT_RESTRICTED", "FROZEN_METHOD_NOT_AVAILABLE", "PRIVACY_RESTRICTED", "AUTH_KEY_UNREGISTERED", "SESSION_REVOKED")):
-                if self.config.owner_id is not None:
-                    from hotaru.accounts import handle_account_critical_failure
-                    handle_account_critical_failure(self.config.session_dir, self.config.owner_id, f"Session authorization restricted: {type(exc).__name__} ({exc})", self)
-            raise
+        app = self.app
+        assert app is not None
         if self.inline is not None:
             try:
                 await self._kernel_setup()
@@ -3266,16 +3391,16 @@ class Runtime:
         self._restart_notice_finish()
         await self._start_singularity()
         if self.supervisor is not None:
-            self.supervisor.mark_ready(mt=self.app.mt is not None, bot=self.app.bot is not None)
+            self.supervisor.mark_ready(mt=app.mt is not None, bot=app.bot is not None)
         if self.sandbox is not None:
             self._prewarm_task = asyncio.create_task(self._prewarm_sandboxes(), name="hotaru:prewarm-sandboxes")
-        if self.account_manager is not None and self.app.session.self_id is not None:
-            profile = self.account_manager.find_by_user(self.app.session.self_id)
+        if self.account_manager is not None and app.session.self_id is not None:
+            profile = self.account_manager.find_by_user(app.session.self_id)
             if profile is not None:
                 self.account_manager.state.set_setting(f"account-ready:{profile.account_number}", os.getpid())
             if not os.environ.get("HOTARU_ACCOUNT_SESSION"):
                 for profile in self.account_manager.items():
-                    if profile.user_id == self.app.session.self_id or not profile.enabled:
+                    if profile.user_id == app.session.self_id or not profile.enabled:
                         continue
                     if self.account_manager.vault_ready(profile.account_number):
                         try:
@@ -3284,7 +3409,7 @@ class Runtime:
                             log.warning("Account #%s could not start: %s", profile.account_number, type(exc).__name__, exc_info=exc)
         gc.collect()
         gc.freeze()
-        self._app_task = asyncio.create_task(self.app.run(), name="hotaru:app")
+        self._app_task = asyncio.create_task(app.run(), name="hotaru:app")
         self._forum_setup_task = asyncio.create_task(self._forum_after_transport(), name="hotaru:forum-setup")
         try:
             await self._app_task
