@@ -248,5 +248,5 @@ async def command_help(ctx: Any, invocation: Any) -> Any:
     await _show_help(ctx, invocation)
 
 
-async def command_hlp(ctx, i):
-    await _show_help(ctx, i)
+async def command_hlp(ctx: Any, invocation: Any) -> Any:
+    await _show_help(ctx, invocation)
