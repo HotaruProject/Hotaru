@@ -139,6 +139,11 @@ class ConnectionRecovery:
                 await self.call("users.getUsers", id=[{"_": "inputUserSelf"}])
             except Exception as exc:
                 self._emit("health_error", "error", error=type(exc).__name__, detail=str(exc)[:240])
+                exc_str = str(exc).upper()
+                if any(err in exc_str for err in ("USER_DEACTIVATED", "USER_DEACTIVATED_BAN", "ACCOUNT_RESTRICTED", "FROZEN_METHOD_NOT_AVAILABLE", "PRIVACY_RESTRICTED", "AUTH_KEY_UNREGISTERED", "SESSION_REVOKED", "AUTH_KEY_INVALID", "SESSION_EXPIRED")):
+                    if self.on_fatal is not None:
+                        self.on_fatal(exc)
+                    break
 
     async def close(self) -> None:
         self._closed = True

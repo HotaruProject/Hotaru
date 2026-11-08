@@ -797,7 +797,9 @@
       "sent": "Бекап отправлен",
       "topic": "Backups",
       "usage": "<code>{prefix}backup [now|on|off]</code>",
-      "restored_files": "Восстановлено файлов: {count}"
+      "restored_files": "Восстановлено файлов: {count}",
+      "restore_confirm": "<tg-emoji emoji-id=\"5325732612084351248\">📦</tg-emoji> <b>Восстановление бэкапа</b><blockquote><tg-emoji emoji-id=\"5258258882022612173\">⏳</tg-emoji> Подтвердите полное восстановление файловой системы, состояния БД и модулей. Текущие данные будут заменены.</blockquote>",
+      "restore_action": "Восстановить"
     },
     "intrusion": {
       "alert": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>Сессия Hotaru используется извне</b>\n\n{source}\n\n<blockquote><code>{detail}</code></blockquote>\n\nДругой клиент подключился к сессии самого Hotaru. Hotaru остановился, чтобы не дать ему читать сообщения и действовать от вашего имени. Если это были не вы, завершите чужую сессию и смените токен бота.",

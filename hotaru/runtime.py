@@ -2737,8 +2737,16 @@ class Runtime:
         backups = self.backups
         if backups is None or self.state is None or self.modules is None:
             raise RuntimeError(self.t('runtime.not_ready'))
-        if self.modules.items():
-            raise RuntimeError("unload modules before filesystem restore")
+        caller = asyncio.current_task()
+        for active in list(self.modules.items()):
+            try:
+                await self.deactivate_module(active.loaded.manifest.module_id, caller=caller)
+            except Exception as exc:
+                log.warning("restore: module %s deactivation failed: %s", active.loaded.manifest.module_id, exc)
+        if self._forms is not None:
+            self._forms.clear()
+        if self._inline_forms is not None:
+            self._inline_forms.clear()
         state = self.state
         self.state = None
         state.close()
@@ -2768,6 +2776,28 @@ class Runtime:
             self.modules = ModuleManager(tasks=self.tasks)
             self.modules.form_cleanup = self.unload_module_forms
             self.stager = ModuleStager(self.modules.loader)
+            if self.screens is not None:
+                self.screens.runtime = self
+            if self.constellations_dir.is_dir():
+                hmod_paths = sorted(self.constellations_dir.glob("*.hmod"))
+                if hasattr(self.modules, "begin_boot"):
+                    self.modules.begin_boot()
+                for hmod_path in hmod_paths:
+                    try:
+                        candidate = self.modules.loader.load(hmod_path)
+                        if self.modules.get(candidate.manifest.module_id) is None:
+                            await self.activate_module(str(hmod_path))
+                    except Exception as exc:
+                        if self.observatory is not None:
+                            self.observatory.emit("modules", "kernel_load_error", path=hmod_path.name, error=type(exc).__name__, detail=str(exc)[:240])
+            for relay_hmod in sorted(self.relay_dir.glob("*.hmod")):
+                mid = relay_hmod.stem
+                ns = self.state.namespace(mid)
+                ns.set("sourcepath", str(relay_hmod))
+            if self.kernel is not None:
+                await self.restore_enabled_modules()
+            if hasattr(self.modules, "end_boot"):
+                await self.modules.end_boot()
 
     def status(self) -> dict[str, Any]:
         return {
@@ -3075,6 +3105,8 @@ class Runtime:
     async def _kernel_setup(self) -> None:
         if self.inline is None:
             raise RuntimeError("inline bot is required")
+        if self.app is None or self.app.mt is None or not getattr(self.app.mt, "auth_ready", None) or not self.app.mt.auth_ready.is_set():
+            raise RuntimeError("cannot start inline bot without an active user session")
         with trusted_scope():
             try:
                 await self.inline.start()
@@ -3241,34 +3273,69 @@ class Runtime:
             except Exception as exc:
                 log.debug("Singularity stop error: %s", exc)
 
+    def _on_fatal_connection(self, exc: BaseException) -> None:
+        if self.intrusion is not None:
+            self.intrusion.inspect(exc)
+        exc_str = str(exc).upper()
+        if any(err in exc_str for err in ("USER_DEACTIVATED", "USER_DEACTIVATED_BAN", "ACCOUNT_RESTRICTED", "FROZEN_METHOD_NOT_AVAILABLE", "PRIVACY_RESTRICTED", "AUTH_KEY_UNREGISTERED", "SESSION_REVOKED", "AUTH_KEY_INVALID", "SESSION_EXPIRED")):
+            if self.inline is not None:
+                asyncio.create_task(self.inline.stop())
+            from hotaru.accounts import handle_account_critical_failure
+            owner = self.config.owner_id or getattr(getattr(self.app, "session", None), "self_id", None) or 0
+            _ = handle_account_critical_failure(self.config.session_dir, owner, f"Runtime session failure: {type(exc).__name__} ({exc})", self)
+            self.request_restart()
+            if self.app is not None:
+                self.app.stop()
+
     async def run(self) -> None:
+        self._start_loop_guard()
+        while not self.closed:
+            if self.app is None:
+                self.build()
+            app = self.app
+            assert app is not None
+            try:
+                await self.authorize()
+                session_user = getattr(getattr(app, "session", None), "data", {}).get("user", {})
+                set_premium(bool(session_user.get("premium")))
+                self._premium_task = asyncio.create_task(self._init_premium(), name="hotaru:init-premium")
+                if app.mt is not None:
+                    self._connection = ConnectionRecovery(
+                        app.mt,
+                        self.observatory,
+                        "user",
+                        on_fatal=self._on_fatal_connection,
+                    )
+                    if self.ratelimit is not None:
+                        self._connection.rate_limiter = self.ratelimit.check
+                    self._connection_task = asyncio.create_task(self._connection.watch(), name="hotaru:user-health")
+                break
+            except BaseException as exc:
+                if self.inline is not None:
+                    try:
+                        await self.inline.stop()
+                    except Exception:
+                        pass
+                exc_str = str(exc).upper()
+                if any(err in exc_str for err in ("USER_DEACTIVATED", "USER_DEACTIVATED_BAN", "ACCOUNT_RESTRICTED", "FROZEN_METHOD_NOT_AVAILABLE", "PRIVACY_RESTRICTED", "AUTH_KEY_UNREGISTERED", "SESSION_REVOKED", "AUTH_KEY_INVALID", "SESSION_EXPIRED")):
+                    from hotaru.accounts import handle_account_critical_failure
+                    owner = self.config.owner_id or getattr(getattr(app, "session", None), "self_id", None) or 0
+                    switched = handle_account_critical_failure(self.config.session_dir, owner, f"Session authorization restricted: {type(exc).__name__} ({exc})", self)
+                    if switched:
+                        self.request_restart()
+                        return
+                    if app.mt is not None:
+                        try:
+                            await app.mt.close()
+                        except Exception:
+                            pass
+                    continue
+                await self.close()
+                raise
         if self.app is None:
             self.build()
-        assert self.app is not None
-        self._start_loop_guard()
-        try:
-            await self.authorize()
-            session_user = getattr(getattr(self.app, "session", None), "data", {}).get("user", {})
-            set_premium(bool(session_user.get("premium")))
-            self._premium_task = asyncio.create_task(self._init_premium(), name="hotaru:init-premium")
-            if self.app.mt is not None:
-                self._connection = ConnectionRecovery(
-                    self.app.mt,
-                    self.observatory,
-                    "user",
-                    on_fatal=self.intrusion.inspect if self.intrusion is not None else None,
-                )
-                if self.ratelimit is not None:
-                    self._connection.rate_limiter = self.ratelimit.check
-                self._connection_task = asyncio.create_task(self._connection.watch(), name="hotaru:user-health")
-        except BaseException as exc:
-            await self.close()
-            exc_str = str(exc).upper()
-            if any(err in exc_str for err in ("USER_DEACTIVATED_BAN", "ACCOUNT_RESTRICTED", "FROZEN_METHOD_NOT_AVAILABLE", "PRIVACY_RESTRICTED", "AUTH_KEY_UNREGISTERED", "SESSION_REVOKED")):
-                if self.config.owner_id is not None:
-                    from hotaru.accounts import handle_account_critical_failure
-                    handle_account_critical_failure(self.config.session_dir, self.config.owner_id, f"Session authorization restricted: {type(exc).__name__} ({exc})", self)
-            raise
+        app = self.app
+        assert app is not None
         if self.inline is not None:
             try:
                 await self._kernel_setup()
@@ -3305,16 +3372,16 @@ class Runtime:
         self._restart_notice_finish()
         await self._start_singularity()
         if self.supervisor is not None:
-            self.supervisor.mark_ready(mt=self.app.mt is not None, bot=self.app.bot is not None)
+            self.supervisor.mark_ready(mt=app.mt is not None, bot=app.bot is not None)
         if self.sandbox is not None:
             self._prewarm_task = asyncio.create_task(self._prewarm_sandboxes(), name="hotaru:prewarm-sandboxes")
-        if self.account_manager is not None and self.app.session.self_id is not None:
-            profile = self.account_manager.find_by_user(self.app.session.self_id)
+        if self.account_manager is not None and app.session.self_id is not None:
+            profile = self.account_manager.find_by_user(app.session.self_id)
             if profile is not None:
                 self.account_manager.state.set_setting(f"account-ready:{profile.account_number}", os.getpid())
             if not os.environ.get("HOTARU_ACCOUNT_SESSION"):
                 for profile in self.account_manager.items():
-                    if profile.user_id == self.app.session.self_id or not profile.enabled:
+                    if profile.user_id == app.session.self_id or not profile.enabled:
                         continue
                     if self.account_manager.vault_ready(profile.account_number):
                         try:
@@ -3323,7 +3390,7 @@ class Runtime:
                             log.warning("Account #%s could not start: %s", profile.account_number, type(exc).__name__, exc_info=exc)
         gc.collect()
         gc.freeze()
-        self._app_task = asyncio.create_task(self.app.run(), name="hotaru:app")
+        self._app_task = asyncio.create_task(app.run(), name="hotaru:app")
         self._forum_setup_task = asyncio.create_task(self._forum_after_transport(), name="hotaru:forum-setup")
         try:
             await self._app_task
