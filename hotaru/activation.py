@@ -42,36 +42,36 @@ class ModuleBinder:
     def bind(self, loaded: LoadedModule, namespace: dict[str, Any], kernel: Any, *, is_kernel: bool = False, sandbox: bool = False) -> tuple[str, ...]:
         handlers: list[tuple[str, Any]] = []
         for name in loaded.manifest.commands:
-            if not name.isidentifier():
+            if not name or any(c.isspace() for c in name):
                 import traceback; traceback.print_exc(); raise ActivationError(f"module command is invalid: {name}")
-            handler = namespace.get(f"command_{name}")
+            handler = namespace.get(f"command_{name}") or namespace.get(f"command_{name.replace('-', '_')}") or namespace.get(name)
             if not sandbox and not callable(handler):
                 import traceback; traceback.print_exc(); raise ActivationError(f"module handler is missing: {name}")
             handlers.append((name, handler))
 
         inline_handlers: list[tuple[str, Any]] = []
         for name in getattr(loaded.manifest, "inline_commands", ()):
-            if not name.isidentifier():
+            if not name or any(c.isspace() for c in name):
                 import traceback; traceback.print_exc(); raise ActivationError(f"module inline command is invalid: {name}")
-            handler = namespace.get(f"inline_{name}")
+            handler = namespace.get(f"inline_{name}") or namespace.get(f"inline_{name.replace('-', '_')}") or namespace.get(name)
             if not sandbox and not callable(handler):
                 import traceback; traceback.print_exc(); raise ActivationError(f"module inline handler is missing: {name}")
             inline_handlers.append((name, handler))
         
         watcher_handlers: list[tuple[str, Any]] = []
         for name in loaded.manifest.watchers:
-            if not name.isidentifier():
+            if not name or any(c.isspace() for c in name):
                 import traceback; traceback.print_exc(); raise ActivationError(f"module watcher is invalid: {name}")
-            handler = namespace.get(f"watcher_{name}")
+            handler = namespace.get(f"watcher_{name}") or namespace.get(f"watcher_{name.replace('-', '_')}") or namespace.get(name)
             if not sandbox and not callable(handler):
                 import traceback; traceback.print_exc(); raise ActivationError(f"watcher handler is missing: {name}")
             watcher_handlers.append((name, handler))
 
         bot_handlers: list[tuple[str, Any]] = []
         for name in getattr(loaded.manifest, "bot_commands", ()):
-            if not name.isidentifier():
+            if not name or any(c.isspace() for c in name):
                 import traceback; traceback.print_exc(); raise ActivationError(f"module bot command is invalid: {name}")
-            handler = namespace.get(f"bot_{name}") or namespace.get(f"command_{name}")
+            handler = namespace.get(f"bot_{name}") or namespace.get(f"command_{name}") or namespace.get(f"bot_{name.replace('-', '_')}") or namespace.get(name)
             if not sandbox and not callable(handler):
                 import traceback; traceback.print_exc(); raise ActivationError(f"module bot handler is missing: {name}")
             bot_handlers.append((name, handler))
@@ -375,7 +375,7 @@ class ModuleManager:
                 persistent=is_persistent,
             )
             for name in loaded.manifest.commands:
-                if not name.isidentifier():
+                if not name or any(c.isspace() for c in name):
                     import traceback; traceback.print_exc(); raise ActivationError(f"module command is invalid: {name}")
             commands = self.binder.bind_sandbox(loaded, kernel)
             instance = ModuleInstance(loaded, {"__sandbox__": True}, commands)

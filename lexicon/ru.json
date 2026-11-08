@@ -799,7 +799,22 @@
       "usage": "<code>{prefix}backup [now|on|off]</code>",
       "restored_files": "Восстановлено файлов: {count}",
       "restore_confirm": "<tg-emoji emoji-id=\"5325732612084351248\">📦</tg-emoji> <b>Восстановление бэкапа</b><blockquote><tg-emoji emoji-id=\"5258258882022612173\">⏳</tg-emoji> Подтвердите полное восстановление файловой системы, состояния БД и модулей. Текущие данные будут заменены.</blockquote>",
-      "restore_action": "Восстановить"
+      "restore_action": "Восстановить",
+      "scope_all": "Всё (БД + Модули)",
+      "scope_modules": "Только модули",
+      "scope_state": "Только БД",
+      "scope_btn": "Объём: {scope}",
+      "current_scope": "Объём: <b>{scope}</b>",
+      "custom_key_btn": "Задать свой ключ",
+      "custom_key_hint": "Введите ключ шифрования / пароль",
+      "reset_key_btn": "Сбросить ключ",
+      "key_custom": "Задан свой ключ",
+      "key_default": "Стандартный ключ vault",
+      "key_info": "Ключ: <b>{status}</b>",
+      "restore_scope": "Объём: <b>{scope}</b>",
+      "restore_custom_key": "Ключ: <b>{key}</b>",
+      "restore_key_btn": "Ключ: {key}",
+      "caption_custom_key": "<tg-emoji emoji-id=\"5325732612084351248\">📦</tg-emoji> <b>Резервная копия Hotaru (Свой ключ)</b>\n<blockquote><tg-emoji emoji-id=\"5258476306152038031\">🔒</tg-emoji> Защищено пользовательским ключом шифрования\n<tg-emoji emoji-id=\"5258105663359294787\">🗓</tg-emoji> <code>{name}</code></blockquote>"
     },
     "intrusion": {
       "alert": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>Сессия Hotaru используется извне</b>\n\n{source}\n\n<blockquote><code>{detail}</code></blockquote>\n\nДругой клиент подключился к сессии самого Hotaru. Hotaru остановился, чтобы не дать ему читать сообщения и действовать от вашего имени. Если это были не вы, завершите чужую сессию и смените токен бота.",

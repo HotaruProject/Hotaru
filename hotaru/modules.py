@@ -45,6 +45,7 @@ class ModuleManifest:
     template_fields: dict[str, dict[str, Any]] | None = None
     banner: str = ""
     bot_commands: tuple[str, ...] = ()
+    name: str = ""
 
     @property
     def description(self) -> str:
@@ -52,6 +53,8 @@ class ModuleManifest:
         return value if isinstance(value, str) else ""
 
     def __post_init__(self) -> Any:
+        if not self.name:
+            object.__setattr__(self, "name", self.module_id)
         if self.tasks is None:
             object.__setattr__(self, "tasks", {})
         if self.aliases is None:
@@ -209,16 +212,21 @@ class HmodLoader:
         required = ("id", "version", "commands", "capabilities")
         if any(key not in raw for key in required):
             raise ModuleValidationError("manifest is missing required fields")
-        module_id = raw["id"]
+        module_id = str(raw["id"]).strip()
         version = raw["version"]
         commands = raw["commands"]
         capabilities = raw["capabilities"]
-        if not isinstance(module_id, str) or not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,63}", module_id):
+        name_val = raw.get("name")
+        name = str(name_val).strip() if isinstance(name_val, str) and name_val.strip() else module_id
+        if not module_id or len(module_id) > 128 or "/" in module_id or "\\" in module_id or "\x00" in module_id:
             raise ModuleValidationError("manifest id is invalid")
         if not isinstance(version, str) or not version:
             raise ModuleValidationError("manifest version is invalid")
         if not HmodLoader._strings(commands) or not HmodLoader._strings(capabilities):
             raise ModuleValidationError("manifest lists must contain strings")
+        for cmd in cast('list[str]', commands):
+            if not cmd or any(c.isspace() for c in cmd):
+                raise ModuleValidationError(f"manifest command is invalid: {cmd}")
 
         watchers = raw.get("watchers", [])
         if not HmodLoader._strings(watchers):
@@ -255,26 +263,26 @@ class HmodLoader:
         if not HmodLoader._strings(after):
             raise ModuleValidationError("manifest after must contain module ids")
         for dep in cast('list[str]', after):
-            if not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,63}", dep):
+            if not dep or "/" in dep or "\\" in dep:
                 raise ModuleValidationError(f"manifest after entry is invalid: {dep}")
 
         inline_commands = raw.get("inline_commands", [])
         if not HmodLoader._strings(inline_commands):
             raise ModuleValidationError("manifest inline_commands must contain strings")
         for inline_name in cast('list[str]', inline_commands):
-            if not inline_name.isidentifier():
+            if not inline_name or any(c.isspace() for c in inline_name):
                 raise ModuleValidationError(f"manifest inline command is invalid: {inline_name}")
 
         rise = raw.get("rise", "")
         if not isinstance(rise, str):
             raise ModuleValidationError("manifest rise must be a string")
-        if rise and not rise.isidentifier():
+        if rise and any(c.isspace() for c in rise):
             raise ModuleValidationError("manifest rise is invalid")
 
         fade = raw.get("fade", "")
         if not isinstance(fade, str):
             raise ModuleValidationError("manifest fade must be a string")
-        if fade and not fade.isidentifier():
+        if fade and any(c.isspace() for c in fade):
             raise ModuleValidationError("manifest fade is invalid")
 
         banner = raw.get("banner", "")
@@ -332,7 +340,7 @@ class HmodLoader:
                 raise ModuleValidationError("template scope must be private/shared/global")
             consumers = cast("list[object]", consumers)
             if scope == "shared":
-                if not consumers or len(consumers) > 64 or any(not isinstance(item, str) or not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,63}", item) for item in consumers):
+                if not consumers or len(consumers) > 64 or any(not isinstance(item, str) or not item or "/" in item or "\\" in item for item in consumers):
                     raise ModuleValidationError("shared template fields require module IDs")
             elif consumers:
                 raise ModuleValidationError("modules requires shared scope")
@@ -370,6 +378,7 @@ class HmodLoader:
             publications,
             banner,
             tuple(cast("list[str]", bot_commands)),
+            name=name,
         )
 
     @staticmethod

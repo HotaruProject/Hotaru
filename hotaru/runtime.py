@@ -2560,17 +2560,28 @@ class Runtime:
                 return screen_obj.with_notice(notice)
         return Screen(self.t('runtime.loaded', module_id=module_id, version=loaded.manifest.version))
 
-    def create_backup(self) -> Path:
+    def create_backup(self, *, scope: str = "all", custom_key: str | bytes | None = None) -> Path:
         if self.backups is None or self.state is None or self.modules is None:
             raise RuntimeError("backup services are not ready")
-        module_paths = [active.loaded.path for active in self.modules.items()]
+        scope_cf = scope.casefold()
+        include_modules = scope_cf in ("all", "full", "modules", "module", "mods", "mod")
+        include_state = scope_cf in ("all", "full", "state", "db", "database")
+        module_paths = [active.loaded.path for active in self.modules.items()] if include_modules else []
+        state_path = self.config.state_path if include_state else None
         stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ")
         destination = self.config.state_path.parent / "backups" / f"{stamp}.hbk"
         with trusted_scope():
-            result = self.backups.create(destination, state_path=self.config.state_path, module_paths=module_paths, metadata={"reason": "operator"})
+            result = self.backups.create(
+                destination,
+                state_path=state_path,
+                module_paths=module_paths,
+                metadata={"reason": "operator", "scope": scope_cf},
+                key=custom_key,
+            )
             removed = self.backups.prune(destination.parent, keep=self.config.backup_keep)
         if self.observatory is not None:
-            self.observatory.emit("backup", "created", files=len(module_paths) + 1, removed=len(removed))
+            total_files = len(module_paths) + (1 if include_state else 0)
+            self.observatory.emit("backup", "created", files=total_files, removed=len(removed))
         return result
 
     async def _command_bk(self, invocation: Any) -> tuple[str, list[dict[str, str]]] | str:
@@ -2733,11 +2744,12 @@ class Runtime:
             raise RuntimeError("backup service is not ready")
         return await self.backups.restore(plan, activate, rollback=rollback, timeout=timeout)
 
-    async def restore_filesystem(self, plan: Any, modules_path: str | Path) -> None:
+    async def restore_filesystem(self, plan: Any, modules_path: str | Path, *, only: str = "all", key: str | bytes | None = None) -> None:
         backups = self.backups
         if backups is None or self.state is None or self.modules is None:
             raise RuntimeError(self.t('runtime.not_ready'))
         caller = asyncio.current_task()
+        scope = only.casefold()
         for active in list(self.modules.items()):
             try:
                 await self.deactivate_module(active.loaded.manifest.module_id, caller=caller)
@@ -2747,32 +2759,38 @@ class Runtime:
             self._forms.clear()
         if self._inline_forms is not None:
             self._inline_forms.clear()
-        state = self.state
-        self.state = None
-        state.close()
+        restore_state = scope in ("all", "full", "state", "db", "database")
+        restore_modules = scope in ("all", "full", "modules", "module", "mods", "mod")
+        if restore_state:
+            state = self.state
+            self.state = None
+            state.close()
         try:
             def activate_staged(staged: str | Path) -> None:
                 backups.activate_staged(
                     staged,
-                    state_path=self.config.state_path,
-                    modules_path=modules_path,
+                    state_path=self.config.state_path if restore_state else None,
+                    modules_path=modules_path if restore_modules else None,
+                    only=only,
                 )
 
             await backups.restore(
                 plan,
                 activate_staged,
+                key=key,
             )
         finally:
-            self.state = StateStore(self.config.state_path)
-            from .flood import FloodFallback
-            responses = self.responses if self.responses is not None else ResponseService()
-            responses.flood = FloodFallback(self)
-            self.context_factory = ModuleContextFactory(self.state, responses, self)
-            self.context_factory.cap_host = self.cap_host
-            self.context_factory.callback_router = self.callbacks
-            self.context_factory.inline_manager = self.inline
-            if self.kernel is not None:
-                self.kernel.context_factory = self.context_factory
+            if restore_state:
+                self.state = StateStore(self.config.state_path)
+                from .flood import FloodFallback
+                responses = self.responses if self.responses is not None else ResponseService()
+                responses.flood = FloodFallback(self)
+                self.context_factory = ModuleContextFactory(self.state, responses, self)
+                self.context_factory.cap_host = self.cap_host
+                self.context_factory.callback_router = self.callbacks
+                self.context_factory.inline_manager = self.inline
+                if self.kernel is not None:
+                    self.kernel.context_factory = self.context_factory
             self.modules = ModuleManager(tasks=self.tasks)
             self.modules.form_cleanup = self.unload_module_forms
             self.stager = ModuleStager(self.modules.loader)
@@ -2790,10 +2808,11 @@ class Runtime:
                     except Exception as exc:
                         if self.observatory is not None:
                             self.observatory.emit("modules", "kernel_load_error", path=hmod_path.name, error=type(exc).__name__, detail=str(exc)[:240])
-            for relay_hmod in sorted(self.relay_dir.glob("*.hmod")):
-                mid = relay_hmod.stem
-                ns = self.state.namespace(mid)
-                ns.set("sourcepath", str(relay_hmod))
+            if self.state is not None:
+                for relay_hmod in sorted(self.relay_dir.glob("*.hmod")):
+                    mid = relay_hmod.stem
+                    ns = self.state.namespace(mid)
+                    ns.set("sourcepath", str(relay_hmod))
             if self.kernel is not None:
                 await self.restore_enabled_modules()
             if hasattr(self.modules, "end_boot"):

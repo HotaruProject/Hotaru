@@ -799,7 +799,22 @@
       "usage": "<code>{prefix}backup [now|on|off]</code>",
       "restored_files": "Restored files: {count}",
       "restore_confirm": "<tg-emoji emoji-id=\"5325732612084351248\">📦</tg-emoji> <b>Restore Backup</b><blockquote><tg-emoji emoji-id=\"5258258882022612173\">⏳</tg-emoji> Confirm full restore of filesystem, database state snapshot, and modules. Current data will be replaced.</blockquote>",
-      "restore_action": "Restore"
+      "restore_action": "Restore",
+      "scope_all": "All (State + Modules)",
+      "scope_modules": "Modules only",
+      "scope_state": "Database state only",
+      "scope_btn": "Scope: {scope}",
+      "current_scope": "Scope: <b>{scope}</b>",
+      "custom_key_btn": "Set Custom Key",
+      "custom_key_hint": "Enter encryption key / passphrase",
+      "reset_key_btn": "Reset Custom Key",
+      "key_custom": "Custom key active",
+      "key_default": "Default vault key",
+      "key_info": "Key: <b>{status}</b>",
+      "restore_scope": "Scope: <b>{scope}</b>",
+      "restore_custom_key": "Key: <b>{key}</b>",
+      "restore_key_btn": "Key: {key}",
+      "caption_custom_key": "<tg-emoji emoji-id=\"5325732612084351248\">📦</tg-emoji> <b>Hotaru Backup (Custom Key)</b>\n<blockquote><tg-emoji emoji-id=\"5258476306152038031\">🔒</tg-emoji> Protected with custom encryption passphrase\n<tg-emoji emoji-id=\"5258105663359294787\">🗓</tg-emoji> <code>{name}</code></blockquote>"
     },
     "intrusion": {
       "alert": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>Hotaru session is being used externally</b>\n\n{source}\n\n<blockquote><code>{detail}</code></blockquote>\n\nAnother client connected using Hotaru's own session. Hotaru stopped to prevent unauthorized actions. If this was not you, terminate the foreign session and revoke the bot token.",

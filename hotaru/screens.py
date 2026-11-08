@@ -1264,7 +1264,7 @@ class ScreenEngine:
         else:
             active = self.runtime.modules.get(module_id) if self.runtime.modules is not None else None
             namespace = getattr(getattr(active, "context", None), "namespace", None)
-            if isinstance(namespace, dict) and cast("dict[str, Any]", namespace).get("__sandbox__") and name.isidentifier() and not name.startswith("__"):
+            if isinstance(namespace, dict) and cast("dict[str, Any]", namespace).get("__sandbox__") and name and not any(c.isspace() for c in name) and not name.startswith("__"):
                 sandbox = self.runtime.sandbox
                 if sandbox is None or module_id != form.module:
                     raise ScreenError(f"screen handler is unavailable: {module_id}.{name}")
