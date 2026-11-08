@@ -820,7 +820,11 @@
       "restore_scope": "Scope: <b>{scope}</b>",
       "restore_custom_key": "Key: <b>{key_name}</b>",
       "restore_key_btn": "Key: {key_name}",
-      "caption_custom_key": "<tg-emoji emoji-id=\"5325732612084351248\">📦</tg-emoji> <b>Hotaru Backup (Custom Key)</b>\n<blockquote><tg-emoji emoji-id=\"5258476306152038031\">🔒</tg-emoji> Protected with custom encryption passphrase\n<tg-emoji emoji-id=\"5258105663359294787\">🗓</tg-emoji> <code>{name}</code></blockquote>"
+      "caption_custom_key": "<tg-emoji emoji-id=\"5325732612084351248\">📦</tg-emoji> <b>Hotaru Backup (Custom Key)</b>\n<blockquote><tg-emoji emoji-id=\"5258476306152038031\">🔒</tg-emoji> Protected with custom encryption passphrase\n<tg-emoji emoji-id=\"5258105663359294787\">🗓</tg-emoji> <code>{name}</code></blockquote>",
+      "key_invalid": "Invalid encryption key",
+      "restoring": "Restoring backup...",
+      "archive_missing": "Backup archive not found. Reply to an .hbk file or provide path",
+      "restore_failed": "Restore failed: {error}"
     },
     "intrusion": {
       "alert": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>Hotaru session is being used externally</b>\n\n{source}\n\n<blockquote><code>{detail}</code></blockquote>\n\nAnother client connected using Hotaru's own session. Hotaru stopped to prevent unauthorized actions. If this was not you, terminate the foreign session and revoke the bot token.",

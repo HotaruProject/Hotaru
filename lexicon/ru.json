@@ -820,7 +820,11 @@
       "restore_scope": "Объём: <b>{scope}</b>",
       "restore_custom_key": "Ключ: <b>{key_name}</b>",
       "restore_key_btn": "Ключ: {key_name}",
-      "caption_custom_key": "<tg-emoji emoji-id=\"5325732612084351248\">📦</tg-emoji> <b>Резервная копия Hotaru (Свой ключ)</b>\n<blockquote><tg-emoji emoji-id=\"5258476306152038031\">🔒</tg-emoji> Защищено пользовательским ключом шифрования\n<tg-emoji emoji-id=\"5258105663359294787\">🗓</tg-emoji> <code>{name}</code></blockquote>"
+      "caption_custom_key": "<tg-emoji emoji-id=\"5325732612084351248\">📦</tg-emoji> <b>Резервная копия Hotaru (Свой ключ)</b>\n<blockquote><tg-emoji emoji-id=\"5258476306152038031\">🔒</tg-emoji> Защищено пользовательским ключом шифрования\n<tg-emoji emoji-id=\"5258105663359294787\">🗓</tg-emoji> <code>{name}</code></blockquote>",
+      "key_invalid": "Неверный ключ шифрования",
+      "restoring": "Восстанавливаем резервную копию...",
+      "archive_missing": "Резервная копия не найдена. Ответьте на .hbk файл или укажите путь",
+      "restore_failed": "Ошибка восстановления: {error}"
     },
     "intrusion": {
       "alert": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>Сессия Hotaru используется извне</b>\n\n{source}\n\n<blockquote><code>{detail}</code></blockquote>\n\nДругой клиент подключился к сессии самого Hotaru. Hotaru остановился, чтобы не дать ему читать сообщения и действовать от вашего имени. Если это были не вы, завершите чужую сессию и смените токен бота.",
