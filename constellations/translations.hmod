@@ -296,10 +296,22 @@ async def command_loadlex(ctx: Any, invocation: Any) -> Any:
         if invocation.args:
             arg = str(invocation.args[0]).strip()
             if arg.startswith("https://") or arg.startswith("http://"):
-                req = urllib.request.Request(arg, headers={"User-Agent": "Hotaru/1.0"})
+                url = arg
+                try:
+                    import urllib.parse
+                    parsed = urllib.parse.urlparse(url)
+                    host = (parsed.hostname or "").lower()
+                    if host == "github.com":
+                        path_parts = parsed.path.strip("/").split("/")
+                        if len(path_parts) >= 4 and path_parts[2] in ("blob", "raw"):
+                            owner, repo, _, *rest = path_parts
+                            url = "https://raw.githubusercontent.com/" + "/".join([owner, repo, *rest])
+                except Exception:
+                    url = arg
+                req = urllib.request.Request(url, headers={"User-Agent": "Hotaru/1.0"})
                 with urllib.request.urlopen(req, timeout=10) as resp:
                     source = resp.read().decode("utf-8")
-                code_override = Path(arg.split("?")[0]).stem.lower()
+                code_override = Path(url.split("?")[0]).stem.lower()
             elif Path(arg).is_file():
                 source = Path(arg).read_text(encoding="utf-8")
                 code_override = Path(arg).stem.lower()

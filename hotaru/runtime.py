@@ -2104,7 +2104,7 @@ class Runtime:
         with trusted_scope():
             await take(app, media, str(destination))
 
-    async def load_module(self, source: str | Path, *, consent_screen: Any = None) -> tuple[Any, str]:
+    async def load_module(self, source: str | Path, *, consent_screen: Any = None, caller_id: str | None = None) -> tuple[Any, str]:
         if self.stager is None or self.state is None:
             raise RuntimeError(self.t('runtime.not_ready'))
         with trusted_scope():
@@ -2118,11 +2118,11 @@ class Runtime:
         unloading = self._unload_tasks.get(candidate.manifest.module_id)
         if unloading is not None:
             await asyncio.shield(unloading)
-        task = asyncio.create_task(self._load_candidate(candidate))
+        task = asyncio.create_task(self._load_candidate(candidate, caller_id=caller_id))
         task.add_done_callback(lambda done: done.cancelled() or done.exception())
         return await asyncio.shield(task)
 
-    async def _load_candidate(self, candidate: Any) -> tuple[Any, str]:
+    async def _load_candidate(self, candidate: Any, caller_id: str | None = None) -> tuple[Any, str]:
         module_id = candidate.manifest.module_id
         with trusted_scope():
             async with self._module_locks.setdefault(module_id, asyncio.Lock()):
@@ -2134,7 +2134,18 @@ class Runtime:
                 if self._is_kernel_module(module_id):
                     raise PermissionError(self.t("runtime.protected", module_id=module_id))
                 caps = list(candidate.manifest.capabilities)
-                if not self._caps_consented(module_id, candidate.manifest, candidate.digest):
+                child_caps = set(caps)
+                is_consented = self._caps_consented(module_id, candidate.manifest, candidate.digest)
+                if not is_consented and caller_id and caller_id != "catalyst":
+                    caller_mod = self.modules.get(caller_id) if self.modules is not None else None
+                    caller_caps = set(caller_mod.loaded.manifest.capabilities if caller_mod and caller_mod.loaded and caller_mod.loaded.manifest else ())
+                    if self._is_kernel_module(caller_id) or caller_id in ("system", "kernel", "loader"):
+                        is_consented = True
+                    elif child_caps.issubset(caller_caps):
+                        is_consented = True
+                    if is_consented:
+                        self._mark_caps_consent(module_id, caps, candidate.digest)
+                if not is_consented:
                     return candidate, "confirm"
                 source_text = candidate.source
                 old_path = self.relay_dir / f"{module_id}.hmod"
@@ -2474,7 +2485,9 @@ class Runtime:
             f'</table>\n'
             f'<blockquote expandable><b>{req_title}</b><br>{caps_body}</blockquote>'
         )
-        if self.screens is None or self.kernel is None or self.kernel.owner_id is None or chat_id is None:
+        owner_id = getattr(getattr(self, "kernel", None), "owner_id", None)
+        chat_id = chat_id or owner_id or "me"
+        if self.screens is None or self.kernel is None or owner_id is None or chat_id is None:
             return f"{card}\n{self.t('runtime.caps_retry')}"
         return (
             card,
@@ -2488,6 +2501,9 @@ class Runtime:
 
     async def _caps_cancel(self, nav: Any) -> object:
         module_id = str(nav.arg("module", "")).casefold()
+        waiter = getattr(self, "_pending_caps_consents", {}).pop(module_id, None)
+        if waiter is not None and not waiter.done():
+            waiter.set_exception(PermissionError("module installation cancelled by user"))
         return Screen(self.t('runtime.module_cancelled', module_id=module_id), toast=self.t('runtime.cancelled'))
 
     async def _caps_confirm(self, nav: Any) -> object:
@@ -2508,7 +2524,13 @@ class Runtime:
             loaded, action = await self.load_module(candidate.source)
             if action not in {"loaded", "updated"}:
                 raise RuntimeError(action)
+            waiter = getattr(self, "_pending_caps_consents", {}).pop(module_id, None)
+            if waiter is not None and not waiter.done():
+                waiter.set_result((loaded, action))
         except Exception as exc:
+            waiter = getattr(self, "_pending_caps_consents", {}).pop(module_id, None)
+            if waiter is not None and not waiter.done():
+                waiter.set_exception(exc)
             if self.observatory is not None:
                 self.observatory.emit("modules", "activation_error", module=module_id, error=type(exc).__name__, detail=str(exc)[:240])
             return Screen(self.t('runtime.load_error', error=type(exc).__name__, detail=str(exc)[:120]))

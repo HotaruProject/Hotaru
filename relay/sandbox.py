@@ -1191,7 +1191,7 @@ class _ModulesProxy:
     async def hashes(self):
         return _cap_call("modules", {"op": "hashes"})
 
-    async def load(self, source=None, *, url=None, text=None):
+    async def load(self, source=None, *, url=None, text=None, chat_id=None, message_id=None, edit=False):
         payload = {"op": "load"}
         if url is not None:
             payload["url"] = url
@@ -1199,6 +1199,12 @@ class _ModulesProxy:
             payload["text"] = text
         if source is not None:
             payload["source"] = source
+        if chat_id is not None:
+            payload["chat_id"] = chat_id
+        if message_id is not None:
+            payload["message_id"] = message_id
+        if edit:
+            payload["edit"] = True
         return _cap_call("modules", payload)
 
     async def unload(self, module_id, purge=False):
