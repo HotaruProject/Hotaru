@@ -562,6 +562,10 @@ class Kit:
             raise ScreenError("screens are unavailable")
         return await self.engine.send(str(getattr(self.ctx, "module_id", "") or ""), chat_id, screen, **options)
 
+    def drop(self, form: Any) -> None:
+        if self.engine is not None:
+            self.engine.drop(form)
+
 
 class _ReentrantLock:
     def __init__(self) -> None:
