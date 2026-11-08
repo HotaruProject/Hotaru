@@ -563,6 +563,18 @@ class InlineManager:
                     except Exception:
                         bot = None
                 if bot is None:
+                    resolve_un = getattr(app, "mt_contacts_resolve_username", None)
+                    if callable(resolve_un):
+                        try:
+                            resolved = await cast(Callable[..., Awaitable[Any]], resolve_un)(username=info.username.lstrip("@"))
+                            body = resolved.get("result", resolved) if isinstance(resolved, dict) else resolved
+                            users = body.get("users", []) if isinstance(body, dict) else []
+                            if users and isinstance(users[0], dict):
+                                u = users[0]
+                                bot = {"_": "inputUser", "user_id": int(u.get("id", info.bot_id)), "access_hash": int(u.get("access_hash", 0))}
+                        except Exception:
+                            bot = None
+                if bot is None:
                     from goygram import ext
                     peer: Any = await app.mt.resolve_peer("@" + info.username)
                     if isinstance(peer, (bytes, bytearray, memoryview)):
@@ -590,6 +602,11 @@ class InlineManager:
                         up = await put(app, str(logo_path), file_name=str(logo_path.name))
                         uploaded_file = document(up)["file"]
                     async with BotFatherGuard(app), BotFatherConversation(app) as conv:
+                        try:
+                            await conv.say("/cancel")
+                            await conv.response()
+                        except Exception:
+                            pass
                         await conv.say("/setuserpic")
                         await conv.response()
                         await conv.say("@" + info.username.lstrip("@"))

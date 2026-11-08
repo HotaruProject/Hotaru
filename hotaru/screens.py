@@ -938,7 +938,22 @@ class ScreenEngine:
             for media_id, kind, path_or_url, is_web in needed:
                 key = (id(app), media_id)
                 cached = _banner_cache.get(key)
-                if cached is not None and time.monotonic() - cached[0] < 1800:
+                state_obj = getattr(self.runtime, "state", None)
+                if cached is None and state_obj is not None:
+                    try:
+                        state_val = state_obj.get_setting("banner:" + media_id)
+                        if isinstance(state_val, dict):
+                            entry_stored = dict(state_val)
+                            for sub in ("photo", "document"):
+                                if sub in entry_stored and isinstance(entry_stored[sub], dict):
+                                    ref_b64 = entry_stored[sub].get("file_reference")
+                                    if isinstance(ref_b64, str):
+                                        entry_stored[sub]["file_reference"] = base64.b64decode(ref_b64.encode("ascii"))
+                            cached = (time.monotonic(), entry_stored)
+                            _banner_cache[key] = cached
+                    except Exception:
+                        pass
+                if cached is not None and time.monotonic() - cached[0] < 86400:
                     files.append(cached[1])
                     if is_web:
                         tag = "video" if kind == "video" else "img"
@@ -985,8 +1000,17 @@ class ScreenEngine:
                             actual_path = temp_p
                     else:
                         actual_path = cast('Path', path_or_url)
-                    entry = await _upload_asset(app, media_id, kind, actual_path)
+                    entry = await asyncio.wait_for(_upload_asset(app, media_id, kind, actual_path), timeout=2.5)
                     _banner_cache[key] = (time.monotonic(), entry)
+                    state_obj = getattr(self.runtime, "state", None)
+                    if state_obj is not None:
+                        try:
+                            def _enc(o: Any) -> Any:
+                                return base64.b64encode(bytes(o)).decode("ascii") if isinstance(o, (bytes, bytearray)) else str(o)
+                            save_entry = json.loads(json.dumps(entry, default=_enc))
+                            state_obj.set_setting("banner:" + media_id, save_entry)
+                        except Exception:
+                            pass
                     files.append(entry)
                     if is_web:
                         tag = "video" if kind == "video" else "img"
@@ -996,7 +1020,7 @@ class ScreenEngine:
                             payload.get("html", "")
                         )
                 except Exception as exc:
-                    log.error("screen banner upload failed for %s (%s): %s: %s", media_id, path_or_url, type(exc).__name__, exc)
+                    log.warning("screen banner upload failed for %s (%s): %s: %s", media_id, path_or_url, type(exc).__name__, exc)
                     tag = "video" if kind == "video" else "img"
                     if "html" in payload:
                         payload["html"] = payload["html"].replace(f'<{tag} src="tg://{kind}?id={media_id}"/>', "")
@@ -1034,7 +1058,7 @@ class ScreenEngine:
             except Exception as exc:
                 if not screen.banner:
                     raise
-                log.error("screen banner failed for module %s: %s: %s", module_id, type(exc).__name__, exc)
+                log.warning("screen banner failed for module %s: %s: %s", module_id, type(exc).__name__, exc)
                 if runtime.observatory is not None:
                     runtime.observatory.emit("screens", "banner_failed", module=module_id, error=type(exc).__name__, detail=str(exc))
                 screen.banner = ""
@@ -1109,7 +1133,7 @@ class ScreenEngine:
             except Exception as exc:
                 if not screen.banner:
                     raise
-                log.error("screen banner failed for module %s: %s: %s", module_id, type(exc).__name__, exc)
+                log.warning("screen banner failed for module %s: %s: %s", module_id, type(exc).__name__, exc)
                 if self.runtime.observatory is not None:
                     self.runtime.observatory.emit("screens", "banner_failed", module=module_id, error=type(exc).__name__, detail=str(exc))
                 screen.banner = ""
@@ -1136,7 +1160,7 @@ class ScreenEngine:
         except Exception as exc:
             if not screen.banner:
                 raise
-            log.error("screen banner failed for module %s: %s: %s", form.module, type(exc).__name__, exc)
+            log.warning("screen banner failed for module %s: %s: %s", form.module, type(exc).__name__, exc)
             if self.runtime.observatory is not None:
                 self.runtime.observatory.emit("screens", "banner_failed", module=form.module, error=type(exc).__name__, detail=str(exc))
             screen.banner = ""
