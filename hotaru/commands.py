@@ -37,6 +37,7 @@ class CommandParser:
         if not valid_prefix(value):
             raise ValueError("prefix must contain 1-8 visible non-whitespace characters")
         self._prefix = value
+        self._escape_double_prefix = not any(char.isalnum() or char == "_" for char in value)
 
     def parse(
         self,
@@ -54,7 +55,7 @@ class CommandParser:
         if not text.startswith(self.prefix):
             return None
         body = text[len(self.prefix):]
-        if body.startswith(self.prefix):
+        if depth == 0 and self._escape_double_prefix and body.startswith(self.prefix):
             return None
         body = body.lstrip()
         if not body:
