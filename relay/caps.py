@@ -24,6 +24,7 @@ from .denylist import is_blocked_host, is_blocked_peer, is_readonly_peer, payloa
 from .firewall import trusted_scope
 from .emoji import to_entities
 from .rpc import rpcname
+from .jobs import Job
 
 if TYPE_CHECKING:
     from .jobs import Job
