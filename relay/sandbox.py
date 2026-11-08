@@ -837,8 +837,8 @@ class SandboxContext(ContextOperations):
     def inline(self):
         return _InlineProxy()
 
-    async def load_module(self, source):
-        return await self.modules.load(source)
+    async def load_module(self, source, **kwargs):
+        return await self.modules.load(source, **kwargs)
 
     async def unload_module(self, module_id, *, purge=False):
         return await self.modules.unload(module_id, purge=purge)
@@ -1191,7 +1191,7 @@ class _ModulesProxy:
     async def hashes(self):
         return _cap_call("modules", {"op": "hashes"})
 
-    async def load(self, source=None, *, url=None, text=None, chat_id=None, message_id=None, edit=False):
+    async def load(self, source=None, *, url=None, text=None, chat_id=None, message_id=None, edit=False, reply_to=None, notice=None, form_id=None):
         payload = {"op": "load"}
         if url is not None:
             payload["url"] = url
@@ -1205,6 +1205,12 @@ class _ModulesProxy:
             payload["message_id"] = message_id
         if edit:
             payload["edit"] = True
+        if reply_to is not None:
+            payload["reply_to"] = reply_to
+        if notice is not None:
+            payload["notice"] = notice
+        if form_id is not None:
+            payload["form_id"] = form_id
         return _cap_call("modules", payload)
 
     async def unload(self, module_id, purge=False):

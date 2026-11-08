@@ -988,45 +988,77 @@ class CapabilityHost:
             chat_id = payload.get("chat_id") or payload.get("peer")
             message_id = payload.get("message_id")
             edit = bool(payload.get("edit", False))
+            reply_to = payload.get("reply_to")
+            notice = payload.get("notice")
+            form_id = payload.get("form_id")
+
             source_obj = None
+            active_nav_form = None
+            if hasattr(runtime, "sandbox") and getattr(runtime.sandbox, "_screen_calls", None):
+                calls = [binding for (m, _), binding in runtime.sandbox._screen_calls.items() if m == caller_id]
+                if calls:
+                    active_nav = calls[-1][1]
+                    active_nav_form = getattr(active_nav, "form", None)
             if hasattr(runtime, "sandbox") and getattr(runtime.sandbox, "_respond_sources", None):
                 sources = [s for (m, _), s in runtime.sandbox._respond_sources.items() if m == caller_id and s is not None]
                 if sources:
                     source_obj = sources[-1]
-            if chat_id is None and source_obj is not None:
-                chat_id = getattr(source_obj, "chat_id", None)
-            if message_id is None and source_obj is not None:
-                message_id = getattr(source_obj, "id", None) or getattr(source_obj, "message_id", None)
-            if chat_id is None:
-                owner_id = getattr(getattr(runtime, "kernel", None), "owner_id", None)
-                chat_id = owner_id or "me"
+            if form_id is not None and runtime.screens is not None:
+                try:
+                    active_nav_form = runtime.screens.load(int(form_id))
+                except Exception:
+                    pass
 
-            rendered = await runtime._render_caps_screen(module_id, loaded.manifest, loaded.source, chat_id, message_id or 0)
+            target_chat = chat_id or (getattr(source_obj, "chat_id", None) if source_obj else None) or getattr(getattr(runtime, "kernel", None), "owner_id", None) or "me"
+            target_msg = message_id or (getattr(source_obj, "id", None) if source_obj else None) or (getattr(source_obj, "message_id", None) if source_obj else None) or 0
+
+            rendered = await runtime._render_caps_screen(module_id, loaded.manifest, loaded.source, target_chat, int(target_msg), caller_id=caller_id, notice=notice)
             from hotaru.screens import Screen
             screen = Screen(cast(Any, rendered[0]), cast(Any, rendered[1])) if isinstance(rendered, tuple) else Screen(str(rendered), [])
 
             displayed = False
-            if edit and runtime.screens is not None:
+            if edit and active_nav_form is not None and runtime.screens is not None:
+                try:
+                    await runtime.screens.render(active_nav_form, screen)
+                    displayed = True
+                except Exception:
+                    pass
+
+            if edit and not displayed and runtime.screens is not None and target_chat is not None and target_msg:
+                try:
+                    db = runtime.screens._ensure()
+                    row = db.execute("SELECT id FROM screen_forms WHERE chat = ? AND message_id = ? ORDER BY touched DESC LIMIT 1", (str(target_chat), int(target_msg))).fetchone()
+                    if row:
+                        found_form = runtime.screens.load(int(row[0]))
+                        if found_form is not None:
+                            await runtime.screens.render(found_form, screen)
+                            displayed = True
+                except Exception:
+                    pass
+
+            if edit and not displayed and runtime.screens is not None:
                 if source_obj is not None:
                     try:
                         await runtime.screens.open("catalyst", source_obj, screen)
                         displayed = True
                     except Exception:
                         pass
-                if not displayed and chat_id is not None and message_id is not None:
+                elif target_chat is not None and target_msg:
                     try:
                         from types import SimpleNamespace
-                        synthetic = SimpleNamespace(chat_id=chat_id, id=int(message_id), message_id=int(message_id), src="mt")
+                        synthetic = SimpleNamespace(chat_id=target_chat, id=int(target_msg), message_id=int(target_msg), src="mt")
                         await runtime.screens.open("catalyst", synthetic, screen)
                         displayed = True
                     except Exception:
                         pass
-            if not displayed and runtime.screens is not None and chat_id is not None:
+
+            if not displayed and runtime.screens is not None and target_chat is not None:
                 try:
-                    await runtime.screens.send("catalyst", chat_id, screen)
+                    await runtime.screens.send("catalyst", target_chat, screen, reply_to=int(reply_to) if reply_to is not None else None)
                     displayed = True
                 except Exception:
                     pass
+
             if not displayed and source_obj is not None and runtime.screens is not None:
                 try:
                     await runtime.screens.open("catalyst", source_obj, screen)

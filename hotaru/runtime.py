@@ -2448,7 +2448,7 @@ class Runtime:
             approved = self._approved_caps(module_id) | set(capabilities)
             self.state.namespace(module_id).set("caps-consent", {"digest": digest, "capabilities": sorted(approved)})
 
-    async def _render_caps_screen(self, module_id: str, manifest: Any, source: str, chat_id: int | str | None, message_id: int) -> tuple[str, list[list[dict[str, Any]]]] | str:
+    async def _render_caps_screen(self, module_id: str, manifest: Any, source: str, chat_id: int | str | None, message_id: int, *, caller_id: str | None = None, notice: str | None = None) -> tuple[str, list[list[dict[str, Any]]]] | str:
         capabilities = sorted(set(manifest.capabilities) - self._approved_caps(module_id))
         cap_icons = {
             "mt": '<tg-emoji emoji-id="5258152182150077732">⚡️</tg-emoji>',
@@ -2475,12 +2475,16 @@ class Runtime:
             caps_blocks.append(f"{c_icon} <b>{html.escape(title)}</b> (<code>{html.escape(cap)}</code>)<br><i>{html.escape(detail)}</i>")
         caps_body = "<br><br>".join(caps_blocks) if caps_blocks else f"<i>{html.escape(self.t('common.none'))}</i>"
         req_title = "Запрашиваемые права:" if getattr(self.config, "language", "en") == "ru" else "Requested capabilities:"
+        loader_row = f'<tr><td><tg-emoji emoji-id="5258514780469075716">📥</tg-emoji> <b>Loader:</b></td><td align="right"><code>{html.escape(caller_id)}</code></td></tr>' if caller_id and caller_id != "catalyst" else ""
+        notice_block = f'<blockquote expandable><b>ℹ️ Notice:</b><br>{html.escape(notice)}</blockquote>\n' if notice else ""
         card = (
             f'<table bordered striped compact>'
             f'<tr><th colspan="2" align="center"><tg-emoji emoji-id="5258476306152038031">🛡</tg-emoji> <b>Capability Consent</b></th></tr>'
             f'<tr><td><tg-emoji emoji-id="5226513232549664618">🧩</tg-emoji> <b>Module:</b></td><td align="right"><code>{html.escape(module_id)} v{html.escape(str(manifest.version))}</code></td></tr>'
+            f'{loader_row}'
             f'<tr><td><tg-emoji emoji-id="5258476306152038031">🔒</tg-emoji> <b>Permissions:</b></td><td align="right"><code>{len(capabilities)}</code></td></tr>'
             f'</table>\n'
+            f'{notice_block}'
             f'<blockquote expandable><b>{req_title}</b><br>{caps_body}</blockquote>'
         )
         owner_id = getattr(getattr(self, "kernel", None), "owner_id", None)
@@ -2513,9 +2517,11 @@ class Runtime:
         owner_id = getattr(getattr(self, "kernel", None), "owner_id", None)
         if owner_id is not None and getattr(nav, "actor", None) != owner_id:
             raise PermissionError("only the human owner can confirm capabilities")
-        if getattr(getattr(nav, "form", None), "module", None) not in ("catalyst", "kernel"):
-            raise PermissionError("invalid consent form")
         module_id = str(nav.arg("module", "")).casefold()
+        form_mod = getattr(getattr(nav, "form", None), "module", None)
+        pending: dict[str, Any] = getattr(self, "_pending_caps_consents", {}) or {}
+        if form_mod not in ("catalyst", "kernel") and module_id not in pending and (not isinstance(form_mod, str) or self.modules.get(form_mod) is None):
+            raise PermissionError("invalid consent form")
         source = nav.arg("source")
         if not isinstance(source, str):
             return Screen(self.t('runtime.module_missing', module_id=module_id), toast=self.t('runtime.source_missing'), alert=True)
