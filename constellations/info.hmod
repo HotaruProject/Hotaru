@@ -16,7 +16,20 @@ HOTARU = {
                 "uptime": {"type": "str", "example": "2h 3m", "example_key": "kernel.ping.example_uptime", "description_key": "kernel.ping.fields.uptime"},
                 "uptime_seconds": {"type": "int", "example": 7380, "description_key": "kernel.ping.fields.uptime_seconds"},
                 "custom_message": {"type": "str", "example": "My message", "description_key": "kernel.ping.fields.custom_message"},
+                "customping": {"type": "str", "example": "My message", "description_key": "kernel.ping.fields.custom_message"},
             },
+            "category": "General",
+        },
+        "custominfo": {
+            "type": "str",
+            "default": "",
+            "max_len": 1000,
+            "category": "General",
+        },
+        "customping": {
+            "type": "str",
+            "default": "",
+            "max_len": 1000,
             "category": "General",
         },
         "custom_message": {
@@ -71,7 +84,7 @@ async def command_info(ctx: 'ModuleContext', invocation: 'CommandInvocation') ->
     else:
         user_handle = "Hotaru User"
 
-    custom_msg = str(ctx.config.get("custom_message", "") or "").strip() if hasattr(ctx, "config") else ""
+    custom_msg = str(ctx.config.get("custominfo", "") or ctx.config.get("custom_message", "") or "").strip() if hasattr(ctx, "config") else ""
     footer_quote = f'<blockquote><tg-emoji emoji-id="5366045973988522066">✨</tg-emoji> {custom_msg}</blockquote>' if custom_msg else f'<blockquote><tg-emoji emoji-id="5366045973988522066">✨</tg-emoji> (✧▽✧) {user_handle}</blockquote>'
 
     wm = ctx.wordmark() if hasattr(ctx, "wordmark") else ctx.screens.wordmark() if hasattr(ctx, "screens") and hasattr(ctx.screens, "wordmark") else '<tg-emoji emoji-id="5985527717183888277">⚡</tg-emoji><tg-emoji emoji-id="5985515480822061758">⚡</tg-emoji><tg-emoji emoji-id="5985558606588681366">⚡</tg-emoji><tg-emoji emoji-id="5985757321840565902">⚡</tg-emoji>'
@@ -101,8 +114,8 @@ async def command_ping(ctx: 'ModuleContext', invocation: 'CommandInvocation') ->
     uptime_s = ctx.uptime
     lang = getattr(getattr(ctx, "i18n", None), "language", "en")
     uptime = ctx.tools.duration(uptime_s, lang) if hasattr(ctx, "tools") else f"{uptime_s}s"
-    custom_msg = str(ctx.config.get("custom_message", "") or "").strip() if hasattr(ctx, "config") else ""
-    text = await ctx.render_template_async("template", latency=ping_ms, uptime=uptime, uptime_seconds=uptime_s, custom_message=custom_msg)
+    custom_msg = str(ctx.config.get("customping", "") or ctx.config.get("custom_message", "") or "").strip() if hasattr(ctx, "config") else ""
+    text = await ctx.render_template_async("template", latency=ping_ms, uptime=uptime, uptime_seconds=uptime_s, custom_message=custom_msg, customping=custom_msg)
     if custom_msg and custom_msg not in text:
         text += f"\n<blockquote>{custom_msg}</blockquote>"
     await ctx.respond(text, parse_mode="HTML", output="edit")

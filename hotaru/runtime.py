@@ -1144,27 +1144,25 @@ class Runtime:
         with trusted_scope():
             bot = await self.app.mt.resolve_peer("@" + self.inline.info.username)
             peer = await self.app.mt.resolve_peer(chat_id)
-        result: Any
-        try:
-            result = await self.app.mt_messages_get_inline_bot_results(
-                bot=bot,
-                peer=peer,
-                query="hotaru-form:" + nonce,
-                offset="",
-            )
-        except Exception as exc:
-            if "BOT_RESPONSE_TIMEOUT" in str(exc):
-                if self.observatory is not None:
-                    self.observatory.emit("inline", "get_results_timeout_retry", nonce=nonce)
-                await asyncio.sleep(0.5)
+        result: Any = None
+        for attempt in range(3):
+            try:
                 result = await self.app.mt_messages_get_inline_bot_results(
                     bot=bot,
                     peer=peer,
                     query="hotaru-form:" + nonce,
                     offset="",
                 )
-            else:
+                break
+            except Exception as exc:
+                if "BOT_RESPONSE_TIMEOUT" in str(exc) and attempt < 2:
+                    if self.observatory is not None:
+                        self.observatory.emit("inline", "get_results_timeout_retry", nonce=nonce, attempt=attempt)
+                    await asyncio.sleep(0.5 * (attempt + 1))
+                    continue
                 raise
+        if result is None:
+            raise RuntimeError("inline bot returned no form result")
         body: Any = cast('dict[str, Any]', result).get("result", result) if isinstance(result, dict) else result
         if isinstance(body, dict) and isinstance(cast('dict[str, Any]', body).get("bot_results"), dict):
             body = cast('dict[str, Any]', body)["bot_results"]
@@ -2109,7 +2107,7 @@ class Runtime:
             raise RuntimeError(self.t('runtime.not_ready'))
         with trusted_scope():
             with tempfile.TemporaryDirectory(prefix=".hotaru-candidate-") as candidate_dir:
-                if isinstance(source, str) and source.startswith("https://"):
+                if isinstance(source, str) and source.startswith(("https://", "http://")):
                     candidate = self.stage_module_url(source, candidate_dir)
                 elif isinstance(source, str) and ("\n" in source or source.lstrip().startswith("HOTARU")):
                     candidate = self.stager.stage_text(source, candidate_dir)
@@ -2500,6 +2498,9 @@ class Runtime:
         )
 
     async def _caps_cancel(self, nav: Any) -> object:
+        owner_id = getattr(getattr(self, "kernel", None), "owner_id", None)
+        if owner_id is not None and getattr(nav, "actor", None) != owner_id:
+            raise PermissionError("only the human owner can cancel module consent")
         module_id = str(nav.arg("module", "")).casefold()
         waiter = getattr(self, "_pending_caps_consents", {}).pop(module_id, None)
         if waiter is not None and not waiter.done():
@@ -2509,6 +2510,11 @@ class Runtime:
     async def _caps_confirm(self, nav: Any) -> object:
         if self.modules is None or self.state is None or self.stager is None:
             return self.t('runtime.invalid_request')
+        owner_id = getattr(getattr(self, "kernel", None), "owner_id", None)
+        if owner_id is not None and getattr(nav, "actor", None) != owner_id:
+            raise PermissionError("only the human owner can confirm capabilities")
+        if getattr(getattr(nav, "form", None), "module", None) not in ("catalyst", "kernel"):
+            raise PermissionError("invalid consent form")
         module_id = str(nav.arg("module", "")).casefold()
         source = nav.arg("source")
         if not isinstance(source, str):

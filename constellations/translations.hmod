@@ -11,7 +11,6 @@ import json
 import logging
 import re
 import tempfile
-import urllib.request
 from pathlib import Path
 from typing import Any, Awaitable, cast
 
@@ -296,21 +295,10 @@ async def command_loadlex(ctx: Any, invocation: Any) -> Any:
         if invocation.args:
             arg = str(invocation.args[0]).strip()
             if arg.startswith("https://") or arg.startswith("http://"):
-                url = arg
-                try:
-                    import urllib.parse
-                    parsed = urllib.parse.urlparse(url)
-                    host = (parsed.hostname or "").lower()
-                    if host == "github.com":
-                        path_parts = parsed.path.strip("/").split("/")
-                        if len(path_parts) >= 4 and path_parts[2] in ("blob", "raw"):
-                            owner, repo, _, *rest = path_parts
-                            url = "https://raw.githubusercontent.com/" + "/".join([owner, repo, *rest])
-                except Exception:
-                    url = arg
-                req = urllib.request.Request(url, headers={"User-Agent": "Hotaru/1.0"})
-                with urllib.request.urlopen(req, timeout=10) as resp:
-                    source = resp.read().decode("utf-8")
+                from hotaru.modules import fetch_url_content, ModuleStager
+                url = ModuleStager.normalize_url(arg)
+                data_bytes = fetch_url_content(url, timeout=15.0)
+                source = data_bytes.decode("utf-8", errors="replace")
                 code_override = Path(url.split("?")[0]).stem.lower()
             elif Path(arg).is_file():
                 source = Path(arg).read_text(encoding="utf-8")
@@ -341,7 +329,7 @@ async def command_loadlex(ctx: Any, invocation: Any) -> Any:
         log_lines.append("-----> Validating lexicon format...")
         await ctx.respond(f"<pre>{chr(10).join(log_lines)}</pre>", parse_mode="HTML", output="edit")
 
-        data = json.loads(source)
+        data = json.loads(str(source))
         if not isinstance(data, dict):
             raise ValueError("Lexicon root must be a JSON object")
 

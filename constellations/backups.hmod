@@ -16,7 +16,7 @@ import html
 import tempfile
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 _lock = asyncio.Lock()
 TOPIC_EMOJI_ID = 5258514780469075716
@@ -92,12 +92,11 @@ async def command_restore(ctx: Any, invocation: Any) -> None:
         if args:
             target = str(args[0]).strip()
             if target.startswith("https://") or target.startswith("http://"):
-                import urllib.request
+                from hotaru.modules import fetch_url_content, ModuleStager
+                url = ModuleStager.normalize_url(target)
                 with tempfile.NamedTemporaryFile(suffix=".hbk", delete=False) as handle:
                     temporary = Path(handle.name)
-                req = urllib.request.Request(target, headers={"User-Agent": "HotaruBackupRestore/1.0"})
-                with urllib.request.urlopen(req, timeout=15) as resp:
-                    temporary.write_bytes(resp.read())
+                temporary.write_bytes(fetch_url_content(url, timeout=30.0))
                 archive_path = temporary
             else:
                 p = Path(target)
@@ -106,18 +105,24 @@ async def command_restore(ctx: Any, invocation: Any) -> None:
                     return
                 archive_path = p
         else:
-            msg = getattr(invocation, "message", None)
-            doc_msg = getattr(invocation, "reply_message", None)
-            if doc_msg is None and msg is not None:
-                doc_msg = getattr(msg, "reply_to_message", None) or (msg.get("reply_to_message") if isinstance(msg, dict) else None)
+            inv_obj: Any = invocation
+            msg_raw: Any = getattr(inv_obj, "message", None)
+            d_msg: dict[str, Any] | None = cast('dict[str, Any]', msg_raw) if isinstance(msg_raw, dict) else None
+            raw_obj: Any = cast(Any, msg_raw)
+            doc_msg: Any = getattr(inv_obj, "reply_message", None)
+            if doc_msg is None and raw_obj is not None:
+                if d_msg is not None:
+                    doc_msg = d_msg.get("reply_to_message")
+                else:
+                    doc_msg = getattr(raw_obj, "reply_to_message", None)
             if callable(cast(object, doc_msg)):
                 doc_msg = None
-            if doc_msg is None and msg is not None:
+            if doc_msg is None and raw_obj is not None:
                 from hotaru.response import reply_message_id
-                reply_id = reply_message_id(msg)
+                reply_id = reply_message_id(raw_obj)
                 if reply_id is not None:
-                    chat_id = getattr(invocation, "chat_id", None) or (msg.get("chat_id") if isinstance(msg, dict) else None)
-                    app = getattr(runtime, "app", None)
+                    chat_id: Any = d_msg.get("chat_id") if d_msg is not None else getattr(inv_obj, "chat_id", None)
+                    app: Any = getattr(runtime, "app", None)
                     if app is not None and hasattr(app, "get_msg") and chat_id is not None:
                         from relay.firewall import trusted_scope
                         with trusted_scope():
@@ -126,7 +131,7 @@ async def command_restore(ctx: Any, invocation: Any) -> None:
                             except Exception:
                                 doc_msg = None
                     if doc_msg is None:
-                        cap_host = getattr(runtime, "cap_host", None)
+                        cap_host: Any = getattr(runtime, "cap_host", None)
                         if cap_host is not None:
                             from relay.firewall import trusted_scope
                             with trusted_scope():
@@ -134,11 +139,14 @@ async def command_restore(ctx: Any, invocation: Any) -> None:
                                     doc_msg = await cap_host.call("loader", "fetch", {"op": "message", "peer": chat_id, "id": reply_id})
                                 except Exception:
                                     doc_msg = None
-            if doc_msg is None and msg is not None:
-                if getattr(msg, "media", None) or getattr(msg, "document", None) or (isinstance(msg, dict) and (msg.get("media") or msg.get("document"))):
-                    doc_msg = msg
-            if doc_msg is None and msg is not None:
-                doc_msg = msg
+            if doc_msg is None and raw_obj is not None:
+                if d_msg is not None:
+                    if d_msg.get("media") or d_msg.get("document"):
+                        doc_msg = cast(Any, d_msg)
+                elif getattr(raw_obj, "media", None) or getattr(raw_obj, "document", None):
+                    doc_msg = raw_obj
+            if doc_msg is None and raw_obj is not None:
+                doc_msg = raw_obj
             with tempfile.NamedTemporaryFile(suffix=".hbk", delete=False) as handle:
                 temporary = Path(handle.name)
             try:
