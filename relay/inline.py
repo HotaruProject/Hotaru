@@ -451,33 +451,32 @@ class InlineManager:
         owner = self._owner_id()
         if owner is not None and state.get_setting("owner-id") is None:
             state.set_setting("owner-id", owner)
-        token = state.get_setting("inline-bot-token")
-        stored_id = state.get_setting("inline-bot-id")
-        info = None
-        recovered = False
-        if token:
-            try:
-                info = await self.getbot(str(token))
-                if stored_id is not None and info.bot_id != int(stored_id):
+        async with self._provision_lock:
+            token = state.get_setting("inline-bot-token")
+            stored_id = state.get_setting("inline-bot-id")
+            info = None
+            recovered = False
+            if token:
+                try:
+                    info = await self.getbot(str(token))
+                    if stored_id is not None and info.bot_id != int(stored_id):
+                        info = None
+                        recovered = True
+                except InlineError:
                     info = None
                     recovered = True
-            except InlineError:
-                info = None
-                recovered = True
-                state.set_setting("inline-bot-token", None)
-        if info is None:
-            found = await self._find_existing_bot()
-            if found is not None:
-                info = found
-                recovered = True
-        if info is None and allow_create:
-            self._create_gate()
-            async with self._provision_lock:
+                    state.set_setting("inline-bot-token", None)
+            if info is None:
+                found = await self._find_existing_bot()
+                if found is not None:
+                    info = found
+                    recovered = True
+            if info is None and allow_create:
+                self._create_gate()
                 info = await self._create_bot()
-            recovered = True
-        if info is None:
-            raise InlineError("no inline bot available: nothing stored, nothing found, creation disabled")
-        self._persist(info)
+            if info is None:
+                raise InlineError("no inline bot available: nothing stored, nothing found, creation disabled")
+            self._persist(info)
         if recovered:
             try:
                 await asyncio.wait_for(self._tune_bot(info), timeout=10.0)
