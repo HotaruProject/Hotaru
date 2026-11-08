@@ -851,7 +851,9 @@
       "sent": "备份已发送",
       "topic": "备份",
       "usage": "<code>{prefix}backup [now|on|off]</code>",
-      "restored_files": "已恢复文件：{count}"
+      "restored_files": "已恢复文件：{count}",
+      "restore_confirm": "<tg-emoji emoji-id=\"5325732612084351248\">📦</tg-emoji> <b>恢复备份</b><blockquote><tg-emoji emoji-id=\"5258258882022612173\">⏳</tg-emoji> 确认完全恢复文件系统、数据库状态和模块。当前数据将被替换。</blockquote>",
+      "restore_action": "恢复"
     },
     "genesis": {
       "title": "初始设置",

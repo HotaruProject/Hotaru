@@ -78,38 +78,36 @@ async def task_send(ctx: Any) -> None:
     await _send(ctx, automatic=True)
 
 
-async def command_restore(ctx: Any, invocation: Any) -> None:
+async def _perform_restore(ctx: Any, target: str | None, reply_id: int | None, inv_obj: Any = None) -> None:
     runtime = ctx.runtime
     if runtime is None:
         await ctx.respond(ctx.t('kernel.kernel.runtime_unavailable'))
         return
     temporary = None
     log_lines = ["-----> Locating backup archive..."]
-    await ctx.respond(f"<pre>{chr(10).join(log_lines)}</pre>", parse_mode="HTML")
+    await ctx.respond(f"<pre>{chr(10).join(log_lines)}</pre>", parse_mode="HTML", output="edit")
     try:
         archive_path = None
-        args = [a for a in invocation.args if a != "restore"]
-        if args:
-            target = str(args[0]).strip()
-            if target.startswith("https://") or target.startswith("http://"):
+        if target:
+            target_str = str(target).strip()
+            if target_str.startswith("https://") or target_str.startswith("http://"):
                 from hotaru.modules import fetch_url_content, ModuleStager
-                url = ModuleStager.normalize_url(target)
+                url = ModuleStager.normalize_url(target_str)
                 with tempfile.NamedTemporaryFile(suffix=".hbk", delete=False) as handle:
                     temporary = Path(handle.name)
                 temporary.write_bytes(fetch_url_content(url, timeout=30.0))
                 archive_path = temporary
             else:
-                p = Path(target)
+                p = Path(target_str)
                 if not p.is_file():
-                    await ctx.respond(f"<pre> !     Error: backup archive not found: {html.escape(target)}</pre>", parse_mode="HTML", output="edit")
+                    await ctx.respond(f"<pre> !     Error: backup archive not found: {html.escape(target_str)}</pre>", parse_mode="HTML", output="edit")
                     return
                 archive_path = p
         else:
-            inv_obj: Any = invocation
-            msg_raw: Any = getattr(inv_obj, "message", None)
+            msg_raw: Any = getattr(inv_obj, "message", None) if inv_obj is not None else None
             d_msg: dict[str, Any] | None = cast('dict[str, Any]', msg_raw) if isinstance(msg_raw, dict) else None
             raw_obj: Any = cast(Any, msg_raw)
-            doc_msg: Any = getattr(inv_obj, "reply_message", None)
+            doc_msg: Any = getattr(inv_obj, "reply_message", None) if inv_obj is not None else None
             if doc_msg is None and raw_obj is not None:
                 if d_msg is not None:
                     doc_msg = d_msg.get("reply_to_message")
@@ -117,17 +115,17 @@ async def command_restore(ctx: Any, invocation: Any) -> None:
                     doc_msg = getattr(raw_obj, "reply_to_message", None)
             if callable(cast(object, doc_msg)):
                 doc_msg = None
-            if doc_msg is None and raw_obj is not None:
+            if doc_msg is None:
                 from hotaru.response import reply_message_id
-                reply_id = reply_message_id(raw_obj)
-                if reply_id is not None:
-                    chat_id: Any = d_msg.get("chat_id") if d_msg is not None else getattr(inv_obj, "chat_id", None)
+                target_reply_id = reply_id or (reply_message_id(raw_obj) if raw_obj is not None else None)
+                if target_reply_id:
+                    chat_id: Any = getattr(ctx, "chat_id", None) or (d_msg.get("chat_id") if d_msg is not None else (getattr(inv_obj, "chat_id", None) if inv_obj is not None else None))
                     app: Any = getattr(runtime, "app", None)
                     if app is not None and hasattr(app, "get_msg") and chat_id is not None:
                         from relay.firewall import trusted_scope
                         with trusted_scope():
                             try:
-                                doc_msg = await app.get_msg(chat_id, reply_id)
+                                doc_msg = await app.get_msg(chat_id, target_reply_id)
                             except Exception:
                                 doc_msg = None
                     if doc_msg is None:
@@ -136,7 +134,7 @@ async def command_restore(ctx: Any, invocation: Any) -> None:
                             from relay.firewall import trusted_scope
                             with trusted_scope():
                                 try:
-                                    doc_msg = await cap_host.call("loader", "fetch", {"op": "message", "peer": chat_id, "id": reply_id})
+                                    doc_msg = await cap_host.call("loader", "fetch", {"op": "message", "peer": chat_id, "id": target_reply_id})
                                 except Exception:
                                     doc_msg = None
             if doc_msg is None and raw_obj is not None:
@@ -145,18 +143,24 @@ async def command_restore(ctx: Any, invocation: Any) -> None:
                         doc_msg = cast(Any, d_msg)
                 elif getattr(raw_obj, "media", None) or getattr(raw_obj, "document", None):
                     doc_msg = raw_obj
-            if doc_msg is None and raw_obj is not None:
-                doc_msg = raw_obj
-            with tempfile.NamedTemporaryFile(suffix=".hbk", delete=False) as handle:
-                temporary = Path(handle.name)
-            try:
-                await runtime._download_module_message(doc_msg, temporary)
-            except Exception:
-                temporary.unlink(missing_ok=True)
-                temporary = None
+            if doc_msg is not None:
+                with tempfile.NamedTemporaryFile(suffix=".hbk", delete=False) as handle:
+                    temporary = Path(handle.name)
+                try:
+                    await runtime._download_module_message(doc_msg, temporary)
+                    archive_path = temporary
+                except Exception:
+                    temporary.unlink(missing_ok=True)
+                    temporary = None
+            if archive_path is None:
+                directory = runtime.config.state_path.parent / "backups"
+                if directory.is_dir():
+                    candidates = sorted([p for p in directory.glob("*.hbk") if p.is_file()], key=lambda p: p.stat().st_mtime, reverse=True)
+                    if candidates:
+                        archive_path = candidates[0]
+            if archive_path is None:
                 await ctx.respond(f"<pre> !     Error: reply to an .hbk file or provide an archive path/url</pre>", parse_mode="HTML", output="edit")
                 return
-            archive_path = temporary
 
         log_lines[-1] += " done"
         log_lines.append("-----> Decrypting HBK container with sanctuary vault key...")
@@ -172,7 +176,7 @@ async def command_restore(ctx: Any, invocation: Any) -> None:
         log_lines.append("-----> Restoring database state snapshot...")
         await ctx.respond(f"<pre>{chr(10).join(log_lines)}</pre>", parse_mode="HTML", output="edit")
 
-        modules_dir = runtime.constellations_dir
+        modules_dir = runtime.relay_dir
         await runtime.restore_filesystem(plan, modules_dir)
 
         log_lines[-1] += " done"
@@ -189,6 +193,47 @@ async def command_restore(ctx: Any, invocation: Any) -> None:
     finally:
         if temporary is not None:
             temporary.unlink(missing_ok=True)
+
+
+async def command_restore(ctx: Any, invocation: Any) -> None:
+    runtime = ctx.runtime
+    if runtime is None:
+        await ctx.respond(ctx.t('kernel.kernel.runtime_unavailable'))
+        return
+    raw_args = [str(a) for a in getattr(invocation, "args", []) if str(a) != "restore"]
+    flags = {"-f", "--force", "force", "f"}
+    is_forced = any(a.casefold() in flags for a in raw_args)
+    clean_args = [a for a in raw_args if a.casefold() not in flags]
+    target = clean_args[0].strip() if clean_args else None
+    from hotaru.response import reply_message_id
+    raw_msg = getattr(invocation, "message", None)
+    reply_id = reply_message_id(raw_msg) if raw_msg is not None else None
+    if is_forced:
+        await _perform_restore(ctx, target, reply_id, invocation)
+        return
+    k = ctx.screens
+    btn_args: dict[str, Any] = {}
+    if target:
+        btn_args["target"] = target
+    if reply_id:
+        btn_args["reply_id"] = reply_id
+    screen = k.screen(
+        ctx.t('kernel.backups.restore_confirm'),
+        [
+            [k.primary(ctx.t('kernel.backups.restore_action'), confirm_restore, **btn_args)],
+            [k.close()],
+        ],
+        rich=True,
+    )
+    await ctx.screens.show(screen)
+
+
+async def confirm_restore(ctx: Any, nav: Any) -> Any:
+    target = nav.arg("target")
+    reply_id = nav.arg("reply_id")
+    await nav.answer()
+    await _perform_restore(ctx, target, reply_id, None)
+    return None
 
 
 async def command_backup(ctx: Any, invocation: Any) -> None:

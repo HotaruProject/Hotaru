@@ -797,7 +797,9 @@
       "sent": "Backup sent",
       "topic": "Backups",
       "usage": "<code>{prefix}backup [now|on|off]</code>",
-      "restored_files": "Restored files: {count}"
+      "restored_files": "Restored files: {count}",
+      "restore_confirm": "<tg-emoji emoji-id=\"5325732612084351248\">📦</tg-emoji> <b>Restore Backup</b><blockquote><tg-emoji emoji-id=\"5258258882022612173\">⏳</tg-emoji> Confirm full restore of filesystem, database state snapshot, and modules. Current data will be replaced.</blockquote>",
+      "restore_action": "Restore"
     },
     "intrusion": {
       "alert": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>Hotaru session is being used externally</b>\n\n{source}\n\n<blockquote><code>{detail}</code></blockquote>\n\nAnother client connected using Hotaru's own session. Hotaru stopped to prevent unauthorized actions. If this was not you, terminate the foreign session and revoke the bot token.",

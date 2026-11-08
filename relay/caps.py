@@ -265,10 +265,11 @@ def _resolve_public_addresses(hostname: str, port: int) -> list[tuple[Any, ...]]
                     req = urllib.request.Request(q_url, headers={"Accept": "application/dns-json", "User-Agent": "Hotaru/1.0"})
                     with urllib.request.urlopen(req, timeout=3.0) as resp:
                         data = json.loads(resp.read().decode("utf-8", errors="replace"))
-                        answers = cast('list[Any]', data.get("Answer", [])) if isinstance(data, dict) else []
+                        data_dict = cast('dict[str, Any]', data) if isinstance(data, dict) else None
+                        answers = cast('list[Any]', data_dict.get("Answer", [])) if data_dict is not None else []
                         for ans in answers:
-                            if isinstance(ans, dict) and ans.get("type") == 1:
-                                ip_str = str(ans.get("data", "")).strip()
+                            if isinstance(ans, dict) and cast('dict[str, Any]', ans).get("type") == 1:
+                                ip_str = str(cast('dict[str, Any]', ans).get("data", "")).strip()
                                 try:
                                     ip_obj = ipaddress.ip_address(ip_str)
                                     if ip_obj.is_global and not ip_obj.is_multicast:
@@ -394,15 +395,17 @@ async def _resolve_mt_peer_arg(app: Any, value: Any) -> Any:
         if callable(resolve_un) and isinstance(value, str):
             try:
                 resolved = await cast(Callable[..., Awaitable[Any]], resolve_un)(username=value.lstrip("@"))
-                body = resolved.get("result", resolved) if isinstance(resolved, dict) else resolved
-                users = body.get("users", []) if isinstance(body, dict) else []
+                resolved_dict = cast('dict[str, Any]', resolved) if isinstance(resolved, dict) else None
+                body_val: Any = resolved_dict.get("result") if resolved_dict is not None and "result" in resolved_dict else resolved_dict
+                body_dict: dict[str, Any] | None = cast('dict[str, Any]', body_val) if isinstance(body_val, dict) else None
+                users = cast('list[Any]', body_dict.get("users", [])) if body_dict is not None else []
                 if users and isinstance(users[0], dict):
-                    u = users[0]
-                    return {"_": "inputPeerUser", "user_id": int(u.get("id", 0)), "access_hash": int(u.get("access_hash", 0))}
-                chats = body.get("chats", []) if isinstance(body, dict) else []
+                    u_dict = cast('dict[str, Any]', users[0])
+                    return {"_": "inputPeerUser", "user_id": int(cast(int | str, u_dict.get("id", 0))), "access_hash": int(cast(int | str, u_dict.get("access_hash", 0)))}
+                chats = cast('list[Any]', body_dict.get("chats", [])) if body_dict is not None else []
                 if chats and isinstance(chats[0], dict):
-                    c = chats[0]
-                    return {"_": "inputPeerChannel", "channel_id": int(c.get("id", 0)), "access_hash": int(c.get("access_hash", 0))}
+                    c_dict = cast('dict[str, Any]', chats[0])
+                    return {"_": "inputPeerChannel", "channel_id": int(cast(int | str, c_dict.get("id", 0))), "access_hash": int(cast(int | str, c_dict.get("access_hash", 0)))}
             except Exception:
                 pass
     return cast(Any, value)

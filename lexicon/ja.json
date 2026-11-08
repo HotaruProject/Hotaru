@@ -802,7 +802,9 @@
       "sent": "バックアップを送信しました",
       "topic": "Backups",
       "usage": "<code>{prefix}backup [now|on|off]</code>",
-      "restored_files": "復元されたファイル: {count}"
+      "restored_files": "復元されたファイル: {count}",
+      "restore_confirm": "<tg-emoji emoji-id=\"5325732612084351248\">📦</tg-emoji> <b>バックアップ復元</b><blockquote><tg-emoji emoji-id=\"5258258882022612173\">⏳</tg-emoji> ファイルシステム、DB状態、モジュールの完全復元を確認してください。</blockquote>",
+      "restore_action": "復元"
     },
     "intrusion": {
       "alert": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> <b>Hotaruセッションが外部で使用されています</b>\n\n{source}\n\n<blockquote><code>{detail}</code></blockquote>\n\n別のクライアントがHotaruのセッションに接続しました。安全のためHotaruを停止しました。",

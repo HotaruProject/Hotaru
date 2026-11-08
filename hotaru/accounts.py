@@ -129,15 +129,12 @@ def handle_account_critical_failure(session_dir: str | Path, user_id: int, reaso
     print("\n" + "=" * 70, file=sys.stderr)
     print(f"[HOTARU CRITICAL RESTRICTION] Account {user_id} encountered restriction: {reason}", file=sys.stderr)
     print("Cannot proceed with userbot operations. Session and keys securely wiped with zeros.", file=sys.stderr)
-    print("Please restart Hotaru to authorize a new account.", file=sys.stderr)
+    print("Rolling back to login state to authorize an account.", file=sys.stderr)
     print("=" * 70 + "\n", file=sys.stderr)
     secure_wipe_account(root, user_id)
-    if runtime is not None:
-        try:
-            asyncio.create_task(runtime.close())
-        except Exception:
-            pass
-    sys.exit(0)
+    if runtime is not None and getattr(runtime, "observatory", None) is not None:
+        runtime.observatory.emit("accounts", "critical_restriction", user_id=user_id, reason=reason)
+    return False
 
 
 @dataclass(frozen=True)

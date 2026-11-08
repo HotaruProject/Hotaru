@@ -937,18 +937,19 @@ class ScreenEngine:
         async with _banner_lock:
             for media_id, kind, path_or_url, is_web in needed:
                 key = (id(app), media_id)
-                cached = _banner_cache.get(key)
-                state_obj = getattr(self.runtime, "state", None)
+                cached: tuple[float, dict[str, Any]] | None = _banner_cache.get(key)
+                state_obj: Any = getattr(self.runtime, "state", None)
                 if cached is None and state_obj is not None:
                     try:
-                        state_val = state_obj.get_setting("banner:" + media_id)
+                        state_val: Any = state_obj.get_setting("banner:" + media_id)
                         if isinstance(state_val, dict):
-                            entry_stored = dict(state_val)
+                            entry_stored: dict[str, Any] = dict(cast('dict[str, Any]', state_val))
                             for sub in ("photo", "document"):
-                                if sub in entry_stored and isinstance(entry_stored[sub], dict):
-                                    ref_b64 = entry_stored[sub].get("file_reference")
+                                sub_dict = entry_stored.get(sub)
+                                if isinstance(sub_dict, dict):
+                                    ref_b64 = cast('dict[str, Any]', sub_dict).get("file_reference")
                                     if isinstance(ref_b64, str):
-                                        entry_stored[sub]["file_reference"] = base64.b64decode(ref_b64.encode("ascii"))
+                                        cast('dict[str, Any]', sub_dict)["file_reference"] = base64.b64decode(ref_b64.encode("ascii"))
                             cached = (time.monotonic(), entry_stored)
                             _banner_cache[key] = cached
                     except Exception:
