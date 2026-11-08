@@ -148,8 +148,7 @@ async def command_ld(ctx: Any, invocation: Any) -> Any:
         if card_fn is not None:
             actor: Any = getattr(cast(object, inv_msg), "from_id", None)
             screen: Any = card_fn(ctx, result["module_id"], actor, None)
-            notice = ctx.t("runtime." + action, module_id=result["module_id"], version=result["version"])
-            await ctx.screens.show(screen.with_notice(notice))
+            await ctx.screens.show(screen)
         else:
             notice = ctx.t("runtime." + action, module_id=result["module_id"], version=result["version"])
             screen = ctx.screens.screen(notice, [[ctx.screens.close()]], banner=ctx.screens.banner(result["module_id"]))

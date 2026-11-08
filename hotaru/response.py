@@ -21,7 +21,7 @@ from .plainfmt import rich_to_plain
 from relay.firewall import trusted_scope
 from relay.files import document, put, take
 from goygram.sugar import extract_sent_message, split_html_text
-from relay.emoji import to_entities, to_rich
+from relay.emoji import outgoing, to_entities, to_rich
 from goygram.types.obj import Obj
 from relay.proxies import (
     Gateway,
@@ -751,6 +751,7 @@ class ModuleContext(ContextOperations):
                 with trusted_scope():
                     from goygram.sugar import md_to_entities
                     data["message"], data["entities"] = md_to_entities(str(text))
+                    outgoing(data["entities"])
             else:
                 data["message"] = str(text)
         if buttons is not None:

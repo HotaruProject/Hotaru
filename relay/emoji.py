@@ -63,9 +63,17 @@ def _collapse(html: str, entities: list[dict[str, Any]]) -> None:
             entity["collapsed"] = True
 
 
+def outgoing(entities: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    for entity in entities:
+        if entity.get("_") == "inputMessageEntityMentionName" and isinstance(entity.get("user_id"), int):
+            entity["_"] = "messageEntityMentionName"
+    return entities
+
+
 def to_entities(text: str) -> tuple[str, list[dict[str, Any]]]:
     html = str(text)
     plain, entities = html_to_entities(_quote.sub("<blockquote>", html))
+    outgoing(entities)
     _collapse(html, entities)
     if not (_premium or not entities):
         entities = degrade(entities)
