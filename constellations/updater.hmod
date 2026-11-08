@@ -28,6 +28,11 @@ def _escape(value: Any) -> Any:
     return _html.escape(str(value), quote=False)
 
 def _repo_dir(runtime: Any) -> Any:
+    if runtime is not None and hasattr(runtime, "constellations_dir"):
+        try:
+            return str(runtime.constellations_dir.resolve().parent)
+        except Exception:
+            pass
     return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 def _git(runtime: Any, *args: Any) -> Any:
@@ -43,17 +48,25 @@ def _git(runtime: Any, *args: Any) -> Any:
     return result.stdout
 
 def _branch(runtime: Any) -> Any:
+    try:
+        upstream = _git(runtime, "rev-parse", "--abbrev-ref", "@{upstream}").strip()
+        if upstream.startswith("origin/"):
+            return upstream.split("/", 1)[1]
+    except Exception:
+        pass
     name = _git(runtime, "rev-parse", "--abbrev-ref", "HEAD").strip()
     return name if name and name != "HEAD" else "main"
 
 def _fetch_origin(runtime: Any) -> Any:
-    _git(runtime, "fetch", "origin", _branch(runtime))
+    branch = _branch(runtime)
+    _git(runtime, "fetch", "--prune", "origin", f"+refs/heads/{branch}:refs/remotes/origin/{branch}")
 
 def _current_commit(runtime: Any) -> Any:
     return _git(runtime, "rev-parse", "HEAD").strip()
 
 def _latest_commit(runtime: Any) -> Any:
-    latest = _git(runtime, "rev-parse", "origin/" + _branch(runtime)).strip()
+    branch = _branch(runtime)
+    latest = _git(runtime, "rev-parse", "origin/" + branch).strip()
     _git(runtime, "cat-file", "-e", latest + "^{commit}")
     return latest
 
@@ -301,13 +314,14 @@ def _emit(ctx: Any, event: Any, **fields: Any) -> Any:
             pass
 
 def _notify_text(ctx: Any, current: str, latest: str, changelog: list[str]) -> str:
+    branch = _branch(getattr(ctx, "runtime", None))
     wm = ctx.wordmark() if hasattr(ctx, "wordmark") else ctx.screens.wordmark() if hasattr(ctx, "screens") and hasattr(ctx.screens, "wordmark") else '<tg-emoji emoji-id="5985527717183888277">⚡</tg-emoji><tg-emoji emoji-id="5985515480822061758">⚡</tg-emoji><tg-emoji emoji-id="5985558606588681366">⚡</tg-emoji><tg-emoji emoji-id="5985757321840565902">⚡</tg-emoji>'
     link = f'<a href="{REPO_URL}/compare/{current[:12]}...{latest[:12]}"><code>{latest[:7]}</code></a>'
     head = (
         '<table bordered striped compact>'
         f'<tr><th colspan="2" align="center">{wm} · <b>{ctx.t("kernel.updater.update_available")}</b></th></tr>'
         f'<tr><td><tg-emoji emoji-id="5258391025281408576">📈</tg-emoji> <b>Commit:</b></td><td align="right">{link}</td></tr>'
-        f'<tr><td><tg-emoji emoji-id="5260730055880876557">🔗</tg-emoji> <b>Branch:</b></td><td align="right"><code>develop</code></td></tr>'
+        f'<tr><td><tg-emoji emoji-id="5260730055880876557">🔗</tg-emoji> <b>Branch:</b></td><td align="right"><code>{_escape(branch)}</code></td></tr>'
         '</table>'
     )
     entries = [f'<tg-emoji emoji-id="5325732612084351248">📦</tg-emoji> {_escape(entry)}' for entry in (changelog or [])[:20]]
