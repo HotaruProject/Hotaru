@@ -972,8 +972,67 @@ class CapabilityHost:
         value = sources[0]
         if not (value.startswith("https://") or "\n" in value or value.lstrip().startswith("HOTARU")):
             raise PermissionError("modules load requires an https url or module source text")
-        loaded, action = await runtime.load_module(value)
+        loaded, action = await runtime.load_module(value, caller_id=caller_id)
         module_id = loaded.manifest.module_id
+        if action == "confirm" and caller_id != "catalyst":
+            chat_id = payload.get("chat_id") or payload.get("peer")
+            message_id = payload.get("message_id")
+            edit = bool(payload.get("edit", False))
+            source_obj = None
+            if hasattr(runtime, "sandbox") and getattr(runtime.sandbox, "_respond_sources", None):
+                sources = [s for (m, _), s in runtime.sandbox._respond_sources.items() if m == caller_id and s is not None]
+                if sources:
+                    source_obj = sources[-1]
+            if chat_id is None and source_obj is not None:
+                chat_id = getattr(source_obj, "chat_id", None)
+            if message_id is None and source_obj is not None:
+                message_id = getattr(source_obj, "id", None) or getattr(source_obj, "message_id", None)
+            if chat_id is None:
+                owner_id = getattr(getattr(runtime, "kernel", None), "owner_id", None)
+                chat_id = owner_id or "me"
+
+            rendered = await runtime._render_caps_screen(module_id, loaded.manifest, loaded.source, chat_id, message_id or 0)
+            from hotaru.screens import Screen
+            screen = Screen(rendered[0], rendered[1]) if isinstance(rendered, tuple) else Screen(str(rendered), [])
+
+            displayed = False
+            if edit and source_obj is not None and runtime.screens is not None:
+                try:
+                    await runtime.screens.open("catalyst", source_obj, screen)
+                    displayed = True
+                except Exception:
+                    pass
+            if not displayed and runtime.screens is not None and chat_id is not None:
+                try:
+                    await runtime.screens.send("catalyst", chat_id, screen)
+                    displayed = True
+                except Exception:
+                    pass
+            if not displayed and source_obj is not None and runtime.screens is not None:
+                try:
+                    await runtime.screens.open("catalyst", source_obj, screen)
+                    displayed = True
+                except Exception:
+                    pass
+
+            if not hasattr(runtime, "_pending_caps_consents"):
+                runtime._pending_caps_consents = {}
+            fut = asyncio.get_running_loop().create_future()
+            runtime._pending_caps_consents[module_id] = fut
+            try:
+                loaded, action = await asyncio.wait_for(fut, timeout=300.0)
+            except TimeoutError:
+                runtime._pending_caps_consents.pop(module_id, None)
+                raise PermissionError("module approval timed out")
+            except Exception as exc:
+                runtime._pending_caps_consents.pop(module_id, None)
+                return {
+                    "module_id": module_id,
+                    "version": loaded.manifest.version,
+                    "action": "cancelled",
+                    "error": str(exc),
+                }
+
         return {
             "module_id": module_id,
             "version": loaded.manifest.version,
