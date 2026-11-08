@@ -5,37 +5,56 @@ HOTARU = {
     "capabilities": ["mt", "state"],
     "banner": "https://raw.githubusercontent.com/HotaruProject/Hotaru/develop/hotaru/assets/info.mp4",
     "config_schema": {
-        "template": {
-            "type": "str",
-            "default_key": "kernel.ping.template",
-            "max_len": 3000,
-            "description": "",
-            "legacy_braces": True,
-            "template_fields": {
-                "latency": {"type": "float", "example": 12.345, "format": ".3f", "description_key": "kernel.ping.fields.latency"},
-                "uptime": {"type": "str", "example": "2h 3m", "example_key": "kernel.ping.example_uptime", "description_key": "kernel.ping.fields.uptime"},
-                "uptime_seconds": {"type": "int", "example": 7380, "description_key": "kernel.ping.fields.uptime_seconds"},
-                "custom_message": {"type": "str", "example": "My message", "description_key": "kernel.ping.fields.custom_message"},
-                "customping": {"type": "str", "example": "My message", "description_key": "kernel.ping.fields.custom_message"},
-            },
-            "category": "General",
-        },
         "custominfo": {
             "type": "str",
-            "default": "",
-            "max_len": 1000,
+            "default": (
+                '<table bordered striped compact>'
+                '<tr><th colspan="2" align="center">{wordmark} · <code>v{version}</code></th></tr>'
+                '<tr><td><tg-emoji emoji-id="5289589186683222806">📶</tg-emoji> <b>Ping:</b></td><td align="right"><code>{latency:.2f} ms</code></td></tr>'
+                '<tr><td><tg-emoji emoji-id="5258258882022612173">⏱</tg-emoji> <b>Uptime:</b></td><td align="right"><code>{uptime}</code></td></tr>'
+                '<tr><td><tg-emoji emoji-id="5325732612084351248">📦</tg-emoji> <b>Modules:</b></td><td align="right"><code>{modules} loaded</code></td></tr>'
+                '</table>'
+                '<hr>'
+                '<tg-emoji emoji-id="5366045973988522066">✨</tg-emoji> (✧▽✧) {user}'
+            ),
+            "max_len": 4096,
+            "description": "Custom message template for .info",
+            "legacy_braces": True,
+            "template_fields": {
+                "latency": {"type": "float", "example": 48.25, "format": ".2f", "description": "Response time in milliseconds"},
+                "ping": {"type": "float", "example": 48.25, "format": ".2f", "description": "Response time in milliseconds"},
+                "uptime": {"type": "str", "example": "2h 3m", "description": "Userbot uptime"},
+                "uptime_seconds": {"type": "int", "example": 7380, "description": "Userbot uptime in seconds"},
+                "modules": {"type": "int", "example": 15, "description": "Number of loaded modules"},
+                "version": {"type": "str", "example": "2.2.0", "description": "Hotaru version"},
+                "wordmark": {"type": "str", "example": "⚡⚡⚡⚡", "description": "Hotaru wordmark"},
+                "wm": {"type": "str", "example": "⚡⚡⚡⚡", "description": "Hotaru wordmark shortcut"},
+                "user": {"type": "str", "example": "@username", "description": "User handle or display name"},
+                "owner_id": {"type": "int", "example": 123456789, "description": "Owner Telegram ID"},
+            },
             "category": "General",
         },
         "customping": {
             "type": "str",
-            "default": "",
-            "max_len": 1000,
-            "category": "General",
-        },
-        "custom_message": {
-            "type": "str",
-            "default": "",
-            "max_len": 1000,
+            "default": (
+                '<tg-emoji emoji-id="5258152182150077732">⚡</tg-emoji> <b>Ping:</b> <code>{latency:.2f} ms</code>\n'
+                '<tg-emoji emoji-id="5258258882022612173">⏳</tg-emoji> <b>Uptime:</b> <code>{uptime}</code>'
+            ),
+            "max_len": 4096,
+            "description": "Custom message template for .ping",
+            "legacy_braces": True,
+            "template_fields": {
+                "latency": {"type": "float", "example": 48.25, "format": ".2f", "description": "Response time in milliseconds"},
+                "ping": {"type": "float", "example": 48.25, "format": ".2f", "description": "Response time in milliseconds"},
+                "uptime": {"type": "str", "example": "2h 3m", "description": "Userbot uptime"},
+                "uptime_seconds": {"type": "int", "example": 7380, "description": "Userbot uptime in seconds"},
+                "modules": {"type": "int", "example": 15, "description": "Number of loaded modules"},
+                "version": {"type": "str", "example": "2.2.0", "description": "Hotaru version"},
+                "wordmark": {"type": "str", "example": "⚡⚡⚡⚡", "description": "Hotaru wordmark"},
+                "wm": {"type": "str", "example": "⚡⚡⚡⚡", "description": "Hotaru wordmark shortcut"},
+                "user": {"type": "str", "example": "@username", "description": "User handle or display name"},
+                "owner_id": {"type": "int", "example": 123456789, "description": "Owner Telegram ID"},
+            },
             "category": "General",
         },
     },
@@ -73,30 +92,30 @@ async def command_info(ctx: 'ModuleContext', invocation: 'CommandInvocation') ->
         modules = len(mod_mgr.items())
 
     owner_id = getattr(getattr(runtime, "config", None), "owner_id", None) or getattr(invocation.message, "from_id", None)
-    user_handle = None
+    user_handle = "Hotaru User"
     msg = invocation.message
     if hasattr(msg, "from_user") and getattr(msg.from_user, "username", None):
         user_handle = f'<a href="https://t.me/{msg.from_user.username}">@{msg.from_user.username}</a>'
     elif hasattr(msg, "sender_chat") and getattr(msg.sender_chat, "username", None):
         user_handle = f'<a href="https://t.me/{msg.sender_chat.username}">@{msg.sender_chat.username}</a>'
-    elif owner_id:
+    elif isinstance(owner_id, int):
         user_handle = f'<a href="tg://user?id={owner_id}">id:{owner_id}</a>'
-    else:
-        user_handle = "Hotaru User"
-
-    custom_msg = str(ctx.config.get("custominfo", "") or ctx.config.get("custom_message", "") or "").strip() if hasattr(ctx, "config") else ""
-    footer_quote = f'<blockquote><tg-emoji emoji-id="5366045973988522066">✨</tg-emoji> {custom_msg}</blockquote>' if custom_msg else f'<blockquote><tg-emoji emoji-id="5366045973988522066">✨</tg-emoji> (✧▽✧) {user_handle}</blockquote>'
 
     wm = ctx.wordmark() if hasattr(ctx, "wordmark") else ctx.screens.wordmark() if hasattr(ctx, "screens") and hasattr(ctx.screens, "wordmark") else '<tg-emoji emoji-id="5985527717183888277">⚡</tg-emoji><tg-emoji emoji-id="5985515480822061758">⚡</tg-emoji><tg-emoji emoji-id="5985558606588681366">⚡</tg-emoji><tg-emoji emoji-id="5985757321840565902">⚡</tg-emoji>'
-    body = (
-        f'<table bordered striped compact>'
-        f'<tr><th colspan="2" align="center">{wm} · <code>v{ctx.version}</code></th></tr>'
-        f'<tr><td><tg-emoji emoji-id="5289589186683222806">📶</tg-emoji> <b>Ping:</b></td><td align="right"><code>{ping_ms:.2f} ms</code></td></tr>'
-        f'<tr><td><tg-emoji emoji-id="5258258882022612173">⏱</tg-emoji> <b>Uptime:</b></td><td align="right"><code>{uptime_fmt}</code></td></tr>'
-        f'<tr><td><tg-emoji emoji-id="5325732612084351248">📦</tg-emoji> <b>Modules:</b></td><td align="right"><code>{modules} loaded</code></td></tr>'
-        f'</table>'
-        f'<hr>'
-        f'{footer_quote}'
+    owner_int = owner_id if isinstance(owner_id, int) else 0
+
+    body = await ctx.render_template_async(
+        "custominfo",
+        latency=ping_ms,
+        ping=ping_ms,
+        uptime=uptime_fmt,
+        uptime_seconds=uptime_s,
+        modules=modules,
+        version=str(ctx.version),
+        wordmark=wm,
+        wm=wm,
+        user=user_handle,
+        owner_id=owner_int,
     )
 
     if hasattr(ctx, "screens") and hasattr(ctx.screens, "show"):
@@ -114,8 +133,37 @@ async def command_ping(ctx: 'ModuleContext', invocation: 'CommandInvocation') ->
     uptime_s = ctx.uptime
     lang = getattr(getattr(ctx, "i18n", None), "language", "en")
     uptime = ctx.tools.duration(uptime_s, lang) if hasattr(ctx, "tools") else f"{uptime_s}s"
-    custom_msg = str(ctx.config.get("customping", "") or ctx.config.get("custom_message", "") or "").strip() if hasattr(ctx, "config") else ""
-    text = await ctx.render_template_async("template", latency=ping_ms, uptime=uptime, uptime_seconds=uptime_s, custom_message=custom_msg, customping=custom_msg)
-    if custom_msg and custom_msg not in text:
-        text += f"\n<blockquote>{custom_msg}</blockquote>"
+
+    runtime = ctx.runtime
+    modules = 0
+    mod_mgr = getattr(runtime, "modules", None)
+    if mod_mgr is not None and hasattr(mod_mgr, "items"):
+        modules = len(mod_mgr.items())
+
+    owner_id = getattr(getattr(runtime, "config", None), "owner_id", None) or getattr(invocation.message, "from_id", None)
+    user_handle = "Hotaru User"
+    msg = invocation.message
+    if hasattr(msg, "from_user") and getattr(msg.from_user, "username", None):
+        user_handle = f'<a href="https://t.me/{msg.from_user.username}">@{msg.from_user.username}</a>'
+    elif hasattr(msg, "sender_chat") and getattr(msg.sender_chat, "username", None):
+        user_handle = f'<a href="https://t.me/{msg.sender_chat.username}">@{msg.sender_chat.username}</a>'
+    elif isinstance(owner_id, int):
+        user_handle = f'<a href="tg://user?id={owner_id}">id:{owner_id}</a>'
+
+    wm = ctx.wordmark() if hasattr(ctx, "wordmark") else ctx.screens.wordmark() if hasattr(ctx, "screens") and hasattr(ctx.screens, "wordmark") else '<tg-emoji emoji-id="5985527717183888277">⚡</tg-emoji><tg-emoji emoji-id="5985515480822061758">⚡</tg-emoji><tg-emoji emoji-id="5985558606588681366">⚡</tg-emoji><tg-emoji emoji-id="5985757321840565902">⚡</tg-emoji>'
+    owner_int = owner_id if isinstance(owner_id, int) else 0
+
+    text = await ctx.render_template_async(
+        "customping",
+        latency=ping_ms,
+        ping=ping_ms,
+        uptime=uptime,
+        uptime_seconds=uptime_s,
+        modules=modules,
+        version=str(ctx.version),
+        wordmark=wm,
+        wm=wm,
+        user=user_handle,
+        owner_id=owner_int,
+    )
     await ctx.respond(text, parse_mode="HTML", output="edit")

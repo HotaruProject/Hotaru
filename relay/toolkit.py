@@ -526,7 +526,7 @@ def template_render(template: object, fields: object, values: object = None, *, 
                 formatted = _template_format(value, spec or meta.get("format", ""))
             except ValueError as exc:
                 raise ValueError(f"{name}: {exc}") from exc
-            piece += _html_mod.escape(formatted, quote=True)
+            piece += escape_smart(formatted)
         size += len(piece)
         if size > 16000:
             raise ValueError("Rendered template exceeds 16000 characters")
