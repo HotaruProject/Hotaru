@@ -948,11 +948,9 @@ class _ScreensProxy:
 
     @staticmethod
     def footer(back=None, **args):
-        row = []
         if back:
-            row.append(_ScreensProxy.button("« Back", back, **args))
-        row.append(_ScreensProxy.close())
-        return [row]
+            return [[_ScreensProxy.button("« Back", back, **args), _ScreensProxy.close()]]
+        return []
 
     @staticmethod
     def icon(name):

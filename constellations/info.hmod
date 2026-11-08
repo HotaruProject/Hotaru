@@ -118,12 +118,7 @@ async def command_info(ctx: 'ModuleContext', invocation: 'CommandInvocation') ->
         owner_id=owner_int,
     )
 
-    if hasattr(ctx, "screens") and hasattr(ctx.screens, "show"):
-        k = ctx.screens
-        screen = k.screen(body, [[k.close()]], banner=k.banner("info"), rich=True)
-        await ctx.screens.show(screen)
-    else:
-        await ctx.respond(body, parse_mode="HTML", rich=True)
+    await ctx.respond(body, parse_mode="HTML", output="edit")
 
 
 async def command_ping(ctx: 'ModuleContext', invocation: 'CommandInvocation') -> None:
