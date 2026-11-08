@@ -106,8 +106,8 @@ async def command_restart(ctx: Any, invocation: Any) -> Any:
     args = [str(a).casefold() for a in getattr(invocation, "args", [])]
     if any(flag in args for flag in ("-f", "--force", "force", "f")):
         runtime = ctx.runtime
-        chat_id = getattr(ctx, "chat_id", None)
-        orig_msg_id = getattr(ctx, "message_id", None)
+        chat_id = invocation.chat_id
+        orig_msg_id = invocation.message_id
         peer_hex = await _peer_hex(runtime, chat_id)
         sent = await ctx.respond(ctx.t("kernel.power.restarting"), parse_mode="HTML", output="edit")
         target_msg_id = orig_msg_id
