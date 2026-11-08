@@ -1925,10 +1925,9 @@ class ModuleSandbox:
 
         return preexec
 
-    def _spawn(self, module_id: str, source: str, commands: list[str], *, namespaces: bool | None = None) -> subprocess.Popen[bytes]:
+    def workspace(self, module_id: str, *, namespaces: bool | None = None) -> Path:
         if namespaces is None:
             namespaces = self._namespaces
-        deps = self._module_deps.get(module_id)
         workspace_root = (self.runtime.config.state_path.parent / "workspaces").resolve()
         if not module_id or Path(module_id).name != module_id or module_id in {".", ".."}:
             raise PermissionError("invalid module workspace")
@@ -1939,6 +1938,13 @@ class ModuleSandbox:
         os.chmod(workspace, 0o700)
         if namespaces and not self._rootless:
             os.chown(workspace, SANDBOX_UID, SANDBOX_GID)
+        return workspace
+
+    def _spawn(self, module_id: str, source: str, commands: list[str], *, namespaces: bool | None = None) -> subprocess.Popen[bytes]:
+        if namespaces is None:
+            namespaces = self._namespaces
+        deps = self._module_deps.get(module_id)
+        workspace = self.workspace(module_id, namespaces=namespaces)
         hello = {
             "module_id": module_id,
             "source": source,
