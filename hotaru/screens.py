@@ -1067,13 +1067,15 @@ class ScreenEngine:
                 except Exception as exc:
                     log.error("screen repaint failed: %s: %s\n%s", type(exc).__name__, exc, traceback.format_exc())
 
-    async def send(self, module_id: str, chat_id: Any, screen: Screen, *, actor: Optional[int] = None, command: Optional[str] = None) -> Form:
+    async def send(self, module_id: str, chat_id: Any, screen: Screen, *, actor: Optional[int] = None, command: Optional[str] = None, reply_to: Optional[int] = None) -> Form:
         app = self._bot_app()
         owner = getattr(getattr(self.runtime, "kernel", None), "owner_id", None)
         form = self._create(module_id, int(actor or owner or 0), command, chat_id, bot=True)
         text, rows, actions, gen = self._compile(form, screen)
         async def _send() -> Any:
             data: dict[str, Any] = {"peer": chat_id, "random_id": secrets.randbits(63), "no_webpage": True}
+            if reply_to is not None:
+                data["reply_to"] = {"_": "inputReplyToMessage", "reply_to_msg_id": int(reply_to)}
             plain, entities = to_entities(text)
             data["message"] = plain
             if entities:
