@@ -18,7 +18,7 @@ import urllib.parse
 import urllib.request
 from functools import partial
 from types import SimpleNamespace
-from typing import TYPE_CHECKING, Any, Callable, cast
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, cast
 
 from .denylist import is_blocked_host, is_blocked_peer, is_readonly_peer, payload_hits_blocked, payload_hits_readonly
 from .firewall import trusted_scope
@@ -237,11 +237,58 @@ def _result_body(value: Any) -> Any:
     return cast(Any, payload)
 
 
+def _resolve_public_addresses(hostname: str, port: int) -> list[tuple[Any, ...]]:
+    try:
+        addresses = socket.getaddrinfo(hostname, port, type=socket.SOCK_STREAM, proto=socket.IPPROTO_TCP)
+    except Exception:
+        addresses = []
+    valid: list[tuple[Any, ...]] = []
+    for info in addresses:
+        try:
+            addr = ipaddress.ip_address(info[4][0])
+            if addr.is_global and not addr.is_multicast:
+                valid.append(info)
+        except Exception:
+            pass
+    if valid:
+        return valid
+    if "." in hostname and not any(hostname.endswith(s) for s in (".localhost", ".local", ".internal", ".arpa", ".test", ".example")):
+        try:
+            ipaddress.ip_address(hostname)
+            is_ip = True
+        except ValueError:
+            is_ip = False
+        if not is_ip:
+            for doh_url in ("https://1.1.1.1/dns-query", "https://8.8.8.8/resolve"):
+                try:
+                    q_url = f"{doh_url}?name={urllib.parse.quote(hostname)}&type=A"
+                    req = urllib.request.Request(q_url, headers={"Accept": "application/dns-json", "User-Agent": "Hotaru/1.0"})
+                    with urllib.request.urlopen(req, timeout=3.0) as resp:
+                        data = json.loads(resp.read().decode("utf-8", errors="replace"))
+                        answers = cast('list[Any]', data.get("Answer", [])) if isinstance(data, dict) else []
+                        for ans in answers:
+                            if isinstance(ans, dict) and ans.get("type") == 1:
+                                ip_str = str(ans.get("data", "")).strip()
+                                try:
+                                    ip_obj = ipaddress.ip_address(ip_str)
+                                    if ip_obj.is_global and not ip_obj.is_multicast:
+                                        valid.append((socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, "", (ip_str, port)))
+                                except Exception:
+                                    pass
+                        if valid:
+                            return valid
+                except Exception:
+                    pass
+    if addresses:
+        return addresses
+    return [(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, "", (hostname, port))]
+
+
 def _public_connection(address: tuple[str, int], timeout: Any = None, source_address: Any = None) -> socket.socket:
     hostname, port = address
     if is_blocked_host(hostname):
         raise PermissionError("net url targets a denied host")
-    addresses = socket.getaddrinfo(hostname, port, type=socket.SOCK_STREAM, proto=socket.IPPROTO_TCP)
+    addresses = _resolve_public_addresses(hostname, port)
     for _, _, _, _, target in addresses:
         addr = ipaddress.ip_address(target[0])
         if not addr.is_global or addr.is_multicast:
@@ -334,13 +381,30 @@ async def _resolve_mt_peer_arg(app: Any, value: Any) -> Any:
         tag = str(d_val.get("_") or "")
         if tag.startswith(("inputPeer", "inputUser", "inputChannel")):
             return cast(Any, value)
+    if isinstance(value, list):
+        return [await _resolve_mt_peer_arg(app, item) for item in cast('list[Any]', value)]
     if isinstance(value, (str, int)) and not isinstance(value, bool):
         mt_transport = getattr(app, "mt", None)
         if mt_transport is not None and hasattr(mt_transport, "resolve_peer"):
             try:
                 return await mt_transport.resolve_peer(value)
             except Exception:
-                return cast(Any, value)
+                pass
+        resolve_un = getattr(app, "mt_contacts_resolve_username", None)
+        if callable(resolve_un) and isinstance(value, str):
+            try:
+                resolved = await cast(Callable[..., Awaitable[Any]], resolve_un)(username=value.lstrip("@"))
+                body = resolved.get("result", resolved) if isinstance(resolved, dict) else resolved
+                users = body.get("users", []) if isinstance(body, dict) else []
+                if users and isinstance(users[0], dict):
+                    u = users[0]
+                    return {"_": "inputPeerUser", "user_id": int(u.get("id", 0)), "access_hash": int(u.get("access_hash", 0))}
+                chats = body.get("chats", []) if isinstance(body, dict) else []
+                if chats and isinstance(chats[0], dict):
+                    c = chats[0]
+                    return {"_": "inputPeerChannel", "channel_id": int(c.get("id", 0)), "access_hash": int(c.get("access_hash", 0))}
+            except Exception:
+                pass
     return cast(Any, value)
 
 
@@ -720,12 +784,9 @@ class CapabilityHost:
             limit = kwargs.get("limit", 100)
             if isinstance(limit, (int, float)) and int(limit) > 500:
                 kwargs = dict(kwargs, limit=500)
-        if lowered in ("contacts.unblock", "contacts.block", "users.getfulluser", "contacts.addcontact") and "id" in kwargs:
-            raw_id = kwargs["id"]
-            if isinstance(raw_id, (str, int)) and not isinstance(raw_id, bool):
-                kwargs = dict(kwargs, id=await _resolve_mt_peer_arg(app, raw_id))
-        if "peer" in kwargs and isinstance(kwargs["peer"], (str, int)) and not isinstance(kwargs["peer"], bool):
-            kwargs = dict(kwargs, peer=await _resolve_mt_peer_arg(app, kwargs["peer"]))
+        for key in ("peer", "id", "bot", "user_id", "participant", "send_as", "join_as", "community"):
+            if key in kwargs:
+                kwargs = dict(kwargs, **{key: await _resolve_mt_peer_arg(app, kwargs[key])})
         kwargs = await _resolve_nested_peers(app, kwargs)
         timeout = payload.get("timeout")
         if timeout is not None and (isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or not 0 < timeout <= 60):
@@ -798,7 +859,7 @@ class CapabilityHost:
         if not port:
             raise PermissionError("net url must contain a port")
         try:
-            for info in socket.getaddrinfo(hostname, port, proto=socket.IPPROTO_TCP):
+            for info in _resolve_public_addresses(hostname, port):
                 addr = ipaddress.ip_address(info[4][0])
                 if not addr.is_global or addr.is_multicast:
                     raise PermissionError("net url resolves to a non-public address")

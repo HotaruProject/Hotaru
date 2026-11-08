@@ -430,6 +430,23 @@ def extract_blob_content(content_bytes: bytes, url: str | None = None) -> bytes:
         except Exception:
             pass
 
+    match_raw_link = re.search(r'<a[^>]+href="([^"]+/(?:raw|plain)/[^"]+)"', text, re.IGNORECASE)
+    if match_raw_link:
+        target_link = match_raw_link.group(1)
+        if url and target_link.startswith("/"):
+            target_link = urllib.parse.urljoin(url, target_link)
+        try:
+            return fetch_url_content(target_link)
+        except Exception:
+            pass
+
+    td_lines = re.findall(r'<td[^>]*class="[^"]*blob-code[^"]*"[^>]*>(.*?)</td>', text, re.DOTALL)
+    if td_lines:
+        clean_lines = [html.unescape(re.sub(r'<[^>]+>', '', line)).rstrip("\r\n") for line in td_lines]
+        combined = "\n".join(clean_lines).strip()
+        if "HOTARU = " in combined or combined.startswith("{") or combined.startswith("import ") or combined.startswith("from "):
+            return combined.encode("utf-8")
+
     for tag in ("textarea", "code", "pre"):
         matches = re.findall(rf"<{tag}[^>]*>(.*?)</{tag}>", text, re.DOTALL | re.IGNORECASE)
         for m in matches:
@@ -515,6 +532,12 @@ class ModuleStager:
             return f"https://pastebin.com/raw/{parts[0]}"
         if host == "rentry.co" and len(parts) == 1 and parts[0] != "raw":
             return f"https://rentry.co/{parts[0]}/raw"
+        if host in ("hastebin.com", "haste.tunnels.msm.io") and len(parts) >= 1 and parts[0] != "raw":
+            return f"https://hastebin.com/raw/{parts[0]}"
+        if host in ("ghostbin.com", "ghostbin.me") and len(parts) >= 1 and parts[-1] != "raw":
+            return f"https://ghostbin.com/{parts[0]}/raw"
+        if host == "dpaste.org" and len(parts) >= 1 and not parts[0].endswith(".txt"):
+            return f"https://dpaste.org/{parts[0]}.txt"
         return value
 
     def stage_url(self, value: str, destination: str | Path, *, timeout: float = 10.0) -> LoadedModule:
