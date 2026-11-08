@@ -491,7 +491,6 @@ class InlineManager:
                 if self.runtime.observatory is not None:
                     self.runtime.observatory.emit("inline", "configure_failed", username=info.username)
         asyncio.create_task(self._tune_bot(info), name="hotaru:tune-bot")
-        asyncio.create_task(self._start_bot_chat(info.username), name="hotaru:bot-chat")
         if hasattr(self.runtime, "sync_web_app"):
             asyncio.create_task(self.runtime.sync_web_app(clean_bot=info.username), name="hotaru:sync-webapp")
         return info
