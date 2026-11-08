@@ -15,7 +15,7 @@ HOTARU = {
                 '<tr><td><tg-emoji emoji-id="5325732612084351248">📦</tg-emoji> <b>Modules:</b></td><td align="right"><code>{modules} loaded</code></td></tr>'
                 '</table>'
                 '<hr>'
-                '<tg-emoji emoji-id="5366045973988522066">✨</tg-emoji> (✧▽✧) {user}'
+                '<blockquote><tg-emoji emoji-id="5366045973988522066">✨</tg-emoji> (✧▽✧) {user}</blockquote>'
             ),
             "max_len": 4096,
             "description": "Custom message template for .info",
@@ -60,24 +60,93 @@ HOTARU = {
     },
 }
 
+import html
 import time
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from hotaru.commands import CommandInvocation
     from hotaru.response import ModuleContext
 
 
+async def _user_handle(ctx: 'ModuleContext', invocation: 'CommandInvocation', owner_id: Any) -> str:
+    msg = invocation.message
+    display_name = None
+    username = None
+
+    def _extract(data: Any) -> None:
+        nonlocal display_name, username
+        if not data:
+            return
+        if hasattr(data, "raw") and isinstance(data.raw, dict):
+            raw = data.raw
+        elif isinstance(data, dict):
+            raw = data
+        else:
+            raw = {}
+        un = raw.get("username") or getattr(data, "username", None)
+        fn = raw.get("first_name") or getattr(data, "first_name", None)
+        ln = raw.get("last_name") or getattr(data, "last_name", None)
+        title = raw.get("title") or getattr(data, "title", None)
+        if not username and un:
+            username = str(un).lstrip("@")
+        if not display_name:
+            if fn and ln:
+                display_name = f"{fn} {ln}".strip()
+            elif fn:
+                display_name = str(fn).strip()
+            elif title:
+                display_name = str(title).strip()
+
+    if msg is not None:
+        _extract(getattr(msg, "from_user", None))
+        if hasattr(msg, "raw") and isinstance(msg.raw, dict):
+            _extract(msg.raw.get("from"))
+            _extract(msg.raw.get("sender_chat"))
+            _extract(msg.raw.get("chat"))
+        _extract(getattr(msg, "sender_chat", None))
+
+    app = getattr(getattr(ctx, "runtime", None), "app", None)
+    if app is not None and (not username or not display_name):
+        _extract(getattr(app, "_me_cache", None))
+        session = getattr(app, "session", None)
+        if session is not None and hasattr(session, "data") and isinstance(session.data, dict):
+            _extract(session.data.get("user"))
+        if (not username or not display_name) and hasattr(app, "get_me"):
+            try:
+                me = await app.get_me()
+                _extract(me)
+            except Exception:
+                pass
+        if (not username or not display_name) and hasattr(app, "mt_req") and getattr(app, "mt", None) is not None:
+            try:
+                raw_users = await app.mt_req("users.getUsers", id=[{"_": "inputUserSelf"}])
+                from goygram.client import _find_ctor
+                u = _find_ctor(raw_users, "user")
+                _extract(u)
+            except Exception:
+                pass
+
+    nickname = display_name or (f"@{username}" if username else None) or (f"id:{owner_id}" if owner_id else "User")
+
+    if username:
+        return f'<a href="https://t.me/{username}">@{username}</a>'
+    if isinstance(owner_id, int):
+        target_name = html.escape(str(nickname))
+        return f'<a href="tg://user?id={owner_id}">{target_name}</a>'
+    return html.escape(str(nickname))
+
+
 async def command_info(ctx: 'ModuleContext', invocation: 'CommandInvocation') -> None:
     start = time.perf_counter()
+    ping_ms = 48.25
     try:
-        if hasattr(ctx, "call"):
-            await ctx.call("help.getNearestDc")
+        app = getattr(getattr(ctx, "runtime", None), "app", None)
+        if app is not None and hasattr(app, "mt_req") and getattr(app, "mt", None) is not None:
+            await app.mt_req("help.getNearestDc")
             ping_ms = max(1.0, (time.perf_counter() - start) * 1000)
-        else:
-            ping_ms = 48.25
     except Exception:
-        ping_ms = 48.25
+        pass
 
     runtime = ctx.runtime
     uptime_s = max(0, int(time.monotonic() - runtime.started_at)) if runtime and hasattr(runtime, "started_at") else 0
@@ -92,14 +161,7 @@ async def command_info(ctx: 'ModuleContext', invocation: 'CommandInvocation') ->
         modules = len(mod_mgr.items())
 
     owner_id = getattr(getattr(runtime, "config", None), "owner_id", None) or getattr(invocation.message, "from_id", None)
-    user_handle = "Hotaru User"
-    msg = invocation.message
-    if hasattr(msg, "from_user") and getattr(msg.from_user, "username", None):
-        user_handle = f'<a href="https://t.me/{msg.from_user.username}">@{msg.from_user.username}</a>'
-    elif hasattr(msg, "sender_chat") and getattr(msg.sender_chat, "username", None):
-        user_handle = f'<a href="https://t.me/{msg.sender_chat.username}">@{msg.sender_chat.username}</a>'
-    elif isinstance(owner_id, int):
-        user_handle = f'<a href="tg://user?id={owner_id}">id:{owner_id}</a>'
+    user_handle = await _user_handle(ctx, invocation, owner_id)
 
     wm = ctx.wordmark() if hasattr(ctx, "wordmark") else ctx.screens.wordmark() if hasattr(ctx, "screens") and hasattr(ctx.screens, "wordmark") else '<tg-emoji emoji-id="5985527717183888277">⚡</tg-emoji><tg-emoji emoji-id="5985515480822061758">⚡</tg-emoji><tg-emoji emoji-id="5985558606588681366">⚡</tg-emoji><tg-emoji emoji-id="5985757321840565902">⚡</tg-emoji>'
     owner_int = owner_id if isinstance(owner_id, int) else 0
@@ -118,7 +180,12 @@ async def command_info(ctx: 'ModuleContext', invocation: 'CommandInvocation') ->
         owner_id=owner_int,
     )
 
-    await ctx.respond(body, parse_mode="HTML", output="edit")
+    if hasattr(ctx, "screens") and hasattr(ctx.screens, "show"):
+        k = ctx.screens
+        screen = k.screen(body, [[k.close()]], banner=k.banner("info"), rich=True)
+        await ctx.screens.show(screen)
+    else:
+        await ctx.respond(body, parse_mode="HTML", rich=True)
 
 
 async def command_ping(ctx: 'ModuleContext', invocation: 'CommandInvocation') -> None:
@@ -136,14 +203,7 @@ async def command_ping(ctx: 'ModuleContext', invocation: 'CommandInvocation') ->
         modules = len(mod_mgr.items())
 
     owner_id = getattr(getattr(runtime, "config", None), "owner_id", None) or getattr(invocation.message, "from_id", None)
-    user_handle = "Hotaru User"
-    msg = invocation.message
-    if hasattr(msg, "from_user") and getattr(msg.from_user, "username", None):
-        user_handle = f'<a href="https://t.me/{msg.from_user.username}">@{msg.from_user.username}</a>'
-    elif hasattr(msg, "sender_chat") and getattr(msg.sender_chat, "username", None):
-        user_handle = f'<a href="https://t.me/{msg.sender_chat.username}">@{msg.sender_chat.username}</a>'
-    elif isinstance(owner_id, int):
-        user_handle = f'<a href="tg://user?id={owner_id}">id:{owner_id}</a>'
+    user_handle = await _user_handle(ctx, invocation, owner_id)
 
     wm = ctx.wordmark() if hasattr(ctx, "wordmark") else ctx.screens.wordmark() if hasattr(ctx, "screens") and hasattr(ctx.screens, "wordmark") else '<tg-emoji emoji-id="5985527717183888277">⚡</tg-emoji><tg-emoji emoji-id="5985515480822061758">⚡</tg-emoji><tg-emoji emoji-id="5985558606588681366">⚡</tg-emoji><tg-emoji emoji-id="5985757321840565902">⚡</tg-emoji>'
     owner_int = owner_id if isinstance(owner_id, int) else 0
