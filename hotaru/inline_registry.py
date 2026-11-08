@@ -20,8 +20,8 @@ class InlineRegistry:
         self._items: dict[str, InlineCommandSpec] = {}
 
     def register(self, name: str, handler: InlineHandler, *, module_id: str | None = None, sandbox: bool = False) -> None:
-        if not name.isidentifier():
-            raise ValueError("inline command name must be an identifier")
+        if not name or any(c.isspace() for c in name):
+            raise ValueError("inline command name cannot be empty or contain whitespace")
         if not isinstance(module_id, str) or not module_id:
             raise ValueError("every inline command must belong to a module")
         key = name.casefold()

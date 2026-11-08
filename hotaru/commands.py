@@ -98,6 +98,6 @@ class CommandParser:
 
     def swap_invocation(self, invocation: CommandInvocation) -> CommandInvocation | None:
         swapped = swap_layout(invocation.name).casefold()
-        if not swapped.isidentifier() or swapped == invocation.name:
+        if not swapped or any(c.isspace() for c in swapped) or swapped == invocation.name:
             return None
         return replace(invocation, name=swapped, layout_swapped=True)
