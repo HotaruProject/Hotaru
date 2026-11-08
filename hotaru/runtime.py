@@ -686,9 +686,14 @@ class Runtime:
         entry = (self._forms or {}).get(key)
         if entry is None:
             return
-        handle, _, text, buttons, options = entry
+        handle, source, text, buttons, options = entry
         if options.get("rich"):
             return
+        inline_form = getattr(source, "src", None) == "inline" or str(handle.key).startswith("inline:")
+        if inline_form:
+            inline_id = getattr(source, "inline_message_id", None) or (self._form_inline_ids or {}).get(str(handle.key).split(":", 1)[-1])
+            if inline_id is None:
+                return
         try:
             await self.edit_form(handle, text, buttons=buttons)
         except Exception as exc:

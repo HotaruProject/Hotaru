@@ -326,6 +326,43 @@ def _workspace_open(root: Path, name: str, flags: int) -> int:
         os.close(directory)
 
 
+async def _resolve_mt_peer_arg(app: Any, value: Any) -> Any:
+    if isinstance(value, (bytes, bytearray, memoryview)):
+        return bytes(value)
+    if isinstance(value, dict):
+        if value.get("_", "").startswith(("inputPeer", "inputUser", "inputChannel")):
+            return value
+    if isinstance(value, (str, int)) and not isinstance(value, bool):
+        mt_transport = getattr(app, "mt", None)
+        if mt_transport is not None and hasattr(mt_transport, "resolve_peer"):
+            try:
+                return await mt_transport.resolve_peer(value)
+            except Exception:
+                return value
+    return value
+
+
+async def _resolve_nested_peers(app: Any, obj: Any) -> Any:
+    if isinstance(obj, dict):
+        ctor = obj.get("_")
+        if ctor in ("inputNotifyPeer", "inputFolderPeer", "inputDialogPeer", "inputDialogPeerCommunity", "botCommandScopePeer", "botCommandScopePeerAdmins", "inputPeerPhotoFileLocation", "inputSavedStarGiftChat", "paidReactionPrivacyPeer") and "peer" in obj:
+            if isinstance(obj["peer"], (str, int)) and not isinstance(obj["peer"], bool):
+                obj = dict(obj, peer=await _resolve_mt_peer_arg(app, obj["peer"]))
+        elif ctor == "botCommandScopePeerUser" and "user_id" in obj:
+            if isinstance(obj["user_id"], (str, int)) and not isinstance(obj["user_id"], bool):
+                obj = dict(obj, user_id=await _resolve_mt_peer_arg(app, obj["user_id"]))
+        res = {}
+        for k, v in obj.items():
+            if isinstance(v, (dict, list)):
+                res[k] = await _resolve_nested_peers(app, v)
+            else:
+                res[k] = v
+        return res
+    if isinstance(obj, list):
+        return [await _resolve_nested_peers(app, item) for item in obj]
+    return obj
+
+
 class CapabilityHost:
     def __init__(self, runtime: Any) -> None:
         self.runtime = runtime
@@ -673,6 +710,13 @@ class CapabilityHost:
             limit = kwargs.get("limit", 100)
             if isinstance(limit, (int, float)) and int(limit) > 500:
                 kwargs = dict(kwargs, limit=500)
+        if lowered in ("contacts.unblock", "contacts.block", "users.getfulluser", "contacts.addcontact") and "id" in kwargs:
+            raw_id = kwargs["id"]
+            if isinstance(raw_id, (str, int)) and not isinstance(raw_id, bool):
+                kwargs = dict(kwargs, id=await _resolve_mt_peer_arg(app, raw_id))
+        if "peer" in kwargs and isinstance(kwargs["peer"], (str, int)) and not isinstance(kwargs["peer"], bool):
+            kwargs = dict(kwargs, peer=await _resolve_mt_peer_arg(app, kwargs["peer"]))
+        kwargs = await _resolve_nested_peers(app, kwargs)
         timeout = payload.get("timeout")
         if timeout is not None and (isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or not 0 < timeout <= 60):
             raise ValueError("MT timeout must be between 0 and 60 seconds")
