@@ -553,20 +553,62 @@ class InlineManager:
         key = f"brand-avatar-bot-{info.bot_id}"
         if state is not None and state.get_setting(key) == digest:
             return
+        uploaded_file = None
+        from relay.files import document, put
         try:
             with trusted_scope():
-                peer = await app.mt.resolve_peer("@" + info.username)
-                peer_dict = cast('dict[str, Any]', peer.to_dict() if hasattr(peer, "to_dict") else peer if isinstance(peer, dict) else {})
-                access_hash = peer_dict.get("access_hash") or 0
-                bot = {"_": "inputUser", "user_id": int(info.bot_id), "access_hash": int(access_hash)}
-                from relay.files import document, put
+                bot = None
+                if hasattr(app, "_typed_peer"):
+                    try:
+                        bot = await app._typed_peer("@" + info.username, "user")
+                    except Exception:
+                        bot = None
+                if bot is None:
+                    from goygram import ext
+                    peer = await app.mt.resolve_peer("@" + info.username)
+                    if isinstance(peer, (bytes, bytearray, memoryview)):
+                        peer_dict = cast('dict[str, Any]', ext.deserialize_constructor(peer))
+                    elif isinstance(peer, dict):
+                        peer_dict = peer
+                    elif hasattr(peer, "to_dict"):
+                        peer_dict = cast('dict[str, Any]', peer.to_dict())
+                    else:
+                        peer_dict = {}
+                    access_hash = peer_dict.get("access_hash") or 0
+                    bot = {"_": "inputUser", "user_id": int(info.bot_id), "access_hash": int(access_hash)}
                 up = await put(app, str(logo_path), file_name=str(logo_path.name))
                 uploaded_file = document(up)["file"]
                 await app.mt_photos_upload_profile_photo(bot=bot, file=uploaded_file)
             if state is not None:
                 state.set_setting(key, digest)
+            return
         except Exception as exc:
-            if self.runtime.observatory is not None:
+            bf_ok = False
+            try:
+                with trusted_scope():
+                    if uploaded_file is None:
+                        up = await put(app, str(logo_path), file_name=str(logo_path.name))
+                        uploaded_file = document(up)["file"]
+                    async with BotFatherGuard(app), BotFatherConversation(app) as conv:
+                        await conv.say("/setuserpic")
+                        await conv.response()
+                        await conv.say("@" + info.username.lstrip("@"))
+                        await conv.response()
+                        peer = await app.mt.resolve_peer(BOTFATHER)
+                        await app.mt_messages_send_media(
+                            peer=peer,
+                            media={"_": "inputMediaUploadedPhoto", "file": uploaded_file},
+                            message="",
+                            random_id=secrets.randbits(63),
+                        )
+                        await conv.response()
+                        bf_ok = True
+                if bf_ok and state is not None:
+                    state.set_setting(key, digest)
+                return
+            except Exception:
+                pass
+            if not bf_ok and self.runtime.observatory is not None:
                 self.runtime.observatory.emit("inline", "avatar_failed", error=type(exc).__name__, detail=str(exc)[:140])
 
     async def _start_bot_chat(self, username: str, *, force: bool = False) -> bool:

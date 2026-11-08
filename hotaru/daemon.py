@@ -174,7 +174,11 @@ class SystemdInit(BaseInitSystem):
         if start:
             code, detail = _run(base + ["restart", SERVICE_NAME])
             if code != 0:
-                raise DaemonError(f"restart failed: {detail}")
+                _run(base + ["reset-failed", SERVICE_NAME])
+                code, detail = _run(base + ["restart", SERVICE_NAME])
+                if code != 0:
+                    clean_msg = detail.splitlines()[0] if detail else "service start failed"
+                    raise DaemonError(f"daemon restart failed: {clean_msg}")
         return path
 
     def status(self) -> str:

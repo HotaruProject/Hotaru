@@ -389,33 +389,31 @@ class ModuleStager:
         try:
             port = parsed.port
         except ValueError as exc:
-            raise ModuleFetchError("module URL must be a plain HTTPS URL") from exc
-        if parsed.scheme != "https" or parsed.username or parsed.password or port or parsed.query or parsed.fragment:
-            raise ModuleFetchError("module URL must be a plain HTTPS URL")
+            raise ModuleFetchError("module URL must be a valid URL") from exc
+        if parsed.scheme not in ("https", "http") or parsed.username or parsed.password:
+            raise ModuleFetchError("module URL must be a valid HTTP or HTTPS URL")
         host = (parsed.hostname or "").casefold()
+        if not host:
+            raise ModuleFetchError("module URL must contain a host")
         parts = [urllib.parse.unquote(part) for part in parsed.path.split("/") if part]
         if any(part in {".", ".."} or "\\" in part for part in parts):
             raise ModuleFetchError("module URL path is unsafe")
-        if host == "github.com" and len(parts) >= 5 and parts[2] == "blob":
-            owner, repo, _, ref, *filename = parts
-            if not filename or not filename[-1].endswith(".hmod"):
-                raise ModuleFetchError("module URL must target a .hmod file")
-            return "https://raw.githubusercontent.com/" + "/".join([owner, repo, ref, *filename])
-        if host == "raw.githubusercontent.com" and len(parts) >= 4 and parts[-1].endswith(".hmod"):
-            return urllib.parse.urlunparse(("https", host, "/" + "/".join(parts), "", "", ""))
-        raise ModuleFetchError("module URL host or path is not allowed")
+        if host == "github.com" and len(parts) >= 4 and parts[2] in ("blob", "raw"):
+            owner, repo, _, *rest = parts
+            return "https://raw.githubusercontent.com/" + "/".join([owner, repo, *rest])
+        return value
 
     def stage_url(self, value: str, destination: str | Path, *, timeout: float = 10.0) -> LoadedModule:
         if timeout <= 0:
             raise ValueError("timeout must be positive")
         url = self.normalize_url(value)
         try:
-            request = urllib.request.Request(url, headers={"Accept": "text/plain"}, method="GET")
+            request = urllib.request.Request(url, headers={"Accept": "*/*", "User-Agent": "HotaruModuleCatalyst/1.0"}, method="GET")
             with trusted_scope():
                 with urllib.request.urlopen(request, timeout=timeout) as response:
                     final = urllib.parse.urlparse(cast(str, response.geturl()))
-                    if final.scheme != "https" or (final.hostname or "").casefold() != "raw.githubusercontent.com":
-                        raise ModuleFetchError("module URL redirected to an unsafe host")
+                    if final.scheme not in ("https", "http"):
+                        raise ModuleFetchError("module URL redirected to an invalid scheme")
                     content_length = response.headers.get("Content-Length")
                     if content_length is not None and int(content_length) > self.loader.max_bytes:
                         raise ModuleFetchError("module download exceeds the size limit")
