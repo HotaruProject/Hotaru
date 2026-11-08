@@ -2554,10 +2554,7 @@ class Runtime:
             factory = getattr(self, "context_factory", None)
             if factory is not None:
                 ctx = factory.create("help", getattr(nav, "call", None))
-                screen: Any = card_fn(ctx, module_id, nav.actor, None)
-                notice = self.t("runtime." + action, module_id=module_id, version=loaded.manifest.version)
-                screen_obj: Any = screen
-                return screen_obj.with_notice(notice)
+                return card_fn(ctx, module_id, nav.actor, None)
         return Screen(self.t('runtime.loaded', module_id=module_id, version=loaded.manifest.version))
 
     def create_backup(self, *, scope: str = "all", custom_key: str | bytes | None = None) -> Path:
