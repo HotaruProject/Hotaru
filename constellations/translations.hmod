@@ -180,6 +180,7 @@ async def command_translate(ctx: Any, invocation: Any) -> Any:
     args = list(invocation.args or [])
     to_lang = None
     target_text = None
+    caption_text = ""
 
     if args and re.fullmatch(r"[a-zA-Z]{2,3}(?:-[a-zA-Z0-9]{2,8})*", args[0]):
         if len(args) > 1:
@@ -212,15 +213,15 @@ async def command_translate(ctx: Any, invocation: Any) -> Any:
             try:
                 await ctx.runtime._download_module_message(src_obj, tmp_path)
                 file_text = tmp_path.read_text(encoding="utf-8", errors="replace")
-                caption = ctx.tools.message_text(src_obj) if hasattr(ctx, "tools") else ""
-                target_text = "\n\n".join(part for part in (caption, file_text) if part)
+                target_text = file_text if file_text.strip() else None
+                caption_text = (ctx.tools.message_text(src_obj) if hasattr(ctx, "tools") else "").strip()
             except Exception as exc:
                 log.error("translate file fetch failed: %s", exc)
             finally:
                 tmp_path.unlink(missing_ok=True)
 
     reply_obj: Any = reply
-    if not target_text and reply_obj is not None:
+    if not target_text and not caption_text and reply_obj is not None:
         target_text = ctx.tools.message_text(reply_obj) if hasattr(ctx, "tools") else None
         if not target_text:
             for attr in ("text", "caption", "message", "raw_text"):
@@ -232,14 +233,14 @@ async def command_translate(ctx: Any, invocation: Any) -> Any:
                     break
 
     inv_m: Any = getattr(invocation, "message", None)
-    if not target_text and inv_m is not None and not callable(cast(object, inv_m)):
+    if not target_text and not caption_text and inv_m is not None and not callable(cast(object, inv_m)):
         cap_val: Any = getattr(inv_m, "caption", None)
         if isinstance(cap_val, dict):
             target_text = str(cast('dict[str, Any]', cap_val).get("text", ""))
         elif isinstance(cap_val, str):
             target_text = cap_val
 
-    if not target_text:
+    if not target_text and not caption_text:
         await ctx.respond(f'<tg-emoji emoji-id="5260342697075416641">❌</tg-emoji> <b>{_escape(ctx.t("kernel.translations.no_text", "No text provided for translation"))}</b>', parse_mode="HTML", output="edit")
         return
 
@@ -249,7 +250,8 @@ async def command_translate(ctx: Any, invocation: Any) -> Any:
     )
 
     try:
-        translated = await ctx.translate(target_text, to_lang=to_lang)
+        translated = await ctx.translate(target_text, to_lang=to_lang) if target_text else ""
+        translated_caption = await ctx.translate(caption_text, to_lang=to_lang) if caption_text else ""
     except Exception as exc:
         log.error("translation error: %s", exc, exc_info=True)
         raw_err = str(exc)
@@ -265,8 +267,12 @@ async def command_translate(ctx: Any, invocation: Any) -> Any:
     from relay.toolkit import escape_smart
     formatted = escape_smart(translated)
     expandable = " expandable" if (len(formatted) > 200 or "\n" in formatted) else ""
-    res = f'<tg-emoji emoji-id="5260512129240276089">📚</tg-emoji> <b>{to_lang.upper()}</b>:\n<blockquote{expandable}>{formatted}</blockquote>'
-    await ctx.respond(res, parse_mode="HTML", output="edit")
+    res = f'<tg-emoji emoji-id="5260512129240276089">📚</tg-emoji> <b>{to_lang.upper()}</b>:'
+    if formatted:
+        res += f'\n<blockquote{expandable}>{formatted}</blockquote>'
+    if translated_caption:
+        res += f'\n\n<footer>{escape_smart(translated_caption)}</footer>'
+    await ctx.respond(res, parse_mode="HTML", output="edit", rich=bool(translated_caption), rich_fallback="bot")
 
 
 async def command_loadlex(ctx: Any, invocation: Any) -> Any:
