@@ -100,6 +100,13 @@ def main() -> None:
         asyncio.run(_run(Runtime(config)))
     except (asyncio.CancelledError, KeyboardInterrupt):
         pass
+    except Exception as exc:
+        from .accounts import AccountError
+        from .daemon import DaemonError
+        if isinstance(exc, (AccountError, DaemonError)):
+            print(f"Error: {exc}", file=sys.stderr)
+            sys.exit(1)
+        raise
 
 
 if __name__ == "__main__":

@@ -106,19 +106,48 @@ async def command_restore(ctx: Any, invocation: Any) -> None:
                     return
                 archive_path = p
         else:
-            msg = invocation.message
-            doc_msg = None
-            if msg is not None:
-                if hasattr(msg, "reply_to_msg") and getattr(msg.reply_to_msg, "media", None):
-                    doc_msg = msg.reply_to_msg
-                elif getattr(msg, "media", None) or getattr(msg, "document", None):
+            msg = getattr(invocation, "message", None)
+            doc_msg = getattr(invocation, "reply_message", None)
+            if doc_msg is None and msg is not None:
+                doc_msg = getattr(msg, "reply_to_message", None) or (msg.get("reply_to_message") if isinstance(msg, dict) else None)
+            if callable(cast(object, doc_msg)):
+                doc_msg = None
+            if doc_msg is None and msg is not None:
+                from hotaru.response import reply_message_id
+                reply_id = reply_message_id(msg)
+                if reply_id is not None:
+                    chat_id = getattr(invocation, "chat_id", None) or (msg.get("chat_id") if isinstance(msg, dict) else None)
+                    app = getattr(runtime, "app", None)
+                    if app is not None and hasattr(app, "get_msg") and chat_id is not None:
+                        from relay.firewall import trusted_scope
+                        with trusted_scope():
+                            try:
+                                doc_msg = await app.get_msg(chat_id, reply_id)
+                            except Exception:
+                                doc_msg = None
+                    if doc_msg is None:
+                        cap_host = getattr(runtime, "cap_host", None)
+                        if cap_host is not None:
+                            from relay.firewall import trusted_scope
+                            with trusted_scope():
+                                try:
+                                    doc_msg = await cap_host.call("loader", "fetch", {"op": "message", "peer": chat_id, "id": reply_id})
+                                except Exception:
+                                    doc_msg = None
+            if doc_msg is None and msg is not None:
+                if getattr(msg, "media", None) or getattr(msg, "document", None) or (isinstance(msg, dict) and (msg.get("media") or msg.get("document"))):
                     doc_msg = msg
-            if doc_msg is None:
-                await ctx.respond(f"<pre> !     Error: reply to an .hbk file or provide an archive path/url</pre>", parse_mode="HTML", output="edit")
-                return
+            if doc_msg is None and msg is not None:
+                doc_msg = msg
             with tempfile.NamedTemporaryFile(suffix=".hbk", delete=False) as handle:
                 temporary = Path(handle.name)
-            await runtime._download_module_message(doc_msg, temporary)
+            try:
+                await runtime._download_module_message(doc_msg, temporary)
+            except Exception:
+                temporary.unlink(missing_ok=True)
+                temporary = None
+                await ctx.respond(f"<pre> !     Error: reply to an .hbk file or provide an archive path/url</pre>", parse_mode="HTML", output="edit")
+                return
             archive_path = temporary
 
         log_lines[-1] += " done"

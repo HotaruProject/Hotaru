@@ -225,12 +225,16 @@ def describe(capabilities: tuple[str, ...], t: Callable[..., str] | None = None)
     return "\n".join(lines)
 
 
-def _result_body(value: Any) -> dict[str, Any]:
+def _result_body(value: Any) -> Any:
+    if isinstance(value, list):
+        return value
     if not isinstance(value, dict):
         return {}
     payload = cast('dict[str, Any]', value)
     result = payload.get("result")
-    return cast('dict[str, Any]', result) if isinstance(result, dict) else payload
+    if isinstance(result, (dict, list)):
+        return result
+    return payload
 
 
 def _public_connection(address: tuple[str, int], timeout: Any = None, source_address: Any = None) -> socket.socket:
