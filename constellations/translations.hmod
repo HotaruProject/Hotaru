@@ -277,10 +277,9 @@ async def command_loadlex(ctx: Any, invocation: Any) -> Any:
     source_msg = reply if reply is not None else getattr(invocation, "message", None)
     if callable(source_msg):
         source_msg = None
-    doc = None
-    if source_msg is not None:
-        doc = getattr(source_msg, "document", None) or getattr(source_msg, "media", None)
-    msg_text = str(getattr(source_msg, "text", "") or "").strip()
+    source_data: dict[str, Any] = cast('dict[str, Any]', source_msg) if isinstance(source_msg, dict) else {}
+    doc = source_data.get("document") or source_data.get("media") or getattr(cast(object, source_msg), "document", None) or getattr(cast(object, source_msg), "media", None)
+    msg_text = str(source_data.get("text") or source_data.get("message") or getattr(cast(object, source_msg), "text", "") or "").strip()
     if not invocation.args and doc is None and not (msg_text.startswith("{") and msg_text.endswith("}")):
         await ctx.respond(f'<tg-emoji emoji-id="5260342697075416641">❌</tg-emoji> <b>{_escape(ctx.t("kernel.translations.usage_file", "Provide a link, path, or reply to a JSON file (.json)"))}</b>', parse_mode="HTML", output="edit")
         return
@@ -311,7 +310,7 @@ async def command_loadlex(ctx: Any, invocation: Any) -> Any:
                 await ctx.respond("<pre> !     Error: reply to a JSON file or provide a url</pre>", parse_mode="HTML", output="edit")
                 return
 
-            reply_text = str(getattr(source_msg, "text", "") or "").strip()
+            reply_text = msg_text
             if reply_text.startswith("{") and reply_text.endswith("}"):
                 source = reply_text
             else:
@@ -319,7 +318,7 @@ async def command_loadlex(ctx: Any, invocation: Any) -> Any:
                     temporary = Path(handle.name)
                 await runtime._download_module_message(source_msg, temporary)
                 source = temporary.read_text(encoding="utf-8")
-                doc_obj: Any = getattr(source_msg, "document", None) or (cast('dict[str, Any]', source_msg).get("document") if isinstance(source_msg, dict) else None)
+                doc_obj: Any = getattr(cast(object, source_msg), "document", None) or source_data.get("document")
                 if doc_obj:
                     file_name: Any = getattr(doc_obj, "file_name", None) or (cast('dict[str, Any]', doc_obj).get("file_name") if isinstance(doc_obj, dict) else None)
                     if file_name and str(file_name).endswith(".json"):
