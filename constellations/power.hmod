@@ -88,7 +88,7 @@ async def confirm_stop(ctx: Any, nav: Any) -> Any:
     if runtime.state is not None:
         runtime.state.set_setting("suspended", "1")
     k = ctx.screens
-    return k.screen(_text_stopped_details(ctx), [], rich=True)
+    return k.screen(_text_stopped_details(ctx), [k.footer()], rich=True)
 
 async def command_resume(ctx: Any, invocation: Any) -> Any:
     runtime = ctx.runtime
