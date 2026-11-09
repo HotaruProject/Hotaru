@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+import logging
+import sqlite3
 from typing import Any, Awaitable, Callable, cast
 
 from relay.firewall import current_module
+
+log = logging.getLogger(__name__)
 
 
 def peer_id(value: Any) -> str:
@@ -27,11 +31,22 @@ class MessageProvenance:
         connection.commit()
         self.pending: set[asyncio.Event] = set()
 
+    def set_connection(self, connection: Any) -> None:
+        self.connection = connection
+        try:
+            connection.execute("CREATE TABLE IF NOT EXISTS module_messages (peer TEXT NOT NULL, message_id INTEGER NOT NULL, module_id TEXT NOT NULL, PRIMARY KEY(peer, message_id))")
+            connection.commit()
+        except (sqlite3.ProgrammingError, sqlite3.OperationalError) as exc:
+            log.warning("provenance set_connection table init failed: %s", exc)
+
     def remember(self, peer: Any, message_id: Any, module_id: str) -> None:
         if peer is None or not isinstance(message_id, int) or isinstance(message_id, bool) or message_id <= 0:
             return
-        self.connection.execute("INSERT OR REPLACE INTO module_messages VALUES (?, ?, ?)", (peer_id(peer), message_id, module_id))
-        self.connection.commit()
+        try:
+            self.connection.execute("INSERT OR REPLACE INTO module_messages VALUES (?, ?, ?)", (peer_id(peer), message_id, module_id))
+            self.connection.commit()
+        except (sqlite3.ProgrammingError, sqlite3.OperationalError) as exc:
+            log.warning("provenance remember failed: %s", exc)
 
     async def generated(self, message: Any) -> bool:
         waiting = tuple(self.pending)
@@ -42,7 +57,10 @@ class MessageProvenance:
                 return True
         peer = getattr(message, "chat_id", None)
         message_id = getattr(message, "id", None) or getattr(message, "message_id", None)
-        return self.connection.execute("SELECT 1 FROM module_messages WHERE peer = ? AND message_id = ?", (peer_id(peer), message_id)).fetchone() is not None
+        try:
+            return self.connection.execute("SELECT 1 FROM module_messages WHERE peer = ? AND message_id = ?", (peer_id(peer), message_id)).fetchone() is not None
+        except (sqlite3.ProgrammingError, sqlite3.OperationalError):
+            return False
 
     def record_result(self, result: Any, fallback: Any, module_id: str) -> None:
         if isinstance(result, dict):

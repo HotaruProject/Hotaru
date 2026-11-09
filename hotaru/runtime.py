@@ -2741,6 +2741,61 @@ class Runtime:
             raise RuntimeError("backup service is not ready")
         return await self.backups.restore(plan, activate, rollback=rollback, timeout=timeout)
 
+    def _rebind_state(self) -> None:
+        if self.state is None:
+            return
+        if self.kernel is not None and self.kernel.provenance is not None:
+            if hasattr(self.kernel.provenance, "set_connection"):
+                self.kernel.provenance.set_connection(self.state.connection)
+            else:
+                self.kernel.provenance.connection = self.state.connection
+
+        from .access import AccessManager, AccessStore
+        self.access = AccessManager(self.config.owner_id, AccessStore(self.state))
+        if self.security is not None:
+            self.security.set_access(self.access)
+        if self.kernel is not None:
+            self.kernel.access = self.access
+
+        from .accounts import AccountManager
+        self.account_manager = AccountManager.open(self.state, self.config.session_dir)
+        self.account_manager.protect(self.state, self.config.owner_id)
+
+        cb_secret = self.state.get_setting("callback_secret")
+        if not isinstance(cb_secret, str) or not cb_secret:
+            cb_secret = secrets.token_hex(32)
+            self.state.set_setting("callback_secret", cb_secret)
+        cb_key = derive_key(cb_secret)
+        if self.callbacks is not None and getattr(self.callbacks, "store", None) is not None:
+            self.callbacks.store._key = cb_key
+            self.callbacks.store._store = self.state
+            if hasattr(self.callbacks.store, "_init_db"):
+                self.callbacks.store._init_db()
+        else:
+            self.callbacks = CallbackRouter(CallbackStore(secret=cb_key, store=self.state), runtime=self)
+
+        if self.screens is not None:
+            self.screens.secret = cb_secret
+            self.screens.runtime = self
+
+        from .flood import FloodFallback
+        responses = self.responses if self.responses is not None else ResponseService()
+        responses.flood = FloodFallback(self)
+        self.context_factory = ModuleContextFactory(self.state, responses, self)
+        self.context_factory.cap_host = self.cap_host
+        self.context_factory.callback_router = self.callbacks
+        self.context_factory.inline_manager = self.inline
+        self.context_factory.screens = self.screens
+        if self.kernel is not None:
+            self.kernel.context_factory = self.context_factory
+
+        if self.kernel is not None:
+            user_aliases = self.state.get_setting("user_aliases", {})
+            if isinstance(user_aliases, dict) and hasattr(self.kernel, "registry"):
+                for alias, command in user_aliases.items():
+                    self.kernel.registry.register_alias(alias, command)
+            self.kernel.suspended = self.state.get_setting("suspended") == "1"
+
     async def restore_filesystem(self, plan: Any, modules_path: str | Path, *, only: str = "all", key: str | bytes | None = None) -> None:
         backups = self.backups
         if backups is None or self.state is None or self.modules is None:
@@ -2779,15 +2834,7 @@ class Runtime:
         finally:
             if restore_state:
                 self.state = StateStore(self.config.state_path)
-                from .flood import FloodFallback
-                responses = self.responses if self.responses is not None else ResponseService()
-                responses.flood = FloodFallback(self)
-                self.context_factory = ModuleContextFactory(self.state, responses, self)
-                self.context_factory.cap_host = self.cap_host
-                self.context_factory.callback_router = self.callbacks
-                self.context_factory.inline_manager = self.inline
-                if self.kernel is not None:
-                    self.kernel.context_factory = self.context_factory
+                self._rebind_state()
             self.modules = ModuleManager(tasks=self.tasks)
             self.modules.form_cleanup = self.unload_module_forms
             self.stager = ModuleStager(self.modules.loader)
@@ -3026,8 +3073,7 @@ class Runtime:
         self.app.core.session_name = session.name
         if self.state.path.resolve() != dest_db.resolve():
             self.state.relocate(dest_db)
-            if self.kernel is not None and self.kernel.provenance is not None:
-                self.kernel.provenance.connection = self.state.connection
+            self._rebind_state()
             self.state.set_setting("session-name", name)
             self.state.set_setting("active-account", userid)
             self.config = replace(self.config, session_name=name, state_path=dest_db)

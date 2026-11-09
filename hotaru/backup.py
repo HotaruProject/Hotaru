@@ -69,7 +69,7 @@ class BackupService:
         snapshot: Path | None = None
         if state_path is not None:
             state = self._regular(Path(state_path))
-            snapshot = self._snapshot_state(state)
+            snapshot = self._snapshot_state(state, dir=state.parent)
             files.append(("state/state.sqlite3", snapshot))
         for path in sorted((Path(item) for item in module_paths), key=lambda item: str(item)):
             module = self._regular(path)
@@ -452,13 +452,29 @@ class BackupService:
 
             if restore_state and target_state is not None and state_temp is not None:
                 if target_state.exists():
-                    rollback_state = self._snapshot_state(self._regular(target_state))
+                    rollback_state = self._snapshot_state(self._regular(target_state), dir=target_state.parent)
                     if state_backup is not None:
-                        os.replace(rollback_state, state_backup)
+                        if state_backup.exists():
+                            state_backup.unlink(missing_ok=True)
+                        try:
+                            os.replace(rollback_state, state_backup)
+                        except OSError as err:
+                            if err.errno == 18:
+                                shutil.copy2(rollback_state, state_backup)
+                                rollback_state.unlink(missing_ok=True)
+                            else:
+                                raise
                     self._remove_sqlite_sidecars(target_state)
                 else:
                     self._remove_sqlite_sidecars(target_state)
-                os.replace(state_temp, target_state)
+                try:
+                    os.replace(state_temp, target_state)
+                except OSError as err:
+                    if err.errno == 18:
+                        shutil.copy2(state_temp, target_state)
+                        state_temp.unlink(missing_ok=True)
+                    else:
+                        raise
                 state_replaced = True
 
             if restore_modules and target_modules is not None and modules_temp is not None:
@@ -466,19 +482,43 @@ class BackupService:
                     if target_modules.is_symlink():
                         raise BackupError("module target is a symlink")
                     if modules_backup is not None:
-                        os.replace(target_modules, modules_backup)
-                os.replace(modules_temp, target_modules)
+                        if modules_backup.exists():
+                            shutil.rmtree(modules_backup, ignore_errors=True)
+                        try:
+                            os.replace(target_modules, modules_backup)
+                        except OSError as err:
+                            if err.errno == 18:
+                                shutil.copytree(target_modules, modules_backup)
+                                shutil.rmtree(target_modules, ignore_errors=True)
+                            else:
+                                raise
+                try:
+                    os.replace(modules_temp, target_modules)
+                except OSError as err:
+                    if err.errno == 18:
+                        if target_modules.exists():
+                            shutil.rmtree(target_modules, ignore_errors=True)
+                        shutil.copytree(modules_temp, target_modules)
+                        shutil.rmtree(modules_temp, ignore_errors=True)
+                    else:
+                        raise
                 modules_replaced = True
         except Exception as exc:
             if modules_replaced and target_modules is not None:
                 shutil.rmtree(target_modules, ignore_errors=True)
             if modules_backup is not None and modules_backup.exists() and target_modules is not None:
-                os.replace(modules_backup, target_modules)
+                try:
+                    os.replace(modules_backup, target_modules)
+                except OSError:
+                    shutil.copytree(modules_backup, target_modules, dirs_exist_ok=True)
             if state_replaced and target_state is not None:
                 target_state.unlink(missing_ok=True)
             if state_backup is not None and state_backup.exists() and target_state is not None:
-                os.replace(state_backup, target_state)
-            raise BackupError("atomic restore activation failed") from exc
+                try:
+                    os.replace(state_backup, target_state)
+                except OSError:
+                    shutil.copy2(state_backup, target_state)
+            raise BackupError(f"atomic restore activation failed: {exc}") from exc
         finally:
             if state_temp is not None:
                 state_temp.unlink(missing_ok=True)
@@ -508,11 +548,14 @@ class BackupService:
                 result = await asyncio.wait_for(result, timeout=timeout)
             return result
         except Exception as exc:
+            log.error("restore activation failed: %s: %s", type(exc).__name__, exc, exc_info=True)
             if rollback is not None:
                 recovery = rollback()
                 if inspect.isawaitable(recovery):
                     await asyncio.wait_for(recovery, timeout=timeout)
-            raise BackupError("restore activation failed") from exc
+            cause = getattr(exc, "__cause__", None)
+            err_msg = f"{exc}" if not cause or str(cause) == str(exc) else f"{exc}: {cause}"
+            raise BackupError(f"restore activation failed: {err_msg}") from exc
         finally:
             self._remove_tree(staged)
 
@@ -571,8 +614,8 @@ class BackupService:
             raise BackupError("backup state schema is invalid")
 
     @staticmethod
-    def _snapshot_state(path: Path) -> Path:
-        fd, temporary = tempfile.mkstemp(prefix=".hotaru-state-", suffix=".sqlite3")
+    def _snapshot_state(path: Path, dir: Path | None = None) -> Path:
+        fd, temporary = tempfile.mkstemp(prefix=".hotaru-state-", suffix=".sqlite3", dir=dir)
         os.close(fd)
         snapshot = Path(temporary)
         try:
