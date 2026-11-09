@@ -71,7 +71,7 @@ async def command_dash(ctx: Any, invocation: Any) -> None:
     status_emoji = '<tg-emoji emoji-id="5260726538302660868">✅</tg-emoji>' if probe_online else '<tg-emoji emoji-id="5260342697075416641">❌</tg-emoji>'
     sync_emoji = '<tg-emoji emoji-id="5260726538302660868">✅</tg-emoji>' if registered else '<tg-emoji emoji-id="5260342697075416641">❌</tg-emoji>'
 
-    header = _tr(ctx, "kernel.singularity.card_title", '<tg-emoji emoji-id="5985527717183888277">⚡</tg-emoji><tg-emoji emoji-id="5985515480822061758">⚡</tg-emoji><tg-emoji emoji-id="5985558606588681366">⚡</tg-emoji><tg-emoji emoji-id="5985757321840565902">⚡</tg-emoji> <b>// Singularity</b>')
+    header = _tr(ctx, "kernel.singularity.card_title", "{wordmark} <b>// Singularity</b>", wordmark=ctx.screens.wordmark())
     probe_label = _tr(ctx, "kernel.singularity.probe", "Probe")
     relay_label = _tr(ctx, "kernel.singularity.relay", "Relay")
     lines = [
@@ -86,12 +86,11 @@ async def command_dash(ctx: Any, invocation: Any) -> None:
     open_label = _tr(ctx, "kernel.singularity.open_button", "Open Singularity")
 
     launch_url = app_link or tunnel_url
+    k = ctx.screens
     buttons: list[list[dict[str, Any]]] = []
     if launch_url:
-        buttons.append([{"text": f"⚡ {open_label}", "url": launch_url, "style": "primary"}])
-
-    if hasattr(ctx, "ui") and hasattr(ctx.ui, "close"):
-        buttons.append([ctx.ui.close("✕ Close")])
+        buttons.append([k.url(f"⚡ {open_label}", launch_url, style="primary")])
+    buttons.append([k.close()])
 
     banner_url = ready_info.get("banner_url")
     if not banner_url:
@@ -99,20 +98,4 @@ async def command_dash(ctx: Any, invocation: Any) -> None:
     if not banner_url:
         banner_url = "https://raw.githubusercontent.com/HotaruProject/Hotaru/develop/singularity/assets/WebApp.jpg"
 
-    if buttons and hasattr(ctx, "form"):
-        if isinstance(banner_url, str) and banner_url.startswith("https://"):
-            try:
-                await ctx.form(text, buttons, module_id="singularity", photo=banner_url, rich=True)
-                return
-            except Exception:
-                pass
-        try:
-            await ctx.form(text, buttons, module_id="singularity", rich=True)
-            return
-        except Exception:
-            pass
-
-    if buttons and hasattr(ctx, "answer"):
-        await ctx.answer(text, rows=buttons, parse_mode="HTML", rich=True)
-    else:
-        await ctx.respond(text, photo=banner_url, parse_mode="HTML", rich=True)
+    await k.show(k.screen(text, buttons, banner=k.banner(banner_url)))

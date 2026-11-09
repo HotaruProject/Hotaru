@@ -978,8 +978,9 @@ class ScreenEngine:
                 try:
                     if is_web:
                         url_name = Path(urllib.parse.urlparse(str(path_or_url)).path).name
-                        local_asset = _assets / url_name if url_name else None
-                        if local_asset is not None and local_asset.exists():
+                        asset_dirs = (_assets, _assets.parent.parent / "singularity" / "assets")
+                        local_asset = next((directory / url_name for directory in asset_dirs if url_name and (directory / url_name).is_file()), None)
+                        if local_asset is not None:
                             actual_path = local_asset
                         else:
                             content = b""
