@@ -62,7 +62,7 @@ HOTARU = {
 
 import html
 import time
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:
     from hotaru.commands import CommandInvocation
@@ -79,15 +79,15 @@ async def _user_handle(ctx: 'ModuleContext', invocation: 'CommandInvocation', ow
         if not data:
             return
         if hasattr(data, "raw") and isinstance(data.raw, dict):
-            raw = data.raw
+            raw = cast('dict[str, Any]', data.raw)
         elif isinstance(data, dict):
-            raw = data
+            raw = cast('dict[str, Any]', data)
         else:
             raw = {}
-        un = raw.get("username") or getattr(data, "username", None)
-        fn = raw.get("first_name") or getattr(data, "first_name", None)
-        ln = raw.get("last_name") or getattr(data, "last_name", None)
-        title = raw.get("title") or getattr(data, "title", None)
+        un = raw.get("username") or getattr(cast(object, data), "username", None)
+        fn = raw.get("first_name") or getattr(cast(object, data), "first_name", None)
+        ln = raw.get("last_name") or getattr(cast(object, data), "last_name", None)
+        title = raw.get("title") or getattr(cast(object, data), "title", None)
         if not username and un:
             username = str(un).lstrip("@")
         if not display_name:
@@ -101,9 +101,10 @@ async def _user_handle(ctx: 'ModuleContext', invocation: 'CommandInvocation', ow
     if msg is not None:
         _extract(getattr(msg, "from_user", None))
         if hasattr(msg, "raw") and isinstance(msg.raw, dict):
-            _extract(msg.raw.get("from"))
-            _extract(msg.raw.get("sender_chat"))
-            _extract(msg.raw.get("chat"))
+            raw = cast('dict[str, Any]', msg.raw)
+            _extract(raw.get("from"))
+            _extract(raw.get("sender_chat"))
+            _extract(raw.get("chat"))
         _extract(getattr(msg, "sender_chat", None))
 
     app = getattr(getattr(ctx, "runtime", None), "app", None)
@@ -111,19 +112,17 @@ async def _user_handle(ctx: 'ModuleContext', invocation: 'CommandInvocation', ow
         _extract(getattr(app, "_me_cache", None))
         session = getattr(app, "session", None)
         if session is not None and hasattr(session, "data") and isinstance(session.data, dict):
-            _extract(session.data.get("user"))
+            _extract(cast('dict[str, Any]', session.data).get("user"))
         if (not username or not display_name) and hasattr(app, "get_me"):
             try:
                 me = await app.get_me()
                 _extract(me)
             except Exception:
                 pass
-        if (not username or not display_name) and hasattr(app, "mt_req") and getattr(app, "mt", None) is not None:
+        if (not username or not display_name) and hasattr(app, "get_me") and getattr(app, "mt", None) is not None:
             try:
-                raw_users = await app.mt_req("users.getUsers", id=[{"_": "inputUserSelf"}])
-                from goygram.client import _find_ctor
-                u = _find_ctor(raw_users, "user")
-                _extract(u)
+                me = await app.get_me(refresh=True)
+                _extract(me)
             except Exception:
                 pass
 
