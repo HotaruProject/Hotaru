@@ -611,6 +611,11 @@ class ScreenEngine:
         self._ready = False
         self.register("paginate", self._kernel_paginate)
 
+    def rebind_state(self, secret: str) -> None:
+        self._key = hashlib.sha256(("hotaru-screens:" + secret).encode()).digest()
+        self._cache.clear()
+        self._ready = False
+
     @property
     def kit(self) -> Kit:
         return Kit(self, getattr(self, "runtime", None))
@@ -973,8 +978,9 @@ class ScreenEngine:
                 try:
                     if is_web:
                         url_name = Path(urllib.parse.urlparse(str(path_or_url)).path).name
-                        local_asset = _assets / url_name if url_name else None
-                        if local_asset is not None and local_asset.exists():
+                        asset_dirs = (_assets, _assets.parent.parent / "singularity" / "assets")
+                        local_asset = next((directory / url_name for directory in asset_dirs if url_name and (directory / url_name).is_file()), None)
+                        if local_asset is not None:
                             actual_path = local_asset
                         else:
                             content = b""

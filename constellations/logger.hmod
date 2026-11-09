@@ -32,7 +32,6 @@ HOTARU = {
 }
 
 from typing import Any, Dict, List, Mapping, Optional, cast
-from types import SimpleNamespace
 
 
 import asyncio
@@ -293,21 +292,58 @@ def logs_menu(ctx: Any, nav: Any = None) -> Any:
 
 async def send_logs_screen(ctx: Any, nav: Any) -> Any:
     level = str(nav.arg("level") or "debug").lower()
-    ctx.retarget(SimpleNamespace(chat_id=nav.form.chat, id=nav.form.message_id, from_id=nav.actor, src="mt", app=ctx.runtime.app))
-    await _export_logs(ctx, level=level, count=100, component=None)
-    screen = logs_menu(ctx, nav)
-    screen.toast = f"✅ {level.upper()}"
-    return screen
+    await _export_logs(ctx, level=level, count=100, component=None, nav=nav)
 
 
-async def _export_logs(ctx: Any, level: str = "debug", count: int = 60, component: Optional[str] = None) -> None:
+async def _edit_logs_file(ctx: Any, nav: Any, path: str, caption: str) -> None:
+    from relay.emoji import to_entities
+    from relay.files import document, put
+
+    form = nav.form
+    if form.inline_id is None and (not form.bot or form.message_id is None):
+        raise RuntimeError("log screen has no editable identity")
+    app = getattr(getattr(ctx.runtime, "inline", None), "bot_app", None)
+    if app is None:
+        raise RuntimeError("inline bot is not ready")
+    upload = await put(app, path, file_name="hotaru-logs.txt")
+    media = document(upload, mime="text/plain", file_name="hotaru-logs.txt")
+    result = await ctx.bot.call("messages.uploadMedia", peer={"_": "inputPeerSelf"}, media=media)
+    if not isinstance(result, dict):
+        raise RuntimeError("log file upload returned no media")
+    result = cast('dict[str, Any]', result)
+    body = result.get("result", result)
+    doc = cast('dict[str, Any]', body).get("document") if isinstance(body, dict) else None
+    if not isinstance(doc, dict):
+        raise RuntimeError("log file upload returned no document")
+    doc = cast('dict[str, Any]', doc)
+    plain, entities = to_entities(caption)
+    data: dict[str, Any] = {
+        "message": plain,
+        "entities": entities,
+        "media": {"_": "inputMediaDocument", "id": {"_": "inputDocument", "id": doc["id"], "access_hash": doc["access_hash"], "file_reference": doc.get("file_reference", b"")}},
+    }
+    if form.inline_id is not None:
+        await ctx.bot.call("messages.editInlineBotMessage", id=form.inline_id, **data)
+    else:
+        data["reply_markup"] = {"_": "replyInlineMarkup", "rows": []}
+        await ctx.bot.call("messages.editMessage", peer=form.chat, id=form.message_id, **data)
+    nav.engine.drop(form)
+
+
+async def _export_logs(ctx: Any, level: str = "debug", count: int = 60, component: Optional[str] = None, nav: Any = None) -> None:
     obs = _obs(ctx)
     if obs is None:
-        await ctx.respond(f'<tg-emoji emoji-id="5260342697075416641">❌</tg-emoji> <b>{ctx.t("kernel.logger.no_observatory")}</b>', parse_mode="HTML", output="edit")
+        if nav is not None:
+            await nav.answer(ctx.t("kernel.logger.no_observatory"), alert=True)
+        else:
+            await ctx.respond(f'<tg-emoji emoji-id="5260342697075416641">❌</tg-emoji> <b>{ctx.t("kernel.logger.no_observatory")}</b>', parse_mode="HTML", output="edit")
         return
     entries = obs.tail(lines=count, level=level, component=component)
     if not entries:
-        await ctx.respond(f'<tg-emoji emoji-id="5260342697075416641">❌</tg-emoji> <b>{ctx.t("kernel.logger.no_entries")}</b>', parse_mode="HTML", output="edit")
+        if nav is not None:
+            await nav.answer(ctx.t("kernel.logger.no_entries"), alert=True)
+        else:
+            await ctx.respond(f'<tg-emoji emoji-id="5260342697075416641">❌</tg-emoji> <b>{ctx.t("kernel.logger.no_entries")}</b>', parse_mode="HTML", output="edit")
         return
     import os
     import tempfile
@@ -317,7 +353,11 @@ async def _export_logs(ctx: Any, level: str = "debug", count: int = 60, componen
         with open(raw_path, "w", encoding="utf-8") as stream:
             stream.write("\n".join(_fmt(ctx, entry) for entry in entries))
         caption = f'<tg-emoji emoji-id="5257965174979042426">📝</tg-emoji> <b>{html.escape(ctx.t("kernel.logger.logs_caption", count=len(entries), level=level.upper()), quote=False)}</b>'
-        await ctx.respond_file(raw_path, caption, file_name="hotaru-logs.txt", mime_type="text/plain")
+        if nav is not None:
+            await _edit_logs_file(ctx, nav, raw_path, caption)
+            await nav.answer(f"✅ {level.upper()}")
+        else:
+            await ctx.respond_file(raw_path, caption, file_name="hotaru-logs.txt", mime_type="text/plain")
         _emit(ctx, "logs_delivered", count=len(entries))
     finally:
         try:
