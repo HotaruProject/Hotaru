@@ -784,7 +784,7 @@ class RuntimeConfig:
     environment: str = "production"
     sandbox: str = "auto"
     singularity_enabled: bool = True
-    singularity_port: int = 8787
+    singularity_port: int = 0
     singularity_mode: str = "live"
     singularity_tunnel: bool = True
     singularity_auto_botfather: bool = True
@@ -882,7 +882,7 @@ class RuntimeConfig:
                 environment=str(values["environment"]),
                 sandbox=str(values.get("sandbox") or "auto"),
                 singularity_enabled=bool(True if values.get("singularity-enabled") is None else values["singularity-enabled"]),
-                singularity_port=int(values.get("singularity-port") or 8787),
+                singularity_port=int(values.get("singularity-port") or 0),
                 singularity_mode=str(values.get("singularity-mode") or "live"),
                 singularity_tunnel=bool(True if values.get("singularity-tunnel") is None else values["singularity-tunnel"]),
                 singularity_auto_botfather=bool(True if values.get("singularity-auto-botfather") is None else values["singularity-auto-botfather"]),
@@ -989,8 +989,8 @@ CORE_SCHEMA = ConfigSchema({
     ),
     "singularity-port": ConfigField(
         key="singularity-port",
-        validator=IntegerValidator(default=8787, minimum=1024, maximum=65535),
-        default=8787,
+        validator=IntegerValidator(default=0, minimum=0, maximum=65535),
+        default=0,
         description="Local TCP port for Singularity web dashboard",
         category="Singularity",
     ),

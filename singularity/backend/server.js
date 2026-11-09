@@ -257,7 +257,7 @@ function renderAuthGateHtml() {
 }
 
 function createSingularityServer(options = {}) {
-  const port = Number(options.port ?? process.env.PORT ?? 8787);
+  const port = Number(options.port ?? process.env.PORT ?? 0) || 0;
   const host = String(options.host ?? process.env.HOST ?? "127.0.0.1");
   let botToken = String(options.botToken ?? process.env.BOT_TOKEN ?? "").trim();
   const ownerIdRaw = options.ownerId ?? process.env.OWNER_ID ?? process.env.ADMIN_ID ?? "";
@@ -921,7 +921,8 @@ if (require.main === module) {
   const srv = createSingularityServer();
   const { port, host } = srv.config;
   srv.httpServer.listen(port, host, () => {
-    process.stdout.write(`[singularity] probe listening on http://${host}:${port}\n`);
+    const actual = srv.httpServer.address().port;
+    process.stdout.write(`[singularity] probe listening on http://${host}:${actual}\n`);
   });
 
   const shutdown = () => {

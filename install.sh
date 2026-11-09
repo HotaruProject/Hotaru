@@ -713,7 +713,7 @@ main() {
 
             echo -e "${C_GRAY}${S_START}  ${C_BOLD}Starting Hotaru Background Service${C_RESET}"
             docker compose up -d
-            outro "Hotaru is now running in Docker! (Dashboard: http://localhost:8787)"
+            outro "Hotaru is now running in Docker! (Dashboard port is picked at random and shown in logs)"
             ;;
 
         3)
