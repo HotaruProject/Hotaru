@@ -89,7 +89,7 @@ async def command_dash(ctx: Any, invocation: Any) -> None:
     k = ctx.screens
     buttons: list[list[dict[str, Any]]] = []
     if launch_url:
-        buttons.append([k.url(f"⚡ {open_label}", launch_url, style="primary")])
+        buttons.append([k.url(open_label, launch_url, style="primary")])
     buttons.append([k.close()])
 
     banner_url = ready_info.get("banner_url")
