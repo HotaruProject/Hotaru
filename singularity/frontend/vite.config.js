@@ -1,6 +1,8 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
+const backendPort = Number(process.env.DASHBOARD_PORT || 0) || 8787;
+
 export default defineConfig({
   plugins: [react()],
   server: {
@@ -9,7 +11,7 @@ export default defineConfig({
     allowedHosts: true,
     proxy: {
       "/api": {
-        target: "http://127.0.0.1:8787",
+        target: `http://127.0.0.1:${backendPort}`,
         changeOrigin: true,
       },
     },
@@ -20,7 +22,7 @@ export default defineConfig({
     allowedHosts: true,
     proxy: {
       "/api": {
-        target: "http://127.0.0.1:8787",
+        target: `http://127.0.0.1:${backendPort}`,
         changeOrigin: true,
       },
     },

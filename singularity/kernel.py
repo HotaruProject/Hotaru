@@ -81,11 +81,24 @@ def _parse_bool(val: Any, default: bool) -> bool:
     return default
 
 
+def _resolve_port(raw: Any) -> int:
+    try:
+        requested = int(raw)
+    except (TypeError, ValueError):
+        requested = 0
+    if requested > 0:
+        return requested
+    import socket
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("127.0.0.1", 0))
+        return int(s.getsockname()[1])
+
+
 @dataclass(slots=True)
 class KernelConfig:
     enabled: bool = True
     host: str = "127.0.0.1"
-    port: int = 8787
+    port: int = 0
     data_mode: str = "live"
     tunnel_enabled: bool = True
     auto_botfather: bool = True
@@ -125,16 +138,12 @@ class KernelConfig:
             or getattr(rt_cfg, "singularity_host", "127.0.0.1")
             or "127.0.0.1"
         )
-        raw_port = (
+        port = _resolve_port(
             os.environ.get("DASHBOARD_PORT")
             or os.environ.get("HOTARU_DASHBOARD_PORT")
             or _setting("singularity-port")
-            or getattr(rt_cfg, "singularity_port", 8787)
+            or getattr(rt_cfg, "singularity_port", 0)
         )
-        try:
-            port = int(raw_port)
-        except (TypeError, ValueError):
-            port = 8787
 
         raw_mode = (
             os.environ.get("DASHBOARD_MODE")
