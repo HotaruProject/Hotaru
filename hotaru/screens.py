@@ -611,6 +611,11 @@ class ScreenEngine:
         self._ready = False
         self.register("paginate", self._kernel_paginate)
 
+    def rebind_state(self, secret: str) -> None:
+        self._key = hashlib.sha256(("hotaru-screens:" + secret).encode()).digest()
+        self._cache.clear()
+        self._ready = False
+
     @property
     def kit(self) -> Kit:
         return Kit(self, getattr(self, "runtime", None))

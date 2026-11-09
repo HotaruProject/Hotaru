@@ -2766,16 +2766,13 @@ class Runtime:
             cb_secret = secrets.token_hex(32)
             self.state.set_setting("callback_secret", cb_secret)
         cb_key = derive_key(cb_secret)
-        if self.callbacks is not None and getattr(self.callbacks, "store", None) is not None:
-            self.callbacks.store._key = cb_key
-            self.callbacks.store._store = self.state
-            if hasattr(self.callbacks.store, "_init_db"):
-                self.callbacks.store._init_db()
+        if self.callbacks is not None:
+            self.callbacks.store = CallbackStore(secret=cb_key, store=self.state, max_items=self.callbacks.store.max_items)
         else:
             self.callbacks = CallbackRouter(CallbackStore(secret=cb_key, store=self.state), runtime=self)
 
         if self.screens is not None:
-            self.screens.secret = cb_secret
+            self.screens.rebind_state(cb_secret)
             self.screens.runtime = self
 
         from .flood import FloodFallback
@@ -2792,8 +2789,9 @@ class Runtime:
         if self.kernel is not None:
             user_aliases = self.state.get_setting("user_aliases", {})
             if isinstance(user_aliases, dict) and hasattr(self.kernel, "registry"):
-                for alias, command in user_aliases.items():
-                    self.kernel.registry.register_alias(alias, command)
+                for alias, command in cast('dict[object, object]', user_aliases).items():
+                    if isinstance(alias, str) and isinstance(command, str):
+                        self.kernel.registry.register_alias(alias, command)
             self.kernel.suspended = self.state.get_setting("suspended") == "1"
 
     async def restore_filesystem(self, plan: Any, modules_path: str | Path, *, only: str = "all", key: str | bytes | None = None) -> None:
