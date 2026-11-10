@@ -193,8 +193,6 @@ class HorizonTunnel:
                 str(binary),
                 "tunnel",
                 "--no-autoupdate",
-                "--protocol",
-                "http2",
                 "--url",
                 target,
             ]
