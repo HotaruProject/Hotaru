@@ -159,10 +159,10 @@ def step_lang(ctx: Any, nav: Any = None) -> Any:
     runtime = ctx.runtime
     current = runtime.language() if runtime else "en"
     available = ctx.i18n.available_languages() if hasattr(ctx, "i18n") and hasattr(ctx.i18n, "available_languages") else ("en", "ru", "uk", "kz", "ja", "zh")
+    labels = {"en": "English", "ru": "Русский", "uk": "Український", "kz": "Қазақша", "ja": "日本語", "zh": "中文"}
     buttons: list[Any] = []
     for code in available:
-        meta = ctx.i18n.get_meta(code) if hasattr(ctx.i18n, "get_meta") else {"name_native": code}
-        label = meta.get("name_native", code)
+        label = labels.get(code, code)
         is_selected = (code == current)
         buttons.append(k.button(k.radio(label, is_selected), apply_lang, style="success" if is_selected else None, code=code))
     rows: list[list[Any]] = k.grid(buttons, 2)
