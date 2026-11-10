@@ -21,3 +21,4 @@ services:
     environment:
       - PYTHONUNBUFFERED=1
       - HOTARU_SESSION_DIR=/app
+      - DASHBOARD_PORT=8787
