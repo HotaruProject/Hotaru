@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING, Any, Awaitable, Callable, cast
 
 from .denylist import is_blocked_host, is_blocked_peer, is_readonly_peer, payload_hits_blocked, payload_hits_readonly
 from .firewall import trusted_scope
+from .netproxy import NetPolicy, ProxySpec, parse_proxy
 from .emoji import to_entities
 from .rpc import rpcname
 from .jobs import Job
@@ -143,7 +144,7 @@ PROVIDERS: dict[str, dict[str, Any]] = {
     },
     "net": {
         "title": "Network",
-        "detail": "outbound internet access to public hosts over http, https, ws, wss, tcp, tls and udp; custom methods, headers, query params, json or raw bodies, base64 responses and live streams; private/internal targets and denied hosts are blocked",
+        "detail": "outbound internet access to public hosts over http, https, ws, wss, tcp, tls and udp; custom methods, headers, query params, json or raw bodies, base64 responses and live streams; private/internal targets and denied hosts are blocked; requests may go through socks4, socks4a, socks5, socks5h or http proxies (per request or the owner default) under the same rules, udp excluded",
         "side_effect": "write",
     },
     "state": {
@@ -285,50 +286,33 @@ def _resolve_public_addresses(hostname: str, port: int) -> list[tuple[Any, ...]]
     return [(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, "", (hostname, port))]
 
 
-def _public_connection(address: tuple[str, int], timeout: Any = None, source_address: Any = None) -> socket.socket:
-    hostname, port = address
-    if is_blocked_host(hostname):
-        raise PermissionError("net url targets a denied host")
-    addresses = _resolve_public_addresses(hostname, port)
-    for _, _, _, _, target in addresses:
-        addr = ipaddress.ip_address(target[0])
-        if not addr.is_global or addr.is_multicast:
-            raise PermissionError("net url resolves to a non-public address")
-    error: OSError = OSError("net url could not be resolved")
-    for family, kind, proto, _, target in addresses:
-        sock = socket.socket(family, kind, proto)
-        try:
-            sock.settimeout(timeout)
-            if source_address is not None:
-                sock.bind(source_address)
-            sock.connect(target)
-            return sock
-        except OSError as exc:
-            error = exc
-            sock.close()
-    raise error
+def _policy_resolve(hostname: str, port: int) -> list[str]:
+    return [str(info[4][0]) for info in _resolve_public_addresses(hostname, port)]
 
 
-class _PublicHTTPConnection(http.client.HTTPConnection):
-    def connect(self) -> None:
-        cast(Any, self)._create_connection = _public_connection
-        super().connect()
+def _routed_handlers(policy: NetPolicy, hops: tuple[ProxySpec, ...]) -> tuple[urllib.request.BaseHandler, urllib.request.BaseHandler]:
+    def create(address: tuple[str, int], timeout: Any = None, source_address: Any = None) -> socket.socket:
+        return policy.open(hops, address[0], address[1], float(timeout) if isinstance(timeout, (int, float)) else None)
 
+    class _RoutedHTTPConnection(http.client.HTTPConnection):
+        def connect(self) -> None:
+            cast(Any, self)._create_connection = create
+            super().connect()
 
-class _PublicHTTPSConnection(http.client.HTTPSConnection):
-    def connect(self) -> None:
-        cast(Any, self)._create_connection = _public_connection
-        super().connect()
+    class _RoutedHTTPSConnection(http.client.HTTPSConnection):
+        def connect(self) -> None:
+            cast(Any, self)._create_connection = create
+            super().connect()
 
+    class _RoutedHTTPHandler(urllib.request.HTTPHandler):
+        def http_open(self, req: Any) -> Any:
+            return self.do_open(_RoutedHTTPConnection, req)
 
-class _PublicHTTPHandler(urllib.request.HTTPHandler):
-    def http_open(self, req: Any) -> Any:
-        return self.do_open(_PublicHTTPConnection, req)
+    class _RoutedHTTPSHandler(urllib.request.HTTPSHandler):
+        def https_open(self, req: Any) -> Any:
+            return self.do_open(_RoutedHTTPSConnection, req)
 
-
-class _PublicHTTPSHandler(urllib.request.HTTPSHandler):
-    def https_open(self, req: Any) -> Any:
-        return self.do_open(_PublicHTTPSConnection, req)
+    return _RoutedHTTPHandler(), _RoutedHTTPSHandler()
 
 
 def _workspace_open(root: Path, name: str, flags: int, *, owner: tuple[int, int] | None = None) -> int:
@@ -448,6 +432,21 @@ class CapabilityHost:
     def __init__(self, runtime: Any) -> None:
         self.runtime = runtime
         self.jobs: dict[tuple[str, str, str], Job] = {}
+        self._net_policy: NetPolicy | None = None
+
+    @property
+    def net_policy(self) -> NetPolicy:
+        raw = getattr(getattr(self.runtime, "config", None), "net_proxy", None)
+        spec = parse_proxy(raw) if raw else None
+        if self._net_policy is None or self._net_policy.default != spec:
+            self._net_policy = NetPolicy(spec, resolve=_policy_resolve)
+        return self._net_policy
+
+    def _net_route(self, payload: dict[str, Any]) -> tuple[ProxySpec, ...]:
+        try:
+            return self.net_policy.route(payload.get("proxy"))
+        except ValueError as exc:
+            raise PermissionError(f"net proxy is invalid: {exc}") from None
 
     def _envelope(self, module_id: str, side_effect: str) -> Any:
         from hotaru.capabilities import BehaviorEnvelope
@@ -521,15 +520,17 @@ class CapabilityHost:
         if op == "start":
             if sum(key[0] == module_id for key in self.jobs) >= 16:
                 raise PermissionError("active request limit")
+            hops: tuple[ProxySpec, ...] = ()
             if kind == "net":
                 self._check_net_target(str(payload.get("url", "")))
+                hops = self._net_route(payload)
             elif not isinstance(payload.get("command"), str) or not payload["command"].strip() or len(payload["command"]) > 16000:
                 raise PermissionError("shell requires a command up to 16000 characters")
             key = secrets.token_hex(16)
             workspace = self.runtime.config.state_path.parent / "workspaces" / module_id
             manifest = self.runtime.modules.get(module_id)
             caps = manifest.loaded.manifest.capabilities if manifest is not None else ()
-            self.jobs[module_id, kind, key] = Job(kind, dict(payload), self._check_net_target, workspace, True, "files" not in caps)
+            self.jobs[module_id, kind, key] = Job(kind, dict(payload), self._check_net_target, workspace, True, "files" not in caps, policy=self.net_policy, hops=hops)
             return {"id": key}
         key = (module_id, kind, str(payload.get("id", "")))
         job = self.jobs.get(key)
@@ -865,17 +866,7 @@ class CapabilityHost:
             raise PermissionError("net url contains an invalid port") from exc
         if not port:
             raise PermissionError("net url must contain a port")
-        try:
-            for info in _resolve_public_addresses(hostname, port):
-                addr = ipaddress.ip_address(info[4][0])
-                if not addr.is_global or addr.is_multicast:
-                    raise PermissionError("net url resolves to a non-public address")
-        except PermissionError:
-            raise
-        except ValueError as exc:
-            raise PermissionError("net url contains an invalid address") from exc
-        except Exception as exc:
-            raise PermissionError("net url could not be resolved") from exc
+        self.net_policy.public_addresses(hostname, port)
         return parsed
 
     def _net_fetch(self, module_id: str, payload: dict[str, Any], meta: dict[str, Any]) -> Any:
@@ -885,6 +876,7 @@ class CapabilityHost:
         if urllib.parse.urlparse(url).scheme not in ("http", "https"):
             raise PermissionError("net requests support http and https; use ctx.stream() for ws, wss, tcp, tls and udp")
         self._check_net_target(url)
+        hops = self._net_route(payload)
         headers = _net_headers(payload.get("headers"))
         params = payload.get("params")
         if isinstance(params, (dict, list, tuple)):
@@ -921,7 +913,7 @@ class CapabilityHost:
                     host._check_net_target(newurl)
                     return super().redirect_request(req, fp, code, msg, headers, newurl)
 
-            opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), _PublicHTTPHandler(), _PublicHTTPSHandler(), _CheckedRedirect())
+            opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), *_routed_handlers(self.net_policy, hops), _CheckedRedirect())
             response: Any = None
             try:
                 response = opener.open(request, timeout=timeout or None)
@@ -937,6 +929,9 @@ class CapabilityHost:
         except PermissionError:
             raise
         except Exception as exc:
+            reason = getattr(exc, "reason", None)
+            if isinstance(reason, PermissionError):
+                raise PermissionError(str(reason)) from None
             raise OSError(f"net fetch failed: {type(exc).__name__}") from exc
         truncated = len(raw) > limit
         raw = raw[:limit]

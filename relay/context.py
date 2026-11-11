@@ -906,14 +906,18 @@ class ContextOperations:
 
     async def net(self, url: str, *, method: str | None = None, headers: dict[str, str] | None = None,
                   params: Any = None, data: Any = None, json: Any = None, body: Any = None,
-                  timeout: float = 10.0, max_bytes: int | None = None, binary: bool = False) -> dict[str, Any]:
+                  timeout: float = 10.0, max_bytes: int | None = None, binary: bool = False,
+                  proxy: str | None = None) -> dict[str, Any]:
         payload = {"url": url, "method": method, "headers": headers, "params": params, "timeout": timeout,
-                   "data": data if data is not None else json, "body": body, "max_bytes": max_bytes, "binary": binary}
+                   "data": data if data is not None else json, "body": body, "max_bytes": max_bytes, "binary": binary,
+                   "proxy": proxy}
         return cast("dict[str, Any]", await self.cap("net", {key: value for key, value in payload.items() if value is not None}))
 
     async def stream(self, url: str, *, headers: dict[str, str] | None = None, timeout: float | None = None,
-                     max_bytes: int | None = None) -> "NetStream":
+                     max_bytes: int | None = None, proxy: str | None = None) -> "NetStream":
         payload: dict[str, Any] = {"op": "start", "url": url, "headers": headers}
+        if proxy is not None:
+            payload["proxy"] = proxy
         if timeout is not None:
             payload["timeout"] = timeout
         if max_bytes is not None:

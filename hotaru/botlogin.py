@@ -42,7 +42,9 @@ class EchoBot:
         api_hash: str,
         token: str,
         session_dir: Path,
+        proxy: str | None = None,
     ) -> None:
+        self.proxy = proxy
         self.api_id = api_id
         self.api_hash = api_hash
         self.token = token.strip()
@@ -79,6 +81,7 @@ class EchoBot:
             session=session,
             intake="mtproto",
             default_transport="mtproto",
+            proxy=self.proxy,
         )
         app.on_msg(self._on_message)
         app.on_cb(self._on_callback)
@@ -293,8 +296,9 @@ async def bot_owner_id(
     token: str,
     session_dir: Path,
     timeout: float = 300.0,
+    proxy: str | None = None,
 ) -> tuple[EchoBot, int]:
-    bot = EchoBot(api_id, api_hash, token, session_dir)
+    bot = EchoBot(api_id, api_hash, token, session_dir, proxy)
     await bot.start()
     try:
         owner = await bot.wait_for_owner(timeout)

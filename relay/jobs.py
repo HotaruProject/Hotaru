@@ -21,16 +21,58 @@ if TYPE_CHECKING:
     from aiohttp.abc import ResolveResult
 from aiohttp.abc import AbstractResolver
 
+from .netproxy import NetPolicy, ProxySpec
+
 
 class PublicResolver(AbstractResolver):
+    def __init__(self, policy: NetPolicy | None = None) -> None:
+        self.policy = policy or NetPolicy()
+
     async def resolve(self, host: str, port: int = 0, family: int = socket.AF_INET) -> list[ResolveResult]:
-        rows = await asyncio.get_running_loop().getaddrinfo(host, port, family=family, type=socket.SOCK_STREAM)
-        if not rows or any(not ipaddress.ip_address(row[4][0]).is_global for row in rows):
-            raise PermissionError("network target is not public")
-        return [{"hostname": host, "host": str(row[4][0]), "port": port, "family": row[0], "proto": row[2], "flags": 0} for row in rows]
+        rows = await asyncio.get_running_loop().run_in_executor(None, self.policy.public_addresses, host, port)
+        return [{"hostname": host, "host": row, "port": port, "family": socket.AF_INET6 if ipaddress.ip_address(row.split("%", 1)[0]).version == 6 else socket.AF_INET, "proto": socket.IPPROTO_TCP, "flags": 0} for row in rows]
 
     async def close(self) -> None:
         return None
+
+
+class RoutedConnector(aiohttp.TCPConnector):
+    def __init__(self, policy: NetPolicy, hops: tuple[ProxySpec, ...]) -> None:
+        super().__init__(resolver=PublicResolver(policy), use_dns_cache=False)
+        self.policy = policy
+        self.hops = hops
+
+    async def _wrap_create_connection(self, *args: Any, addr_infos: Any, req: Any, timeout: Any, client_error: type[Exception] = aiohttp.ClientConnectorError, **kwargs: Any) -> Any:
+        if not self.hops:
+            return await super()._wrap_create_connection(*args, addr_infos=addr_infos, req=req, timeout=timeout, client_error=client_error, **kwargs)
+        host = str(req.url.raw_host or "")
+        port = int(req.url.port or (443 if req.url.scheme in {"https", "wss"} else 80))
+        connect_timeout = getattr(timeout, "sock_connect", None) or 30.0
+        try:
+            sock = await asyncio.get_running_loop().run_in_executor(None, self.policy.open, self.hops, host, port, float(connect_timeout))
+        except PermissionError:
+            raise
+        except OSError as exc:
+            raise client_error(req.connection_key, exc) from exc
+        sock.settimeout(None)
+        sock.setblocking(False)
+        return await asyncio.get_running_loop().create_connection(*args, **kwargs, sock=sock)
+
+
+def route_bot_api(app: Any, proxy: str | None) -> None:
+    bot = getattr(app, "bot", None)
+    if not proxy or bot is None or not hasattr(bot, "sess"):
+        return
+    from .netproxy import TELEGRAM_PROXY_SCHEMES, parse_proxy
+    policy = NetPolicy(parse_proxy(proxy, TELEGRAM_PROXY_SCHEMES))
+
+    async def boot() -> None:
+        if bot.sess and not bot.sess.closed:
+            return
+        timeout = aiohttp.ClientTimeout(total=float(getattr(bot, "timeout", 25)) + 10)
+        bot.sess = aiohttp.ClientSession(timeout=timeout, connector=RoutedConnector(policy, policy.route()), trust_env=False)
+
+    bot.boot = boot
 
 
 class Job:
@@ -146,13 +188,15 @@ class Job:
         _os.setgid(SANDBOX_GID)
         _os.setuid(SANDBOX_UID)
 
-    def __init__(self, kind: str, data: dict[str, Any], check_url: Callable[[str], Any], workspace: Path, net_blocked: bool = False, fs_jail: bool = False) -> None:
+    def __init__(self, kind: str, data: dict[str, Any], check_url: Callable[[str], Any], workspace: Path, net_blocked: bool = False, fs_jail: bool = False, *, policy: NetPolicy | None = None, hops: tuple[ProxySpec, ...] = ()) -> None:
         self.kind = kind
         self.data = data
         self.check_url = check_url
         self.workspace = workspace
         self.net_blocked = net_blocked
         self.fs_jail = fs_jail
+        self.policy = policy or NetPolicy()
+        self.hops = hops
         self.token = uuid4().hex
         self.events: asyncio.Queue[dict[str, str]] = asyncio.Queue(64)
         self.out: asyncio.Queue[tuple[Any, bool]] = asyncio.Queue(64)
@@ -206,7 +250,7 @@ class Job:
 
     async def websocket(self, url: str, headers: dict[str, str], limit: int) -> dict[str, Any]:
         timeout = aiohttp.ClientTimeout(total=None, sock_connect=30, sock_read=None)
-        connector = aiohttp.TCPConnector(resolver=PublicResolver(), use_dns_cache=False)
+        connector = RoutedConnector(self.policy, self.hops)
         async with aiohttp.ClientSession(timeout=timeout, connector=connector, trust_env=False) as session:
             async with session.ws_connect(url, headers=headers, max_msg_size=limit, heartbeat=30) as socket:
                 self.emit("open", "")
@@ -230,10 +274,11 @@ class Job:
         port = parsed.port or 0
         loop = asyncio.get_running_loop()
         datagram = parsed.scheme == "udp"
-        resolved: Any = (await loop.getaddrinfo(host, port, type=socket.SOCK_DGRAM if datagram else socket.SOCK_STREAM))[0][4]
-        target = (str(resolved[0]), int(resolved[1]))
         if datagram:
-            transport, _ = await loop.create_datagram_endpoint(lambda: _Datagram(self, limit), remote_addr=target)
+            if self.hops:
+                raise PermissionError("udp streams cannot be routed through a proxy")
+            address = (await loop.run_in_executor(None, self.policy.public_addresses, host, port))[0]
+            transport, _ = await loop.create_datagram_endpoint(lambda: _Datagram(self, limit), remote_addr=(address, port))
             self.emit("open", "")
             try:
                 while True:
@@ -243,7 +288,9 @@ class Job:
                 transport.close()
             return {"closed": True}
         secure = parsed.scheme == "tls"
-        reader, writer = await asyncio.open_connection(target[0], target[1], ssl=ssl.create_default_context() if secure else None, server_hostname=host if secure else None)
+        sock = await loop.run_in_executor(None, self.policy.open, self.hops, host, port, 30.0)
+        sock.settimeout(None)
+        reader, writer = await asyncio.open_connection(sock=sock, ssl=ssl.create_default_context() if secure else None, server_hostname=host if secure else None)
         self.emit("open", "")
         try:
             writer_task = asyncio.create_task(self.pump_bytes(writer))
@@ -291,7 +338,7 @@ class Job:
         limit = data.get("max_bytes")
         limit = int(limit) if isinstance(limit, (int, float)) and int(limit) > 0 else 8 * 1024 * 1024
         result: dict[str, Any] = {"status": 0, "body": ""}
-        connector = aiohttp.TCPConnector(resolver=PublicResolver(), use_dns_cache=False)
+        connector = RoutedConnector(self.policy, self.hops)
         async with aiohttp.ClientSession(timeout=timeout, connector=connector, trust_env=False) as session:
             async with session.request(method, url,
                                        headers=data.get("headers"), json=data.get("data"), allow_redirects=False) as response:
