@@ -74,10 +74,10 @@ async def command_lsalias(ctx: Any, invocation: Any) -> Any:
         await ctx.respond(f'<tg-emoji emoji-id="5260342697075416641">❌</tg-emoji> {ctx.t("settings.alias_list_empty")}', parse_mode="HTML", output="edit")
         return
     data = cast(Any, aliases)
-    prefix = runtime.config.prefix
+    prefix = _escape(runtime.config.prefix)
     lines = [f'<tg-emoji emoji-id="5258260149037965799">💼</tg-emoji> <b>{ctx.t("settings.alias_list_title")}</b>']
     for alias in sorted(data):
-        lines.append(f"<code>{prefix}{alias}</code> → <code>{prefix}{data[alias]}</code>")
+        lines.append(f"<code>{prefix}{_escape(alias)}</code> → <code>{prefix}{_escape(data[alias])}</code>")
     await ctx.respond("<br>".join(lines), parse_mode="HTML", output="edit")
 
 
