@@ -15,6 +15,7 @@ from typing import Any, Awaitable, Callable, cast
 from goygram import Session
 from goygram.errors import UnauthorizedError
 from relay.firewall import trusted_scope
+from relay.jobs import route_bot_api
 
 log = logging.getLogger(__name__)
 
@@ -497,7 +498,9 @@ class InlineManager:
     async def _tune_bot(self, info: InlineBotInfo) -> None:
         from goygram import GoyGram
 
-        app = GoyGram(bot_token=info.token, default_transport="api")
+        proxy = self.runtime.config.tg_proxy
+        app = GoyGram(bot_token=info.token, default_transport="api", proxy=proxy)
+        route_bot_api(app, proxy)
         try:
             await app.get_me()
             await self._inspect_webhook(app)
@@ -709,7 +712,9 @@ class InlineManager:
     async def getbot(self, token: str) -> InlineBotInfo:
         from goygram import GoyGram
 
-        app = GoyGram(bot_token=token, default_transport="api")
+        proxy = self.runtime.config.tg_proxy
+        app = GoyGram(bot_token=token, default_transport="api", proxy=proxy)
+        route_bot_api(app, proxy)
         try:
             me = await app.get_me()
             if not isinstance(me, dict):
@@ -972,6 +977,7 @@ class InlineManager:
             session=bot_session,
             intake="mtproto",
             default_transport="mtproto",
+            proxy=self.runtime.config.tg_proxy,
         )
         app.on_inline(self._dispatch_inline)
         app.on_cb(self._dispatch_callback)

@@ -5,13 +5,22 @@ import contextvars
 import os
 import sys
 from pathlib import Path
-from typing import Any, Generator
+from typing import Any, Generator, cast
 
 _active = contextvars.ContextVar("hotaru_module_firewall", default=False)
 _trusted = contextvars.ContextVar("hotaru_module_trusted", default=False)
 _owner = contextvars.ContextVar("hotaru_module_owner", default="")
 _installed = False
 _protected: set[str] = set()
+_telegram_guard = False
+
+
+def guard_telegram(enabled: bool = True) -> None:
+    global _telegram_guard, _installed
+    _telegram_guard = enabled
+    if enabled and not _installed:
+        sys.addaudithook(_audit)
+        _installed = True
 
 
 def install(*paths: str | Path) -> None:
@@ -39,6 +48,11 @@ def _under_protected(path: str) -> bool:
 
 
 def _audit(event: str, args: tuple[Any, ...]) -> None:
+    if _telegram_guard and event == "socket.connect" and len(args) > 1 and isinstance(args[1], tuple):
+        from .netproxy import is_telegram_address
+        target = cast("tuple[Any, ...]", args[1])
+        if target and isinstance(target[0], str) and is_telegram_address(target[0]):
+            raise PermissionError("direct Telegram connection blocked: tg-proxy is configured")
     if not _active.get() or _trusted.get():
         return
     if event in {"open", "os.open"} and args and isinstance(args[0], (str, bytes)):

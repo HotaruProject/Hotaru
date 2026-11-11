@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import os
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Iterator, Mapping, Sequence, cast
 
@@ -748,6 +748,8 @@ _ENV_MAPPINGS: dict[str, tuple[str, ...]] = {
     "log-level": ("HOTARU_LOG_LEVEL", "LOG_LEVEL"),
     "environment": ("HOTARU_ENV", "ENVIRONMENT", "NODE_ENV"),
     "sandbox": ("HOTARU_SANDBOX", "SANDBOX"),
+    "tg-proxy": ("HOTARU_TG_PROXY",),
+    "net-proxy": ("HOTARU_NET_PROXY",),
     "log-chat": ("HOTARU_LOG_CHAT", "LOG_CHAT", "LOG_GROUP", "LOG_CHANNEL"),
     "singularity-enabled": ("HOTARU_DASHBOARD_ENABLED", "DASHBOARD_ENABLED"),
     "singularity-port": ("HOTARU_DASHBOARD_PORT", "DASHBOARD_PORT"),
@@ -790,6 +792,8 @@ class RuntimeConfig:
     singularity_auto_botfather: bool = True
     singularity_short_name: str = "dashboard"
     weboff: bool = False
+    tg_proxy: str | None = field(default=None, repr=False)
+    net_proxy: str | None = field(default=None, repr=False)
 
     @classmethod
     def from_database(cls, path: str | Path | None = None, *, discover: bool = True) -> "RuntimeConfig":
@@ -800,7 +804,7 @@ class RuntimeConfig:
         state = StateStore(path)
         try:
             values: dict[str, Any] = {}
-            for setting_key in ("api-id", "api-hash", "bot-token", "owner-id", "log-chat", "prefix", "session-name", "session-dir", "backup-keep", "inline-enabled", "log-level", "environment", "sandbox", "singularity-enabled", "singularity-port", "singularity-mode", "singularity-tunnel", "singularity-auto-botfather"):
+            for setting_key in ("api-id", "api-hash", "bot-token", "owner-id", "log-chat", "prefix", "session-name", "session-dir", "backup-keep", "inline-enabled", "log-level", "environment", "sandbox", "singularity-enabled", "singularity-port", "singularity-mode", "singularity-tunnel", "singularity-auto-botfather", "tg-proxy", "net-proxy"):
                 raw_env = _resolve_env(setting_key, dotenv) if discover else None
                 if raw_env is not None:
                     if setting_key == "api-id":
@@ -824,6 +828,10 @@ class RuntimeConfig:
                         val = raw_env.lower()
                     elif setting_key == "sandbox":
                         val = raw_env.strip().lower()
+                    elif setting_key in {"tg-proxy", "net-proxy"}:
+                        val = None if raw_env.lower() in {"off", "none", "direct"} else raw_env
+                        if (state.get_setting(setting_key) or None) != val:
+                            state.set_setting(setting_key, val or "")
                     else:
                         val = raw_env
                     values[setting_key] = val
@@ -886,6 +894,8 @@ class RuntimeConfig:
                 singularity_mode=str(values.get("singularity-mode") or "live"),
                 singularity_tunnel=bool(True if values.get("singularity-tunnel") is None else values["singularity-tunnel"]),
                 singularity_auto_botfather=bool(True if values.get("singularity-auto-botfather") is None else values["singularity-auto-botfather"]),
+                tg_proxy=str(values["tg-proxy"]) if values.get("tg-proxy") else None,
+                net_proxy=str(values["net-proxy"]) if values.get("net-proxy") else None,
             )
         finally:
             state.close()
@@ -910,6 +920,13 @@ class RuntimeConfig:
             raise ValueError("session name must be a simple filename")
         if self.api_id is not None and self.api_id <= 0:
             raise ValueError("API ID must be positive")
+        from relay.netproxy import PROXY_SCHEMES, TELEGRAM_PROXY_SCHEMES, parse_proxy
+        for name, value, schemes in (("tg-proxy", self.tg_proxy, TELEGRAM_PROXY_SCHEMES), ("net-proxy", self.net_proxy, PROXY_SCHEMES)):
+            if value is not None:
+                try:
+                    parse_proxy(value, schemes)
+                except ValueError as exc:
+                    raise ValueError(f"{name}: {exc}") from None
 
     def as_dict(self, mask_secrets: bool = True) -> dict[str, Any]:
         return {
@@ -930,7 +947,19 @@ class RuntimeConfig:
             "singularity_port": self.singularity_port,
             "singularity_mode": self.singularity_mode,
             "singularity_tunnel": self.singularity_tunnel,
+            "tg_proxy": self._proxy_view(self.tg_proxy, mask_secrets),
+            "net_proxy": self._proxy_view(self.net_proxy, mask_secrets),
         }
+
+    @staticmethod
+    def _proxy_view(value: str | None, mask_secrets: bool) -> str | None:
+        if value is None or not mask_secrets:
+            return value
+        from relay.netproxy import parse_proxy
+        try:
+            return parse_proxy(value).redacted()
+        except ValueError:
+            return "••••••••"
 
     def to_env(self, mask_secrets: bool = True) -> str:
         lines: list[str] = []

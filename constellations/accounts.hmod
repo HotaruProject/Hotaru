@@ -889,7 +889,7 @@ class AccountLogin:
             path = Path(tmp) / 'login.vault'
             app = GoyGram(api_id=self.runtime.config.api_id, api_hash=self.runtime.config.api_hash,
                           session_name=str(path.with_suffix('')), session=Session(name=str(path.with_suffix('')), path=path),
-                          default_transport='mtproto')
+                          default_transport='mtproto', proxy=self.runtime.config.tg_proxy)
             try:
                 result = await self.authenticate(app)
                 return self.save(app, result, uid)

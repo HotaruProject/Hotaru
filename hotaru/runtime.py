@@ -32,7 +32,8 @@ from relay.inline_tl import answer_tl
 from relay.sandbox import ModuleSandbox
 from relay.caps import CapabilityHost, PROVIDERS as CAP_PROVIDERS
 from relay.rpc import delete_chat_msg
-from relay.firewall import install as install_firewall, trusted_scope
+from relay.firewall import guard_telegram, install as install_firewall, trusted_scope
+from relay.jobs import route_bot_api
 from relay.context import install_mt_layer
 from relay.emoji import has_emoji, set_premium, to_entities, to_rich
 from goygram.sugar import extract_sent_message
@@ -211,6 +212,10 @@ class Runtime:
             session_name = str(session_dir / self.config.session_name)
             guarded = [vault, vault.with_suffix(".session")]
         install_firewall(*guarded)
+        if self.config.tg_proxy:
+            guard_telegram(True)
+        elif any(os.environ.get(name) for name in ("ALL_PROXY", "all_proxy", "HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy")):
+            log.warning("proxy environment variables are set but HOTARU_TG_PROXY is not; GoyGram may route Telegram through them without a kill-switch")
         previous_disable = logging.root.manager.disable
         logging.disable(logging.INFO)
         try:
@@ -230,7 +235,9 @@ class Runtime:
                 session_name=session_name,
                 session=Session(name=session_name, path=vault, data=session_data),
                 default_transport="mtproto" if self.config.api_id is not None else "api",
+                proxy=self.config.tg_proxy,
             )
+            route_bot_api(self.app, self.config.tg_proxy)
             install_mt_layer(self.app)
         finally:
             logging.disable(previous_disable)

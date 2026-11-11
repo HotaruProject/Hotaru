@@ -1380,10 +1380,12 @@ async def _qr_login(app: Any, api_id: int, api_hash: str) -> dict[str, Any] | No
         return None
 
 
-async def _bot_identity(token: str) -> tuple[str | None, int | None]:
+async def _bot_identity(token: str, proxy: str | None = None) -> tuple[str | None, int | None]:
     from goygram import GoyGram
+    from relay.jobs import route_bot_api
 
-    app = GoyGram(bot_token=token, default_transport="api")
+    app = GoyGram(bot_token=token, default_transport="api", proxy=proxy)
+    route_bot_api(app, proxy)
     try:
         me = await app.get_me()
         if not isinstance(me, dict):
@@ -1420,14 +1422,14 @@ async def _bot_login(runtime: Any) -> tuple[int, Any] | None:
     token = _ask("Bot token", secret=True, validate=token_problem)
     if not token:
         return None
-    bot = EchoBot(api_id, api_hash, token, Path(config.session_dir))
+    bot = EchoBot(api_id, api_hash, token, Path(config.session_dir), config.tg_proxy)
     try:
         await bot.start()
     except Exception as exc:
         log_error(f"Bot connection failed: {exc}")
         await bot.close()
         return None
-    username, _ = await _bot_identity(token)
+    username, _ = await _bot_identity(token, config.tg_proxy)
     try:
         handle = f"@{username}" if username else "the bot"
         note(
