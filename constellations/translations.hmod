@@ -190,6 +190,40 @@ async def _extract_reply_source(ctx: Any, invocation: Any) -> Any:
     return reply
 
 
+_CHUNK_BYTES = 3500
+_MAX_TRANSLATE_BYTES = 60000
+
+
+def _translation_chunks(text: str, limit: int = _CHUNK_BYTES) -> list[tuple[str, str]]:
+    chunks: list[tuple[str, str]] = []
+    rest = text
+    while len(rest.encode("utf-8")) > limit:
+        head = rest.encode("utf-8")[:limit].decode("utf-8", "ignore")
+        cut = None
+        for pattern in (r"\n+", r"(?<=[.!?…])\s+", r"\s+"):
+            found = [m for m in re.finditer(pattern, head) if m.start() > 0]
+            if found:
+                cut = found[-1]
+                break
+        if cut is None:
+            chunks.append((head, ""))
+            rest = rest[len(head):]
+            continue
+        chunks.append((head[:cut.start()], cut.group()))
+        rest = rest[cut.end():]
+    chunks.append((rest, ""))
+    return chunks
+
+
+async def _translate_long(ctx: Any, text: str, to_lang: str) -> str:
+    if len(text.encode("utf-8")) > _MAX_TRANSLATE_BYTES:
+        raise ValueError(f"translation input exceeds {_MAX_TRANSLATE_BYTES} UTF-8 bytes")
+    parts: list[str] = []
+    for chunk, sep in _translation_chunks(text):
+        parts.append((await ctx.translate(chunk, to_lang=to_lang) if chunk.strip() else chunk) + sep)
+    return "".join(parts)
+
+
 async def command_translate(ctx: Any, invocation: Any) -> Any:
     args = list(invocation.args or [])
     to_lang = None
@@ -264,8 +298,8 @@ async def command_translate(ctx: Any, invocation: Any) -> Any:
     )
 
     try:
-        translated = await ctx.translate(target_text, to_lang=to_lang) if target_text else ""
-        translated_caption = await ctx.translate(caption_text, to_lang=to_lang) if caption_text else ""
+        translated = await _translate_long(ctx, target_text, to_lang) if target_text else ""
+        translated_caption = await _translate_long(ctx, caption_text, to_lang) if caption_text else ""
     except Exception as exc:
         log.error("translation error: %s", exc, exc_info=True)
         raw_err = str(exc)
