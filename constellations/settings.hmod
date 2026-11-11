@@ -74,10 +74,10 @@ async def command_lsalias(ctx: Any, invocation: Any) -> Any:
         await ctx.respond(f'<tg-emoji emoji-id="5260342697075416641">❌</tg-emoji> {ctx.t("settings.alias_list_empty")}', parse_mode="HTML", output="edit")
         return
     data = cast(Any, aliases)
-    prefix = runtime.config.prefix
+    prefix = _escape(runtime.config.prefix)
     lines = [f'<tg-emoji emoji-id="5258260149037965799">💼</tg-emoji> <b>{ctx.t("settings.alias_list_title")}</b>']
     for alias in sorted(data):
-        lines.append(f"<code>{prefix}{alias}</code> → <code>{prefix}{data[alias]}</code>")
+        lines.append(f"<code>{prefix}{_escape(alias)}</code> → <code>{prefix}{_escape(data[alias])}</code>")
     await ctx.respond("<br>".join(lines), parse_mode="HTML", output="edit")
 
 
@@ -475,6 +475,7 @@ async def command_conf(ctx: Any, invocation: Any) -> Any:
     candidates = _modules(ctx)
     module_id: str = args[0].casefold()
     found_mod = next((item for item in candidates if item[0] == module_id), None)
+    shortcut = False
     if found_mod is None and len(args) >= 2:
         matches_field: list[tuple[str, str]] = []
         for m_id, _, m_schema, *_ in candidates:
@@ -484,6 +485,7 @@ async def command_conf(ctx: Any, invocation: Any) -> Any:
             module_id = matches_field[0][0]
             args = [module_id, args[0]] + args[1:]
             found_mod = next((item for item in candidates if item[0] == module_id), None)
+            shortcut = True
 
     if found_mod is None:
         module_key: Callable[[Tuple[str, Any, ConfigSchema]], str] = lambda item: item[0]
@@ -504,6 +506,9 @@ async def command_conf(ctx: Any, invocation: Any) -> Any:
     _, schema, config = opened
 
     if args[1].casefold() == "reset":
+        if found_mod is None:
+            await ctx.respond(ctx.t("kernel.config.missing", module=_escape(args[0].casefold())))
+            return
         config.reset()
         await ctx.respond(
             f'<tg-emoji emoji-id="5260687119092817530">🔄</tg-emoji> <b>{_escape(module_id)}</b>: {_escape(ctx.t("kernel.config.reset_done", "Defaults restored"))}',
@@ -514,7 +519,7 @@ async def command_conf(ctx: Any, invocation: Any) -> Any:
     key: str = args[1]
     raw = getattr(invocation, "raw_args", None)
     if isinstance(raw, str):
-        match = re.match(r"\s*\S+\s+\S+([\s\S]*)", raw)
+        match = re.match(r"\s*\S+([\s\S]*)" if shortcut else r"\s*\S+\s+\S+([\s\S]*)", raw)
         suffix = match[1] if match else ""
         new_val = suffix[1:] if suffix else None
     else:

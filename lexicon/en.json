@@ -700,12 +700,12 @@
     "capability_details": {
       "mt": "full userbot MTProto access (messages, media, dialogs, chats, channels, contacts) with account security and payment operations blocked",
       "files": "read and write files inside the module workspace",
-      "net": "outbound HTTP(S) requests to the internet; private/internal targets and denied hosts are blocked",
+      "net": "outbound HTTP(S) requests to the internet; private/internal targets and denied hosts are blocked, also through proxies (socks4/5, http)",
       "state": "persistent key-value state in the module namespace",
       "inline": "query and interact with inline bots",
       "modules": "load, unload, reload, list, and inspect installed modules; hashes and manifest info",
       "assets": "access to hidden assets storage",
-      "shell": "full shell access with the Hotaru process OS permissions, including host files, credentials and network; NOT confined to the module workspace. Command timeout and returned output limits still apply",
+      "shell": "run shell commands in an isolated jail that sees only the module workspace, bundled system tools and a private /tmp; commands never get network access (use the net capability through ctx.net/ctx.stream instead). Command timeout and returned output limits still apply",
       "logs": "write structured entries to the observatory log; always granted",
       "fetch": "read-only access to messages, entities and reply resolution; always granted"
     },
