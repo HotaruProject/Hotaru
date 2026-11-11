@@ -984,11 +984,11 @@ async def command_addaccount(ctx: Any, invocation: Any) -> Any:
     args = invocation.args
     login = ctx.runtime.account_login
     if args and args[0] == 'password':
-        parts = str(ctx.message.text or '').split(maxsplit=2)
-        if len(parts) != 3:
+        match = re.match(r'password\s+(\S[\s\S]*)', str(getattr(invocation, 'raw_args', '') or ''))
+        if match is None:
             await ctx.respond(_usage(ctx), parse_mode='HTML')
             return
-        await login.submit(ctx, parts[2])
+        await login.submit(ctx, match[1])
         return
     if args == ('cancel',):
         if not login.owner(ctx):

@@ -46,7 +46,7 @@ class ApiRateLimiter:
         ns.set("local_floodwait", self.local_floodwait)
 
     def suspend(self, seconds: int) -> float:
-        self.suspend_until = time.monotonic() + max(1, seconds)
+        self.suspend_until = time.monotonic() + seconds if seconds > 0 else 0.0
         return self.suspend_until
 
     def toggle(self) -> bool:

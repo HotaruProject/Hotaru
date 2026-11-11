@@ -17,6 +17,20 @@ from typing import Any, Awaitable, cast
 log = logging.getLogger(__name__)
 
 LANGUAGES = ("ru", "en", "kz", "uk", "ja", "zh")
+TARGET_CODES = frozenset((
+    "aa", "ab", "ae", "af", "ak", "am", "an", "ar", "as", "av", "ay", "az", "ba", "be", "bg", "bh",
+    "bi", "bm", "bn", "bo", "br", "bs", "ca", "ce", "ch", "co", "cr", "cs", "cu", "cv", "cy", "da",
+    "de", "dv", "dz", "ee", "el", "en", "eo", "es", "et", "eu", "fa", "ff", "fi", "fj", "fo", "fr",
+    "fy", "ga", "gd", "gl", "gn", "gu", "gv", "ha", "he", "hi", "ho", "hr", "ht", "hu", "hy", "hz",
+    "ia", "id", "ie", "ig", "ii", "ik", "io", "is", "it", "iu", "ja", "jv", "ka", "kg", "ki", "kj",
+    "kk", "kl", "km", "kn", "ko", "kr", "ks", "ku", "kv", "kw", "ky", "la", "lb", "lg", "li", "ln",
+    "lo", "lt", "lu", "lv", "mg", "mh", "mi", "mk", "ml", "mn", "mr", "ms", "mt", "my", "na", "nb",
+    "nd", "ne", "ng", "nl", "nn", "no", "nr", "nv", "ny", "oc", "oj", "om", "or", "os", "pa", "pi",
+    "pl", "ps", "pt", "qu", "rm", "rn", "ro", "ru", "rw", "sa", "sc", "sd", "se", "sg", "si", "sk",
+    "sl", "sm", "sn", "so", "sq", "sr", "ss", "st", "su", "sv", "sw", "ta", "te", "tg", "th", "ti",
+    "tk", "tl", "tn", "to", "tr", "ts", "tt", "tw", "ty", "ug", "uk", "ur", "uz", "ve", "vi", "vo",
+    "wa", "wo", "xh", "yi", "yo", "za", "zh", "zu", "kz", "fil", "haw", "ceb", "hmn",
+))
 
 NATIVE_NAMES = {
     "ru": "Русский",
@@ -176,13 +190,47 @@ async def _extract_reply_source(ctx: Any, invocation: Any) -> Any:
     return reply
 
 
+_CHUNK_BYTES = 3500
+_MAX_TRANSLATE_BYTES = 60000
+
+
+def _translation_chunks(text: str, limit: int = _CHUNK_BYTES) -> list[tuple[str, str]]:
+    chunks: list[tuple[str, str]] = []
+    rest = text
+    while len(rest.encode("utf-8")) > limit:
+        head = rest.encode("utf-8")[:limit].decode("utf-8", "ignore")
+        cut = None
+        for pattern in (r"\n+", r"(?<=[.!?…])\s+", r"\s+"):
+            found = [m for m in re.finditer(pattern, head) if m.start() > 0]
+            if found:
+                cut = found[-1]
+                break
+        if cut is None:
+            chunks.append((head, ""))
+            rest = rest[len(head):]
+            continue
+        chunks.append((head[:cut.start()], cut.group()))
+        rest = rest[cut.end():]
+    chunks.append((rest, ""))
+    return chunks
+
+
+async def _translate_long(ctx: Any, text: str, to_lang: str) -> str:
+    if len(text.encode("utf-8")) > _MAX_TRANSLATE_BYTES:
+        raise ValueError(f"translation input exceeds {_MAX_TRANSLATE_BYTES} UTF-8 bytes")
+    parts: list[str] = []
+    for chunk, sep in _translation_chunks(text):
+        parts.append((await ctx.translate(chunk, to_lang=to_lang) if chunk.strip() else chunk) + sep)
+    return "".join(parts)
+
+
 async def command_translate(ctx: Any, invocation: Any) -> Any:
     args = list(invocation.args or [])
     to_lang = None
     target_text = None
     caption_text = ""
 
-    if args and re.fullmatch(r"[a-zA-Z]{2,3}(?:-[a-zA-Z0-9]{2,8})*", args[0]):
+    if args and re.fullmatch(r"[a-zA-Z]{2,3}(?:-[a-zA-Z0-9]{2,8})*", args[0]) and args[0].split("-")[0].lower() in TARGET_CODES:
         if len(args) > 1:
             to_lang = args[0].lower()
             target_text = " ".join(args[1:])
@@ -250,8 +298,8 @@ async def command_translate(ctx: Any, invocation: Any) -> Any:
     )
 
     try:
-        translated = await ctx.translate(target_text, to_lang=to_lang) if target_text else ""
-        translated_caption = await ctx.translate(caption_text, to_lang=to_lang) if caption_text else ""
+        translated = await _translate_long(ctx, target_text, to_lang) if target_text else ""
+        translated_caption = await _translate_long(ctx, caption_text, to_lang) if caption_text else ""
     except Exception as exc:
         log.error("translation error: %s", exc, exc_info=True)
         raw_err = str(exc)

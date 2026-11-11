@@ -175,14 +175,17 @@ async def command_shield(ctx: Any, invocation: Any) -> Any:
     await ctx.screens.show(screen)
 
 
+MAX_SUSPEND_SECONDS = 86400
+
+
 async def command_suspend_api(ctx: Any, invocation: Any) -> Any:
     prefix = ctx.runtime.config.prefix
     args = invocation.args
-    if not args or not args[0].isdigit():
+    if not args or not args[0].isascii() or not args[0].isdigit():
         usage_str = ctx.t("kernel.shield.usage_suspend", prefix=prefix)
         await ctx.respond(f'<tg-emoji emoji-id="5258476306152038031">🛡</tg-emoji> <b>{usage_str}</b>')
         return
-    seconds = int(args[0])
+    seconds = min(int(args[0]), MAX_SUSPEND_SECONDS)
     rl = getattr(ctx.runtime, "ratelimit", None)
     if rl is not None:
         rl.suspend(seconds)
