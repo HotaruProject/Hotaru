@@ -194,6 +194,9 @@ def _update_repository(root: str | os.PathLike[str]) -> UpdateResult:
         return UpdateResult(before, target, None, False, [], False)
     replaced = _git(repo, "merge-base", before, target, check=False).returncode != 0
     _preflight(repo, target)
+    if _git(repo, "merge-base", "--is-ancestor", before, target, check=False).returncode != 0:
+        stamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        _git(repo, "update-ref", "refs/hotaru/backups/" + stamp + "-commits", before)
     status = _git(repo, "status", "--porcelain=v1", "-z").stdout
     recovery = None
     stash = None
