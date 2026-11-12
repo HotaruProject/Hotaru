@@ -205,8 +205,8 @@ _ICONS: dict[str, str] = {
     "send": '<tg-emoji emoji-id="5258073068852485953">✈️</tg-emoji>',
     "checkbox": '<tg-emoji emoji-id="5258453452631056344">❌</tg-emoji>',
     "text": '<tg-emoji emoji-id="5370546867786523009">📝</tg-emoji>',
-    "kernel": '<tg-emoji emoji-id="4974681956907221809">▪️</tg-emoji>',
-    "module": '<tg-emoji emoji-id="4974508259839836856">▪️</tg-emoji>',
+    "kernel": '<tg-emoji emoji-id="5258096772776991776">⚙</tg-emoji>',
+    "module": '<tg-emoji emoji-id="5258011929993026890">👤</tg-emoji>',
     "terminal": '<tg-emoji emoji-id="5289601856836745198">💻</tg-emoji>',
 }
 
