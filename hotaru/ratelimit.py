@@ -2,20 +2,23 @@ from __future__ import annotations
 
 import asyncio
 import collections
+import contextvars
 import logging
 import time
 from typing import Any
 
 log = logging.getLogger(__name__)
 
+_ALERT = contextvars.ContextVar("hotaru_apifw_alert", default=False)
+
 
 class ApiRateLimiter:
     def __init__(self, runtime: Any) -> None:
         self.runtime = runtime
         self._lock = asyncio.Lock()
-        self._cooldown_lock = False
         self._history: collections.deque[tuple[str, float]] = collections.deque()
         self.suspend_until: float = 0.0
+        self._pause_until: float = 0.0
         self.total_blocked: int = 0
         self._load()
 
@@ -70,49 +73,55 @@ class ApiRateLimiter:
             "total_cooldowns": self.total_blocked,
         }
 
+    def _paused(self) -> bool:
+        now = time.monotonic()
+        return self.enabled and now >= self.suspend_until and now < self._pause_until
+
     async def check(self, method: str) -> None:
-        if not self.enabled:
+        if not self.enabled or _ALERT.get():
             return
         now = time.monotonic()
         if now < self.suspend_until:
             return
+        triggered = 0
         async with self._lock:
             cutoff = now - self.time_sample
             while self._history and self._history[0][1] < cutoff:
                 self._history.popleft()
             self._history.append((method, now))
             count = len(self._history)
-            if count <= self.threshold or self._cooldown_lock:
-                return
-            self._cooldown_lock = True
-            self.total_blocked += 1
+            if now >= self._pause_until:
+                if count <= self.threshold:
+                    return
+                self._pause_until = now + self.local_floodwait
+                self.total_blocked += 1
+                triggered = count
+        if triggered:
+            self._announce(triggered)
+        while self._paused():
+            await asyncio.sleep(min(0.5, max(0.0, self._pause_until - time.monotonic())))
 
-        await self._trigger_cooldown(count)
-
-    async def _trigger_cooldown(self, count: int) -> None:
-        try:
-            log.warning(
-                "apifw: threshold exceeded (%d requests in %ss, limit %d), pausing for %ss",
-                count,
-                self.time_sample,
-                self.threshold,
-                self.local_floodwait,
+    def _announce(self, count: int) -> None:
+        log.warning(
+            "apifw: threshold exceeded (%d requests in %ss, limit %d), pausing for %ss",
+            count,
+            self.time_sample,
+            self.threshold,
+            self.local_floodwait,
+        )
+        if self.runtime.observatory is not None:
+            self.runtime.observatory.emit(
+                "security",
+                "apifw_triggered",
+                "warning",
+                count=count,
+                threshold=self.threshold,
+                duration=self.local_floodwait,
             )
-            if self.runtime.observatory is not None:
-                self.runtime.observatory.emit(
-                    "security",
-                    "apifw_triggered",
-                    "warning",
-                    count=count,
-                    threshold=self.threshold,
-                    duration=self.local_floodwait,
-                )
-            asyncio.create_task(self._notify_alert(count))
-            await asyncio.sleep(self.local_floodwait)
-        finally:
-            self._cooldown_lock = False
+        asyncio.create_task(self._notify_alert(count))
 
     async def _notify_alert(self, count: int) -> None:
+        _ALERT.set(True)
         flood = getattr(getattr(self.runtime, "responses", None), "flood", None)
         if flood is None:
             return

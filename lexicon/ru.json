@@ -881,6 +881,7 @@
       "telemetry_empty": "Нет недавних вызовов в окне сэмплирования",
       "telemetry_footer": "Методы, вызванные в текущем окне",
       "usage_suspend": "Использование: {prefix}suspend_api [секунды]",
+      "resumed": "Защита API: возобновлена",
       "suspended_success": "Защита API: приостановлена на <code>{seconds}с</code>"
     },
     "genesis": {

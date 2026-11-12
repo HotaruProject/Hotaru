@@ -826,6 +826,7 @@
       "telemetry_empty": "采样窗口内无近期调用",
       "telemetry_footer": "当前窗口内调用的方法",
       "usage_suspend": "用法: {prefix}suspend_api [秒数]",
+      "resumed": "API 保护已恢复",
       "suspended_success": "API 保护: 已暂停 <code>{seconds}秒</code>"
     },
     "backups": {

@@ -870,6 +870,7 @@
       "telemetry_empty": "サンプル期間内の最近の呼び出しはありません",
       "telemetry_footer": "現在の期間内に呼び出されたメソッド",
       "usage_suspend": "使用法: {prefix}suspend_api [秒]",
+      "resumed": "API保護を再開しました",
       "suspended_success": "API保護: <code>{seconds}秒</code> 一時停止しました"
     },
     "genesis": {
