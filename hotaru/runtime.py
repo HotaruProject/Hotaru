@@ -1818,7 +1818,7 @@ class Runtime:
                 )
             return None
 
-    def find_module(self, query: str) -> str | None:
+    def find_module(self, query: str, *, exact: bool = False) -> str | None:
         query = str(query or "").strip().casefold()
         if not query:
             return None
@@ -1833,6 +1833,8 @@ class Runtime:
                     all_ids.add(f.stem.casefold())
         if query in all_ids:
             return query
+        if exact:
+            return None
         for cand in sorted(all_ids):
             if cand.startswith(query):
                 return cand
@@ -2305,7 +2307,7 @@ class Runtime:
             return self.t('runtime.not_ready')
         if len(invocation.args) != 1:
             return self.t('runtime.usage_reset', prefix=self.config.prefix)
-        module_id = self.find_module(str(invocation.args[0])) or str(invocation.args[0]).casefold()
+        module_id = self.find_module(str(invocation.args[0]), exact=True) or str(invocation.args[0]).casefold()
         return await self.reset_module_database(module_id)
 
     async def _command_rl(self, invocation: Any, *, source: str | None = None) -> Any:

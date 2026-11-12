@@ -122,6 +122,13 @@ async def task_send(ctx: Any) -> None:
     await _send(ctx, automatic=True)
 
 
+def _is_service(message: Any) -> bool:
+    raw: Any = message if hasattr(message, "get") else getattr(message, "raw", None)
+    if not hasattr(raw, "get"):
+        return False
+    return str(raw.get("_") or "") == "messageService" or raw.get("action") is not None
+
+
 async def _locate_archive(ctx: Any, target: str | None, reply_id: int | None, inv_obj: Any = None, nav: Any = None) -> tuple[Path | None, Path | None, str | None]:
     runtime = ctx.runtime
     if runtime is None:
@@ -156,9 +163,9 @@ async def _locate_archive(ctx: Any, target: str | None, reply_id: int | None, in
             doc_msg = getattr(raw_obj, "reply_to_message", None)
     if callable(cast(object, doc_msg)):
         doc_msg = None
+    from hotaru.response import reply_message_id
+    target_reply_id = reply_id or (reply_message_id(raw_obj) if raw_obj is not None else None)
     if doc_msg is None:
-        from hotaru.response import reply_message_id
-        target_reply_id = reply_id or (reply_message_id(raw_obj) if raw_obj is not None else None)
         if target_reply_id:
             chat_id: Any = getattr(ctx, "chat_id", None) or (d_msg.get("chat_id") if d_msg is not None else (getattr(inv_obj, "chat_id", None) if inv_obj is not None else (getattr(getattr(nav, "form", None), "chat", None) if nav is not None else None)))
             app: Any = getattr(runtime, "app", None)
@@ -190,9 +197,13 @@ async def _locate_archive(ctx: Any, target: str | None, reply_id: int | None, in
         try:
             await runtime._download_module_message(doc_msg, temporary)
             return temporary, temporary, None
-        except Exception:
+        except Exception as exc:
             temporary.unlink(missing_ok=True)
             temporary = None
+            if not _is_service(doc_msg):
+                return None, None, str(exc) or ctx.t("kernel.backups.archive_missing")
+    elif target_reply_id:
+        return None, None, ctx.t("kernel.backups.archive_missing")
     directory = runtime.config.state_path.parent / "backups"
     if directory.is_dir():
         candidates = sorted([p for p in directory.glob("*.hbk") if p.is_file()], key=lambda p: p.stat().st_mtime, reverse=True)
@@ -228,6 +239,12 @@ async def _execute_restore(ctx: Any, plan: Any, temporary: Path | None, *, scope
             temporary.unlink(missing_ok=True)
 
 
+def _open_error(ctx: Any, exc: Exception, *, markup: bool) -> str:
+    if "decryption failed" in str(exc):
+        return ctx.t("kernel.backups.key_invalid")
+    return ctx.t("kernel.backups.restore_failed", error=html.escape(str(exc)) if markup else str(exc))
+
+
 async def _perform_restore(ctx: Any, target: str | None, reply_id: int | None, inv_obj: Any = None, *, only: str = "all", key: str | bytes | None = None) -> None:
     runtime = ctx.runtime
     if runtime is None:
@@ -240,10 +257,10 @@ async def _perform_restore(ctx: Any, target: str | None, reply_id: int | None, i
         return
     try:
         plan = runtime.backups.plan(archive_path, key=key)
-    except Exception:
+    except Exception as exc:
         if temporary is not None:
             temporary.unlink(missing_ok=True)
-        await ctx.respond(f'<tg-emoji emoji-id="5260342697075416641">❌</tg-emoji> <b>{ctx.t("kernel.backups.key_invalid")}</b>', parse_mode="HTML", output="edit")
+        await ctx.respond(f'<tg-emoji emoji-id="5260342697075416641">❌</tg-emoji> <b>{_open_error(ctx, exc, markup=True)}</b>', parse_mode="HTML", output="edit")
         return
     restoring_text = f'<tg-emoji emoji-id="5258514780469075716">📁</tg-emoji> <b>{ctx.t("kernel.backups.restoring")}</b>'
     await ctx.respond(restoring_text, parse_mode="HTML", output="edit")
@@ -312,12 +329,12 @@ async def confirm_restore(ctx: Any, nav: Any) -> Any:
         )
     try:
         plan = runtime.backups.plan(archive_path, key=key)
-    except Exception:
+    except Exception as exc:
         if temporary is not None:
             temporary.unlink(missing_ok=True)
-        await nav.answer(ctx.t("kernel.backups.key_invalid"), alert=True)
+        await nav.answer(_open_error(ctx, exc, markup=False), alert=True)
         return _render_restore_screen(ctx, target, reply_id, scope=scope, key=key).with_notice(
-            f'<tg-emoji emoji-id="5260342697075416641">❌</tg-emoji> <b>{ctx.t("kernel.backups.key_invalid")}</b>'
+            f'<tg-emoji emoji-id="5260342697075416641">❌</tg-emoji> <b>{_open_error(ctx, exc, markup=True)}</b>'
         )
     await nav.answer()
     restoring_text = f'<tg-emoji emoji-id="5258514780469075716">📁</tg-emoji> <b>{ctx.t("kernel.backups.restoring")}</b>'

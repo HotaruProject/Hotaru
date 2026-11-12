@@ -168,7 +168,7 @@ async def command_ul(ctx: Any, invocation: Any) -> Any:
         await ctx.respond(ctx.t("runtime.usage_unload", prefix=runtime.config.prefix), parse_mode="HTML")
         return
     raw_mod = str(args[0]).casefold()
-    module_id = (runtime.find_module(raw_mod) if hasattr(runtime, "find_module") else None) or raw_mod
+    module_id = (runtime.find_module(raw_mod, exact=purge) if hasattr(runtime, "find_module") else None) or raw_mod
     if runtime._is_kernel_module(module_id):
         await ctx.respond(ctx.t('runtime.protected', module_id=module_id))
         return

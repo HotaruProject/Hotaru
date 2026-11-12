@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import hashlib
 import hmac
 import inspect
@@ -601,7 +602,7 @@ class BackupService:
         path = Path(temporary)
         try:
             path.write_bytes(data)
-            with sqlite3.connect(path) as connection:
+            with contextlib.closing(sqlite3.connect(path)) as connection:
                 check = connection.execute("PRAGMA integrity_check").fetchone()
                 table = connection.execute(
                     "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'module_state'"
@@ -619,7 +620,7 @@ class BackupService:
         os.close(fd)
         snapshot = Path(temporary)
         try:
-            with sqlite3.connect(path) as source, sqlite3.connect(snapshot) as target:
+            with contextlib.closing(sqlite3.connect(path)) as source, contextlib.closing(sqlite3.connect(snapshot)) as target:
                 source.backup(target)
                 check = target.execute("PRAGMA integrity_check").fetchone()
                 if check != ("ok",):

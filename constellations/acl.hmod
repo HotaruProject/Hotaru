@@ -131,7 +131,9 @@ def _grant_rule(ctx: Any, kind: str, target: Any, rule_type: str, rule: str, dur
         rule = spec.name
     elif rule_type == "module":
         specs = ctx.runtime.kernel.registry.spec_of(rule)
-        if not specs or any(s.kernel for s in specs):
+        if not specs:
+            raise ValueError(ctx.t("kernel.config.module_missing", module=_escape(rule)))
+        if any(s.kernel for s in specs):
             raise ValueError(ctx.t("acl.kernel_rule"))
     else:
         raise ValueError(ctx.t("acl.bad_rule"))

@@ -7,9 +7,10 @@ HOTARU = {
 }
 
 import ast
+import codecs
 import asyncio
 import logging
-import contextlib
+import contextvars
 import html
 import inspect
 import io
@@ -93,20 +94,28 @@ def _clean_code(text: str) -> str:
 def _censor(ret: str, ctx: Any) -> str:
     runtime = getattr(ctx, "runtime", None)
     if runtime is not None:
+        hidden: list[Any] = []
         config = getattr(runtime, "config", None)
         if config is not None:
             for key in ("bot_token", "inline_bot_token", "api_hash"):
                 try:
-                    secret = getattr(config, key, None)
+                    hidden.append(getattr(config, key, None))
                 except Exception:
-                    secret = None
-                if secret:
-                    masked = (
-                        f'{str(secret).split(":")[0]}:{"*" * 26}'
-                        if ":" in str(secret)
-                        else "*" * 26
-                    )
-                    ret = ret.replace(str(secret), masked)
+                    pass
+        state = getattr(runtime, "state", None)
+        if state is not None:
+            try:
+                hidden.append(state.get_setting("inline-bot-token"))
+            except Exception:
+                pass
+        for secret in hidden:
+            if secret:
+                masked = (
+                    f'{str(secret).split(":")[0]}:{"*" * 26}'
+                    if ":" in str(secret)
+                    else "*" * 26
+                )
+                ret = ret.replace(str(secret), masked)
     return ret
 
 
@@ -193,7 +202,7 @@ class OutputUpdater:
             lang = entry[3] if len(entry) > 3 else None
             if content is None or content == "":
                 continue
-            text = str(content)
+            text = _censor(str(content), self.ctx)
             overhead = _u16(self._fmt_entry(title, "", is_code, lang))
             i = 0
             n = len(text)
@@ -249,7 +258,7 @@ class OutputUpdater:
             if sections is None:
                 sections = [("code" if self.is_py else "command", self.cmd, True, "python" if self.is_py else "bash")]
                 if buffer_str:
-                    sections.append(("output", buffer_str[-2800:], True))
+                    sections.append(("output", _censor(buffer_str, self.ctx)[-2800:], True))
                 else:
                     sections.append(("output", self.ctx.t('kernel.executor.running'), False))
             if returncode is not None:
@@ -306,11 +315,44 @@ class StreamInterceptor(io.StringIO):
     def __init__(self, updater: OutputUpdater) -> None:
         super().__init__()
         self.updater = updater
+        self.loop = asyncio.get_running_loop()
 
     def write(self, s: str) -> int:
         res = super().write(s)
-        asyncio.create_task(self.updater.update(s))
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            self.loop.call_soon_threadsafe(lambda: asyncio.ensure_future(self.updater.update(s)))
+        else:
+            asyncio.create_task(self.updater.update(s))
         return res
+
+
+class StreamRouter:
+    def __init__(self, fallback: Any) -> None:
+        self.capture: contextvars.ContextVar[Any] = contextvars.ContextVar("executor_capture", default=None)
+        self.fallback = fallback
+
+    def _target(self) -> Any:
+        target = self.capture.get()
+        return self.fallback if target is None else target
+
+    def write(self, s: str) -> int:
+        return self._target().write(s)
+
+    def flush(self) -> None:
+        self._target().flush()
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self.fallback, name)
+
+
+def _router(name: str) -> StreamRouter:
+    current = getattr(sys, name)
+    if not isinstance(getattr(current, "capture", None), contextvars.ContextVar):
+        current = StreamRouter(current)
+        setattr(sys, name, current)
+    return cast(StreamRouter, current)
 
 
 def _get_raw_text(invocation: Any) -> str:
@@ -1247,7 +1289,8 @@ def _build_py_helpers(ctx: Any, invocation: Any, reply: Any) -> dict[str, Any]:
 
     m_proxy = _MsgProxy(source, ctx=ctx, invocation=invocation, is_cmd=True)
     r_proxy = _MsgProxy(reply, ctx=ctx, invocation=invocation, is_cmd=False) if reply else None
-    db_proxy = _DBProxy(state)
+    store = getattr(getattr(ctx, "runtime", None), "state", None)
+    db_proxy = _DBProxy(store, getattr(ctx, "module_id", "executor")) if store is not None else _DBProxy(state)
 
     def _attr_or(obj: Any, *attrs: Any, default: Any=None) -> Any:
         for a in attrs:
@@ -1337,18 +1380,12 @@ def _build_py_helpers(ctx: Any, invocation: Any, reply: Any) -> dict[str, Any]:
 
     async def get_full_user(user_id: Any=None) -> Any:
         uid = user_id or get_user_id()
-        return await ctx.mt(
-            "users.getFullUser",
-            id={"_": "inputUser", "user_id": uid, "access_hash": 0},
-        )
+        return await ctx.user_details(uid)
 
     async def get_peers_count(chat_id: Any=None) -> int | None:
         cid = chat_id or get_chat_id()
         try:
-            res = await ctx.mt(
-                "channels.getFullChannel",
-                channel={"_": "inputChannel", "channel_id": cid, "access_hash": 0},
-            )
+            res = await ctx.channel_details(cid)
             return res.get("full_chat", {}).get("participants_count")
         except Exception as exc:
             logging.getLogger(__name__).error("executor peers count failed: %s: %s", type(exc).__name__, exc)
@@ -1557,12 +1594,13 @@ async def _sh_run(ctx: Any, invocation: Any) -> Any:
             _ACTIVE_SH[resp_msg_id] = process
 
     async def read_pty() -> Any:
+        decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
         while True:
             try:
                 data = os.read(master, 4096)
                 if data:
-                    text = data.decode("utf-8", errors="replace")
-                    if not skip_output:
+                    text = decoder.decode(data)
+                    if text and not skip_output:
                         await updater.update(text)
                 else:
                     break
@@ -1570,6 +1608,9 @@ async def _sh_run(ctx: Any, invocation: Any) -> Any:
                 await asyncio.sleep(0.1)
             except OSError:
                 break
+        tail = decoder.decode(b"", final=True)
+        if tail and not skip_output:
+            await updater.update(tail)
 
     reader_task = asyncio.create_task(read_pty())
     
@@ -1679,13 +1720,20 @@ async def _py_run(ctx: Any, invocation: Any) -> Any:
     result_val = _SENTINEL
     error_trace = None
 
+    stdout_buf = StreamInterceptor(updater)
+    stderr_buf = StreamInterceptor(updater)
+    stdout_router = _router("stdout")
+    stderr_router = _router("stderr")
+
     async def _task() -> Any:
         nonlocal result_val
+        stdout_router.capture.set(stdout_buf)
+        stderr_router.capture.set(stderr_buf)
         exec_scope = dict(env)
         try:
             bytecode = compile(_wrap_eval_code(raw_code), "<executor>", "exec")
         except SyntaxError as exc:
-            raise SyntaxError(f"SyntaxError: {exc.msg} (line {exc.lineno})") from None
+            raise SyntaxError(f"{exc.msg} (line {exc.lineno})") from None
         exec(bytecode, exec_scope)
         runner = exec_scope.get("__executor_runner__")
         if runner is None:
@@ -1701,12 +1749,8 @@ async def _py_run(ctx: Any, invocation: Any) -> Any:
         if resp_msg_id:
             _ACTIVE_PY[resp_msg_id] = eval_task
 
-    stdout_buf = StreamInterceptor(updater)
-    stderr_buf = StreamInterceptor(updater)
-
     try:
-        with contextlib.redirect_stdout(stdout_buf), contextlib.redirect_stderr(stderr_buf):
-            await eval_task
+        await eval_task
     except asyncio.CancelledError:
         error_trace = ctx.t('kernel.executor.cancelled')
     except SystemExit as exc:
