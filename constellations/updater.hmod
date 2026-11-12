@@ -80,6 +80,16 @@ def _changelog(runtime: Any) -> Any:
 def _pull(runtime: Any) -> Any:
     return runtime.update_checkout()
 
+def _check(runtime: Any) -> Any:
+    _fetch_origin(runtime)
+    return _current_commit(runtime), _latest_commit(runtime), _changelog(runtime)
+
+_git_lock = asyncio.Lock()
+
+async def _off_loop(fn: Any, runtime: Any) -> Any:
+    async with _git_lock:
+        return await asyncio.get_running_loop().run_in_executor(None, fn, runtime)
+
 def _serialize_inline(mid: object) -> dict[str, Any] | None:
     if not isinstance(mid, dict):
         return None
@@ -364,10 +374,7 @@ async def command_updlog(ctx: Any, invocation: Any) -> Any:
         await ctx.respond(f"<b>{ctx.t('kernel.updater.unavailable')}</b>", parse_mode="HTML")
         return
     try:
-        _fetch_origin(runtime)
-        current = _current_commit(runtime)
-        latest = _latest_commit(runtime)
-        changelog = _changelog(runtime)
+        current, latest, changelog = await _off_loop(_check, runtime)
     except Exception as exc:
         await ctx.respond(ctx.t('kernel.updater.check_failed', error=_escape(exc)), parse_mode="HTML")
         return
@@ -389,7 +396,7 @@ async def _run_update(ctx: Any) -> Any:
         await _status(ctx, text)
     await say(ctx.t('kernel.updater.downloading'))
     try:
-        update = _pull(ctx.runtime)
+        update = await _off_loop(_pull, ctx.runtime)
     except Exception as exc:
         await say(ctx.t('kernel.updater.failed', error=_escape(exc)))
         return
@@ -424,10 +431,7 @@ async def command_upd(ctx: Any, invocation: Any) -> Any:
         return
     force = "force" in invocation.args or "-f" in invocation.args or "--force" in invocation.args
     try:
-        _fetch_origin(runtime)
-        current = _current_commit(runtime)
-        latest = _latest_commit(runtime)
-        changelog = _changelog(runtime)
+        current, latest, changelog = await _off_loop(_check, runtime)
     except Exception as exc:
         if force:
             raise
@@ -457,10 +461,7 @@ async def task_poller(ctx: Any) -> Any:
     if ctx.state.get("notify", True) is False:
         return
     try:
-        _fetch_origin(runtime)
-        current = _current_commit(runtime)
-        latest = _latest_commit(runtime)
-        changelog = _changelog(runtime)
+        current, latest, changelog = await _off_loop(_check, runtime)
     except Exception as exc:
         _emit(ctx, "poller_git_error", error=type(exc).__name__)
         return
