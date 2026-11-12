@@ -132,6 +132,11 @@ class CommandRegistry:
         if not isinstance(module_id, str) or not module_id:
             raise ValueError("every bot command must belong to a module")
         key = name.casefold()
+        current = self._bot_items.get(key)
+        if current is not None and (current.kernel or current.module_id in KERNEL_MODULES):
+            raise ValueError(f"kernel bot command is reserved: {key}")
+        if current is not None:
+            raise ValueError(f"bot command already registered: {key}")
         self._bot_items[key] = CommandSpec(name=key, handler=handler, kernel=kernel, module_id=module_id, sandbox=sandbox)
 
     def unregister_bot(self, name: str, *, module_id: str | None = None) -> bool:

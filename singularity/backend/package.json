@@ -6,7 +6,7 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "test": "node --test ../tests/node/*.test.js"
+    "test": "node --test test/*.test.js"
   },
   "dependencies": {
     "cookie-parser": "^1.4.7",

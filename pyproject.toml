@@ -9,6 +9,7 @@ description = "A security-first Telegram userbot built on GoyGram"
 requires-python = ">=3.13"
 dependencies = [
     "goygram==0.8.29",
+    "packaging>=24.2",
     "psutil>=6.1.0",
 ]
 
