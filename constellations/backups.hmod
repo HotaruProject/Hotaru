@@ -122,6 +122,13 @@ async def task_send(ctx: Any) -> None:
     await _send(ctx, automatic=True)
 
 
+def _is_service(message: Any) -> bool:
+    raw: Any = message if hasattr(message, "get") else getattr(message, "raw", None)
+    if not hasattr(raw, "get"):
+        return False
+    return str(raw.get("_") or "") == "messageService" or raw.get("action") is not None
+
+
 async def _locate_archive(ctx: Any, target: str | None, reply_id: int | None, inv_obj: Any = None, nav: Any = None) -> tuple[Path | None, Path | None, str | None]:
     runtime = ctx.runtime
     if runtime is None:
@@ -156,9 +163,9 @@ async def _locate_archive(ctx: Any, target: str | None, reply_id: int | None, in
             doc_msg = getattr(raw_obj, "reply_to_message", None)
     if callable(cast(object, doc_msg)):
         doc_msg = None
+    from hotaru.response import reply_message_id
+    target_reply_id = reply_id or (reply_message_id(raw_obj) if raw_obj is not None else None)
     if doc_msg is None:
-        from hotaru.response import reply_message_id
-        target_reply_id = reply_id or (reply_message_id(raw_obj) if raw_obj is not None else None)
         if target_reply_id:
             chat_id: Any = getattr(ctx, "chat_id", None) or (d_msg.get("chat_id") if d_msg is not None else (getattr(inv_obj, "chat_id", None) if inv_obj is not None else (getattr(getattr(nav, "form", None), "chat", None) if nav is not None else None)))
             app: Any = getattr(runtime, "app", None)
@@ -190,9 +197,13 @@ async def _locate_archive(ctx: Any, target: str | None, reply_id: int | None, in
         try:
             await runtime._download_module_message(doc_msg, temporary)
             return temporary, temporary, None
-        except Exception:
+        except Exception as exc:
             temporary.unlink(missing_ok=True)
             temporary = None
+            if not _is_service(doc_msg):
+                return None, None, str(exc) or ctx.t("kernel.backups.archive_missing")
+    elif target_reply_id:
+        return None, None, ctx.t("kernel.backups.archive_missing")
     directory = runtime.config.state_path.parent / "backups"
     if directory.is_dir():
         candidates = sorted([p for p in directory.glob("*.hbk") if p.is_file()], key=lambda p: p.stat().st_mtime, reverse=True)
