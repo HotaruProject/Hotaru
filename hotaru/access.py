@@ -476,7 +476,10 @@ class AccessManager:
             return False
         if permission & Permission.EVERYONE:
             return True
-        return bool(self.permissions_of(user_id) & permission)
+        granted = self.permissions_of(user_id)
+        if granted & Permission.ADMIN:
+            granted |= Permission.TRUSTED
+        return bool(granted & permission)
 
     def user_labels(self, user_id: int | None) -> tuple[str, ...]:
         permissions = self.permissions_of(user_id)

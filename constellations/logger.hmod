@@ -390,9 +390,9 @@ async def command_logs(ctx: Any, invocation: Any) -> Any:
         return
     level = args[0].lower() if args[0].lower() in LEVELS else "debug"
     rest = args[1:] if args[0].lower() in LEVELS else args
-    count = int(rest[0]) if rest and rest[0].isdigit() else 60
+    count = int(rest[0]) if rest and rest[0].isascii() and rest[0].isdigit() else 60
     count = max(1, min(count, 1000))
-    if rest and rest[0].isdigit():
+    if rest and rest[0].isascii() and rest[0].isdigit():
         rest = rest[1:]
     component = rest[0].lower() if rest else None
     await _export_logs(ctx, level=level, count=count, component=component)

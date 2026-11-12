@@ -138,14 +138,14 @@ async def _user_handle(ctx: 'ModuleContext', invocation: 'CommandInvocation', ow
 
 async def command_info(ctx: 'ModuleContext', invocation: 'CommandInvocation') -> None:
     start = time.perf_counter()
-    ping_ms = 48.25
-    try:
-        app = getattr(getattr(ctx, "runtime", None), "app", None)
-        if app is not None and hasattr(app, "mt_req") and getattr(app, "mt", None) is not None:
+    ping_ms = 0.0
+    app = getattr(getattr(ctx, "runtime", None), "app", None)
+    if app is not None and hasattr(app, "mt_req") and getattr(app, "mt", None) is not None:
+        try:
             await app.mt_req("help.getNearestDc")
-            ping_ms = max(1.0, (time.perf_counter() - start) * 1000)
-    except Exception:
-        pass
+        except Exception:
+            pass
+        ping_ms = max(1.0, (time.perf_counter() - start) * 1000)
 
     runtime = ctx.runtime
     uptime_s = max(0, int(time.monotonic() - runtime.started_at)) if runtime and hasattr(runtime, "started_at") else 0
@@ -189,14 +189,14 @@ async def command_info(ctx: 'ModuleContext', invocation: 'CommandInvocation') ->
 
 async def command_ping(ctx: 'ModuleContext', invocation: 'CommandInvocation') -> None:
     start = time.perf_counter()
-    ping_ms = 48.25
-    try:
-        app = getattr(getattr(ctx, "runtime", None), "app", None)
-        if app is not None and hasattr(app, "mt_req") and getattr(app, "mt", None) is not None:
+    ping_ms = 0.0
+    app = getattr(getattr(ctx, "runtime", None), "app", None)
+    if app is not None and hasattr(app, "mt_req") and getattr(app, "mt", None) is not None:
+        try:
             await app.mt_req("help.getNearestDc")
-            ping_ms = max(1.0, (time.perf_counter() - start) * 1000)
-    except Exception:
-        pass
+        except Exception:
+            pass
+        ping_ms = max(1.0, (time.perf_counter() - start) * 1000)
 
     uptime_s = ctx.uptime
     lang = getattr(getattr(ctx, "i18n", None), "language", "en")
