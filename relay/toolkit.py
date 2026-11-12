@@ -781,7 +781,89 @@ def _rich_text(node: object) -> str:
         return f'<a name="{escape_attr(node.get("name") or "")}"></a>'
     if kind == "textMath":
         return f"<tg-math>{escape(node.get('source') or '')}</tg-math>"
+    if kind == "textCustomEmoji":
+        return f'<tg-emoji emoji-id="{escape_attr(node.get("document_id") or 0)}">{escape(node.get("alt") or "❔")}</tg-emoji>'
+    if kind == "textMentionName":
+        return f'<a href="tg://user?id={escape_attr(node.get("user_id") or 0)}">{inner}</a>'
+    if kind == "textPhone":
+        return f'<a href="tel:{escape_attr(node.get("phone") or "")}">{inner}</a>'
+    if kind == "textDate":
+        flags = (("day_of_week", "w"), ("short_date", "d"), ("long_date", "D"), ("short_time", "t"), ("long_time", "T"), ("relative", "r"))
+        fmt = "".join(letter for name, letter in flags if node.get(name))
+        attr = f' format="{fmt}"' if fmt else ""
+        return f'<tg-time unix="{escape_attr(node.get("date") or 0)}"{attr}>{inner}</tg-time>'
+    if kind == "textButton":
+        return _rich_button(node)
     return inner
+
+
+def _rich_button(button: object) -> str:
+    if not isinstance(button, dict):
+        return ""
+    data = cast('dict[str, Any]', button)
+    label: Any = data.get("text")
+    text = _rich_text(cast(object, label)) if isinstance(label, dict) else escape(label or "")
+    kind = data.get("type") if isinstance(data.get("type"), dict) else data
+    kind = cast('dict[str, Any]', kind)
+    tag = str(kind.get("_") or data.get("_") or "")
+    attrs: list[str] = []
+    def value(name: str) -> Any:
+        found = kind.get(name)
+        return found if found is not None else data.get(name)
+    if "Copy" in tag:
+        attrs += ['type="copy_text"', f'text="{escape_attr(value("copy_text") or "")}"']
+    elif "WebView" in tag:
+        attrs += ['type="web_app"', f'url="{escape_attr(value("url") or "")}"']
+    elif "SwitchInline" in tag:
+        current = bool(value("same_peer"))
+        attrs += [f'type="{"switch_inline_query_current_chat" if current else "switch_inline_query"}"', f'query="{escape_attr(value("query") or "")}"']
+    elif "Callback" in tag:
+        raw = value("data")
+        decoded = raw.decode("utf-8", "replace") if isinstance(raw, (bytes, bytearray)) else str(raw or "")
+        attrs += ['type="callback_data"', f'data="{escape_attr(decoded)}"']
+    elif "UserProfile" in tag and value("user_id"):
+        attrs += ['type="url"', f'url="tg://user?id={escape_attr(value("user_id"))}"']
+    elif value("url"):
+        attrs += ['type="url"', f'url="{escape_attr(value("url"))}"']
+    style = data.get("style")
+    if isinstance(style, dict):
+        style = cast('dict[str, Any]', style)
+        for name in ("primary", "danger", "success"):
+            if style.get("bg_" + name):
+                attrs.append(f'style="{name}"')
+                break
+        if style.get("icon"):
+            attrs.append(f'icon="{escape_attr(style["icon"])}"')
+    extra = (" " + " ".join(attrs)) if attrs else ""
+    return f"<tg-button{extra}>{text}</tg-button>"
+
+
+def _rich_button_rows(rows: object, align: str = "left") -> str:
+    out: list[str] = []
+    for row in cast('list[Any]', rows) if isinstance(rows, list) else []:
+        buttons = cast('dict[str, Any]', row).get("buttons") if isinstance(row, dict) else row
+        rendered = "".join(_rich_button(button) for button in cast('list[Any]', buttons) if isinstance(buttons, list))
+        if rendered:
+            out.append(f'<tg-button-row align="{align}">{rendered}</tg-button-row>')
+    return "".join(out)
+
+
+_RICH_INLINE_BLOCKS = frozenset({"pageBlockParagraph", "pageBlockAuthorDate", "pageBlockThinking"})
+
+
+def _rich_blocks(blocks: object) -> str:
+    out: list[str] = []
+    previous = ""
+    for block in cast('list[Any]', blocks) if isinstance(blocks, list) else []:
+        rendered = _rich_block(block)
+        if not rendered:
+            continue
+        kind = str(cast('dict[str, Any]', block).get("_", "")) if isinstance(block, dict) else ""
+        if previous in _RICH_INLINE_BLOCKS and kind in _RICH_INLINE_BLOCKS and not out[-1].endswith("\n"):
+            out.append("\n")
+        out.append(rendered)
+        previous = kind
+    return "".join(out)
 
 
 def _rich_caption(node: object) -> str:
@@ -799,8 +881,8 @@ def _rich_block(block: object) -> str:
     block = cast('dict[str, Any]', block)
     kind = block.get("_", "")
     text = _rich_text(block.get("text")) if block.get("text") is not None else ""
-    if kind == "pageBlockParagraph":
-        return f"<p>{text}</p>"
+    if kind in {"pageBlockParagraph", "pageBlockThinking"}:
+        return text
     if kind == "pageBlockTitle":
         return f"<h1>{text}</h1>"
     if kind == "pageBlockSubtitle":
@@ -815,16 +897,18 @@ def _rich_block(block: object) -> str:
         return f"<footer>{text}</footer>"
     if kind == "pageBlockAuthorDate":
         author = _rich_text(block.get("author"))
-        return f'<p><b>{author}</b> <tg-time unix="{block.get("published_date", 0)}" format="dMy"></tg-time></p>'
+        return f'<b>{author}</b> <tg-time unix="{escape_attr(block.get("published_date", 0))}" format="d"></tg-time>'
     if kind == "pageBlockPreformatted":
         lang = escape_attr(block.get("language") or "")
         cls = f' class="language-{lang}"' if lang else ""
         return f"<pre><code{cls}>{text}</code></pre>"
     if kind in {"pageBlockPhoto", "pageBlockVideo", "pageBlockAudio", "pageBlockDocument", "pageBlockMap", "pageBlockEmbed"}:
-        return f"<figcaption>{_rich_caption(block.get('caption'))}</figcaption>"
+        caption = _rich_caption(block.get('caption'))
+        return f"<figcaption>{caption}</figcaption>" if caption else ""
     if kind in {"pageBlockCollage", "pageBlockSlideshow"}:
-        inner = "".join(_rich_block(item) for item in cast('list[Any]', block.get("items") or []))
-        return f"<figure>{inner}<figcaption>{_rich_caption(block.get('caption'))}</figcaption></figure>"
+        inner = _rich_blocks(block.get("items"))
+        caption = _rich_caption(block.get('caption'))
+        return f"<figure>{inner}<figcaption>{caption}</figcaption></figure>" if caption else inner
     if kind == "pageBlockDivider":
         return "<hr>"
     if kind == "pageBlockAnchor":
@@ -838,7 +922,7 @@ def _rich_block(block: object) -> str:
             if item.get("text") is not None:
                 inner = _rich_text(item.get("text"))
             else:
-                inner = "".join(_rich_block(sub) for sub in cast('list[Any]', item.get("blocks") or []))
+                inner = _rich_blocks(item.get("blocks"))
             items.append(f"<li>{inner}</li>")
         return f"<ul>{''.join(items)}</ul>" if items else ""
     if kind == "pageBlockOrderedList":
@@ -850,16 +934,49 @@ def _rich_block(block: object) -> str:
             if item.get("text") is not None:
                 inner = _rich_text(item.get("text"))
             else:
-                inner = "".join(_rich_block(sub) for sub in cast('list[Any]', item.get("blocks") or []))
+                inner = _rich_blocks(item.get("blocks"))
             ordered_items.append(f"<li>{inner}</li>")
-        return f"<ol>{''.join(ordered_items)}</ol>" if ordered_items else ""
-    if kind == "pageBlockBlockquote":
-        return f"<blockquote>{text}{_rich_caption(block.get('caption'))}</blockquote>"
+        ol_attrs = ""
+        if isinstance(block.get("start"), int) and block["start"] not in (0, 1):
+            ol_attrs += f' start="{block["start"]}"'
+        if block.get("reversed"):
+            ol_attrs += " reversed"
+        if block.get("type"):
+            ol_attrs += f' type="{escape_attr(block["type"])}"'
+        return f"<ol{ol_attrs}>{''.join(ordered_items)}</ol>" if ordered_items else ""
+    if kind in {"pageBlockBlockquote", "pageBlockBlockquoteBlocks"}:
+        body = text if kind == "pageBlockBlockquote" else _rich_blocks(block.get("blocks"))
+        caption = _rich_caption(block.get("caption"))
+        cite = f"<cite>{caption}</cite>" if caption else ""
+        expandable = " expandable" if block.get("collapsed") else ""
+        return f"<blockquote{expandable}>{body}{cite}</blockquote>"
     if kind == "pageBlockPullquote":
-        return f"<aside>{text}<cite>{_rich_caption(block.get('caption'))}</cite></aside>"
+        caption = _rich_caption(block.get("caption"))
+        return f"<aside>{text}" + (f"<cite>{caption}</cite>" if caption else "") + "</aside>"
+    if kind == "pageBlockButtonRow":
+        align = "center" if block.get("align_center") else "right" if block.get("align_right") else "left"
+        button_row: list[Any] = list(cast('list[Any]', block.get("buttons") or []))
+        return _rich_button_rows([button_row], align)
+    if kind == "pageBlockMath":
+        return f"<tg-math>{escape(block.get('source') or '')}</tg-math>"
+    if kind == "pageBlockCover":
+        return _rich_block(block.get("cover"))
+    if kind == "pageBlockEmbedPost":
+        caption = _rich_caption(block.get("caption"))
+        return _rich_blocks(block.get("blocks")) + (f"<figcaption>{caption}</figcaption>" if caption else "")
+    if kind == "pageBlockRelatedArticles":
+        links: list[str] = []
+        for article in cast('list[Any]', block.get("articles") or []):
+            if isinstance(article, dict):
+                article = cast('dict[str, Any]', article)
+                links.append(f'<li><a href="{escape_attr(article.get("url") or "")}">{escape(article.get("title") or article.get("url") or "")}</a></li>')
+        heading = _rich_text(block.get("title")) if block.get("title") is not None else ""
+        return (f"<h4>{heading}</h4>" if heading else "") + (f"<ul>{''.join(links)}</ul>" if links else "")
+    if kind in {"pageBlockChannel", "pageBlockUnsupported"}:
+        return ""
     if kind == "pageBlockDetails":
         title = _rich_text(block.get("title")) if block.get("title") is not None else ""
-        inner = "".join(_rich_block(sub) for sub in cast('list[Any]', block.get("blocks") or []))
+        inner = _rich_blocks(block.get("blocks"))
         open_attr = " open" if block.get("open") else ""
         return f"<details{open_attr}><summary>{title}</summary>{inner}</details>"
     if kind == "pageBlockTable":
@@ -1000,7 +1117,7 @@ class _MessageTextParser(HTMLParser):
         self.parts.append(data)
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-        if tag in {"p", "h1", "h2", "h3", "h4", "h5", "h6", "li", "pre", "blockquote", "aside", "summary", "details", "tr", "br", "hr", "footer", "figure", "figcaption"}:
+        if tag in {"p", "h1", "h2", "h3", "h4", "h5", "h6", "li", "pre", "blockquote", "aside", "summary", "details", "tr", "br", "hr", "footer", "figure", "figcaption", "tg-button-row"}:
             self.parts.append("\n")
 
     def handle_endtag(self, tag: str) -> None:
@@ -1045,7 +1162,11 @@ def rich_to_html(message: object) -> str:
     if not isinstance(rich, dict):
         return ""
     rich = cast('dict[str, Any]', rich)
-    return "".join(_rich_block(block) for block in cast('list[Any]', rich.get("blocks") or []))
+    html = _rich_blocks(rich.get("blocks"))
+    markup = message.get("reply_markup")
+    if isinstance(markup, dict) and isinstance(cast('dict[str, Any]', markup).get("rows"), list):
+        html += _rich_button_rows(cast('dict[str, Any]', markup)["rows"])
+    return html
 
 
 def btn_html(button: dict[str, Any]) -> str:
