@@ -49,6 +49,9 @@ Before pushing your branch, run the automated checks locally.
 2. **Strict type checking**:
    Hotaru enforces strict type checking using `basedpyright==1.40.1`. Ensure all targets pass without diagnostics.
 
+   In each of `singularity/backend` and `singularity/frontend`, run `npm ci` followed by `npm test`.
+   Verify the frontend bundle with `npm run build` in `singularity/frontend`.
+
 3. **Semgrep security scan**:
    ```bash
    uv run --with 'semgrep==1.179.0' semgrep scan --config p/security-audit --config .semgrep/hotaru-security.yml .

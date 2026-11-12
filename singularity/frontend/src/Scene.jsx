@@ -233,6 +233,7 @@ function createProgram(gl, vsSrc, fsSrc) {
 
 export const Scene = React.memo(React.forwardRef(function Scene({ reducedMotion }, ref) {
   const canvasRef = React.useRef(null);
+  const renderRef = React.useRef(null);
   const directorRef = React.useRef({
     yaw: 0.0,
     pitch: 0.18,
@@ -258,6 +259,7 @@ export const Scene = React.memo(React.forwardRef(function Scene({ reducedMotion 
       d.autoRotate = false;
       d.yawVel = 0;
       d.pitchVel = 0;
+      renderRef.current?.();
     },
     recenter: () => {
       const d = directorRef.current;
@@ -269,6 +271,7 @@ export const Scene = React.memo(React.forwardRef(function Scene({ reducedMotion 
       d.autoRotate = !reducedMotion;
       d.yawVel = 0;
       d.pitchVel = 0;
+      renderRef.current?.();
     }
   }));
 
@@ -315,6 +318,7 @@ export const Scene = React.memo(React.forwardRef(function Scene({ reducedMotion 
       canvas.width = width;
       canvas.height = height;
       gl.viewport(0, 0, width, height);
+      renderRef.current?.();
     }
 
     const ro = new ResizeObserver(resize);
@@ -349,6 +353,7 @@ export const Scene = React.memo(React.forwardRef(function Scene({ reducedMotion 
       d.pitchVel = dy * sens;
       d.yaw += d.yawVel;
       d.pitch = Math.max(-1.42, Math.min(1.42, d.pitch + d.pitchVel));
+      renderRef.current?.();
     }
 
     function onPointerUp() {
@@ -362,6 +367,7 @@ export const Scene = React.memo(React.forwardRef(function Scene({ reducedMotion 
       d.animating = false;
       const delta = Math.sign(e.deltaY) * 1.5;
       d.dist = Math.max(12.0, Math.min(48.0, d.dist + delta));
+      renderRef.current?.();
     }
 
     function onTouchStart(e) {
@@ -379,8 +385,10 @@ export const Scene = React.memo(React.forwardRef(function Scene({ reducedMotion 
         const currentDist = Math.hypot(dx, dy);
         const factor = (pinchStart - currentDist) * 0.055;
         const d = directorRef.current;
+        d.animating = false;
         d.dist = Math.max(12.0, Math.min(48.0, d.dist + factor));
         pinchStart = currentDist;
+        renderRef.current?.();
       }
     }
 
@@ -398,10 +406,11 @@ export const Scene = React.memo(React.forwardRef(function Scene({ reducedMotion 
     canvas.style.cursor = 'grab';
 
     function draw(now) {
+      rafId = null;
       const d = directorRef.current;
       if (d.animating) {
         const elapsed = now - d.t0;
-        const p = Math.min(1.0, elapsed / d.duration);
+        const p = reducedMotion ? 1.0 : Math.min(1.0, elapsed / d.duration);
         const k = 1 - Math.pow(1 - p, 4);
         d.yaw = d.from.yaw + (d.to.yaw - d.from.yaw) * k;
         d.pitch = d.from.pitch + (d.to.pitch - d.from.pitch) * k;
@@ -412,7 +421,7 @@ export const Scene = React.memo(React.forwardRef(function Scene({ reducedMotion 
           d.pitch = d.to.pitch;
           d.dist = d.to.dist;
         }
-      } else if (!dragging) {
+      } else if (!dragging && !reducedMotion) {
         d.yawVel *= 0.92;
         d.pitchVel *= 0.92;
         d.yaw += d.yawVel;
@@ -433,10 +442,14 @@ export const Scene = React.memo(React.forwardRef(function Scene({ reducedMotion 
       }
     }
 
-    rafId = requestAnimationFrame(draw);
+    renderRef.current = () => {
+      if (rafId === null) rafId = requestAnimationFrame(draw);
+    };
+    renderRef.current();
 
     return () => {
-      if (rafId) cancelAnimationFrame(rafId);
+      renderRef.current = null;
+      if (rafId !== null) cancelAnimationFrame(rafId);
       ro.disconnect();
       canvas.removeEventListener('pointerdown', onPointerDown);
       window.removeEventListener('pointermove', onPointerMove);

@@ -21,7 +21,7 @@ RUN pip install --no-cache-dir uv
 
 COPY pyproject.toml uv.lock ./
 
-RUN uv pip install --system "goygram==0.8.29" "psutil>=6.1.0" "hatchling>=1.25" "hatch-vcs>=0.4"
+RUN uv pip install --system "goygram==0.8.29" "psutil>=6.1.0" "packaging>=24.2" "hatchling>=1.25" "hatch-vcs>=0.4"
 
 COPY . .
 

@@ -80,11 +80,11 @@ class ApiRateLimiter:
     async def check(self, method: str) -> None:
         if not self.enabled or _ALERT.get():
             return
-        now = time.monotonic()
-        if now < self.suspend_until:
-            return
         triggered = 0
         async with self._lock:
+            now = time.monotonic()
+            if now < self.suspend_until:
+                return
             cutoff = now - self.time_sample
             while self._history and self._history[0][1] < cutoff:
                 self._history.popleft()
@@ -121,34 +121,37 @@ class ApiRateLimiter:
         asyncio.create_task(self._notify_alert(count))
 
     async def _notify_alert(self, count: int) -> None:
-        _ALERT.set(True)
-        flood = getattr(getattr(self.runtime, "responses", None), "flood", None)
-        if flood is None:
-            return
+        token = _ALERT.set(True)
         try:
-            text = self.runtime.t(
-                "kernel.shield.alert",
-                count=count,
-                sample=int(self.time_sample),
-                threshold=self.threshold,
-                cooldown=int(self.local_floodwait),
-            )
-        except Exception:
+            flood = getattr(getattr(self.runtime, "responses", None), "flood", None)
+            if flood is None:
+                return
             try:
                 text = self.runtime.t(
-                    "kernel.apifw.alert",
+                    "kernel.shield.alert",
                     count=count,
                     sample=int(self.time_sample),
                     threshold=self.threshold,
                     cooldown=int(self.local_floodwait),
                 )
             except Exception:
-                text = (
-                    f"<b>API Flood Protection triggered!</b>\n\n"
-                    f"Rate reached {count} calls in {int(self.time_sample)}s (threshold: {self.threshold}).\n"
-                    f"Paused API requests for {int(self.local_floodwait)}s to protect your account."
-                )
-        config = getattr(self.runtime, "config", None)
-        target = getattr(config, "log_chat", None) or getattr(config, "owner_id", None)
-        if isinstance(target, int):
-            await flood.send(target, text)
+                try:
+                    text = self.runtime.t(
+                        "kernel.apifw.alert",
+                        count=count,
+                        sample=int(self.time_sample),
+                        threshold=self.threshold,
+                        cooldown=int(self.local_floodwait),
+                    )
+                except Exception:
+                    text = (
+                        f"<b>API Flood Protection triggered!</b>\n\n"
+                        f"Rate reached {count} calls in {int(self.time_sample)}s (threshold: {self.threshold}).\n"
+                        f"Paused API requests for {int(self.local_floodwait)}s to protect your account."
+                    )
+            config = getattr(self.runtime, "config", None)
+            target = getattr(config, "log_chat", None) or getattr(config, "owner_id", None)
+            if isinstance(target, int):
+                await flood.send(target, text)
+        finally:
+            _ALERT.reset(token)

@@ -19,6 +19,17 @@ jobs:
           enable-cache: true
       - run: uv sync --locked
       - run: uv run --locked python -m compileall -q hotaru relay
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: |
+            singularity/backend/package-lock.json
+            singularity/frontend/package-lock.json
+      - run: npm ci && npm test
+        working-directory: singularity/backend
+      - run: npm ci && npm test && npm run build
+        working-directory: singularity/frontend
       - run: uv pip install 'basedpyright==1.40.1'
       - name: strict types
         run: |
