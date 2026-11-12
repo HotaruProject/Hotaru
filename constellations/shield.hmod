@@ -189,5 +189,5 @@ async def command_suspend_api(ctx: Any, invocation: Any) -> Any:
     rl = getattr(ctx.runtime, "ratelimit", None)
     if rl is not None:
         rl.suspend(seconds)
-    success_str = ctx.t("kernel.shield.suspended_success", seconds=seconds)
+    success_str = ctx.t("kernel.shield.suspended_success", seconds=seconds) if seconds else ctx.t("kernel.shield.resumed")
     await ctx.respond(f'<tg-emoji emoji-id="5260726538302660868">✅</tg-emoji> <b>{success_str}</b>')

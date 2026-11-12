@@ -881,6 +881,7 @@
       "telemetry_empty": "No recent calls in sample window",
       "telemetry_footer": "Methods called during current window",
       "usage_suspend": "Usage: {prefix}suspend_api [seconds]",
+      "resumed": "API protection resumed",
       "suspended_success": "API Protection: suspended for <code>{seconds}s</code>"
     },
     "genesis": {
