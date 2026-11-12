@@ -172,10 +172,13 @@ def _card(ctx: Any, module_id: str, actor: Any, back: Any, **back_args: Any) -> 
         commands.append(line)
     title = f"{k.icon('text')} <b>{_escape(ctx.t('kernel.help_ui.commands'))}</b> · {len(commands)}"
     body = "\n".join(commands) or f"<i>{_escape(ctx.t('kernel.help_ui.no_commands'))}</i>"
-    lines.append(f"{title}\n{body}")
+    if len(commands) > _open_limit:
+        lines[-1] += k.details(title, body)
+    else:
+        lines.append(f"{title}\n{body}")
     if manifest.capabilities:
         capabilities = "\n".join(f"• {_escape(ctx.t(f'kernel.capabilities.{item}', item))}" for item in manifest.capabilities)
-        lines.append(f"{k.icon('lock')} <b>{_escape(ctx.t('kernel.help_ui.capabilities'))}</b> · {len(manifest.capabilities)}\n{capabilities}")
+        lines[-1] += k.details(f"{k.icon('lock')} <b>{_escape(ctx.t('kernel.help_ui.capabilities'))}</b> · {len(manifest.capabilities)}", capabilities)
     rows: List[List[Any]] = []
     if getattr(manifest, "config_schema", None) and runtime.modules.get("settings") is not None and runtime.access.is_owner(actor):
         rows.append([k.link(ctx.t("kernel.help_ui.settings"), "settings", "module", style="primary", id=module_id, origin="help")])
