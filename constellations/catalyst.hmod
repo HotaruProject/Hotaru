@@ -178,10 +178,13 @@ async def command_ul(ctx: Any, invocation: Any) -> Any:
         return
     await ctx.respond(ctx.t('runtime.unloading', module=module_id), parse_mode="HTML")
     try:
-        await ctx.unload_module(module_id, purge=purge)
+        result = await runtime.unload_module(module_id, purge=purge)
     except Exception as exc:
         err = html.escape(str(exc), quote=False)
         await ctx.respond(ctx.t('runtime.unload_failed', error=err), parse_mode="HTML", output="edit")
+        return
+    if result is not None:
+        await ctx.respond(result, parse_mode="HTML", output="edit")
         return
     await ctx.respond(ctx.t('runtime.purged' if purge else 'runtime.unloaded', module=module_id), parse_mode="HTML", output="edit")
 
