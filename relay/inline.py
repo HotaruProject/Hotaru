@@ -1121,7 +1121,7 @@ class InlineManager:
         except Exception as exc:
             name = type(exc).__name__
             msg = str(exc).lower()
-            if "client" in name.lower() or "connect" in name.lower() or "reset by peer" in msg:
+            if "client" in name.lower() or "connect" in name.lower() or "reset by peer" in msg or re.search(r"\bhttp 5\d\d\b", msg):
                 log.debug("inline webhook check network issue: %s: %s", name, exc)
                 return
             log.warning("inline webhook check failed: %s: %s", name, exc)
