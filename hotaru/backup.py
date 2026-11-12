@@ -94,7 +94,15 @@ class BackupService:
         os.close(fd)
         sealed_path = Path(sealed)
         try:
+            for name, _ in files:
+                self._validate_name(name)
+            if len({name for name, _ in files}) != len(files):
+                raise BackupError("backup contains duplicate paths")
+            if sum(path.stat().st_size for _, path in files) > self.max_bytes:
+                raise BackupError("backup exceeds the expanded size limit")
             raw_entries: list[tuple[str, bytes]] = [(name, path.read_bytes()) for name, path in files]
+            if sum(len(data) for _, data in raw_entries) > self.max_bytes:
+                raise BackupError("backup exceeds the expanded size limit")
             packed = self._pack_container(manifest, raw_entries)
             if len(packed) > self.max_bytes:
                 raise BackupError("backup exceeds the size limit")
@@ -134,18 +142,38 @@ class BackupService:
         return bytes(out)
 
     @staticmethod
-    def _unpack_container(raw: bytes) -> tuple[dict[str, object], dict[str, bytes]]:
+    def _validate_name(name: str) -> None:
+        if "\x00" in name or "\\" in name or not (
+            name == "state/state.sqlite3"
+            or (name.startswith("modules/") and name.count("/") == 1 and Path(name).suffix == ".hmod")
+        ):
+            raise BackupError("backup contains an unsafe path")
+
+    def _unpack_container(self, raw: bytes) -> tuple[dict[str, object], dict[str, bytes]]:
         if len(raw) < 6:
             raise BackupError("backup container header is truncated")
-        _ver, _comp_type, mlen = struct.unpack_from(">BBI", raw, 0)
+        version, compression, mlen = struct.unpack_from(">BBI", raw, 0)
+        if (version, compression) != (1, 1):
+            raise BackupError("backup container format is unsupported")
         pos = 6
         if len(raw) < pos + mlen + 4:
             raise BackupError("backup manifest is truncated")
-        manifest = json.loads(raw[pos:pos + mlen].decode("utf-8"))
+        try:
+            decoded = cast(object, json.loads(raw[pos:pos + mlen].decode("utf-8")))
+        except (ValueError, UnicodeError) as exc:
+            raise BackupError("backup manifest is invalid") from exc
+        if not isinstance(decoded, dict):
+            raise BackupError("backup manifest is unsupported")
+        manifest = cast('dict[str, object]', decoded)
+        records_value = manifest.get("files")
+        if manifest.get("format") != 1 or not isinstance(records_value, dict):
+            raise BackupError("backup manifest is unsupported")
+        records = cast('dict[str, object]', records_value)
         pos += mlen
         nfiles, = struct.unpack_from(">I", raw, pos)
         pos += 4
         files: dict[str, bytes] = {}
+        remaining = self.max_bytes
         for _ in range(nfiles):
             if len(raw) < pos + 2:
                 raise BackupError("backup record is truncated")
@@ -153,7 +181,13 @@ class BackupService:
             pos += 2
             if len(raw) < pos + nlen + 48:
                 raise BackupError("backup record metadata is truncated")
-            name = raw[pos:pos + nlen].decode("utf-8")
+            try:
+                name = raw[pos:pos + nlen].decode("utf-8")
+            except UnicodeError as exc:
+                raise BackupError("backup contains an invalid filename") from exc
+            self._validate_name(name)
+            if name in files:
+                raise BackupError("backup contains duplicate paths")
             pos += nlen
             orig_len, comp_len, sha = struct.unpack_from(">QQ32s", raw, pos)
             pos += 48
@@ -161,10 +195,33 @@ class BackupService:
                 raise BackupError("backup record payload is truncated")
             comp_data = raw[pos:pos + comp_len]
             pos += comp_len
-            decomp = zlib.decompress(comp_data)
+            if orig_len > remaining:
+                raise BackupError("backup exceeds the expanded size limit")
+            decoder = zlib.decompressobj()
+            try:
+                decomp = decoder.decompress(comp_data, orig_len + 1)
+            except zlib.error as exc:
+                raise BackupError("backup record compression is invalid") from exc
+            if len(decomp) > orig_len:
+                raise BackupError("backup record exceeds its declared size")
+            if not decoder.eof or decoder.unused_data or decoder.unconsumed_tail:
+                raise BackupError("backup record compression is invalid")
             if len(decomp) != orig_len or hashlib.sha256(decomp).digest() != sha:
                 raise BackupError(f"checksum verification failed for {name}")
+            record_value = records.get(name)
+            record = cast('dict[str, object]', record_value) if isinstance(record_value, dict) else None
+            if record is None or len(decomp) != record.get("size") or hashlib.sha256(decomp).hexdigest() != record.get("sha256"):
+                raise BackupError("backup manifest does not match archive")
+            remaining -= len(decomp)
             files[name] = decomp
+        if pos != len(raw) or not files or set(files) != set(records):
+            raise BackupError("backup manifest does not match archive")
+        self._validate_metadata(manifest.get("metadata", {}))
+        for name, data in files.items():
+            if name == "state/state.sqlite3":
+                self._validate_state(data)
+            else:
+                self._validate_module(data)
         return manifest, files
 
     def dry_run(self, archive_path: str | Path, key: str | bytes | None = None) -> DryRunResult:
@@ -176,18 +233,7 @@ class BackupService:
         fmt, payload = self._unseal(archive, key=key)
         if fmt == 3:
             manifest, files = self._unpack_container(payload)
-            records_value = manifest.get("files")
-            if not isinstance(records_value, dict) or not files:
-                raise BackupError("backup manifest or files are missing")
-            for name, data in files.items():
-                if name == "state/state.sqlite3":
-                    self._validate_state(data)
-                elif name.startswith("modules/"):
-                    self._validate_module(data)
-                else:
-                    raise BackupError("backup contains an unsafe path")
             metadata = manifest.get("metadata", {})
-            self._validate_metadata(metadata)
             return {"format": 1, "files": tuple(sorted(files)), "metadata": cast('dict[str, object]', metadata) if isinstance(metadata, dict) else {}}
         else:
             fd, temporary = tempfile.mkstemp(prefix=".hotaru-open-", suffix=".zip")
@@ -255,11 +301,8 @@ class BackupService:
             raise BackupError("backup exceeds the expanded size limit")
         for info in source.infolist():
             name = info.filename
-            if name not in {"manifest.json", "state/state.sqlite3"} and not (
-                name.startswith("modules/") and name.count("/") == 1
-                and "\\" not in name and Path(name).suffix == ".hmod"
-            ):
-                raise BackupError("backup contains an unsafe path")
+            if name != "manifest.json":
+                self._validate_name(name)
             if stat.S_ISLNK(info.external_attr >> 16):
                 raise BackupError("backup contains a symlink")
         try:
@@ -342,23 +385,8 @@ class BackupService:
         if archive.suffix != ".hbk" or archive.stat().st_size > self.max_bytes:
             raise BackupError("backup extension or size is invalid")
         fmt, payload = self._unseal(archive, key=key)
-        destination = Path(directory) if directory is not None else Path(tempfile.mkdtemp(prefix="hotaru-restore-"))
-        if destination.is_symlink():
-            raise BackupError("restore destination is a symlink")
-        destination.mkdir(parents=True, exist_ok=True)
-        destination.chmod(0o700)
         if fmt == 3:
-            _manifest, files = self._unpack_container(payload)
-            for name, data in files.items():
-                target = destination / name
-                if target.parent.is_symlink():
-                    raise BackupError("restore directory is a symlink")
-                target.parent.mkdir(parents=True, exist_ok=True)
-                target.parent.chmod(0o700)
-                fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
-                with os.fdopen(fd, "wb") as stream:
-                    stream.write(data)
-            return destination
+            _, files = self._unpack_container(payload)
         else:
             fd, temporary = tempfile.mkstemp(prefix=".hotaru-stage-", suffix=".zip")
             with os.fdopen(fd, "wb") as stream:
@@ -366,20 +394,8 @@ class BackupService:
             plain = Path(temporary)
             try:
                 with zipfile.ZipFile(plain) as source:
-                    self._inspect(source)
-                    for info in source.infolist():
-                        name = info.filename
-                        if name == "manifest.json":
-                            continue
-                        target = destination / name
-                        if target.parent.is_symlink():
-                            raise BackupError("restore directory is a symlink")
-                        target.parent.mkdir(parents=True, exist_ok=True)
-                        target.parent.chmod(0o700)
-                        fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
-                        with os.fdopen(fd, "wb") as stream:
-                            stream.write(source.read(name))
-                return destination
+                    result = self._inspect(source)
+                    files = {name: source.read(name) for name in result["files"]}
             except BackupError:
                 raise
             except Exception as exc:
@@ -387,6 +403,32 @@ class BackupService:
                 raise BackupError(f"backup archive is invalid: {type(exc).__name__}: {exc}") from exc
             finally:
                 plain.unlink(missing_ok=True)
+        destination = Path(directory) if directory is not None else Path(tempfile.mkdtemp(prefix="hotaru-restore-"))
+        flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+        try:
+            destination.mkdir(parents=True, exist_ok=True)
+            root_fd = os.open(destination, flags)
+            try:
+                os.fchmod(root_fd, 0o700)
+                for name, data in files.items():
+                    folder, filename = name.split("/")
+                    try:
+                        os.mkdir(folder, mode=0o700, dir_fd=root_fd)
+                    except FileExistsError:
+                        pass
+                    folder_fd = os.open(folder, flags, dir_fd=root_fd)
+                    try:
+                        os.fchmod(folder_fd, 0o700)
+                        fd = os.open(filename, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600, dir_fd=folder_fd)
+                        with os.fdopen(fd, "wb") as stream:
+                            stream.write(data)
+                    finally:
+                        os.close(folder_fd)
+            finally:
+                os.close(root_fd)
+        except OSError as exc:
+            raise BackupError("restore destination is unsafe or unavailable") from exc
+        return destination
 
     def activate_staged(
         self,

@@ -105,36 +105,15 @@ def version_tuple(value: str) -> tuple[int | str, ...]:
 
 
 def satisfies(installed: str, operator: str, wanted: str) -> bool:
-    if operator == "~=":
-        floor = version_tuple(wanted)
-        if len(floor) < 2:
-            return False
-        base_parts: list[Any] = list(floor[:2] if len(floor) == 2 else floor[: len(floor) - 1])
-        base_parts[-1] = int(base_parts[-1]) + 1
-        return floor <= version_tuple(installed) < tuple(base_parts)
-    left = version_tuple(installed)
-    right = version_tuple(wanted)
-    if operator == "==":
-        if wanted.endswith(".*"):
-            prefix = wanted[:-2]
-            return normalize_version(installed).startswith(normalize_version(prefix))
-        return left == right
-    if operator == "===":
-        return installed.strip() == wanted.strip()
-    if operator == "!=":
-        if wanted.endswith(".*"):
-            prefix = wanted[:-2]
-            return not normalize_version(installed).startswith(normalize_version(prefix))
-        return left != right
-    if operator == ">=":
-        return left >= right
-    if operator == "<=":
-        return left <= right
-    if operator == ">":
-        return left > right
-    if operator == "<":
-        return left < right
-    raise DependencyError(f"operator is unsupported: {operator}")
+    from packaging.specifiers import InvalidSpecifier, Specifier
+    from packaging.version import InvalidVersion
+
+    try:
+        return Specifier(operator + wanted).contains(installed, prereleases=True)
+    except InvalidSpecifier as exc:
+        raise DependencyError(f"version specifier is invalid: {operator}{wanted}") from exc
+    except InvalidVersion:
+        return False
 
 
 def requirement_satisfied(requirement: Requirement, installed: str) -> bool:

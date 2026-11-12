@@ -13,7 +13,7 @@ class ApiRateLimiter:
     def __init__(self, runtime: Any) -> None:
         self.runtime = runtime
         self._lock = asyncio.Lock()
-        self._cooldown_lock = False
+        self._cooldown: asyncio.Task[None] | None = None
         self._history: collections.deque[tuple[str, float]] = collections.deque()
         self.suspend_until: float = 0.0
         self.total_blocked: int = 0
@@ -73,44 +73,43 @@ class ApiRateLimiter:
     async def check(self, method: str) -> None:
         if not self.enabled:
             return
-        now = time.monotonic()
-        if now < self.suspend_until:
-            return
         async with self._lock:
+            now = time.monotonic()
+            if now < self.suspend_until:
+                return
             cutoff = now - self.time_sample
             while self._history and self._history[0][1] < cutoff:
                 self._history.popleft()
             self._history.append((method, now))
             count = len(self._history)
-            if count <= self.threshold or self._cooldown_lock:
-                return
-            self._cooldown_lock = True
-            self.total_blocked += 1
+            if self._cooldown is None or self._cooldown.done():
+                if count <= self.threshold:
+                    return
+                self.total_blocked += 1
+                self._cooldown = asyncio.create_task(self._trigger_cooldown(count))
+            cooldown = self._cooldown
 
-        await self._trigger_cooldown(count)
+        await asyncio.shield(cooldown)
 
     async def _trigger_cooldown(self, count: int) -> None:
-        try:
-            log.warning(
-                "apifw: threshold exceeded (%d requests in %ss, limit %d), pausing for %ss",
-                count,
-                self.time_sample,
-                self.threshold,
-                self.local_floodwait,
+        log.warning(
+            "apifw: threshold exceeded (%d requests in %ss, limit %d), pausing for %ss",
+            count,
+            self.time_sample,
+            self.threshold,
+            self.local_floodwait,
+        )
+        if self.runtime.observatory is not None:
+            self.runtime.observatory.emit(
+                "security",
+                "apifw_triggered",
+                "warning",
+                count=count,
+                threshold=self.threshold,
+                duration=self.local_floodwait,
             )
-            if self.runtime.observatory is not None:
-                self.runtime.observatory.emit(
-                    "security",
-                    "apifw_triggered",
-                    "warning",
-                    count=count,
-                    threshold=self.threshold,
-                    duration=self.local_floodwait,
-                )
-            asyncio.create_task(self._notify_alert(count))
-            await asyncio.sleep(self.local_floodwait)
-        finally:
-            self._cooldown_lock = False
+        asyncio.create_task(self._notify_alert(count))
+        await asyncio.sleep(self.local_floodwait)
 
     async def _notify_alert(self, count: int) -> None:
         flood = getattr(getattr(self.runtime, "responses", None), "flood", None)

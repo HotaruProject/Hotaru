@@ -94,6 +94,8 @@ class EchoBot:
             return
         if self.bot_id is not None and sender == self.bot_id:
             return
+        if chat != sender or (self.owner is not None and sender != self.owner):
+            return
         text = str(getattr(message, "text", "") or "")
         pending = self._pending
         if pending is not None:
@@ -107,8 +109,6 @@ class EchoBot:
             return
         if self.owner is not None:
             return
-        if not isinstance(chat, int) or chat <= 0:
-            chat = sender
         self.owner = sender
         welcome_html = (
             f'<tg-emoji emoji-id="5366045973988522066">✨</tg-emoji> <b>HOTARU USERBOT</b> · Authentication\n\n'

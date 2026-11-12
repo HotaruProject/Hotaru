@@ -2,6 +2,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const EventEmitter = require("node:events");
+const { StringDecoder } = require("node:string_decoder");
 
 const SECRET_RE =
   /(\b\d{6,12}:[A-Za-z0-9_-]{30,}\b)|(\b[0-9a-f]{32,}\b)|(\bsk-[A-Za-z0-9]{16,}\b)|(\bbot\d{6,12}:[\w-]{30,}\b)|(\bBearer\s+[A-Za-z0-9._-]{16,}\b)/gi;
@@ -181,6 +182,9 @@ class NodeTelemetryProbe extends EventEmitter {
     this._seenEventKeys = new Set();
     this._obsOffset = 0;
     this._obsInode = null;
+    this._obsDecoder = new StringDecoder("utf8");
+    this._obsRemainder = "";
+    this._obsDiscarding = false;
     this._lastHeartbeatMs = 0;
 
     this._recordDebug({
@@ -273,24 +277,38 @@ class NodeTelemetryProbe extends EventEmitter {
     try {
       if (!fs.existsSync(this.observatoryPath)) return;
       const stat = fs.statSync(this.observatoryPath);
-      if (this._obsInode !== stat.ino || stat.size < this._obsOffset) {
+      const reset = this._obsInode !== stat.ino || stat.size < this._obsOffset;
+      if (reset) {
         this._obsInode = stat.ino;
         this._obsOffset = Math.max(0, stat.size - 16384);
+        this._obsDecoder = new StringDecoder("utf8");
+        this._obsRemainder = "";
+        this._obsDiscarding = this._obsOffset > 0;
       }
       if (stat.size <= this._obsOffset) return;
       const len = Math.min(65536, stat.size - this._obsOffset);
       const fd = fs.openSync(this.observatoryPath, "r");
       let chunk = "";
       try {
+        if (reset && this._obsOffset > 0) {
+          const previous = Buffer.alloc(1);
+          fs.readSync(fd, previous, 0, 1, this._obsOffset - 1);
+          this._obsDiscarding = previous[0] !== 10;
+        }
         const buf = Buffer.alloc(len);
         const read = fs.readSync(fd, buf, 0, len, this._obsOffset);
         this._obsOffset += read;
-        chunk = buf.subarray(0, read).toString("utf8");
+        chunk = this._obsDecoder.write(buf.subarray(0, read));
       } finally {
         fs.closeSync(fd);
       }
-      const lines = chunk.split("\n");
+      const lines = (this._obsRemainder + chunk).split("\n");
+      this._obsRemainder = lines.pop();
       for (const line of lines) {
+        if (this._obsDiscarding) {
+          this._obsDiscarding = false;
+          continue;
+        }
         const trimmed = line.trim();
         if (!trimmed.startsWith("{")) continue;
         try {
@@ -300,6 +318,10 @@ class NodeTelemetryProbe extends EventEmitter {
             this._recordDebug(formatted);
           }
         } catch {}
+      }
+      if (this._obsDiscarding || this._obsRemainder.length > 4 * 1024 * 1024) {
+        this._obsRemainder = "";
+        this._obsDiscarding = true;
       }
     } catch {}
   }
