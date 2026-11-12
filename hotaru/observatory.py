@@ -13,7 +13,7 @@ import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Dict, Generator, TextIO, cast
+from typing import Any, BinaryIO, Callable, Dict, Generator, Iterator, TextIO, cast
 
 from goygram.errors import ConnectionClosedError
 
@@ -107,6 +107,21 @@ def pretty_error(error: BaseException | None, *, frames: int = 4, note: str = ""
     if note:
         lines.append(f"  note: {scrub_text(note)}")
     return "\n".join(lines)
+
+
+def _reverse_lines(stream: BinaryIO, block: int = 65536) -> Iterator[str]:
+    position = stream.seek(0, io.SEEK_END)
+    rest = b""
+    while position > 0:
+        step = min(block, position)
+        position -= step
+        stream.seek(position)
+        parts = (stream.read(step) + rest).split(b"\n")
+        rest = parts[0]
+        for part in reversed(parts[1:]):
+            yield part.decode("utf-8", "replace")
+    if rest:
+        yield rest.decode("utf-8", "replace")
 
 
 def rotate_file(path: Path, max_bytes: int = 4 * 1024 * 1024, keep_files: int = 4) -> None:
@@ -252,34 +267,27 @@ class Observatory:
     def tail(self, *, lines: int = 40, component: str | None = None, level: str = "debug", module: str | None = None) -> list[dict[str, Any]]:
         floor = _numeric[norm_level(level)]
         wanted: list[dict[str, Any]] = []
-        with self.path.open("r", encoding="utf-8", errors="replace") as stream:
+        with self.path.open("rb") as stream:
             try:
-                stream.seek(0, io.SEEK_END)
-                size = stream.tell()
-                step = min(65536, size)
-                stream.seek(max(0, size - step))
-                if size > step:
-                    stream.readline()
-                tail_data = stream.read().splitlines()
+                for raw in _reverse_lines(stream):
+                    if len(wanted) >= lines:
+                        break
+                    try:
+                        decoded = cast(object, json.loads(raw))
+                    except (ValueError, TypeError):
+                        continue
+                    if not isinstance(decoded, dict):
+                        continue
+                    entry = cast('dict[str, Any]', decoded)
+                    if component and entry.get("component") != component:
+                        continue
+                    if module and entry.get("module") != module:
+                        continue
+                    if _numeric.get(entry.get("level") or "info", 20) < floor:
+                        continue
+                    wanted.append(entry)
             except OSError:
-                tail_data = []
-            for raw in reversed(tail_data):
-                if len(wanted) >= lines:
-                    break
-                try:
-                    decoded = cast(object, json.loads(raw))
-                except (ValueError, TypeError):
-                    continue
-                if not isinstance(decoded, dict):
-                    continue
-                entry = cast('dict[str, Any]', decoded)
-                if component and entry.get("component") != component:
-                    continue
-                if module and entry.get("module") != module:
-                    continue
-                if _numeric.get(entry.get("level") or "info", 20) < floor:
-                    continue
-                wanted.append(entry)
+                pass
         return wanted
 
     def error(self, component: str, event: str, **fields: Any) -> None:

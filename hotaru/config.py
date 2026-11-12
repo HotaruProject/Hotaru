@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 from dataclasses import dataclass, field
@@ -157,6 +158,8 @@ class FloatValidator(Validator):
         try:
             val = float(value)
         except (ValueError, TypeError):
+            raise ConfigValidationError(f"Invalid float value: {value!r}")
+        if math.isnan(val):
             raise ConfigValidationError(f"Invalid float value: {value!r}")
         if self.minimum is not None and val < self.minimum:
             raise ConfigValidationError(f"Value {val} is less than minimum {self.minimum}")
