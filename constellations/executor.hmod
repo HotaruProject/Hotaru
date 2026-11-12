@@ -9,7 +9,7 @@ HOTARU = {
 import ast
 import asyncio
 import logging
-import contextlib
+import contextvars
 import html
 import inspect
 import io
@@ -306,11 +306,44 @@ class StreamInterceptor(io.StringIO):
     def __init__(self, updater: OutputUpdater) -> None:
         super().__init__()
         self.updater = updater
+        self.loop = asyncio.get_running_loop()
 
     def write(self, s: str) -> int:
         res = super().write(s)
-        asyncio.create_task(self.updater.update(s))
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            self.loop.call_soon_threadsafe(lambda: asyncio.ensure_future(self.updater.update(s)))
+        else:
+            asyncio.create_task(self.updater.update(s))
         return res
+
+
+class StreamRouter:
+    def __init__(self, fallback: Any) -> None:
+        self.capture: contextvars.ContextVar[Any] = contextvars.ContextVar("executor_capture", default=None)
+        self.fallback = fallback
+
+    def _target(self) -> Any:
+        target = self.capture.get()
+        return self.fallback if target is None else target
+
+    def write(self, s: str) -> int:
+        return self._target().write(s)
+
+    def flush(self) -> None:
+        self._target().flush()
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self.fallback, name)
+
+
+def _router(name: str) -> StreamRouter:
+    current = getattr(sys, name)
+    if not isinstance(getattr(current, "capture", None), contextvars.ContextVar):
+        current = StreamRouter(current)
+        setattr(sys, name, current)
+    return cast(StreamRouter, current)
 
 
 def _get_raw_text(invocation: Any) -> str:
@@ -1679,13 +1712,20 @@ async def _py_run(ctx: Any, invocation: Any) -> Any:
     result_val = _SENTINEL
     error_trace = None
 
+    stdout_buf = StreamInterceptor(updater)
+    stderr_buf = StreamInterceptor(updater)
+    stdout_router = _router("stdout")
+    stderr_router = _router("stderr")
+
     async def _task() -> Any:
         nonlocal result_val
+        stdout_router.capture.set(stdout_buf)
+        stderr_router.capture.set(stderr_buf)
         exec_scope = dict(env)
         try:
             bytecode = compile(_wrap_eval_code(raw_code), "<executor>", "exec")
         except SyntaxError as exc:
-            raise SyntaxError(f"SyntaxError: {exc.msg} (line {exc.lineno})") from None
+            raise SyntaxError(f"{exc.msg} (line {exc.lineno})") from None
         exec(bytecode, exec_scope)
         runner = exec_scope.get("__executor_runner__")
         if runner is None:
@@ -1701,12 +1741,8 @@ async def _py_run(ctx: Any, invocation: Any) -> Any:
         if resp_msg_id:
             _ACTIVE_PY[resp_msg_id] = eval_task
 
-    stdout_buf = StreamInterceptor(updater)
-    stderr_buf = StreamInterceptor(updater)
-
     try:
-        with contextlib.redirect_stdout(stdout_buf), contextlib.redirect_stderr(stderr_buf):
-            await eval_task
+        await eval_task
     except asyncio.CancelledError:
         error_trace = ctx.t('kernel.executor.cancelled')
     except SystemExit as exc:
