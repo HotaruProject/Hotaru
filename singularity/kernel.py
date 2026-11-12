@@ -312,6 +312,7 @@ class SingularityKernel:
         self._synced_tunnel_url: str = ""
         self._last_tunnel_restart_ts: float = 0.0
         self._last_sync_attempt_ts: float = 0.0
+        self._sync_failures = 0
         self._running = False
 
     @property
@@ -712,6 +713,7 @@ class SingularityKernel:
             return
         self.tunnel_url = new_url
         self._synced_tunnel_url = ""
+        self._sync_failures = 0
         log.info("Singularity Horizon tunnel URL rotated: %s", new_url)
         try:
             loop = asyncio.get_running_loop()
@@ -762,7 +764,7 @@ class SingularityKernel:
                     and self._synced_tunnel_url.rstrip("/") != self.tunnel_url.rstrip("/")
                     and (self._tunnel_task is None or self._tunnel_task.done())
                     and (self._rotation_task is None or self._rotation_task.done())
-                    and now - self._last_sync_attempt_ts >= self.sync_retry_cooldown
+                    and now - self._last_sync_attempt_ts >= self._sync_cooldown()
                 ):
                     self._rotation_task = asyncio.create_task(
                         self._sync_and_notify(self.tunnel_url),
@@ -772,6 +774,9 @@ class SingularityKernel:
                 await asyncio.sleep(self.watchdog_interval)
         except asyncio.CancelledError:
             raise
+
+    def _sync_cooldown(self) -> float:
+        return min(self.sync_retry_cooldown * 2 ** min(self._sync_failures, 16), 3600.0)
 
     async def _provision_bot_and_miniapp(self, url: str) -> RelaySyncReport:
         with trusted_scope():
@@ -844,6 +849,7 @@ class SingularityKernel:
             if attempt == 0:
                 await asyncio.sleep(1.5)
 
+        self._sync_failures = 0 if sync_res.ok else self._sync_failures + 1
         if self._running and self.runtime is not None:
             await sync_owner_menu_button(self.runtime, url)
         return sync_res
