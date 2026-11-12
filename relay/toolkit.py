@@ -976,10 +976,12 @@ def entities_to_html(text: str | None, entities: list[object] | tuple[object, ..
         return _html_mod.escape(text)
     opens: dict[int, list[str]] = {}
     closes: dict[int, list[str]] = {}
-    for a, b, o, c in sorted(items, key=lambda x: x[1] - x[0], reverse=True):
-        opens.setdefault(a, []).append(o)
-    for a, b, o, c in sorted(items, key=lambda x: x[1] - x[0]):
-        closes.setdefault(b, []).append(c)
+    ordered = sorted(range(len(items)), key=lambda i: (items[i][0], items[i][0] - items[i][1], i))
+    rank = {index: position for position, index in enumerate(ordered)}
+    for index in ordered:
+        opens.setdefault(items[index][0], []).append(items[index][2])
+    for index in sorted(range(len(items)), key=lambda i: (items[i][1], items[i][1] - items[i][0], -rank[i])):
+        closes.setdefault(items[index][1], []).append(items[index][3])
     out: list[str] = []
     for i in range(len(text) + 1):
         out.extend(closes.get(i, ()))

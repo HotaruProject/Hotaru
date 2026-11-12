@@ -184,8 +184,9 @@ def _update_repository(root: str | os.PathLike[str]) -> UpdateResult:
     resumed = _resume_interrupted(repo)
     if resumed is not None:
         return resumed
+    upstream = _text(_git(repo, "rev-parse", "--abbrev-ref", "@{upstream}", check=False))
     name = _text(_git(repo, "rev-parse", "--abbrev-ref", "HEAD")).strip()
-    branch = name if name and name != "HEAD" else "main"
+    branch = upstream.split("/", 1)[1] if upstream.startswith("origin/") else name if name and name != "HEAD" else "main"
     _git(repo, "fetch", "--prune", "origin", "+refs/heads/" + branch + ":refs/remotes/origin/" + branch)
     before = _text(_git(repo, "rev-parse", "HEAD"))
     target = _text(_git(repo, "rev-parse", "origin/" + branch))

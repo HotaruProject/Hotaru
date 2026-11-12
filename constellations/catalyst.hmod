@@ -20,7 +20,9 @@ async def command_ld(ctx: Any, invocation: Any) -> Any:
     if runtime is None:
         await ctx.respond(ctx.t('kernel.kernel.runtime_unavailable'))
         return
-    if len(invocation.args) > 1:
+    raw_args = str(getattr(invocation, "raw_args", "") or "").strip()
+    inline_source = raw_args.startswith("HOTARU") or "\n" in raw_args
+    if len(invocation.args) > 1 and not inline_source:
         await ctx.respond(ctx.t('runtime.usage_load', prefix=runtime.config.prefix))
         return
 
@@ -79,7 +81,9 @@ async def command_ld(ctx: Any, invocation: Any) -> Any:
     log_lines = ["-----> Fetching module source..."]
     await ctx.respond(f"<pre>{chr(10).join(log_lines)}</pre>", parse_mode="HTML")
     try:
-        if invocation.args:
+        if inline_source:
+            source = raw_args
+        elif invocation.args:
             source = str(invocation.args[0]).strip()
             if source.startswith(("https://", "http://")):
                 from hotaru.modules import ModuleStager

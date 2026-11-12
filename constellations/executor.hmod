@@ -623,7 +623,7 @@ class _MsgProxy:
     def args_list(self) -> list[str]:
         if self.__dict__["_is_cmd"] and self.__dict__["_inv"]:
             return list(getattr(self.__dict__["_inv"], "args", []))
-        return self.text.split()
+        return self.plain_text.split()
 
 
     @property
@@ -896,7 +896,7 @@ class _MsgProxy:
         return f'<a href="tg://user?id={uid}">{display}</a>' if uid else display
 
     def fmt_text(self, text: str | None = None) -> str:
-        return html.escape(str(text if text is not None else self.text))
+        return html.escape(str(text if text is not None else self.plain_text))
 
 
 

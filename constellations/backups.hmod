@@ -279,9 +279,9 @@ def _render_restore_screen(ctx: Any, target: str | None, reply_id: int | None, s
     scope_name = ctx.t(f"kernel.backups.scope_{scope}")
     text = ctx.t('kernel.backups.restore_confirm')
     text += "\n" + ctx.t('kernel.backups.restore_scope', scope=scope_name)
-    key_status = key if key else ctx.t('kernel.backups.key_default')
+    key_status = ctx.t('kernel.backups.key_custom') if key else ctx.t('kernel.backups.key_default')
     text += "\n" + ctx.t('kernel.backups.restore_custom_key', key_name=key_status)
-    key_btn_text = ctx.t('kernel.backups.restore_key_btn', key_name=key if key else ctx.t('kernel.backups.key_default'))
+    key_btn_text = ctx.t('kernel.backups.restore_key_btn', key_name=key_status)
     return k.screen(
         text,
         [
