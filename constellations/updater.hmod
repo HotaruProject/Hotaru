@@ -80,9 +80,19 @@ def _changelog(runtime: Any) -> Any:
 def _pull(runtime: Any) -> Any:
     return runtime.update_checkout()
 
+def _contains(runtime: Any, commit: str, head: str) -> bool:
+    try:
+        _git(runtime, "merge-base", "--is-ancestor", commit, head)
+        return True
+    except RuntimeError:
+        return False
+
 def _check(runtime: Any) -> Any:
     _fetch_origin(runtime)
-    return _current_commit(runtime), _latest_commit(runtime), _changelog(runtime)
+    current, latest = _current_commit(runtime), _latest_commit(runtime)
+    if current != latest and _contains(runtime, latest, current):
+        return current, current, []
+    return current, latest, _changelog(runtime)
 
 _git_lock = asyncio.Lock()
 
@@ -261,9 +271,11 @@ async def _bot_edit(ctx: Any, chat_id: Any, message_id: Any, text: Any) -> Any:
 async def _status(ctx: Any, text: Any) -> Any:
     try:
         pending = ctx.state.get("update_pending")
+        edited = False
         for surface in _surfaces(pending):
-            await _edit_surface(ctx, text, surface)
-        return
+            edited = await _edit_surface(ctx, text, surface) is not None or edited
+        if edited:
+            return
     except Exception as exc:
         _emit(ctx, "status_error", error=type(exc).__name__, detail=str(exc)[:120])
     try:
@@ -297,6 +309,8 @@ async def _finalize_restart(ctx: Any, pending: dict[str, Any]) -> None:
     else:
         took = ctx.t("common.unknown")
     html = ctx.t('kernel.updater.restarted', took=took)
+    if isinstance(pending.get("note"), str) and pending["note"]:
+        html += "\n" + pending["note"]
     surfaces = _surfaces(pending)
     done: dict[int, str] = {}
     for attempt in range(5):
@@ -403,14 +417,15 @@ async def _run_update(ctx: Any) -> Any:
     if update.before == update.after:
         await say(ctx.t('kernel.updater.up_to_date'))
         return
-    if update.conflicts:
-        await say(ctx.t('kernel.updater.conflicts', path=_escape(str(update.recovery))))
+    note = ctx.t('kernel.updater.conflicts', path=_escape(str(update.recovery))) if update.conflicts else ""
     ctx.state.set("notified_commit", update.after)
-    await say(ctx.t('kernel.updater.restarting', commit=_escape(update.after[:7])))
+    await say(ctx.t('kernel.updater.restarting', commit=_escape(update.after[:7])) + ("\n" + note if note else ""))
     pending = ctx.state.get("update_pending")
     if isinstance(pending, dict):
         pending = dict(cast('dict[str, Any]', pending))
         pending["restarting"] = time.time()
+        if note:
+            pending["note"] = note
         ctx.state.set("update_pending", pending)
     await asyncio.sleep(1)
     await _restart_service(ctx)
@@ -423,6 +438,16 @@ async def _restart_service(ctx: Any) -> Any:
             await asyncio.wait_for(runtime.app.close(), timeout=1.0)
     except Exception:
         pass
+
+async def _command_surface(ctx: Any, invocation: Any) -> None:
+    chat_id = getattr(invocation, "chat_id", None)
+    message_id = getattr(invocation, "message_id", None)
+    surface: dict[str, Any] = {"chat_id": chat_id, "message_id": message_id, "own": True}
+    try:
+        surface["peer"] = (await ctx.runtime.app.mt.resolve_peer(chat_id)).hex()
+    except Exception as exc:
+        _emit(ctx, "command_surface_error", error=type(exc).__name__)
+    _remember_surface(ctx, surface)
 
 async def command_upd(ctx: Any, invocation: Any) -> Any:
     runtime = ctx.runtime
@@ -443,6 +468,7 @@ async def command_upd(ctx: Any, invocation: Any) -> Any:
         return
 
     if force:
+        await _command_surface(ctx, invocation)
         await _run_update(ctx)
         return
 
