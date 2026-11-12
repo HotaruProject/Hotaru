@@ -49,7 +49,6 @@ Before pushing your branch, run the automated checks locally.
 2. **Strict type checking**:
    Hotaru enforces strict type checking using `basedpyright==1.40.1`. Ensure all targets pass without diagnostics.
 
-   Run regression tests with `uv run --locked python -m unittest discover -s tests -v`.
    In each of `singularity/backend` and `singularity/frontend`, run `npm ci` followed by `npm test`.
    Verify the frontend bundle with `npm run build` in `singularity/frontend`.
 

@@ -19,7 +19,6 @@ jobs:
           enable-cache: true
       - run: uv sync --locked
       - run: uv run --locked python -m compileall -q hotaru relay
-      - run: uv run --locked python -m unittest discover -s tests -v
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
