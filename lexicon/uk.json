@@ -870,6 +870,7 @@
       "telemetry_empty": "Немає нещодавніх викликів у вікні вибірки",
       "telemetry_footer": "Методи, викликані в поточному вікні",
       "usage_suspend": "Використання: {prefix}suspend_api [секунди]",
+      "resumed": "Захист API: відновлено",
       "suspended_success": "Захист API: призупинено на <code>{seconds}с</code>"
     },
     "genesis": {
