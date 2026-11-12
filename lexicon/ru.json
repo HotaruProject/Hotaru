@@ -328,6 +328,7 @@
       "settings": "⚙️ Настройки",
       "search_prompt": "модуль или команда",
       "results": "Результаты по «{query}»",
+      "developer": "Разработчик",
       "aliases": "Алиасы",
       "count": "модулей: {count}",
       "prefix": "префикс {prefix}"

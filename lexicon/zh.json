@@ -319,6 +319,7 @@
       "usage": "<b>用法：</b><code>{prefix}help</code> 或 <code>{prefix}help &lt;module&gt;</code>",
       "disabled": "<b>模块已停用：</b><code>{module}</code><br><i>错误：{error}</i>",
       "missing": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>未找到模块：</b> <code>{module}</code>",
+      "developer": "开发者",
       "aliases": "别名",
       "kernel_badge": "kernel",
       "title": "Hotaru · 帮助",

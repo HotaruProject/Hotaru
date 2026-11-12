@@ -46,6 +46,7 @@ class ModuleManifest:
     banner: str = ""
     bot_commands: tuple[str, ...] = ()
     name: str = ""
+    developer: str = ""
 
     @property
     def description(self) -> str:
@@ -285,6 +286,9 @@ class HmodLoader:
         if fade and any(c.isspace() for c in fade):
             raise ModuleValidationError("manifest fade is invalid")
 
+        developer_val = raw.get("developer", "")
+        developer = developer_val.strip()[:128] if isinstance(developer_val, str) else ""
+
         banner = raw.get("banner", "")
         if not isinstance(banner, str):
             raise ModuleValidationError("manifest banner must be a string")
@@ -379,6 +383,7 @@ class HmodLoader:
             banner,
             tuple(cast("list[str]", bot_commands)),
             name=name,
+            developer=developer,
         )
 
     @staticmethod

@@ -328,6 +328,7 @@
       "settings": "⚙️ Settings",
       "search_prompt": "module or command",
       "results": "Results for «{query}»",
+      "developer": "Developer",
       "aliases": "Aliases",
       "count": "{count} modules",
       "prefix": "prefix {prefix}"

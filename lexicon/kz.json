@@ -268,6 +268,7 @@
       "settings": "⚙️ Баптаулар",
       "search_prompt": "модуль не команда",
       "results": "«{query}» нәтижелері",
+      "developer": "Әзірлеуші",
       "aliases": "Бүркеншік атаулар",
       "count": "модуль: {count}",
       "prefix": "префикс {prefix}"
