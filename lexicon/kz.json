@@ -870,6 +870,7 @@
       "telemetry_empty": "Іріктеу терезесінде соңғы шақырулар жоқ",
       "telemetry_footer": "Ағымдағы терезеде шақырылған әдістер",
       "usage_suspend": "Қолданылуы: {prefix}suspend_api [секунд]",
+      "resumed": "API қорғанысы қайта қосылды",
       "suspended_success": "API қорғанысы: <code>{seconds}с</code> тоқтатылды"
     },
     "genesis": {
