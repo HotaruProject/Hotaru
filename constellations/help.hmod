@@ -139,6 +139,9 @@ def _card(ctx: Any, module_id: str, actor: Any, back: Any, **back_args: Any) -> 
     description = _description(runtime, manifest)
     if description:
         lines.append(f"<i>{_escape(description)}</i>")
+    developer = str(getattr(manifest, "developer", "") or "")
+    if developer:
+        lines.append(f"{k.icon('account')} {_escape(ctx.t('kernel.help_ui.developer'))}: {_escape(developer)}")
     commands: List[str] = []
     all_cmds: list[tuple[str, bool]] = [(c, False) for c in manifest.commands]
     for bc in getattr(manifest, "bot_commands", ()):
