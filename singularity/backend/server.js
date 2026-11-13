@@ -127,7 +127,8 @@ function renderAuthGateHtml() {
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <link rel="icon" href="data:," />
-  <title>403 // HOTARU SINGULARITY</title>
+  <title>Hotaru Singularity</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <style>
     html, body {
       margin: 0;
@@ -171,12 +172,20 @@ function renderAuthGateHtml() {
 </head>
 <body>
   <div class="gate" data-testid="auth-gate">
-    <div class="code">HTTP 403 // SANCTUARY_GUARD</div>
+    <div class="code">HTTP 200 SANCTUARY GUARD</div>
     <div class="title" id="gate-title">KERNEL TELEMETRY LOCKED - OWNER ONLY</div>
     <div class="desc" id="gate-desc">Launch via your Hotaru inline Mini App button inside Telegram.</div>
   </div>
   <script>
     (function () {
+      try {
+        var cachedToken = sessionStorage.getItem("singularity_session_token");
+        if (cachedToken) {
+          window.location.replace("/?session=" + encodeURIComponent(cachedToken) + (window.location.hash || ""));
+          return;
+        }
+      } catch (_) {}
+
       function extractInitData() {
         try {
           if (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initData) {
@@ -227,29 +236,21 @@ function renderAuthGateHtml() {
               window.location.replace(nextUrl);
               return;
             }
-            if (titleEl) titleEl.textContent = "403 // ACCESS DENIED";
+            if (titleEl) titleEl.textContent = "403 ACCESS DENIED";
             if (descEl) descEl.textContent = "Owner signature required.";
           })
           .catch(function () {
-            if (titleEl) titleEl.textContent = "403 // VERIFICATION FAILED";
+            if (titleEl) titleEl.textContent = "403 VERIFICATION FAILED";
           });
       }
 
       tryVerify();
-      if (!attempted && (window.TelegramWebviewProxy || window.TelegramWebview)) {
-        var sdk = document.createElement("script");
-        sdk.src = "https://telegram.org/js/telegram-web-app.js";
-        sdk.async = true;
-        sdk.onload = tryVerify;
-        sdk.onerror = function () {};
-        document.head.appendChild(sdk);
-      }
       var polls = 0;
       var timer = setInterval(function () {
         polls += 1;
         tryVerify();
-        if (attempted || polls >= 12) clearInterval(timer);
-      }, 120);
+        if (attempted || polls >= 20) clearInterval(timer);
+      }, 100);
     })();
   </script>
 </body>
@@ -654,18 +655,18 @@ function createSingularityServer(options = {}) {
 
     const auth = authenticateHttpRequest(req, res, searchParams);
     if (!auth.ok) {
-      const wantsHtml =
-        method === "GET" &&
+      const isRootNavigation =
+        (method === "GET" || method === "HEAD") &&
         (pathname === "/" || pathname === "/index.html") &&
-        !auth.explicitFailed &&
-        String(req.headers.accept || "").includes("text/html");
+        !auth.explicitFailed;
 
-      if (wantsHtml) {
+      if (isRootNavigation) {
         const gateBuf = Buffer.from(renderAuthGateHtml(), "utf8");
-        res.statusCode = 403;
+        res.statusCode = 200;
         res.setHeader("Cache-Control", "no-store");
         res.setHeader("Content-Type", "text/html; charset=utf-8");
         res.setHeader("Content-Length", String(gateBuf.length));
+        if (method === "HEAD") return res.end();
         return res.end(gateBuf);
       }
 

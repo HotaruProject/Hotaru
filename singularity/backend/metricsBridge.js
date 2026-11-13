@@ -151,13 +151,17 @@ function resolveDefaultObservatoryPath() {
   if (process.env.OBSERVATORY_LOG_PATH) {
     return path.resolve(process.env.OBSERVATORY_LOG_PATH);
   }
-  return path.resolve(__dirname, "../../../observatory/runtime/events.jsonl");
+  const cand1 = path.resolve(__dirname, "../../observatory/runtime/events.jsonl");
+  if (fs.existsSync(cand1)) return cand1;
+  const cand2 = path.resolve(process.cwd(), "observatory/runtime/events.jsonl");
+  if (fs.existsSync(cand2)) return cand2;
+  return cand1;
 }
 
 class NodeTelemetryProbe extends EventEmitter {
   constructor({
     runtimeTtlMs = 6000,
-    maxDebugEvents = 48,
+    maxDebugEvents = 200,
     observatoryPath = resolveDefaultObservatoryPath(),
     pollIntervalMs = 1000,
   } = {}) {
@@ -251,23 +255,28 @@ class NodeTelemetryProbe extends EventEmitter {
 
   _formatObservatoryRecord(obj) {
     if (!obj || typeof obj !== "object") return null;
-    const ignored = new Set(["ts", "time", "level", "component", "event", "tb"]);
+    const ignored = new Set(["ts", "time", "level", "component", "event", "tb", "msg"]);
     const parts = [];
+    if (obj.msg) {
+      parts.push(scrubText(obj.msg));
+    }
     for (const [k, v] of Object.entries(obj)) {
       if (ignored.has(k) || v === null || v === undefined) continue;
       if (isSecretKey(k)) {
         parts.push(`${k}=[redacted]`);
       } else if (typeof v === "object") {
-        parts.push(`${k}=${scrubText(JSON.stringify(v)).slice(0, 64)}`);
+        parts.push(`${k}=${scrubText(JSON.stringify(v)).slice(0, 80)}`);
       } else {
-        parts.push(`${k}=${scrubText(v).slice(0, 80)}`);
+        parts.push(`${k}=${scrubText(v).slice(0, 100)}`);
       }
     }
+    const rawTs = typeof obj.ts === "number" ? obj.ts : Date.now();
+    const tsMs = rawTs < 1e11 ? Math.round(rawTs * 1000) : Math.round(rawTs);
     return {
-      ts: typeof obj.ts === "number" ? obj.ts : Date.now(),
+      ts: tsMs,
       level: String(obj.level || "info"),
-      component: String(obj.component || obj.module || "observatory"),
-      event: String(obj.event || "event"),
+      component: String(obj.component || obj.module || "kernel"),
+      event: String(obj.event || "log"),
       detail: parts.join(" "),
     };
   }
@@ -495,7 +504,7 @@ class NodeTelemetryProbe extends EventEmitter {
       collector: runtimeFresh ? "node.probe+hotaru" : "node.probe",
       system,
       userbot,
-      debugEvents: this._debugBuffer.slice(-24),
+      debugEvents: this._debugBuffer.slice(-100),
     };
   }
 
