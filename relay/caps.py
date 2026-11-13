@@ -885,6 +885,26 @@ class CapabilityHost:
             url = f"{url}{'&' if '?' in url else '?'}{params}"
         document = payload.get("json", payload.get("data"))
         raw_body = payload.get("body")
+        body_file = payload.get("body_file")
+        if body_file is not None:
+            if not self._allowed(module_id, "files"):
+                raise PermissionError("net body_file requires the files capability")
+            if not isinstance(body_file, str) or not body_file or "\x00" in body_file:
+                raise PermissionError("net body_file requires a workspace file path")
+            if document is not None or raw_body is not None:
+                raise PermissionError("net body_file cannot be combined with body, json or data")
+            sandbox = getattr(self.runtime, "sandbox", None)
+            if sandbox is None:
+                raise PermissionError("module workspace is not ready")
+            workspace = Path(sandbox.workspace(module_id))
+            fd = _workspace_open(workspace, body_file, os.O_RDONLY)
+            with os.fdopen(fd, "rb") as handle:
+                body_limit = 64 * 1024 * 1024
+                if os.fstat(handle.fileno()).st_size > body_limit:
+                    raise PermissionError("net body_file exceeds 64 MiB")
+                raw_body = handle.read(body_limit + 1)
+                if len(raw_body) > body_limit:
+                    raise PermissionError("net body_file exceeds 64 MiB")
         if isinstance(raw_body, str):
             raw_body = raw_body.encode()
         elif isinstance(raw_body, (bytes, bytearray)):
