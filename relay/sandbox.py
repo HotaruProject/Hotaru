@@ -2342,7 +2342,11 @@ class ModuleSandbox:
                     reply = {"kind": "cap_result", "cid": message.get("cid"), "ok": True, "result": result}
                 except Exception as exc:
                     reply = {"kind": "cap_result", "cid": message.get("cid"), "ok": False, "error_type": type(exc).__name__, "error": f"{type(exc).__name__}: {exc}"}
-                    log.error("sandbox capability failed (module=%s request=%r): %s: %s\n%s", module_id, message, type(exc).__name__, exc, traceback.format_exc())
+                    import goygram.errors as ge
+                    if isinstance(exc, (ge.GoyGramError, asyncio.TimeoutError, TimeoutError, OSError)):
+                        log.debug("sandbox capability %s failed (module=%s): %s: %s", name, module_id, type(exc).__name__, exc)
+                    else:
+                        log.error("sandbox capability failed (module=%s request=%r): %s: %s\n%s", module_id, message, type(exc).__name__, exc, traceback.format_exc())
             if process is self._workers.get(module_id) and process is not None and process.poll() is None and process.stdin is not None:
                 await self._write_reply(process, reply)
 
@@ -2367,7 +2371,7 @@ class ModuleSandbox:
                     reply = {"kind": "op_result", "cid": message.get("cid"), "ok": False, "error_type": type(exc).__name__, "error": f"{type(exc).__name__}: {exc}"}
                     import goygram.errors as ge
                     if isinstance(exc, (ge.GoyGramError, asyncio.TimeoutError, TimeoutError, OSError)):
-                        log.warning("sandbox op %s failed (module=%s): %s", method, module_id, exc)
+                        log.debug("sandbox op %s failed (module=%s): %s: %s", method, module_id, type(exc).__name__, exc)
                     else:
                         log.error("sandbox op failed (module=%s request=%r): %s: %s\n%s", module_id, message, type(exc).__name__, exc, traceback.format_exc())
             if process is self._workers.get(module_id) and process is not None and process.poll() is None and process.stdin is not None:
@@ -2387,7 +2391,11 @@ class ModuleSandbox:
                 reply = {"kind": "respond_result", "cid": message.get("cid"), "ok": True, "result": result}
             except Exception as exc:
                 reply = {"kind": "respond_result", "cid": message.get("cid"), "ok": False, "error_type": type(exc).__name__, "error": f"{type(exc).__name__}: {exc}"}
-                log.error("sandbox respond failed (module=%s request=%r): %s: %s\n%s", module_id, payload, type(exc).__name__, exc, traceback.format_exc())
+                import goygram.errors as ge
+                if isinstance(exc, (ge.GoyGramError, asyncio.TimeoutError, TimeoutError, OSError)):
+                    log.debug("sandbox respond failed (module=%s): %s: %s", module_id, type(exc).__name__, exc)
+                else:
+                    log.error("sandbox respond failed (module=%s request=%r): %s: %s\n%s", module_id, payload, type(exc).__name__, exc, traceback.format_exc())
             process = self._workers.get(module_id)
             if process is not None and process.poll() is None and process.stdin is not None:
                 await self._write_reply(process, reply)
@@ -2433,7 +2441,11 @@ class ModuleSandbox:
                 result = {"ok": True, "result": value}
             except Exception as exc:
                 result = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
-                log.error("sandbox callback failed (module=%s request=%r): %s: %s\n%s", module_id, message, type(exc).__name__, exc, traceback.format_exc())
+                import goygram.errors as ge
+                if isinstance(exc, (ge.GoyGramError, asyncio.TimeoutError, TimeoutError, OSError)):
+                    log.debug("sandbox callback failed (module=%s): %s: %s", module_id, type(exc).__name__, exc)
+                else:
+                    log.error("sandbox callback failed (module=%s request=%r): %s: %s\n%s", module_id, message, type(exc).__name__, exc, traceback.format_exc())
             if process is not None and process.poll() is None and process.stdin is not None:
                 await self._write_reply(process, {"cb_respond_result": result, "cid": message.get("cid")})
 
