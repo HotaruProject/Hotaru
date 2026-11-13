@@ -96,6 +96,14 @@ class FloodFallback:
                     chat_id,
                     exc.seconds,
                 )
+            except Exception as exc:
+                if name == "bot" and attempt == 0:
+                    reopen = getattr(getattr(self.runtime, "inline", None), "reopen_owner_chat", None)
+                    blocked = any(item in str(exc).lower() for item in ("chat not found", "bot was blocked", "forbidden: bot", "peer_id_invalid", "input_user_deactivated"))
+                    if blocked and callable(reopen) and await reopen(chat_id):
+                        attempt += 1
+                        return await app.send_msg(chat_id, text, **payload)
+                raise
 
     async def notify(self, chat_id: Any, html: str, *, src: str | None = None) -> None:
         config = getattr(self.runtime, "config", None)

@@ -150,8 +150,8 @@ class ApiRateLimiter:
                         f"Paused API requests for {int(self.local_floodwait)}s to protect your account."
                     )
             config = getattr(self.runtime, "config", None)
-            target = getattr(config, "log_chat", None) or getattr(config, "owner_id", None)
+            target = getattr(config, "owner_id", None) or getattr(getattr(self.runtime, "kernel", None), "owner_id", None) or getattr(config, "log_chat", None)
             if isinstance(target, int):
-                await flood.send(target, text)
+                await flood.send(target, text, src="bot")
         finally:
             _ALERT.reset(token)

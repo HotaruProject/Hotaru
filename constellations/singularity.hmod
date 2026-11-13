@@ -8,7 +8,7 @@ HOTARU = {
 
 from typing import Any
 
-from singularity.relay import get_sanctuary_app_state, resolve_inline_banner_url
+from singularity.relay import resolve_inline_banner_url
 
 
 def _tr(ctx: Any, key: str, fallback: str, **kwargs: Any) -> str:
@@ -35,36 +35,11 @@ async def command_dash(ctx: Any, invocation: Any) -> None:
             ready_info = await svc.ensure_ready()
     svc = getattr(runtime, "singularity", None)
 
-    state = getattr(runtime, "state", None)
-    db_state = get_sanctuary_app_state(state)
-
-    bot_user = (
-        str(ready_info.get("bot_username") or "")
-        or db_state.bot_username
-        or (str(state.get_setting("inline-bot-username") or "") if state is not None and hasattr(state, "get_setting") else "")
-    ).lstrip("@").strip()
-
-    short_slug = (
-        str(ready_info.get("short_name") or "")
-        or db_state.short_name
-        or (svc.config.short_name if svc is not None else "dashboard")
-    ).strip()
-
-    app_link = (
-        str(ready_info.get("app_link") or "")
-        or db_state.app_link
-        or (svc.webapp_link if svc is not None and svc.webapp_link else "")
-        or (f"https://t.me/{bot_user}/{short_slug}" if bot_user else "")
-    ).strip()
-
-    tunnel_url = (
-        str(ready_info.get("tunnel_url") or "")
-        or (svc.tunnel_url if svc is not None and svc.tunnel_url else "")
-        or db_state.last_tunnel_url
-    ).strip()
+    app_link = str(ready_info.get("app_link") or "").strip()
+    tunnel_url = str(ready_info.get("tunnel_url") or "").strip()
 
     probe_online = bool(ready_info.get("running") if ready_info else (svc is not None and svc.is_running))
-    registered = bool(ready_info.get("registered") if ready_info else (db_state.registered or (svc is not None and svc.webapp_registered)))
+    registered = bool(ready_info.get("registered") if ready_info else (svc is not None and svc.webapp_registered))
 
     status_tag = "ONLINE" if probe_online else "STANDBY"
     sync_tag = "SYNCED" if registered else "PENDING"
@@ -85,7 +60,7 @@ async def command_dash(ctx: Any, invocation: Any) -> None:
 
     open_label = _tr(ctx, "kernel.singularity.open_button", "Open Singularity")
 
-    launch_url = app_link or tunnel_url
+    launch_url = app_link
     k = ctx.screens
     buttons: list[list[dict[str, Any]]] = []
     if launch_url and probe_online:

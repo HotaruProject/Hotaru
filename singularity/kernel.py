@@ -801,6 +801,7 @@ class SingularityKernel:
 
                 if not self.config.auto_botfather:
                     fallback_link = self.webapp_link or f"https://t.me/{bot_user}/{self.config.short_name}"
+                    self.webapp_link = fallback_link
                     self._synced_tunnel_url = url
                     return RelaySyncReport(
                         ok=True,
@@ -899,19 +900,20 @@ class SingularityKernel:
 
             bot_user = self._resolve_bot_username()
             db_state = get_sanctuary_app_state(getattr(self.runtime, "state", None))
-            app_link = (
-                self.webapp_link
-                or db_state.app_link
-                or (f"https://t.me/{bot_user}/{db_state.short_name or self.config.short_name}" if bot_user else "")
+            link_live = bool(
+                self.tunnel_url
+                and self._tunnel is not None
+                and self._tunnel.is_alive
+                and self._synced_tunnel_url.rstrip("/") == self.tunnel_url.rstrip("/")
             )
             banner_url = await resolve_inline_banner_url(self.tunnel_url)
             return {
                 "running": self.is_running,
                 "tunnel_url": self.tunnel_url,
-                "app_link": app_link,
+                "app_link": (self.webapp_link or "") if link_live else "",
                 "bot_username": bot_user,
                 "short_name": db_state.short_name or self.config.short_name,
-                "registered": bool(self.webapp_registered or db_state.registered),
+                "registered": bool(link_live and (self.webapp_registered or db_state.registered)),
                 "banner_url": banner_url,
             }
 
