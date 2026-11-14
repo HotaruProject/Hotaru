@@ -1326,8 +1326,7 @@ class Runtime:
                 }
                 if rich:
                     photo_result["input_message_content"] = {"rich_message": rich if isinstance(rich, dict) else {"_": "inputRichMessageHTML", **to_rich(form_text)}}
-                if buttons:
-                    photo_result["reply_markup"] = {"inline_keyboard": buttons}
+                photo_result["reply_markup"] = {"inline_keyboard": buttons if buttons else [[{"text": "\u00ad", "callback_data": "~"}]]}
                 try:
                     await answer_tl(query, results=[photo_result], cache_time=0, is_personal=True)
                     answered = True
@@ -1338,8 +1337,7 @@ class Runtime:
                 if rich:
                     rich_content = rich if isinstance(rich, dict) else {"_": "inputRichMessageHTML", **to_rich(form_text)}
                     result["input_message_content"] = {"rich_message": rich_content}
-                if buttons:
-                    result["reply_markup"] = {"inline_keyboard": buttons}
+                result["reply_markup"] = {"inline_keyboard": buttons if buttons else [[{"text": "\u00ad", "callback_data": "~"}]]}
                 await answer_tl(query, results=[result], cache_time=0, is_personal=True)
             if self.observatory is not None:
                 self.observatory.emit("inline", "form_answered", buttons=len(buttons))

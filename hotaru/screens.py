@@ -1214,11 +1214,6 @@ class ScreenEngine:
                 elif form.bot and form.message_id is not None:
                     with trusted_scope():
                         await app.mt_messages_edit_message(peer=form.chat, id=form.message_id, message=plain, **data)
-                elif form.message_id is not None and getattr(self.runtime, "app", None) is not None:
-                    user_app = getattr(self.runtime, "app", None)
-                    user_data = {k: v for k, v in data.items() if k != "reply_markup"}
-                    with trusted_scope():
-                        await user_app.mt_messages_edit_message(peer=form.chat, id=form.message_id, message=plain, **user_data)
                 elif attempt < 4:
                     await asyncio.sleep(0.5)
                     continue
