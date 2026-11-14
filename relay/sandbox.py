@@ -1780,6 +1780,17 @@ class ModuleSandbox:
             self._sandbox_base = SANDBOX_BASE_ROOT
         os.makedirs(self._sandbox_base, exist_ok=True)
         os.chmod(self._sandbox_base, 0o700)
+        try:
+            for entry in os.listdir(self._sandbox_base):
+                candidate = os.path.join(self._sandbox_base, entry)
+                if os.path.isdir(candidate) and not os.listdir(candidate):
+                    try:
+                        os.rmdir(candidate)
+                    except OSError:
+                        pass
+        except OSError:
+            pass
+        self._proc_readers: dict[str, tuple[subprocess.Popen[bytes], threading.Thread]] = {}
         self._pids_cap = apply_tree_pids_cap()
         observatory = getattr(runtime, "observatory", None)
         if observatory is not None:
@@ -1856,13 +1867,6 @@ class ModuleSandbox:
                 raise OSError(ctypes.get_errno(), "unshare failed")
             mount(b"none", b"/", None, MS_REC | MS_PRIVATE)
             os.makedirs(sandbox_base, exist_ok=True)
-            for entry in os.listdir(sandbox_base):
-                candidate = os.path.join(sandbox_base, entry)
-                try:
-                    if os.path.isdir(candidate) and not os.listdir(candidate):
-                        os.rmdir(candidate)
-                except OSError:
-                    pass
             newroot = tempfile.mkdtemp(prefix="root.", dir=sandbox_base)
             mount(b"tmpfs", newroot.encode(), b"tmpfs", MS_NOSUID | MS_NODEV, b"mode=0755")
 
@@ -2078,14 +2082,7 @@ class ModuleSandbox:
             self._persistent_modules.discard(module_id)
         if lazy:
             return True
-        current = self._workers.get(module_id)
-        if current is not None and current.poll() is None:
-            return True
-        if module_id not in self._module_deps:
-            await self.ensure_module_deps(module_id, source, requires)
-        loop = asyncio.get_running_loop()
-        process = await loop.run_in_executor(None, lambda: self._spawn_worker(module_id, source, commands))
-        self._start_reader(module_id, process)
+        await self._ensure_worker(module_id)
         return True
 
     async def call(self, module_id: str, command: str, args: list[str], payload: dict[str, Any], source: Any = None, target: str | None = None, context: Any = None, nav: Any = None) -> Any:
@@ -2166,7 +2163,16 @@ class ModuleSandbox:
     async def _ensure_worker(self, module_id: str) -> subprocess.Popen[bytes]:
         async with self._ensure_locks.setdefault(module_id, asyncio.Lock()):
             process = self._workers.get(module_id)
-            if process is None or process.poll() is not None:
+            if process is not None and process.poll() is not None:
+                self._workers.pop(module_id, None)
+                old_pump = self._pumps.pop(module_id, None)
+                if old_pump is not None:
+                    old_pump.cancel()
+                self._queues.pop(module_id, None)
+                self._readers.pop(module_id, None)
+                self._proc_readers.pop(module_id, None)
+                process = None
+            if process is None:
                 if module_id not in self._module_defs:
                     raise SandboxError(f"sandbox worker is not running: {module_id}")
                 source, commands = self._module_defs[module_id]
@@ -2182,9 +2188,16 @@ class ModuleSandbox:
             return process
 
     def _start_reader(self, module_id: str, process: subprocess.Popen[bytes]) -> None:
-        reader = self._readers.get(module_id)
-        if reader is not None and reader.is_alive():
-            return
+        proc_info = self._proc_readers.get(module_id)
+        if proc_info is not None:
+            proc, reader = proc_info
+            if proc is process and reader.is_alive():
+                return
+        old_pump = self._pumps.pop(module_id, None)
+        if old_pump is not None:
+            old_pump.cancel()
+        self._queues.pop(module_id, None)
+        self._readers.pop(module_id, None)
         loop = asyncio.get_running_loop()
         queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
         self._queues[module_id] = queue
@@ -2205,10 +2218,11 @@ class ModuleSandbox:
 
         thread = threading.Thread(target=read, daemon=True)
         self._readers[module_id] = thread
+        self._proc_readers[module_id] = (process, thread)
         thread.start()
-        self._pumps[module_id] = loop.create_task(self._pump(module_id, queue))
+        self._pumps[module_id] = loop.create_task(self._pump(module_id, process, queue))
 
-    async def _pump(self, module_id: str, queue: asyncio.Queue[dict[str, Any] | None]) -> None:
+    async def _pump(self, module_id: str, process: subprocess.Popen[bytes], queue: asyncio.Queue[dict[str, Any] | None]) -> None:
         try:
             while True:
                 message = await queue.get()
@@ -2243,7 +2257,7 @@ class ModuleSandbox:
         except Exception as exc:
             log.error("sandbox pump failed (module=%s): %s: %s\n%s", module_id, type(exc).__name__, exc, traceback.format_exc())
         finally:
-            if self._queues.get(module_id) is queue:
+            if self._workers.get(module_id) is process and self._queues.get(module_id) is queue:
                 self._kill_worker(module_id, SandboxError(f"sandbox worker stopped: {module_id}"))
 
     def _spawn_pump_task(self, coro: Any) -> None:
@@ -2266,7 +2280,8 @@ class ModuleSandbox:
                 waiter.set_exception(error)
 
     def _kill_worker(self, module_id: str, error: Exception) -> None:
-        process = self._workers.get(module_id)
+        process = self._workers.pop(module_id, None)
+        self._proc_readers.pop(module_id, None)
         if process is not None and process.poll() is None:
             try:
                 process.kill()
@@ -2678,6 +2693,7 @@ class ModuleSandbox:
         if pump is not None:
             pump.cancel()
         self._readers.pop(module_id, None)
+        self._proc_readers.pop(module_id, None)
         self._queues.pop(module_id, None)
         self._fail_waiters(module_id, SandboxError(f"sandbox worker stopped: {module_id}"))
         if process is not None and process.poll() is None:
@@ -2771,6 +2787,7 @@ class ModuleSandbox:
         if pump is not None:
             pump.cancel()
         self._readers.pop(module_id, None)
+        self._proc_readers.pop(module_id, None)
         self._queues.pop(module_id, None)
         self._booted.pop(module_id, None)
         self._last_use.pop(module_id, None)

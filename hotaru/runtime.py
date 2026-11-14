@@ -3219,21 +3219,18 @@ class Runtime:
         await self._ensure_forum()
 
     async def _prewarm_sandboxes(self) -> None:
-        await asyncio.sleep(0.5)
-        if self.sandbox is None:
+        if self.sandbox is None or self.closed or self._relaunch:
             return
         module_ids = self.sandbox.module_ids()
         live = set(self.sandbox.live_worker_ids())
-        for module_id in module_ids:
-            if self.closed or self._relaunch:
-                break
-            try:
-                if module_id not in live:
-                    await self.sandbox.ensure_worker(module_id)
-                    await asyncio.sleep(0.05)
-            except Exception as exc:
-                if self.observatory is not None:
-                    self.observatory.emit("sandbox", "prewarm_error", module=module_id, error=type(exc).__name__, detail=str(exc)[:120])
+        to_warm = [mid for mid in module_ids if mid not in live]
+        if not to_warm:
+            return
+        results = await asyncio.gather(*[self.sandbox.ensure_worker(mid) for mid in to_warm], return_exceptions=True)
+        if self.observatory is not None:
+            for mid, res in zip(to_warm, results):
+                if isinstance(res, Exception):
+                    self.observatory.emit("sandbox", "prewarm_error", module=mid, error=type(res).__name__, detail=str(res)[:120])
 
     def get_memory_usage(self) -> int:
         pid = os.getpid()
@@ -3433,12 +3430,12 @@ class Runtime:
         await self.restore_enabled_modules(on_progress=self._restart_notice_progress)
         if self.modules is not None and hasattr(self.modules, "end_boot"):
             await self.modules.end_boot()
+        if self.sandbox is not None:
+            await self._prewarm_sandboxes()
         self._restart_notice_finish()
         await self._start_singularity()
         if self.supervisor is not None:
             self.supervisor.mark_ready(mt=app.mt is not None, bot=app.bot is not None)
-        if self.sandbox is not None:
-            self._prewarm_task = asyncio.create_task(self._prewarm_sandboxes(), name="hotaru:prewarm-sandboxes")
         if self.account_manager is not None and app.session.self_id is not None:
             profile = self.account_manager.find_by_user(app.session.self_id)
             if profile is not None:
