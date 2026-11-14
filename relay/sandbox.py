@@ -1729,7 +1729,7 @@ class ModuleSandbox:
         self,
         runtime: Any,
         *,
-        nproc: int = 64,
+        nproc: int = int(os.environ.get("HOTARU_SANDBOX_NPROC", "512")),
         spawn_timeout: float = 60.0,
         idle_timeout: float = 300.0,
     ) -> None:
