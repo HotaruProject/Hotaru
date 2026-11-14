@@ -1087,7 +1087,12 @@ class ScreenEngine:
             raise
         form.message_id = sent.get("id") if isinstance(sent, dict) and isinstance(sent.get("id"), int) else None
         self._commit(form, text, actions, gen, screen)
-        asyncio.get_running_loop().create_task(self._bind(form.id, nonce, gen, rows, has_emoji(text)))
+        ready_id = (runtime._form_inline_ids or {}).get(nonce) if hasattr(runtime, "_form_inline_ids") else None
+        if isinstance(ready_id, dict):
+            form.inline_id = ready_id
+            self._save(form)
+        else:
+            asyncio.get_running_loop().create_task(self._bind(form.id, nonce, gen, rows, has_emoji(text)))
         return form
 
     async def _bind(self, form_id: int, nonce: str, gen: int, rows: list[list[dict[str, Any]]], repaint: bool) -> None:
@@ -1209,6 +1214,11 @@ class ScreenEngine:
                 elif form.bot and form.message_id is not None:
                     with trusted_scope():
                         await app.mt_messages_edit_message(peer=form.chat, id=form.message_id, message=plain, **data)
+                elif form.message_id is not None and getattr(self.runtime, "app", None) is not None:
+                    user_app = getattr(self.runtime, "app", None)
+                    user_data = {k: v for k, v in data.items() if k != "reply_markup"}
+                    with trusted_scope():
+                        await user_app.mt_messages_edit_message(peer=form.chat, id=form.message_id, message=plain, **user_data)
                 elif attempt < 4:
                     await asyncio.sleep(0.5)
                     continue
@@ -1221,6 +1231,8 @@ class ScreenEngine:
                 if attempt or exc.seconds > 8:
                     raise
                 await asyncio.sleep(exc.seconds + 0.5)
+            except ScreenError:
+                raise
             except Exception as exc:
                 if "rich_message" not in data:
                     raise
