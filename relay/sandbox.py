@@ -2084,7 +2084,8 @@ class ModuleSandbox:
         if module_id not in self._module_deps:
             await self.ensure_module_deps(module_id, source, requires)
         loop = asyncio.get_running_loop()
-        await loop.run_in_executor(None, lambda: self._spawn_worker(module_id, source, commands))
+        process = await loop.run_in_executor(None, lambda: self._spawn_worker(module_id, source, commands))
+        self._start_reader(module_id, process)
         return True
 
     async def call(self, module_id: str, command: str, args: list[str], payload: dict[str, Any], source: Any = None, target: str | None = None, context: Any = None, nav: Any = None) -> Any:
