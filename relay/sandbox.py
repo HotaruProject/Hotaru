@@ -301,10 +301,12 @@ def install_seccomp():
 
 
 def install_firewall(protected, namespaces=False, deps_root="", workspace=""):
+    workspace = str(Path(workspace).resolve()) if workspace else ""
     roots = [str(Path(item).resolve()) for item in protected]
+    if workspace:
+        roots = [root for root in roots if root != workspace]
     native_root = str((Path(os.__file__).resolve().parent / "lib-dynload").resolve()) + os.sep
     module_deps = str(Path(deps_root).resolve()) + os.sep if deps_root else ""
-    workspace = str(Path(workspace).resolve()) if workspace else ""
 
     def deny_process(*args, **kwargs):
         raise PermissionError("module process escape is denied")
@@ -334,7 +336,7 @@ def install_firewall(protected, namespaces=False, deps_root="", workspace=""):
             flags = args[2] if len(args) > 2 else 0
             reading_dep = bool(module_deps) and value.startswith(module_deps) and not (isinstance(mode, str) and any(char in mode for char in "wax+")) and not (isinstance(flags, int) and flags & (os.O_WRONLY | os.O_RDWR | os.O_CREAT | os.O_TRUNC | os.O_APPEND))
             own_workspace = bool(workspace) and (value == workspace or value.startswith(workspace + os.sep))
-            if value.endswith((".vault", ".session")) or any((value == root or value.startswith(root + os.sep)) and not ((reading_dep or own_workspace) and (module_deps.startswith(root + os.sep) or workspace.startswith(root + os.sep))) for root in roots):
+            if value.endswith((".vault", ".session")) or any((value == root or value.startswith(root + os.sep)) and not ((reading_dep or own_workspace) and (module_deps.startswith(root + os.sep) or workspace == root or workspace.startswith(root + os.sep))) for root in roots):
                 raise PermissionError("module access to Telegram session storage is denied")
         if event in {"os.remove", "os.rmdir", "os.truncate", "shutil.rmtree", "os.rename", "os.link", "os.symlink"}:
             count = 2 if event in {"os.rename", "os.link", "os.symlink"} else 1
@@ -345,7 +347,7 @@ def install_firewall(protected, namespaces=False, deps_root="", workspace=""):
                     raise PermissionError("portable sandbox requires absolute paths for descriptor operations")
                 value = str(Path(os.fsdecode(path)).resolve())
                 own_workspace = bool(workspace) and (value == workspace or value.startswith(workspace + os.sep))
-                if value.endswith((".vault", ".session")) or any((value == root or value.startswith(root + os.sep) or root.startswith(value.rstrip(os.sep) + os.sep)) and not (own_workspace and workspace.startswith(root + os.sep)) for root in roots):
+                if value.endswith((".vault", ".session")) or any((value == root or value.startswith(root + os.sep) or root.startswith(value.rstrip(os.sep) + os.sep)) and not (own_workspace and (workspace == root or workspace.startswith(root + os.sep))) for root in roots):
                     raise PermissionError("module access to Telegram session storage is denied")
         if event in {"subprocess.Popen", "os.system", "os.posix_spawn", "os.exec", "os.fork", "os.forkpty", "multiprocessing.Process"}:
             raise PermissionError("module process escape is denied")
@@ -1965,9 +1967,9 @@ class ModuleSandbox:
             "deps_root": "/opt/pkgs" if namespaces and deps else deps or "",
             "workspace": str(workspace),
             "protected": [
-                str(self.runtime.config.session_dir),
-                str(self.runtime.config.session_dir / f"{self.runtime.config.session_name}.vault"),
-                str(self.runtime.config.session_dir / f"{self.runtime.config.session_name}.session"),
+                str(Path(self.runtime.config.session_dir).resolve()),
+                str((Path(self.runtime.config.session_dir) / f"{self.runtime.config.session_name}.vault").resolve()),
+                str((Path(self.runtime.config.session_dir) / f"{self.runtime.config.session_name}.session").resolve()),
                 os.path.join(os.environ.get("HOME") or os.path.expanduser("~"), ".ssh"),
                 os.path.join(os.environ.get("HOME") or os.path.expanduser("~"), ".config", "gh"),
                 os.path.join(os.environ.get("HOME") or os.path.expanduser("~"), ".gitconfig"),
