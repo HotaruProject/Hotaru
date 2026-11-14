@@ -313,7 +313,7 @@
       "button": {
         "add": "Додати акаунт",
         "refresh": "Оновити",
-        "close": "✕ Close",
+        "close": "✕ Закрити",
         "permissions": "Права",
         "start": "Запустити",
         "stop": "Зупинити",
@@ -786,7 +786,7 @@
         },
         "restore": {
           "usage": "<-f|--force> <archive>",
-          "description": "Restore from backup archive"
+          "description": "Відновити з резервної копії"
         }
       },
       "config_fields": {
@@ -966,7 +966,7 @@
     "brand": "<tg-emoji emoji-id=\"5985527717183888277\">⚡</tg-emoji><tg-emoji emoji-id=\"5985515480822061758\">⚡</tg-emoji><tg-emoji emoji-id=\"5985558606588681366\">⚡</tg-emoji><tg-emoji emoji-id=\"5985757321840565902\">⚡</tg-emoji>",
     "ok": "ОК",
     "cancel": "Скасувати",
-    "close": "✕ Close",
+    "close": "✕ Закрити",
     "back": "Назад",
     "unknown_error": "Невідома помилка",
     "confirm": "Підтвердити",
@@ -1213,7 +1213,7 @@
     }
   },
   "ui": {
-    "close": "✕ Close",
+    "close": "✕ Закрити",
     "back": "‹ Назад",
     "expired": "Меню застаріло. Викличте команду ще раз.",
     "stale": "Меню щойно оновилося, натисніть ще раз.",

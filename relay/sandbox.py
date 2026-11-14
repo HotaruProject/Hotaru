@@ -783,7 +783,7 @@ class SandboxContext(ContextOperations):
 
     @property
     def screens(self):
-        return _ScreensProxy()
+        return _ScreensProxy(self.t)
 
     async def _ctx_media_rpc(self, method, **kwargs):
         return _respond_call({"media_rpc": {"method": method, "kwargs": kwargs}})
@@ -898,6 +898,9 @@ class SandboxNav:
 
 
 class _ScreensProxy:
+    def __init__(self, t=None):
+        self.t = t or (lambda k, d=None: d or k)
+
     @staticmethod
     def screen(text, rows=None, **options):
         data = {"text": text, "rows": rows or []}
@@ -934,9 +937,11 @@ class _ScreensProxy:
     def success(text, callback, **args):
         return _ScreensProxy.button(text, callback, style="success", **args)
 
-    @staticmethod
-    def close(text="✕ Close"):
-        return _UiProxy.button(text or "✕ Close", "close", style="danger")
+    def close(self, text=None):
+        t_fn = getattr(self, "t", None) or (lambda k, d=None: d or k)
+        if not text or text in {"Close", "✕ Close"}:
+            text = t_fn("common.close", "✕ Close")
+        return _UiProxy.button(text, "close", style="danger")
 
     @staticmethod
     def url(text, link, style=None):
@@ -946,12 +951,12 @@ class _ScreensProxy:
     def webapp(text, link, style=None):
         return {"text": text, "web_app": {"url": str(link)}, "style": style}
 
-    @staticmethod
-    def footer(back=None, **args):
+    def footer(self, back=None, **args):
         row = []
         if back:
-            row.append(_ScreensProxy.button("« Back", back, **args))
-        row.append(_ScreensProxy.close())
+            t_fn = getattr(self, "t", None) or (lambda k, d=None: d or k)
+            row.append(self.button(t_fn("common.back", "« Back"), back, **args))
+        row.append(self.close())
         return [row]
 
     @staticmethod
@@ -1021,8 +1026,8 @@ class _UiProxy:
         return action_id
 
     def close(self, text=None):
-        if text is None:
-            text = self.t("common.close")
+        if not text or text in {"Close", "✕ Close"}:
+            text = self.t("common.close", "✕ Close")
         return {"text": text, "action_id": "close", "style": "danger"}
 
     @staticmethod

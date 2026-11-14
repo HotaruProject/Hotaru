@@ -1506,13 +1506,14 @@ class InlineHelper:
 class UiHelper:
 
 
-    def __init__(self, module_id: str, store: Any, owner_id: int | None, chat_id: int | str | None, message_id: int, router: Any = None) -> None:
+    def __init__(self, module_id: str, store: Any, owner_id: int | None, chat_id: int | str | None, message_id: int, router: Any = None, translate: Callable[..., str] | None = None) -> None:
         self._module_id = module_id
         self._store = store
         self._router = router
         self._owner_id = owner_id
         self._chat_id = chat_id
         self._message_id = message_id
+        self._translate = translate
         self._actions: dict[str, Callable[[Any, Any], Any]] = {}
 
     def on(self, handler: Callable[[Any, Any], Any]) -> str:
@@ -1583,9 +1584,12 @@ class UiHelper:
     def url(self, text: str, url: str) -> dict[str, str]:
         return self.button_url(text, url)
 
-    def close(self, text: str = "✕ Close") -> dict[str, str]:
-        if not text or text in {"Close", "Закрыть", "✕ Закрыть", "閉じる", "Жабу", "关闭", "Закрити"}:
-            text = "✕ Close"
+    def close(self, text: str | None = None) -> dict[str, str]:
+        if not text or text in {"Close", "✕ Close"}:
+            if callable(self._translate):
+                text = self._translate("common.close", "✕ Close")
+            else:
+                text = "✕ Close"
         async def handler(callback: Any, payload: Any) -> Any:
             try:
                 await callback.respond()
@@ -1600,13 +1604,19 @@ class UiHelper:
             return None
         return self.button(text, handler, style="danger")
 
-    def back(self, text: str, handler: Callable[[Any, Any], Any], payload: Any = None) -> dict[str, str]:
+    def back(self, text: str | None = None, handler: Callable[[Any, Any], Any] | None = None, payload: Any = None) -> dict[str, str]:
+        if not text:
+            text = self._translate("common.back", "Back") if callable(self._translate) else "Back"
         return self.button(text, handler, payload)
 
-    def confirm(self, text: str, handler: Callable[[Any, Any], Any], payload: Any = None) -> dict[str, str]:
+    def confirm(self, text: str | None = None, handler: Callable[[Any, Any], Any] | None = None, payload: Any = None) -> dict[str, str]:
+        if not text:
+            text = self._translate("common.confirm", "Confirm") if callable(self._translate) else "Confirm"
         return self.button(text, handler, payload, style="success")
 
-    def cancel(self, text: str, handler: Callable[[Any, Any], Any], payload: Any = None) -> dict[str, str]:
+    def cancel(self, text: str | None = None, handler: Callable[[Any, Any], Any] | None = None, payload: Any = None) -> dict[str, str]:
+        if not text:
+            text = self._translate("common.cancel", "Cancel") if callable(self._translate) else "Cancel"
         return self.button(text, handler, payload, style="danger")
 
     def form(self, text: str, *rows: Any) -> dict[str, Any]:
