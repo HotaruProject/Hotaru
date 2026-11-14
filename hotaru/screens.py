@@ -1198,13 +1198,20 @@ class ScreenEngine:
         if rich:
             data["rich_message"] = await self._rich(text)
         app = self._bot_app()
-        for attempt in range(3):
+        for attempt in range(5):
             try:
+                if form.inline_id is None:
+                    reloaded = self.load(form.id)
+                    if reloaded is not None and reloaded.inline_id is not None:
+                        form.inline_id = reloaded.inline_id
                 if form.inline_id is not None:
                     await CallbackContext.edit_inline(app, form.inline_id, plain, data)
                 elif form.bot and form.message_id is not None:
                     with trusted_scope():
                         await app.mt_messages_edit_message(peer=form.chat, id=form.message_id, message=plain, **data)
+                elif attempt < 4:
+                    await asyncio.sleep(0.5)
+                    continue
                 else:
                     raise ScreenError("form has no editable identity yet")
                 return

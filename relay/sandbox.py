@@ -2191,8 +2191,14 @@ class ModuleSandbox:
                 line = self._readline(process)
                 if not line:
                     break
-                loop.call_soon_threadsafe(queue.put_nowait, _json_dict(line))
-            loop.call_soon_threadsafe(queue.put_nowait, None)
+                try:
+                    loop.call_soon_threadsafe(queue.put_nowait, _json_dict(line))
+                except RuntimeError:
+                    break
+            try:
+                loop.call_soon_threadsafe(queue.put_nowait, None)
+            except RuntimeError:
+                pass
 
         thread = threading.Thread(target=read, daemon=True)
         self._readers[module_id] = thread
@@ -2489,6 +2495,37 @@ class ModuleSandbox:
             with trusted_scope():
                 await handle.edit(str(payload.get("content", "")), buttons=buttons)
             return True
+        if "screen" in payload:
+            spec = payload["screen"]
+            if isinstance(spec, dict):
+                form_id = spec.get("form_id") or spec.get("id") or payload.get("form_id") or payload.get("id")
+                form_id_str = str(form_id) if form_id is not None else ""
+                if form_id_str.startswith("screen:"):
+                    form_id_str = form_id_str.split(":", 1)[1]
+                if form_id_str.isdigit() and (payload.get("op") == "edit" or spec.get("op") == "edit" or form_id):
+                    screens = getattr(self.runtime, "screens", None)
+                    if screens is not None:
+                        form = screens.load(int(form_id_str))
+                        if form is not None:
+                            if form.module != module_id:
+                                raise PermissionError("screen form belongs to another module")
+                            text = spec.get("text")
+                            if not isinstance(text, str) or not text:
+                                raise ValueError("screen requires non-empty text")
+                            rows = self._sandbox_buttons(module_id, spec.get("rows") or [], getattr(form, "chat", None), getattr(form, "actor", None))
+                            from hotaru.screens import Screen
+                            screen = Screen(
+                                text=text,
+                                rows=rows or [],
+                                toast=spec.get("toast") if isinstance(spec.get("toast"), str) else None,
+                                alert=bool(spec.get("alert", False)),
+                                rich=bool(spec.get("rich", False)),
+                                notice=spec.get("notice") if isinstance(spec.get("notice"), str) else None,
+                                banner=str(spec.get("banner")) if isinstance(spec.get("banner"), str) else "",
+                            )
+                            with trusted_scope():
+                                await screens.render(form, screen)
+                            return form.id
         if source is None:
             raise PermissionError("no message source is bound to this call")
         context = self._respond_contexts.get((module_id, rid))
@@ -2520,7 +2557,7 @@ class ModuleSandbox:
                 banner=str(spec.get("banner")) if isinstance(spec.get("banner"), str) else "",
             )
             form = await self.runtime.screens.show(context, screen, reply_to=options.get("reply_to"), fallback=bool(options.get("fallback", True)))
-            return form.message_id if form is not None else None
+            return form.id if form is not None else None
         if "media_rpc" in payload:
             media_rpc = payload["media_rpc"]
             if not isinstance(media_rpc, dict):
