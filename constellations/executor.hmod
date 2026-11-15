@@ -116,6 +116,11 @@ def _censor(ret: str, ctx: Any) -> str:
                     else "*" * 26
                 )
                 ret = ret.replace(str(secret), masked)
+    try:
+        from hotaru.observatory import scrub_text
+        ret = scrub_text(ret)
+    except Exception:
+        pass
     return ret
 
 

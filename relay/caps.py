@@ -26,6 +26,7 @@ from .netproxy import NetPolicy, ProxySpec, parse_proxy
 from .emoji import to_entities
 from .rpc import rpcname
 from .jobs import Job
+from hotaru.observatory import scrub_text
 
 if TYPE_CHECKING:
     from .jobs import Job
@@ -685,11 +686,11 @@ class CapabilityHost:
             if not isinstance(text, str) or not text.strip():
                 return {"ok": False}
             level = str(payload.get("level") or "info")
-            fields: dict[str, Any] = {"msg": text[:2048]}
+            fields: dict[str, Any] = {"msg": scrub_text(text[:2048])}
             if isinstance(payload.get("name"), str):
-                fields["name"] = payload["name"][:120]
+                fields["name"] = scrub_text(payload["name"][:120])
             if isinstance(payload.get("detail"), str):
-                fields["detail"] = payload["detail"][:2048]
+                fields["detail"] = scrub_text(payload["detail"][:2048])
             observatory.emit("module", "log", level=level, module=module_id, **fields)
             return {"ok": True}
         if op == "read":

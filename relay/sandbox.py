@@ -23,6 +23,7 @@ from . import context as _context
 from . import translation as _translation
 from . import denylist as _denylist
 from relay.firewall import module_scope, trusted_scope
+from hotaru.observatory import scrub_text
 
 _CONTEXT_SOURCE = Path(_context.__file__).read_text(encoding="utf-8")
 _TRANSLATION_SOURCE = Path(_translation.__file__).read_text(encoding="utf-8")
@@ -2069,7 +2070,7 @@ class ModuleSandbox:
         text = message.get("log")
         if not isinstance(text, str):
             return
-        observatory.emit("module", "output", level=level, module=module_id, msg=text[:2048])
+        observatory.emit("module", "output", level=level, module=module_id, msg=scrub_text(text[:2048]))
 
     _MAX_LINE_BYTES = 1 << 20
 

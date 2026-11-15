@@ -28,15 +28,62 @@ _sink: contextvars.ContextVar[Observatory | None] = contextvars.ContextVar("hota
 _module: contextvars.ContextVar[str] = contextvars.ContextVar("hotaru_observatory_module", default="")
 
 _secret_keys = (
-    "token", "password", "passwd", "secret", "api_hash", "api-key", "apikey",
-    "auth_key", "authkey", "vault", "session", "cookie", "authorization",
-    "signing_seed", "phone", "code",
+    "token", "password", "passwd", "passphrase", "secret", "api_hash", "apihash",
+    "api-key", "apikey", "api_key", "auth_key", "authkey", "auth-key", "auth_token",
+    "vault", "session", "cookie", "authorization", "signing_seed", "phone", "code",
+    "pin", "otp", "private_key", "client_secret", "access_token", "refresh_token",
+    "master_key", "credential", "webhook", "proxy_auth",
 )
 _secret_patterns = re.compile(
-    r"(\b\d{6,12}:[A-Za-z0-9_-]{30,}\b)|(\b[0-9a-f]{32,}\b)|(\bsk-[A-Za-z0-9]{16,}\b)|"
-    r"(\bbot\d{6,12}:[\w-]{30,}\b)|(\bBearer\s+[A-Za-z0-9._-]{16,}\b)|(\b[A-Za-z0-9._%+-]+@[\w.-]+\.\w{2,4}:[^\s]{8,}\b)",
+    r"(\b(?:bot)?\d{6,14}:[A-Za-z0-9_-]{30,}\b)|"
+    r"(\bsk-(?:proj-|ant-|admin-|or-v1-)?[A-Za-z0-9_-]{16,}\b)|"
+    r"(\bAIza[0-9A-Za-z_-]{30,45}\b)|"
+    r"(\b(?:gsk|pplx|hf)_[A-Za-z0-9_-]{20,}\b)|"
+    r"(\b(?:ghp|gho|ghu|ghs|ghr|glpat)_[A-Za-z0-9_-]{20,}\b)|"
+    r"(\bgithub_pat_[A-Za-z0-9_]{50,}\b)|"
+    r"(\bxox[baprs]-[A-Za-z0-9-]{10,}\b)|"
+    r"(\b[A-Za-z0-9_-]{24}\.[A-Za-z0-9_-]{6}\.[A-Za-z0-9_-]{27,}\b)|"
+    r"(\b(?:A3T[A-Z0-9]|AKIA|AGPA|AIDA|AROA|AIPA|ANPA|ANVA|ASIA)[A-Z0-9]{16}\b)|"
+    r"(\b(?:rk|sk)_(?:test|live)_[0-9a-zA-Z]{24,}\b)|"
+    r"(\beyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b)|"
+    r"(\bBearer\s+[A-Za-z0-9._~+/-]{16,}=*\b)|"
+    r"(\b1[A-Za-z0-9+/=]{150,}\b)|"
+    r"(\bBQ[A-Za-z0-9+/=]{150,}\b)|"
+    r"(\b[0-9a-f]{32,64}\b)|"
+    r"(\b[A-Za-z0-9._%+-]+@[\w.-]+\.\w{2,4}:[^\s]{8,}\b)",
     re.IGNORECASE,
 )
+_pem_pattern = re.compile(
+    r"-----BEGIN [A-Z0-9 -]*PRIVATE KEY-----[\s\S]*?-----END [A-Z0-9 -]*PRIVATE KEY-----",
+    re.IGNORECASE,
+)
+_url_credentials_pattern = re.compile(
+    r"([a-zA-Z][a-zA-Z0-9+.-]*://(?:[^:@\s]*:)?)[^@\s]+@",
+)
+_kv_secret_pattern = re.compile(
+    r"([\'\"]?\b(?:api[_-]?key|api[_-]?hash|auth[_-]?key|auth[_-]?token|access[_-]?token|refresh[_-]?token|"
+    r"client[_-]?secret|bot[_-]?token|app[_-]?secret|password|passwd|passphrase|private[_-]?key|"
+    r"session[_-]?key|master[_-]?key|secret|token|authorization|cookie|pin)\b[\'\"]?)"
+    r"(\s*[:=]\s*)(?:([\'\"])(.*?)\3|([^\s\'\",;}{]+))",
+    re.IGNORECASE,
+)
+_otp_pattern = re.compile(
+    r"(?<!status[ _-])(?<!error[ _-])(?<!exit[ _-])(?<!response[ _-])(?<!country[ _-])(?<!zip[ _-])(?<!http[ _-])"
+    r"\b(login[_-]?code|auth[_-]?code|verify[_-]?code|verification[_-]?code|otp|pin|passcode|code)\b"
+    r"(\s*[:=\s]\s*)([\'\"]?)(\d{4,8})\b\3",
+    re.IGNORECASE,
+)
+_cli_flag_pattern = re.compile(
+    r"(--(?:api[_-]?key|token|password|passwd|secret|auth[_-]?token|access[_-]?token))\s+([^\s]+)",
+    re.IGNORECASE,
+)
+
+
+def _kv_repl(m: re.Match[str]) -> str:
+    prefix = m.group(1) + m.group(2)
+    if m.group(3) is not None:
+        return f"{prefix}{m.group(3)}[redacted]{m.group(3)}"
+    return f"{prefix}[redacted]"
 
 
 def norm_level(level: str) -> str:
@@ -47,11 +94,20 @@ def norm_level(level: str) -> str:
 
 
 def scrub_text(value: str) -> str:
-    return _secret_patterns.sub("[redacted]", value)
+    if not value:
+        return value
+    text = _pem_pattern.sub("[redacted-private-key]", value)
+    text = _url_credentials_pattern.sub(r"\1[redacted]@", text)
+    text = _kv_secret_pattern.sub(_kv_repl, text)
+    text = _otp_pattern.sub(r"\1\2\3[redacted]\3", text)
+    text = _cli_flag_pattern.sub(r"\1 [redacted]", text)
+    return _secret_patterns.sub("[redacted]", text)
 
 
 def is_secret_key(key: str) -> bool:
     lowered = key.casefold()
+    if any(ignore in lowered for ignore in ("status_code", "error_code", "exit_code", "response_code", "country_code", "lang_code", "language_code", "currency_code")):
+        return False
     return any(marker in lowered for marker in _secret_keys)
 
 
@@ -306,6 +362,33 @@ class Observatory:
         self.emit(component, event, level="crit", **fields)
 
 
+class SecretRedactionFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        if isinstance(record.msg, str):
+            record.msg = scrub_text(record.msg)
+        if record.args:
+            if isinstance(record.args, dict):
+                record.args = {k: (scrub_text(v) if isinstance(v, str) else v) for k, v in record.args.items()}
+            elif isinstance(record.args, tuple):
+                record.args = tuple((scrub_text(v) if isinstance(v, str) else v) for v in record.args)
+            elif isinstance(record.args, list):
+                record.args = [(scrub_text(v) if isinstance(v, str) else v) for v in record.args]
+        return True
+
+
+class RedactingFormatter(logging.Formatter):
+    def __init__(self, original: logging.Formatter | None = None) -> None:
+        super().__init__()
+        self._original = original
+
+    def format(self, record: logging.LogRecord) -> str:
+        if self._original is not None:
+            formatted = self._original.format(record)
+        else:
+            formatted = super().format(record)
+        return scrub_text(formatted)
+
+
 class _Bridge(logging.Handler):
     _translate = {"WARNING": "warn", "ERROR": "error", "CRITICAL": "crit", "DEBUG": "debug", "INFO": "info"}
 
@@ -315,7 +398,7 @@ class _Bridge(logging.Handler):
 
     def emit(self, record: logging.LogRecord) -> None:
         level = self._translate.get(record.levelname, "info")
-        fields: dict[str, Any] = {"msg": record.getMessage()}
+        fields: dict[str, Any] = {"msg": scrub_text(record.getMessage())}
         if record.name == "goygram.mtproto" and (
             record.msg == "MTProto connection lost, reconnecting in %.1fs"
             or (record.msg == "MTProto reconnect failed: %r" and isinstance(record.args, tuple)
@@ -338,13 +421,27 @@ class _Bridge(logging.Handler):
 
 def install(observatory: Observatory, *, goygram_level: str = "error") -> None:
     _sink.set(observatory)
+    filt = SecretRedactionFilter()
     root = logging.getLogger()
-    root.addHandler(_Bridge(observatory))
+    root.addFilter(filt)
+    for handler in root.handlers:
+        handler.addFilter(filt)
+        if not isinstance(handler.formatter, RedactingFormatter):
+            handler.setFormatter(RedactingFormatter(handler.formatter))
+    bridge = _Bridge(observatory)
+    bridge.addFilter(filt)
+    root.addHandler(bridge)
     root.setLevel(logging.INFO)
     goygram = logging.getLogger("goygram")
-    goygram.addHandler(_Bridge(observatory))
+    goygram.addFilter(filt)
+    for handler in goygram.handlers:
+        handler.addFilter(filt)
+        if not isinstance(handler.formatter, RedactingFormatter):
+            handler.setFormatter(RedactingFormatter(handler.formatter))
+    goygram.addHandler(bridge)
     goygram.setLevel(_numeric.get(norm_level(goygram_level), 40))
     goygram.propagate = False
+    logging.getLogger("hotaru").addFilter(filt)
 
 
 def log(*message: Any, level: str = "info", component: str = "module") -> None:
@@ -390,15 +487,16 @@ class _Writer(io.TextIOBase):
         observatory = _sink.get()
         if observatory is None:
             return
-        observatory.emit("module", "output", level="info", stream=self.stream_name, msg=line[: observatory.max_value])
+        observatory.emit("module", "output", level="info", stream=self.stream_name, msg=scrub_text(line[: observatory.max_value]))
 
     def write(self, data: str) -> int:
+        scrubbed = scrub_text(data)
         try:
-            self.original.write(data)
+            self.original.write(scrubbed)
             self.original.flush()
         except Exception:
             pass
-        self._buffer += data
+        self._buffer += scrubbed
         while "\n" in self._buffer:
             line, self._buffer = self._buffer.split("\n", 1)
             if line.strip():

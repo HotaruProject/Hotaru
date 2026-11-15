@@ -272,11 +272,30 @@ def flatten(nested: list[Any]) -> list[Any]:
     return result
 
 
+_CENSOR_RE = re.compile(
+    r"(\b(?:bot)?\d{6,14}:[A-Za-z0-9_-]{30,}\b)|(\bsk-(?:proj-|ant-|admin-|or-v1-)?[A-Za-z0-9_-]{16,}\b)|"
+    r"(\bAIza[0-9A-Za-z_-]{30,45}\b)|(\b(?:gsk|pplx|hf)_[A-Za-z0-9_-]{20,}\b)|"
+    r"(\b(?:ghp|gho|ghu|ghs|ghr|glpat)_[A-Za-z0-9_-]{20,}\b)|"
+    r"(\bgithub_pat_[A-Za-z0-9_]{50,}\b)|(\bxox[baprs]-[A-Za-z0-9-]{10,}\b)|"
+    r"(\b[A-Za-z0-9_-]{24}\.[A-Za-z0-9_-]{6}\.[A-Za-z0-9_-]{27,}\b)|"
+    r"(\beyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b)|"
+    r"(\bBearer\s+[A-Za-z0-9._~+/-]{16,}=*\b)|(\b1[A-Za-z0-9+/=]{150,}\b)|"
+    r"(\bBQ[A-Za-z0-9+/=]{150,}\b)|(\b[0-9a-f]{32,64}\b)",
+    re.IGNORECASE,
+)
+
+
 def censor(obj: Any, fields: list[str] | None = None, replacement: str = "***") -> Any:
     if fields is None:
-        fields = ["phone", "password", "token", "secret", "api_hash", "api_id"]
+        fields = [
+            "phone", "password", "passwd", "token", "secret", "api_hash", "api_id",
+            "api_key", "auth_key", "session", "cookie", "code", "pin", "otp",
+            "private_key", "access_token", "refresh_token", "client_secret",
+        ]
+    if isinstance(obj, str):
+        return _CENSOR_RE.sub(replacement, obj)
     if isinstance(obj, dict):
-        return {k: (replacement if k.lower() in [f.lower() for f in fields] and isinstance(v, str) else censor(v, fields, replacement)) for k, v in cast('dict[str, Any]', obj).items()}
+        return {k: (replacement if any(marker in k.lower() for marker in fields) and isinstance(v, str) else censor(v, fields, replacement)) for k, v in cast('dict[str, Any]', obj).items()}
     if isinstance(obj, list):
         return [censor(item, fields, replacement) for item in cast('list[Any]', obj)]
     return obj
