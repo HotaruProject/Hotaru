@@ -4,7 +4,10 @@ import asyncio
 import logging
 import re
 import secrets
+import shutil
 import string
+import struct
+import subprocess
 import time
 import traceback
 from dataclasses import dataclass
@@ -137,6 +140,47 @@ def _extract_flattened_buttons(msg: Any) -> list[tuple[int, str, bytes]]:
                 out.append((flat_idx, label, data_bytes))
             flat_idx += 1
     return out
+
+
+def _scale_banner_640x360(src_bytes: bytes) -> bytes:
+    if len(src_bytes) >= 24 and src_bytes.startswith(b"\x89PNG\r\n\x1a\n"):
+        w, h = struct.unpack(">II", src_bytes[16:24])
+        if w == 640 and h == 360:
+            return src_bytes
+    try:
+        from PIL import Image
+        import io
+        im = Image.open(io.BytesIO(src_bytes))
+        im = im.convert("RGB")
+        im = im.resize((640, 360))
+        out = io.BytesIO()
+        im.save(out, format="PNG")
+        res = out.getvalue()
+        if len(res) >= 24:
+            return res
+    except Exception:
+        pass
+    tools = [
+        ["ffmpeg", "-v", "error", "-y", "-i", "pipe:0", "-vf", "scale=640:360", "-frames:v", "1", "-c:v", "png", "-f", "image2", "pipe:1"],
+        ["magick", "-", "-resize", "640x360!", "png:-"],
+        ["convert", "-", "-resize", "640x360!", "png:-"],
+    ]
+    for cmd in tools:
+        if shutil.which(cmd[0]):
+            try:
+                proc = subprocess.run(cmd, input=src_bytes, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, check=True)
+                if proc.stdout and len(proc.stdout) >= 24:
+                    return proc.stdout
+            except Exception:
+                continue
+    root = Path(__file__).resolve().parent.parent
+    companion = root / "hotaru/assets/banner_640x360.png"
+    if companion.is_file():
+        try:
+            return companion.read_bytes()
+        except Exception:
+            pass
+    return src_bytes
 
 
 class BotFatherConversation:
@@ -726,8 +770,22 @@ class InlineManager:
                 except Exception:
                     continue
             await self._apply_bot_avatar(info)
-            banner_ok = await self._apply_bot_banner(info)
-            report["banner_ready"] = banner_ok
+            banner_ready = False
+            state = getattr(self.runtime, "state", None)
+            key = f"brand-banner-bot-{info.bot_id}"
+            if state is not None and state.get_setting(key):
+                banner_ready = True
+            else:
+                has_tg = await self._has_bot_description_photo(info)
+                if has_tg is True:
+                    banner_ready = True
+                    if state is not None:
+                        root = Path(__file__).resolve().parent.parent
+                        bp = next((p for p in [root / "hotaru/assets/banner_640x360.png", root / "hotaru/assets/banner.png", root / "assets/banner.png"] if p.is_file()), None)
+                        if bp is not None:
+                            import hashlib
+                            state.set_setting(key, hashlib.sha256(bp.read_bytes()).hexdigest())
+            report["banner_ready"] = banner_ready
         except Exception:
             if self.runtime.observatory is not None:
                 self.runtime.observatory.emit("inline", "tune_failed", username=info.username)
@@ -913,7 +971,7 @@ class InlineManager:
     ) -> bool:
         state = getattr(self.runtime, "state", None)
         root = Path(__file__).resolve().parent.parent
-        candidates: list[Path] = [root / "hotaru/assets/banner.png", root / "assets/banner.png"]
+        candidates: list[Path] = [root / "hotaru/assets/banner_640x360.png", root / "hotaru/assets/banner.png", root / "assets/banner.png"]
         banner_path: Path | None = next((p for p in candidates if p.is_file()), None)
         if banner_path is None:
             return False
@@ -923,10 +981,17 @@ class InlineManager:
         key = f"brand-banner-bot-{info.bot_id}"
 
         has_state = state is not None and state.get_setting(key) == digest
-        if has_state and not force:
-            has_tg = await self._has_bot_description_photo(info)
-            if has_tg is True or has_tg is None:
-                return True
+        if not force:
+            if has_state:
+                has_tg = await self._has_bot_description_photo(info)
+                if has_tg is True or has_tg is None:
+                    return True
+            else:
+                has_tg = await self._has_bot_description_photo(info)
+                if has_tg is True:
+                    if state is not None:
+                        state.set_setting(key, digest)
+                    return True
 
         async def _do_upload(c: BotFatherConversation) -> bool:
             clean_username = info.username.lstrip("@").strip()
@@ -987,7 +1052,8 @@ class InlineManager:
                 log.debug("could not reach descpic button for bot %s", info.bot_id)
                 return False
 
-            photo_reply = await c.send_photo(banner_path, file_name="banner.png")
+            photo_bytes = _scale_banner_640x360(banner_path.read_bytes())
+            photo_reply = await c.send_photo(photo_bytes, file_name="banner.png")
             reply_text = str(photo_reply.get("message") or "").lower()
             if "success" in reply_text or "updated" in reply_text or "done" in reply_text or not (
                 "error" in reply_text or "wrong" in reply_text or "invalid" in reply_text
@@ -1204,10 +1270,6 @@ class InlineManager:
             bot_id = int(token.split(":", 1)[0])
             info = InlineBotInfo(token, username, bot_id)
             await self._configure(conv, username, bot_id=bot_id)
-            try:
-                await self._apply_bot_banner(info, conv=conv)
-            except Exception as exc:
-                log.warning("failed to set bot banner during creation: %s", exc)
             return info
 
     async def _pick_username(self, conv: BotFatherConversation) -> tuple[str, str]:
