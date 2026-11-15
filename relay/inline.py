@@ -237,7 +237,7 @@ class BotFatherConversation:
             await self._delete(*(m.get("id", 0) for m in recent))
             await asyncio.sleep(0.5)
 
-    async def ask(self, text: str) -> dict[str, Any]:
+    async def ask(self, text: str, *, delete: bool = True) -> dict[str, Any]:
         await self.drain()
         mine_id = await self.say(text)
         try:
@@ -246,12 +246,13 @@ class BotFatherConversation:
             await self._delete(mine_id)
             self._tracked_ids.discard(mine_id)
             raise
-        parts = reply.get("parts")
-        ids = [cast('dict[str, Any]', item).get("id", 0) for item in cast('list[Any]', parts)] if isinstance(parts, list) else [reply.get("id", 0)]
-        await self._delete(mine_id, *ids)
-        self._tracked_ids.discard(mine_id)
-        for i in ids:
-            self._tracked_ids.discard(i)
+        if delete:
+            parts = reply.get("parts")
+            ids = [cast('dict[str, Any]', item).get("id", 0) for item in cast('list[Any]', parts)] if isinstance(parts, list) else [reply.get("id", 0)]
+            await self._delete(mine_id, *ids)
+            self._tracked_ids.discard(mine_id)
+            for i in ids:
+                self._tracked_ids.discard(i)
         return reply
 
     async def wait_edited_or_new(
@@ -903,13 +904,7 @@ class InlineManager:
             target_edit_cb = f"bots/{info.bot_id}/edit"
             target_descpic_cb = f"bots/{info.bot_id}/edit/descpic"
 
-            try:
-                await c.say("/cancel")
-                await c.response()
-            except Exception:
-                pass
-
-            curr_msg = await c.ask("/mybots")
+            curr_msg = await c.ask("/mybots", delete=False)
 
             found_descpic = False
             bot_menu = await c.click_button(curr_msg, target_descpic_cb)
@@ -933,10 +928,7 @@ class InlineManager:
                             break
                         curr_msg = nxt
                     if not found_bot_menu:
-                        try:
-                            curr_msg = await c.ask(target_bot_at)
-                        except Exception:
-                            return False
+                        return False
 
             if not found_descpic:
                 descpic_candidate = await c.click_button(curr_msg, target_descpic_cb)
