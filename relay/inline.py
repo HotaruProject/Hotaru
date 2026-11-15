@@ -936,8 +936,13 @@ class InlineManager:
                 clicked = await conv.click_button(r_fb, at, username)
                 if not clicked:
                     r_fb = await conv.ask(at)
-                c_en = await conv.click_button(r_fb, "100%", "Enabled", "Enabled (100%)")
-                if not c_en:
+                c_en = await conv.click_button(r_fb, "100%", "Enabled (100%)", "Enabled")
+                if c_en is None:
+                    c_en = await conv.ask("Enabled")
+                    if "invalid" in str(c_en.get("message", "")).lower():
+                        c_en = await conv.ask("100%")
+                low = str(c_en.get("message", "")).lower()
+                if "percentage" in low or "probability" in low:
                     await conv.ask("100%")
             except Exception:
                 pass
