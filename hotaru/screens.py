@@ -1211,9 +1211,24 @@ class ScreenEngine:
                         form.inline_id = reloaded.inline_id
                 if form.inline_id is not None:
                     await CallbackContext.edit_inline(app, form.inline_id, plain, data)
-                elif form.bot and form.message_id is not None:
+                elif not str(form.chat).startswith("-") and form.inline_id is None and attempt < 2 and form.message_id is None:
+                    await asyncio.sleep(0.5)
+                    continue
+                elif form.message_id is not None and form.chat is not None:
+                    target_app = app if form.bot else getattr(self.runtime, "app", None)
+                    if target_app is None:
+                        raise ScreenError("form has no client to edit message")
+                    peer = int(form.chat) if str(form.chat).lstrip("-").isdigit() else form.chat
                     with trusted_scope():
-                        await app.mt_messages_edit_message(peer=form.chat, id=form.message_id, message=plain, **data)
+                        try:
+                            await target_app.mt_messages_edit_message(peer=peer, id=form.message_id, message=plain, **data)
+                        except Exception as edit_exc:
+                            if "reply_markup" in data:
+                                edit_data = dict(data)
+                                edit_data.pop("reply_markup", None)
+                                await target_app.mt_messages_edit_message(peer=peer, id=form.message_id, message=plain, **edit_data)
+                            else:
+                                raise edit_exc
                 elif attempt < 4:
                     await asyncio.sleep(0.5)
                     continue
@@ -1373,8 +1388,8 @@ class ScreenEngine:
                 elif _inline_key(form.inline_id) != _inline_key(inline_id):
                     log.info("screen dispatch inline mismatch: form=%s expected=%s got=%s", form.id, _inline_key(form.inline_id), _inline_key(inline_id))
                     return
-            elif form.bot and (str(getattr(callback, "chat_id", None)) != str(form.chat) or getattr(callback, "msg_id", None) != form.message_id):
-                log.info("screen dispatch bot message mismatch: form=%s chat=%s/%s msg=%s/%s", form.id, getattr(callback, "chat_id", None), form.chat, getattr(callback, "msg_id", None), form.message_id)
+            elif form.message_id is not None and (str(getattr(callback, "chat_id", None)) != str(form.chat) or getattr(callback, "msg_id", None) != form.message_id):
+                log.info("screen dispatch message mismatch: form=%s chat=%s/%s msg=%s/%s", form.id, getattr(callback, "chat_id", None), form.chat, getattr(callback, "msg_id", None), form.message_id)
                 return
             action = form.actions[index]
             actor = getattr(callback, "from_id", None)

@@ -2445,7 +2445,8 @@ class ModuleSandbox:
             except Exception as exc:
                 reply = {"kind": "respond_result", "cid": message.get("cid"), "ok": False, "error_type": type(exc).__name__, "error": f"{type(exc).__name__}: {exc}"}
                 import goygram.errors as ge
-                if isinstance(exc, (ge.GoyGramError, asyncio.TimeoutError, TimeoutError, OSError)):
+                from hotaru.screens import ScreenError
+                if isinstance(exc, (ge.GoyGramError, ScreenError, asyncio.TimeoutError, TimeoutError, OSError)):
                     log.debug("sandbox respond failed (module=%s): %s: %s", module_id, type(exc).__name__, exc)
                 else:
                     log.error("sandbox respond failed (module=%s request=%r): %s: %s\n%s", module_id, payload, type(exc).__name__, exc, traceback.format_exc())
@@ -2566,7 +2567,15 @@ class ModuleSandbox:
                                 banner=str(spec.get("banner")) if isinstance(spec.get("banner"), str) else "",
                             )
                             with trusted_scope():
-                                await screens.render(form, screen)
+                                try:
+                                    await screens.render(form, screen)
+                                except Exception as render_err:
+                                    from hotaru.screens import ScreenError
+                                    from goygram.errors import FloodWaitError
+                                    if isinstance(render_err, (FloodWaitError, ScreenError)):
+                                        log.warning("sandbox screen render non-fatal failure for module %s: %s: %s", module_id, type(render_err).__name__, render_err)
+                                    else:
+                                        raise
                             return form.id
         if source is None:
             raise PermissionError("no message source is bound to this call")
