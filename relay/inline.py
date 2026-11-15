@@ -88,6 +88,57 @@ def _merge(messages: list[dict[str, Any]]) -> dict[str, Any]:
     return merged
 
 
+def _btn_field(obj: Any, key: str, default: Any = None) -> Any:
+    if isinstance(obj, dict):
+        return obj.get(key, default)
+    return getattr(obj, key, default)
+
+
+def _coerce_cb_bytes(raw_data: Any) -> bytes | None:
+    if isinstance(raw_data, (bytes, bytearray, memoryview)):
+        return bytes(raw_data)
+    if isinstance(raw_data, str):
+        return raw_data.encode("utf-8")
+    if isinstance(raw_data, list) and raw_data and all(isinstance(x, int) and 0 <= x <= 255 for x in raw_data):
+        return bytes(raw_data)
+    return None
+
+
+def _extract_flattened_buttons(msg: Any) -> list[tuple[int, str, bytes]]:
+    if msg is None:
+        return []
+    markup = _btn_field(msg, "reply_markup") or _btn_field(msg, "buttons")
+    if not markup:
+        return []
+    rows = (
+        markup
+        if isinstance(markup, list)
+        else (
+            _btn_field(markup, "rows")
+            or _btn_field(markup, "inline_keyboard")
+            or _btn_field(markup, "keyboard")
+        )
+    )
+    if not rows:
+        return []
+    out: list[tuple[int, str, bytes]] = []
+    flat_idx = 0
+    for row in rows:
+        btns = row if isinstance(row, list) else _btn_field(row, "buttons", [])
+        for btn in btns or []:
+            raw_text = btn if isinstance(btn, str) else _btn_field(btn, "text", "")
+            label = str(_btn_field(raw_text, "text", raw_text) or "")
+            kind = _btn_field(btn, "type", btn)
+            raw_data = _btn_field(kind, "data", None)
+            if raw_data is None:
+                raw_data = _btn_field(btn, "data", _btn_field(btn, "callback_data", None))
+            data_bytes = _coerce_cb_bytes(raw_data)
+            if data_bytes is not None:
+                out.append((flat_idx, label, data_bytes))
+            flat_idx += 1
+    return out
+
+
 class BotFatherConversation:
     def __init__(self, app: Any, *, timeout: float = 30.0) -> None:
         self.app = app
@@ -265,16 +316,17 @@ class BotFatherConversation:
         deadline = time.monotonic() + (timeout if timeout is not None else self.timeout)
         while time.monotonic() < deadline:
             await asyncio.sleep(0.4)
-            result = await self.app.mt_messages_get_history(
-                peer=self._peer,
-                offset_id=0,
-                offset_date=0,
-                add_offset=0,
-                limit=10,
-                max_id=0,
-                min_id=0,
-                hash=0,
-            )
+            with trusted_scope():
+                result = await self.app.mt_messages_get_history(
+                    peer=self._peer,
+                    offset_id=0,
+                    offset_date=0,
+                    add_offset=0,
+                    limit=10,
+                    max_id=0,
+                    min_id=0,
+                    hash=0,
+                )
             body = _result_body(result)
             messages = body.get("messages")
             for message in cast('list[Any]', messages) if isinstance(messages, list) else []:
@@ -303,76 +355,55 @@ class BotFatherConversation:
         return None
 
     async def click_button(self, reply: dict[str, Any], *needles: str) -> dict[str, Any] | None:
-        markup: Any = reply.get("reply_markup")
-        if not isinstance(markup, dict):
+        buttons = _extract_flattened_buttons(reply)
+        if not buttons:
             return None
-        markup_dict = cast('dict[str, Any]', markup)
-        raw_rows = markup_dict.get("rows")
-        if not isinstance(raw_rows, list):
-            return None
-        rows = cast('list[Any]', raw_rows)
         floor = reply.get("id", self._last_id)
         prev_text = str(reply.get("message") or "")
-        matched_btn: dict[str, Any] | None = None
-        candidate_btn: dict[str, Any] | None = None
-        for row in rows:
-            if not isinstance(row, dict):
-                continue
-            row_dict = cast('dict[str, Any]', row)
-            raw_buttons = row_dict.get("buttons")
-            if not isinstance(raw_buttons, list):
-                continue
-            buttons = cast('list[Any]', raw_buttons)
+        markup = reply.get("reply_markup")
+
+        matched: tuple[int, str, bytes] | None = None
+        candidate: tuple[int, str, bytes] | None = None
+
+        if not needles:
+            matched = buttons[0]
+        else:
             for btn in buttons:
-                if not isinstance(btn, dict):
-                    continue
-                btn_dict = cast('dict[str, Any]', btn)
-                btn_text = str(btn_dict.get("text") or "")
-                data = btn_dict.get("data")
-                str_data = (
-                    bytes(data).decode("utf-8", errors="ignore")
-                    if isinstance(data, (bytes, bytearray))
-                    else str(data or "")
-                )
-                if not needles:
-                    matched_btn = btn_dict
+                label = btn[1]
+                str_data = btn[2].decode("utf-8", errors="ignore")
+                for n in needles:
+                    if not n:
+                        continue
+                    n_low = n.casefold()
+                    if n_low == label.casefold() or n_low == str_data.casefold():
+                        matched = btn
+                        break
+                    if candidate is None and (n_low in label.casefold() or n_low in str_data.casefold()):
+                        candidate = btn
+                if matched is not None:
                     break
-                if any(
-                    n.casefold() == btn_text.casefold()
-                    or (str_data and n.casefold() == str_data.casefold())
-                    for n in needles
-                ):
-                    matched_btn = btn_dict
-                    break
-                if candidate_btn is None and any(
-                    n.casefold() in btn_text.casefold()
-                    or (str_data and n.casefold() in str_data.casefold())
-                    for n in needles
-                ):
-                    candidate_btn = btn_dict
-            if matched_btn is not None:
-                break
-        target = matched_btn or candidate_btn
+
+        target = matched or candidate
         if target is not None:
-            raw_data = target.get("data")
-            if isinstance(raw_data, (bytes, bytearray)):
-                try:
+            raw_data = target[2]
+            try:
+                with trusted_scope():
                     await self.app.mt_messages_get_bot_callback_answer(
                         peer=self._peer,
                         msg_id=reply["id"],
-                        data=bytes(raw_data),
+                        data=raw_data,
                     )
-                    edited_or_new = await self.wait_edited_or_new(
-                        reply["id"],
-                        previous_text=prev_text,
-                        previous_markup=markup,
-                        timeout=min(8.0, self.timeout),
-                    )
-                    if edited_or_new is not None:
-                        return edited_or_new
-                    return await self.response(since=floor)
-                except Exception:
-                    pass
+                edited_or_new = await self.wait_edited_or_new(
+                    reply["id"],
+                    previous_text=prev_text,
+                    previous_markup=markup,
+                    timeout=min(8.0, self.timeout),
+                )
+                if edited_or_new is not None:
+                    return edited_or_new
+                return await self.response(since=floor)
+            except Exception as exc:
+                log.debug("click_button failed: %s", exc)
         return None
 
     async def send_photo(self, photo: bytes | Path, file_name: str = "banner.png") -> dict[str, Any]:
