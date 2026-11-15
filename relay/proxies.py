@@ -951,6 +951,8 @@ class ForumHelper:
             if manager is not None and getattr(manager, "info", None) is not None:
                 try:
                     await manager._apply_bot_avatar(manager.info)
+                    if hasattr(manager, "_apply_bot_banner"):
+                        await manager._apply_bot_banner(manager.info)
                 except Exception:
                     pass
             self._applied.add(chat_id)

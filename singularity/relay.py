@@ -934,6 +934,40 @@ async def _provision_bot_via_driver(
                 await driver.ask(f"@{cand_username}", timeout=8.0)
                 await driver.ask("hotaru:~$", timeout=8.0)
             _persist_inline_bot_credentials(runtime, state, bot_id, cand_username, token)
+            root = Path(__file__).resolve().parent.parent
+            banner_path = root / "hotaru/assets/banner.png"
+            if banner_path.is_file():
+                try:
+                    r_myb = await driver.ask("/mybots", timeout=8.0)
+                    if r_myb is not None:
+                        btns = _flatten_buttons(r_myb)
+                        b_btn = next((b for b in btns if cand_username.lower() in b[1].lower() or f"bots/{bot_id}".lower() in str(b[2]).lower()), None)
+                        if b_btn is not None:
+                            mid = _extract_msg_id(r_myb)
+                            prev_t = _extract_msg_text(r_myb)
+                            await driver.click_button(mid, b_btn[2])
+                            b_menu = await driver.wait_edited_or_new(mid, prev_t, timeout=7.0)
+                            if b_menu is not None:
+                                edit_btn = _find_button_by_text(b_menu, "Edit Bot") or next((b for b in _flatten_buttons(b_menu) if f"bots/{bot_id}/edit".lower() in str(b[2]).lower()), None)
+                                if edit_btn is not None:
+                                    mid = _extract_msg_id(b_menu)
+                                    prev_t = _extract_msg_text(b_menu)
+                                    await driver.click_button(mid, edit_btn[2])
+                                    e_menu = await driver.wait_edited_or_new(mid, prev_t, timeout=7.0)
+                                    if e_menu is not None:
+                                        desc_btn = _find_button_by_text(e_menu, "Edit Description Picture", "Description Picture") or next((b for b in _flatten_buttons(e_menu) if f"bots/{bot_id}/edit/descpic".lower() in str(b[2]).lower()), None)
+                                        if desc_btn is not None:
+                                            mid = _extract_msg_id(e_menu)
+                                            prev_t = _extract_msg_text(e_menu)
+                                            await driver.click_button(mid, desc_btn[2])
+                                            await driver.wait_edited_or_new(mid, prev_t, timeout=7.0)
+                                            await driver.send_cover_photo(banner_path.read_bytes(), file_name="banner.png")
+                                            import hashlib
+                                            digest = hashlib.sha256(banner_path.read_bytes()).hexdigest()
+                                            if state is not None and hasattr(state, "set_setting"):
+                                                state.set_setting(f"brand-banner-bot-{bot_id}", digest)
+                except Exception as exc:
+                    log.debug("singularity provision banner skipped: %s", exc)
             return bot_id, cand_username, token
         low = txt.lower()
         if "taken" in low or "occupied" in low or "sorry" in low:
