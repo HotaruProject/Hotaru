@@ -553,10 +553,13 @@ class _BotFatherRelayDriver:
                             random_id=secrets.randbits(63),
                         )
                         sent_id = self._extract_sent_id_from_updates(raw)
-                        res = sent_id or before
-                        if res:
-                            self._tracked_ids.add(res)
-                        return res
+                        if not sent_id:
+                            after = await self.max_message_id()
+                            if after > before:
+                                sent_id = after
+                        if sent_id:
+                            self._tracked_ids.add(sent_id)
+                        return sent_id or before
                     sent = await self.mt.send_message(BOTFATHER_USERNAME, text)
                     res = _extract_msg_id(sent)
                     if res:
@@ -602,10 +605,13 @@ class _BotFatherRelayDriver:
                     random_id=secrets.randbits(63),
                 )
                 sent_id = self._extract_sent_id_from_updates(raw)
-                res = sent_id or before
-                if res:
-                    self._tracked_ids.add(res)
-                return res
+                if not sent_id:
+                    after = await self.max_message_id()
+                    if after > before:
+                        sent_id = after
+                if sent_id:
+                    self._tracked_ids.add(sent_id)
+                return sent_id or before
 
             suffix = ".jpg" if file_name.lower().endswith(".jpg") else ".png"
             with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
@@ -614,16 +620,24 @@ class _BotFatherRelayDriver:
             try:
                 if hasattr(self.mt, "send_photo"):
                     sent = await self.mt.send_photo(BOTFATHER_USERNAME, str(tmp_path))
-                    res = _extract_msg_id(sent) or before
+                    res = _extract_msg_id(sent)
+                    if not res:
+                        after = await self.max_message_id()
+                        if after > before:
+                            res = after
                     if res:
                         self._tracked_ids.add(res)
-                    return res
+                    return res or before
                 if hasattr(self.mt, "send_file"):
                     sent = await self.mt.send_file(BOTFATHER_USERNAME, str(tmp_path))
-                    res = _extract_msg_id(sent) or before
+                    res = _extract_msg_id(sent)
+                    if not res:
+                        after = await self.max_message_id()
+                        if after > before:
+                            res = after
                     if res:
                         self._tracked_ids.add(res)
-                    return res
+                    return res or before
                 raise RuntimeError("photo_upload_unsupported")
             finally:
                 tmp_path.unlink(missing_ok=True)
@@ -701,7 +715,7 @@ class _BotFatherRelayDriver:
                 if _is_outgoing(m, self._self_id):
                     continue
                 mid = _extract_msg_id(m)
-                if mid:
+                if mid and mid >= msg_id:
                     self._tracked_ids.add(mid)
                 txt = _extract_msg_text(m)
                 if mid > msg_id:
@@ -740,7 +754,7 @@ class _BotFatherRelayDriver:
                 if _is_outgoing(m, self._self_id):
                     continue
                 mid = _extract_msg_id(m)
-                if mid:
+                if mid and mid >= list_msg_id:
                     self._tracked_ids.add(mid)
                 txt = _extract_msg_text(m)
                 has_detail = (
@@ -755,20 +769,51 @@ class _BotFatherRelayDriver:
                         return m
         return None
 
-    async def delete_messages(self, *ids: int) -> None:
-        valid = [i for i in ids if i > 0]
+    async def _purge_ids(self, ids: list[int]) -> None:
+        valid = sorted({i for i in ids if i > 0})
         if not valid:
             return
         for i in valid:
             self._tracked_ids.discard(i)
-        try:
-            with trusted_scope():
-                if self.is_goygram:
+        with trusted_scope():
+            if self.is_goygram:
+                try:
                     await self.app.mt_messages_delete_messages(id=valid, revoke=True)
-                elif hasattr(self.mt, "delete_messages"):
-                    await self.mt.delete_messages(BOTFATHER_USERNAME, valid)
-        except Exception:
-            pass
+                    return
+                except Exception:
+                    pass
+                try:
+                    await self.app.mt_messages_delete_messages(id=valid, revoke=False)
+                    return
+                except Exception:
+                    pass
+                for mid in valid:
+                    try:
+                        await self.app.mt_messages_delete_messages(id=[mid], revoke=True)
+                    except Exception:
+                        try:
+                            await self.app.mt_messages_delete_messages(id=[mid], revoke=False)
+                        except Exception:
+                            pass
+            elif hasattr(self.mt, "delete_messages"):
+                try:
+                    await self.mt.delete_messages(BOTFATHER_USERNAME, valid, revoke=True)
+                    return
+                except Exception:
+                    pass
+                try:
+                    await self.mt.delete_messages(BOTFATHER_USERNAME, valid, revoke=False)
+                    return
+                except Exception:
+                    pass
+                for mid in valid:
+                    try:
+                        await self.mt.delete_messages(BOTFATHER_USERNAME, [mid], revoke=False)
+                    except Exception:
+                        pass
+
+    async def delete_messages(self, *ids: int) -> None:
+        await self._purge_ids(list(ids))
 
     async def cancel_dialogue(self) -> None:
         try:
@@ -784,42 +829,54 @@ class _BotFatherRelayDriver:
     async def cleanup_messages(self) -> None:
         try:
             initial = getattr(self, "_initial_max_id", 0)
-            recent = await self.get_recent_messages(limit=30)
+            recent = await self.get_recent_messages(limit=60)
             for m in recent:
                 mid = _extract_msg_id(m)
-                if mid > initial:
+                if not mid:
+                    continue
+                if initial > 0 and mid > initial:
+                    self._tracked_ids.add(mid)
+                    continue
+                txt = _extract_msg_text(m).lower()
+                if (
+                    "trycloudflare.com" in txt
+                    or "hotaru dashboard" in txt
+                    or "please send a new web app url" in txt
+                    or txt == "success!"
+                    or txt == "/myapps"
+                    or txt == "/cancel"
+                ):
                     self._tracked_ids.add(mid)
         except Exception:
             pass
         if not self._tracked_ids:
             return
-        to_del = list(self._tracked_ids)
+        to_del = sorted(self._tracked_ids)
         self._tracked_ids.clear()
-        try:
-            with trusted_scope():
-                if self.is_goygram:
-                    await self.app.mt_messages_delete_messages(id=to_del, revoke=True)
-                elif hasattr(self.mt, "delete_messages"):
-                    await self.mt.delete_messages(BOTFATHER_USERNAME, to_del)
-        except Exception:
-            pass
+        await self._purge_ids(to_del)
 
     @staticmethod
     def _extract_sent_id_from_updates(raw: Any) -> int:
         body = _unwrap_tl(raw)
         if isinstance(body.get("id"), int):
             return int(body["id"])
+        if isinstance(body.get("message_id"), int):
+            return int(body["message_id"])
+        if isinstance(body.get("msg_id"), int):
+            return int(body["msg_id"])
+        if isinstance(body.get("message"), dict) and isinstance(body["message"].get("id"), int):
+            return int(body["message"]["id"])
         updates = body.get("updates")
         if isinstance(updates, list):
             for upd in updates:
                 if not isinstance(upd, dict):
                     continue
                 kind = upd.get("_")
-                if kind == "updateNewMessage" and isinstance(upd.get("message"), dict):
+                if kind in ("updateNewMessage", "updateMessageID") and isinstance(upd.get("message"), dict):
                     mid = upd["message"].get("id")
                     if isinstance(mid, int):
                         return mid
-                if kind == "updateMessageID" and isinstance(upd.get("id"), int):
+                if isinstance(upd.get("id"), int):
                     return int(upd["id"])
         return 0
 

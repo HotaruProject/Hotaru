@@ -208,9 +208,33 @@ class BotFatherConversation:
         messages = body.get("messages")
         if messages:
             self._last_id = max((cast('dict[str, Any]', m).get("id", 0) for m in cast('list[Any]', messages) if isinstance(m, dict)), default=0)
+        self._initial_id = self._last_id
         return self
 
     async def __aexit__(self, *exc: Any) -> None:
+        try:
+            init_id = getattr(self, "_initial_id", 0)
+            if init_id > 0:
+                with trusted_scope():
+                    result = await self.app.mt_messages_get_history(
+                        peer=self._peer,
+                        offset_id=0,
+                        offset_date=0,
+                        add_offset=0,
+                        limit=30,
+                        max_id=0,
+                        min_id=0,
+                        hash=0,
+                    )
+                body = _result_body(result)
+                msgs = body.get("messages")
+                for item in cast('list[Any]', msgs) if isinstance(msgs, list) else []:
+                    if isinstance(item, dict):
+                        mid = item.get("id", 0)
+                        if isinstance(mid, int) and mid > init_id:
+                            self._tracked_ids.add(mid)
+        except Exception:
+            pass
         if self._tracked_ids:
             await self._delete(*self._tracked_ids)
             self._tracked_ids.clear()
@@ -230,6 +254,14 @@ class BotFatherConversation:
     def _extract_sent_id(self, result: Any) -> int:
         body = _result_body(result)
         if body:
+            if isinstance(body.get("id"), int):
+                return int(body["id"])
+            if isinstance(body.get("message_id"), int):
+                return int(body["message_id"])
+            if isinstance(body.get("msg_id"), int):
+                return int(body["msg_id"])
+            if isinstance(body.get("message"), dict) and isinstance(body["message"].get("id"), int):
+                return int(body["message"]["id"])
             updates = body.get("updates")
             if isinstance(updates, list):
                 for update in cast('list[Any]', updates):
@@ -245,16 +277,35 @@ class BotFatherConversation:
                                 return cast(int, message_data["id"])
                     if kind == "updateMessageID" and isinstance(update_dict.get("id"), int):
                         return cast(int, update_dict["id"])
+                    if isinstance(update_dict.get("id"), int):
+                        return cast(int, update_dict["id"])
         return 0
 
     async def _delete(self, *ids: int) -> None:
-        valid = [i for i in ids if i > 0]
+        valid = sorted({i for i in ids if i > 0})
         if not valid:
             return
-        try:
-            await self.app.mt_messages_delete_messages( id=valid, revoke=True)
-        except Exception:
-            pass
+        for i in valid:
+            self._tracked_ids.discard(i)
+        with trusted_scope():
+            try:
+                await self.app.mt_messages_delete_messages(id=valid, revoke=True)
+                return
+            except Exception:
+                pass
+            try:
+                await self.app.mt_messages_delete_messages(id=valid, revoke=False)
+                return
+            except Exception:
+                pass
+            for mid in valid:
+                try:
+                    await self.app.mt_messages_delete_messages(id=[mid], revoke=True)
+                except Exception:
+                    try:
+                        await self.app.mt_messages_delete_messages(id=[mid], revoke=False)
+                    except Exception:
+                        pass
 
     def _is_mine(self, message: dict[str, Any]) -> bool:
         if message.get("out"):
