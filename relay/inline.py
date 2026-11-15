@@ -1376,6 +1376,12 @@ class InlineManager:
         if getattr(update, "update_type", None) != "updateBotInlineSend":
             return
         if not self._allows_form(update, chosen=True):
+            if self.runtime.observatory is not None:
+                nonce = str(getattr(update, "query", "") or "").strip().split(":", 1)[-1]
+                actor = getattr(update, "from_id", None)
+                if not isinstance(actor, int):
+                    actor = getattr(getattr(update, "from_user", None), "id", None)
+                self.runtime.observatory.emit("inline", "chosen_dropped", nonce=nonce, msg_id=getattr(update, "msg_id", None), actor=actor)
             return
         text = str(getattr(update, "query", "") or "").strip()
         from hotaru.security import AccessVerdict

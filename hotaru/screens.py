@@ -1211,9 +1211,12 @@ class ScreenEngine:
                         form.inline_id = reloaded.inline_id
                 if form.inline_id is not None:
                     await CallbackContext.edit_inline(app, form.inline_id, plain, data)
-                elif form.bot and form.message_id is not None:
+                elif form.message_id is not None:
+                    target = app if form.bot else getattr(self.runtime, "app", None)
+                    if target is None:
+                        raise ScreenError("form has no editable identity yet")
                     with trusted_scope():
-                        await app.mt_messages_edit_message(peer=form.chat, id=form.message_id, message=plain, **data)
+                        await target.mt_messages_edit_message(peer=form.chat, id=form.message_id, message=plain, **data)
                 elif attempt < 4:
                     await asyncio.sleep(0.5)
                     continue
