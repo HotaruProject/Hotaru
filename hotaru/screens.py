@@ -1236,12 +1236,16 @@ class ScreenEngine:
                         form.inline_id = reloaded.inline_id
                 if form.inline_id is not None:
                     await CallbackContext.edit_inline(app, form.inline_id, plain, data)
+                elif not form.bot:
+                    if attempt < 4:
+                        await asyncio.sleep(1.0)
+                        continue
+                    raise ScreenError("form inline identity is not bound yet")
                 elif form.message_id is not None:
-                    target = app if form.bot else getattr(self.runtime, "app", None)
-                    if target is None:
+                    if app is None:
                         raise ScreenError("form has no editable identity yet")
                     with trusted_scope():
-                        await target.mt_messages_edit_message(peer=form.chat, id=form.message_id, message=plain, **data)
+                        await app.mt_messages_edit_message(peer=form.chat, id=form.message_id, message=plain, **data)
                 elif attempt < 4:
                     await asyncio.sleep(0.5)
                     continue
@@ -1257,7 +1261,7 @@ class ScreenEngine:
             except ScreenError:
                 raise
             except Exception as exc:
-                if "rich_message" not in data:
+                if "rich_message" not in data or "INLINE_BOT_REQUIRED" in str(exc):
                     raise
                 log.error("screen rich edit failed for module %s: %s: %s", form.module, type(exc).__name__, exc)
                 if self.runtime.observatory is not None:
