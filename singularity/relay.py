@@ -961,7 +961,9 @@ async def _provision_bot_via_driver(
                                             prev_t = _extract_msg_text(e_menu)
                                             await driver.click_button(mid, desc_btn[2])
                                             await driver.wait_edited_or_new(mid, prev_t, timeout=7.0)
-                                            await driver.send_cover_photo(banner_path.read_bytes(), file_name="banner.png")
+                                            from relay.inline import _scale_banner_640x360
+                                            photo_bytes = _scale_banner_640x360(banner_path.read_bytes())
+                                            await driver.send_cover_photo(photo_bytes, file_name="banner.png")
                                             import hashlib
                                             digest = hashlib.sha256(banner_path.read_bytes()).hexdigest()
                                             if state is not None and hasattr(state, "set_setting"):
