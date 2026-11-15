@@ -1293,7 +1293,50 @@ class InlineManager:
             raise InlineError(f"bot discovery failed: {type(exc).__name__}") from exc
         return None
 
+    async def _direct_bot_peer(self, username: str) -> Any:
+        app = self.runtime.app
+        if app is None or not re.fullmatch(r"@?[A-Za-z0-9_]{4,32}", username or ""):
+            return None
+        with trusted_scope():
+            return await app.mt.resolve_peer("@" + username.lstrip("@"))
+
+    async def _direct_token(self, username: str) -> str | None:
+        try:
+            peer = await self._direct_bot_peer(username)
+            if peer is None:
+                return None
+            with trusted_scope():
+                result = await self.runtime.app.mt_bots_export_bot_token(bot=peer, revoke=False)
+            raw = result.get("token") if isinstance(result, dict) else getattr(result, "token", None)
+            token = _token_in({"message": str(raw or "")})
+            return token or None
+        except Exception as exc:
+            log.debug("direct token export failed: %s: %s", type(exc).__name__, exc)
+            return None
+
+    async def _direct_info(self, username: str, *, about: str | None = None, description: str | None = None) -> bool:
+        try:
+            peer = await self._direct_bot_peer(username)
+            if peer is None:
+                return False
+            fields: dict[str, Any] = {}
+            if about is not None:
+                fields["about"] = about
+            if description is not None:
+                fields["description"] = description
+            with trusted_scope():
+                await self.runtime.app.mt_bots_set_bot_info(bot=peer, lang_code="", **fields)
+            return True
+        except Exception as exc:
+            if "MESSAGE_NOT_MODIFIED" in str(exc) or "BOT_NOT_MODIFIED" in str(exc):
+                return True
+            log.debug("direct bot info failed: %s: %s", type(exc).__name__, exc)
+            return False
+
     async def _fetch_token(self, conv: BotFatherConversation, username_button: str) -> str | None:
+        direct = await self._direct_token(username_button)
+        if direct:
+            return direct
         try:
             await conv.ask("/token")
             answer = await conv.ask(username_button)
@@ -1393,6 +1436,15 @@ class InlineManager:
                     await conv.ask("100%")
             except Exception:
                 pass
+
+        about_text = "Hotaru Userbot - security-first modular userbot"
+        desc_text = "Hotaru Userbot - security-first modular Telegram userbot with capability sandboxing."
+        if not skip_about and not skip_desc and await self._direct_info(username, about=about_text, description=desc_text):
+            skip_about = skip_desc = True
+        elif not skip_about and await self._direct_info(username, about=about_text):
+            skip_about = True
+        elif not skip_desc and await self._direct_info(username, description=desc_text):
+            skip_desc = True
 
         if not skip_about:
             try:
