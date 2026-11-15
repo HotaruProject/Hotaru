@@ -271,6 +271,13 @@ class Kernel:
         except asyncio.CancelledError:
             return None
         except (Exception, SystemExit) as exc:
+            runtime = getattr(self, "runtime", None) or getattr(self.context_factory, "runtime", None)
+            if runtime is not None and (getattr(runtime, "closed", False) or getattr(runtime, "_relaunch", False)):
+                return None
+            if self.suspended:
+                return None
+            if type(exc).__name__ == "SandboxError" and "sandbox worker stopped" in str(exc):
+                return None
             trace = getattr(exc, "worker_trace", "") or "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
             log.error("command failed [%s] %s: %s\n%s", getattr(spec, "module_id", None), getattr(spec, "name", None), exc, trace)
             if self.response_service is not None:

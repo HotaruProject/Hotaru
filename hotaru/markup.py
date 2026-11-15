@@ -89,4 +89,6 @@ def kbd_to_tl(markup: Any) -> dict[str, Any] | None:
     for row in rows:
         buttons = [to_button(item) for item in row if item is not None]
         out += [{"_": "keyboardInlineButtonRow", "buttons": buttons[i:i + row_limit]} for i in range(0, len(buttons), row_limit)]
+    if not out:
+        return None
     return {"_": "replyInlineMarkup", "rows": out}
