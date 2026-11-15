@@ -530,7 +530,8 @@ class CapabilityHost:
             workspace = self.runtime.config.state_path.parent / "workspaces" / module_id
             manifest = self.runtime.modules.get(module_id)
             caps = manifest.loaded.manifest.capabilities if manifest is not None else ()
-            self.jobs[module_id, kind, key] = Job(kind, dict(payload), self._check_net_target, workspace, True, "files" not in caps, policy=self.net_policy, hops=hops)
+            net_blocked = not self._allowed(module_id, "net")
+            self.jobs[module_id, kind, key] = Job(kind, dict(payload), self._check_net_target, workspace, net_blocked, "files" not in caps, policy=self.net_policy, hops=hops)
             return {"id": key}
         key = (module_id, kind, str(payload.get("id", "")))
         job = self.jobs.get(key)
@@ -714,7 +715,8 @@ class CapabilityHost:
             env.update({key: os.environ[key] for key in ("SystemRoot", "COMSPEC", "PATHEXT") if key in os.environ})
         preexec = None
         if os.name != "nt":
-            preexec = lambda: Job.jail_preexec(str(workspace), True)
+            net_blocked = not self._allowed(module_id, "net")
+            preexec = lambda: Job.jail_preexec(str(workspace), net_blocked)
         try:
             loop = asyncio.get_running_loop()
             proc = await loop.run_in_executor(
