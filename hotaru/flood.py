@@ -37,10 +37,14 @@ class FloodFallback:
         reply_to: int | None = None,
         topic_id: int | None = None,
     ) -> Any:
+        if getattr(self.runtime, "closed", False) or getattr(self.runtime, "_relaunch", False):
+            return None
+        flooded = False
         for name, app in self._clients(src):
             try:
                 return await self._deliver(app, name, chat_id, html, reply_to=reply_to, topic_id=topic_id)
             except FloodWaitError as exc:
+                flooded = True
                 log.warning(
                     "flood fallback: %s sender flooded for chat %s (%ss): %s",
                     name,
@@ -57,7 +61,8 @@ class FloodFallback:
                     exc,
                 )
         log.error("flood fallback: message for chat %s was not delivered by any sender", chat_id)
-        await self.notify(chat_id, html, src=src)
+        if flooded and not getattr(self.runtime, "closed", False) and not getattr(self.runtime, "_relaunch", False):
+            await self.notify(chat_id, html, src=src)
         return None
 
     async def _deliver(
@@ -106,6 +111,8 @@ class FloodFallback:
                 raise
 
     async def notify(self, chat_id: Any, html: str, *, src: str | None = None) -> None:
+        if getattr(self.runtime, "closed", False) or getattr(self.runtime, "_relaunch", False):
+            return
         config = getattr(self.runtime, "config", None)
         target = getattr(config, "log_chat", None)
         if not isinstance(target, int) or target == chat_id:

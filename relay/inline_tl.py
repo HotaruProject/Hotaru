@@ -48,6 +48,8 @@ def _markup_of(result: dict[str, Any]) -> dict[str, Any] | None:
     if isinstance(markup, list):
         rows: list[Any] = [row if isinstance(row, (list, tuple)) else [row] for row in cast('list[Any]', markup)]
         markup = {"inline_keyboard": rows}
+    if isinstance(markup, dict) and not markup.get("inline_keyboard") and not markup.get("keyboard"):
+        return None
     return _kbd(markup)
 
 

@@ -23,6 +23,7 @@ from . import context as _context
 from . import translation as _translation
 from . import denylist as _denylist
 from relay.firewall import module_scope, trusted_scope
+from hotaru.observatory import scrub_text
 
 _CONTEXT_SOURCE = Path(_context.__file__).read_text(encoding="utf-8")
 _TRANSLATION_SOURCE = Path(_translation.__file__).read_text(encoding="utf-8")
@@ -301,10 +302,12 @@ def install_seccomp():
 
 
 def install_firewall(protected, namespaces=False, deps_root="", workspace=""):
+    workspace = str(Path(workspace).resolve()) if workspace else ""
     roots = [str(Path(item).resolve()) for item in protected]
+    if workspace:
+        roots = [root for root in roots if root != workspace]
     native_root = str((Path(os.__file__).resolve().parent / "lib-dynload").resolve()) + os.sep
     module_deps = str(Path(deps_root).resolve()) + os.sep if deps_root else ""
-    workspace = str(Path(workspace).resolve()) if workspace else ""
 
     def deny_process(*args, **kwargs):
         raise PermissionError("module process escape is denied")
@@ -334,7 +337,7 @@ def install_firewall(protected, namespaces=False, deps_root="", workspace=""):
             flags = args[2] if len(args) > 2 else 0
             reading_dep = bool(module_deps) and value.startswith(module_deps) and not (isinstance(mode, str) and any(char in mode for char in "wax+")) and not (isinstance(flags, int) and flags & (os.O_WRONLY | os.O_RDWR | os.O_CREAT | os.O_TRUNC | os.O_APPEND))
             own_workspace = bool(workspace) and (value == workspace or value.startswith(workspace + os.sep))
-            if value.endswith((".vault", ".session")) or any((value == root or value.startswith(root + os.sep)) and not ((reading_dep or own_workspace) and (module_deps.startswith(root + os.sep) or workspace.startswith(root + os.sep))) for root in roots):
+            if value.endswith((".vault", ".session")) or any((value == root or value.startswith(root + os.sep)) and not ((reading_dep or own_workspace) and (module_deps.startswith(root + os.sep) or workspace == root or workspace.startswith(root + os.sep))) for root in roots):
                 raise PermissionError("module access to Telegram session storage is denied")
         if event in {"os.remove", "os.rmdir", "os.truncate", "shutil.rmtree", "os.rename", "os.link", "os.symlink"}:
             count = 2 if event in {"os.rename", "os.link", "os.symlink"} else 1
@@ -345,7 +348,7 @@ def install_firewall(protected, namespaces=False, deps_root="", workspace=""):
                     raise PermissionError("portable sandbox requires absolute paths for descriptor operations")
                 value = str(Path(os.fsdecode(path)).resolve())
                 own_workspace = bool(workspace) and (value == workspace or value.startswith(workspace + os.sep))
-                if value.endswith((".vault", ".session")) or any((value == root or value.startswith(root + os.sep) or root.startswith(value.rstrip(os.sep) + os.sep)) and not (own_workspace and workspace.startswith(root + os.sep)) for root in roots):
+                if value.endswith((".vault", ".session")) or any((value == root or value.startswith(root + os.sep) or root.startswith(value.rstrip(os.sep) + os.sep)) and not (own_workspace and (workspace == root or workspace.startswith(root + os.sep))) for root in roots):
                     raise PermissionError("module access to Telegram session storage is denied")
         if event in {"subprocess.Popen", "os.system", "os.posix_spawn", "os.exec", "os.fork", "os.forkpty", "multiprocessing.Process"}:
             raise PermissionError("module process escape is denied")
@@ -783,7 +786,7 @@ class SandboxContext(ContextOperations):
 
     @property
     def screens(self):
-        return _ScreensProxy()
+        return _ScreensProxy(self.t)
 
     async def _ctx_media_rpc(self, method, **kwargs):
         return _respond_call({"media_rpc": {"method": method, "kwargs": kwargs}})
@@ -898,6 +901,9 @@ class SandboxNav:
 
 
 class _ScreensProxy:
+    def __init__(self, t=None):
+        self.t = t or (lambda k, d=None: d or k)
+
     @staticmethod
     def screen(text, rows=None, **options):
         data = {"text": text, "rows": rows or []}
@@ -934,9 +940,11 @@ class _ScreensProxy:
     def success(text, callback, **args):
         return _ScreensProxy.button(text, callback, style="success", **args)
 
-    @staticmethod
-    def close(text="✕ Close"):
-        return _UiProxy.button(text or "✕ Close", "close", style="danger")
+    def close(self, text=None):
+        t_fn = getattr(self, "t", None) or (lambda k, d=None: d or k)
+        if not text or text in {"Close", "✕ Close"}:
+            text = t_fn("common.close", "✕ Close")
+        return _UiProxy.button(text, "close", style="danger")
 
     @staticmethod
     def url(text, link, style=None):
@@ -946,12 +954,12 @@ class _ScreensProxy:
     def webapp(text, link, style=None):
         return {"text": text, "web_app": {"url": str(link)}, "style": style}
 
-    @staticmethod
-    def footer(back=None, **args):
+    def footer(self, back=None, **args):
         row = []
         if back:
-            row.append(_ScreensProxy.button("« Back", back, **args))
-        row.append(_ScreensProxy.close())
+            t_fn = getattr(self, "t", None) or (lambda k, d=None: d or k)
+            row.append(self.button(t_fn("common.back", "« Back"), back, **args))
+        row.append(self.close())
         return [row]
 
     @staticmethod
@@ -1021,8 +1029,8 @@ class _UiProxy:
         return action_id
 
     def close(self, text=None):
-        if text is None:
-            text = self.t("common.close")
+        if not text or text in {"Close", "✕ Close"}:
+            text = self.t("common.close", "✕ Close")
         return {"text": text, "action_id": "close", "style": "danger"}
 
     @staticmethod
@@ -1265,6 +1273,28 @@ def install_output_capture():
     sys.stderr = _LogSink("stderr")
 
 
+def install_secure_random():
+    import secrets as _sec
+    import random as _rnd
+    sysrand = _sec.SystemRandom()
+    for name in dir(sysrand):
+        if not name.startswith("_") and callable(getattr(sysrand, name)):
+            fn = getattr(sysrand, name)
+            if not hasattr(_sec, name) or name == "choice":
+                setattr(_sec, name, fn)
+            setattr(_rnd, name, fn)
+    setattr(_sec, "Random", _sec.SystemRandom)
+    setattr(_rnd, "Random", _sec.SystemRandom)
+    setattr(_sec, "seed", lambda *a, **kw: None)
+    setattr(_rnd, "seed", lambda *a, **kw: None)
+    for sec_name in ("token_bytes", "token_hex", "token_urlsafe", "randbelow", "randbits", "compare_digest"):
+        if hasattr(_sec, sec_name):
+            setattr(_rnd, sec_name, getattr(_sec, sec_name))
+    sys.modules["random"] = _sec
+    sys.modules["secrets"] = _sec
+    return _sec
+
+
 def main():
     cfg = _proto_loads(sys.stdin.readline())
     policy = cfg.get("seccomp") or {}
@@ -1304,8 +1334,9 @@ def main():
     translation_ns = {}
     exec(compile(cfg["translation_source"], "hotaru_translation", "exec"), translation_ns, translation_ns)
     SandboxContext._ctx_translate_text = staticmethod(translation_ns["translate"])
+    sec_rand = install_secure_random()
     tools = _build_tools(cfg.get("toolkit_source", ""))
-    ns = {"__name__": cfg.get("module_id", "sandbox"), "cap": _cap_call, "mt": _mt_call, "net": _net_call, "tools": SimpleNamespace(**tools), "logs": _WorkerLogs()}
+    ns = {"__name__": cfg.get("module_id", "sandbox"), "cap": _cap_call, "mt": _mt_call, "net": _net_call, "tools": SimpleNamespace(**tools), "logs": _WorkerLogs(), "random": sec_rand, "secrets": sec_rand}
     try:
         code = compile(cfg["source"], cfg.get("module_id", "sandbox"), "exec", flags=__future__.annotations.compiler_flag, dont_inherit=True)
         exec(code, ns, ns)
@@ -1722,7 +1753,7 @@ class ModuleSandbox:
         self,
         runtime: Any,
         *,
-        nproc: int = 64,
+        nproc: int = int(os.environ.get("HOTARU_SANDBOX_NPROC", "512")),
         spawn_timeout: float = 60.0,
         idle_timeout: float = 300.0,
     ) -> None:
@@ -1773,6 +1804,17 @@ class ModuleSandbox:
             self._sandbox_base = SANDBOX_BASE_ROOT
         os.makedirs(self._sandbox_base, exist_ok=True)
         os.chmod(self._sandbox_base, 0o700)
+        try:
+            for entry in os.listdir(self._sandbox_base):
+                candidate = os.path.join(self._sandbox_base, entry)
+                if os.path.isdir(candidate) and not os.listdir(candidate):
+                    try:
+                        os.rmdir(candidate)
+                    except OSError:
+                        pass
+        except OSError:
+            pass
+        self._proc_readers: dict[str, tuple[subprocess.Popen[bytes], threading.Thread]] = {}
         self._pids_cap = apply_tree_pids_cap()
         observatory = getattr(runtime, "observatory", None)
         if observatory is not None:
@@ -1849,13 +1891,6 @@ class ModuleSandbox:
                 raise OSError(ctypes.get_errno(), "unshare failed")
             mount(b"none", b"/", None, MS_REC | MS_PRIVATE)
             os.makedirs(sandbox_base, exist_ok=True)
-            for entry in os.listdir(sandbox_base):
-                candidate = os.path.join(sandbox_base, entry)
-                try:
-                    if os.path.isdir(candidate) and not os.listdir(candidate):
-                        os.rmdir(candidate)
-                except OSError:
-                    pass
             newroot = tempfile.mkdtemp(prefix="root.", dir=sandbox_base)
             mount(b"tmpfs", newroot.encode(), b"tmpfs", MS_NOSUID | MS_NODEV, b"mode=0755")
 
@@ -1960,9 +1995,9 @@ class ModuleSandbox:
             "deps_root": "/opt/pkgs" if namespaces and deps else deps or "",
             "workspace": str(workspace),
             "protected": [
-                str(self.runtime.config.session_dir),
-                str(self.runtime.config.session_dir / f"{self.runtime.config.session_name}.vault"),
-                str(self.runtime.config.session_dir / f"{self.runtime.config.session_name}.session"),
+                str(Path(self.runtime.config.session_dir).resolve()),
+                str((Path(self.runtime.config.session_dir) / f"{self.runtime.config.session_name}.vault").resolve()),
+                str((Path(self.runtime.config.session_dir) / f"{self.runtime.config.session_name}.session").resolve()),
                 os.path.join(os.environ.get("HOME") or os.path.expanduser("~"), ".ssh"),
                 os.path.join(os.environ.get("HOME") or os.path.expanduser("~"), ".config", "gh"),
                 os.path.join(os.environ.get("HOME") or os.path.expanduser("~"), ".gitconfig"),
@@ -2035,7 +2070,7 @@ class ModuleSandbox:
         text = message.get("log")
         if not isinstance(text, str):
             return
-        observatory.emit("module", "output", level=level, module=module_id, msg=text[:2048])
+        observatory.emit("module", "output", level=level, module=module_id, msg=scrub_text(text[:2048]))
 
     _MAX_LINE_BYTES = 1 << 20
 
@@ -2071,13 +2106,7 @@ class ModuleSandbox:
             self._persistent_modules.discard(module_id)
         if lazy:
             return True
-        current = self._workers.get(module_id)
-        if current is not None and current.poll() is None:
-            return True
-        if module_id not in self._module_deps:
-            await self.ensure_module_deps(module_id, source, requires)
-        loop = asyncio.get_running_loop()
-        await loop.run_in_executor(None, lambda: self._spawn_worker(module_id, source, commands))
+        await self._ensure_worker(module_id)
         return True
 
     async def call(self, module_id: str, command: str, args: list[str], payload: dict[str, Any], source: Any = None, target: str | None = None, context: Any = None, nav: Any = None) -> Any:
@@ -2158,7 +2187,16 @@ class ModuleSandbox:
     async def _ensure_worker(self, module_id: str) -> subprocess.Popen[bytes]:
         async with self._ensure_locks.setdefault(module_id, asyncio.Lock()):
             process = self._workers.get(module_id)
-            if process is None or process.poll() is not None:
+            if process is not None and process.poll() is not None:
+                self._workers.pop(module_id, None)
+                old_pump = self._pumps.pop(module_id, None)
+                if old_pump is not None:
+                    old_pump.cancel()
+                self._queues.pop(module_id, None)
+                self._readers.pop(module_id, None)
+                self._proc_readers.pop(module_id, None)
+                process = None
+            if process is None:
                 if module_id not in self._module_defs:
                     raise SandboxError(f"sandbox worker is not running: {module_id}")
                 source, commands = self._module_defs[module_id]
@@ -2174,9 +2212,16 @@ class ModuleSandbox:
             return process
 
     def _start_reader(self, module_id: str, process: subprocess.Popen[bytes]) -> None:
-        reader = self._readers.get(module_id)
-        if reader is not None and reader.is_alive():
-            return
+        proc_info = self._proc_readers.get(module_id)
+        if proc_info is not None:
+            proc, reader = proc_info
+            if proc is process and reader.is_alive():
+                return
+        old_pump = self._pumps.pop(module_id, None)
+        if old_pump is not None:
+            old_pump.cancel()
+        self._queues.pop(module_id, None)
+        self._readers.pop(module_id, None)
         loop = asyncio.get_running_loop()
         queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
         self._queues[module_id] = queue
@@ -2186,15 +2231,22 @@ class ModuleSandbox:
                 line = self._readline(process)
                 if not line:
                     break
-                loop.call_soon_threadsafe(queue.put_nowait, _json_dict(line))
-            loop.call_soon_threadsafe(queue.put_nowait, None)
+                try:
+                    loop.call_soon_threadsafe(queue.put_nowait, _json_dict(line))
+                except RuntimeError:
+                    break
+            try:
+                loop.call_soon_threadsafe(queue.put_nowait, None)
+            except RuntimeError:
+                pass
 
         thread = threading.Thread(target=read, daemon=True)
         self._readers[module_id] = thread
+        self._proc_readers[module_id] = (process, thread)
         thread.start()
-        self._pumps[module_id] = loop.create_task(self._pump(module_id, queue))
+        self._pumps[module_id] = loop.create_task(self._pump(module_id, process, queue))
 
-    async def _pump(self, module_id: str, queue: asyncio.Queue[dict[str, Any] | None]) -> None:
+    async def _pump(self, module_id: str, process: subprocess.Popen[bytes], queue: asyncio.Queue[dict[str, Any] | None]) -> None:
         try:
             while True:
                 message = await queue.get()
@@ -2229,7 +2281,7 @@ class ModuleSandbox:
         except Exception as exc:
             log.error("sandbox pump failed (module=%s): %s: %s\n%s", module_id, type(exc).__name__, exc, traceback.format_exc())
         finally:
-            if self._queues.get(module_id) is queue:
+            if self._workers.get(module_id) is process and self._queues.get(module_id) is queue:
                 self._kill_worker(module_id, SandboxError(f"sandbox worker stopped: {module_id}"))
 
     def _spawn_pump_task(self, coro: Any) -> None:
@@ -2252,7 +2304,8 @@ class ModuleSandbox:
                 waiter.set_exception(error)
 
     def _kill_worker(self, module_id: str, error: Exception) -> None:
-        process = self._workers.get(module_id)
+        process = self._workers.pop(module_id, None)
+        self._proc_readers.pop(module_id, None)
         if process is not None and process.poll() is None:
             try:
                 process.kill()
@@ -2484,6 +2537,37 @@ class ModuleSandbox:
             with trusted_scope():
                 await handle.edit(str(payload.get("content", "")), buttons=buttons)
             return True
+        if "screen" in payload:
+            spec = payload["screen"]
+            if isinstance(spec, dict):
+                form_id = spec.get("form_id") or spec.get("id") or payload.get("form_id") or payload.get("id")
+                form_id_str = str(form_id) if form_id is not None else ""
+                if form_id_str.startswith("screen:"):
+                    form_id_str = form_id_str.split(":", 1)[1]
+                if form_id_str.isdigit() and (payload.get("op") == "edit" or spec.get("op") == "edit" or form_id):
+                    screens = getattr(self.runtime, "screens", None)
+                    if screens is not None:
+                        form = screens.load(int(form_id_str))
+                        if form is not None:
+                            if form.module != module_id:
+                                raise PermissionError("screen form belongs to another module")
+                            text = spec.get("text")
+                            if not isinstance(text, str) or not text:
+                                raise ValueError("screen requires non-empty text")
+                            rows = self._sandbox_buttons(module_id, spec.get("rows") or [], getattr(form, "chat", None), getattr(form, "actor", None))
+                            from hotaru.screens import Screen
+                            screen = Screen(
+                                text=text,
+                                rows=rows or [],
+                                toast=spec.get("toast") if isinstance(spec.get("toast"), str) else None,
+                                alert=bool(spec.get("alert", False)),
+                                rich=bool(spec.get("rich", False)),
+                                notice=spec.get("notice") if isinstance(spec.get("notice"), str) else None,
+                                banner=str(spec.get("banner")) if isinstance(spec.get("banner"), str) else "",
+                            )
+                            with trusted_scope():
+                                await screens.render(form, screen)
+                            return form.id
         if source is None:
             raise PermissionError("no message source is bound to this call")
         context = self._respond_contexts.get((module_id, rid))
@@ -2515,7 +2599,7 @@ class ModuleSandbox:
                 banner=str(spec.get("banner")) if isinstance(spec.get("banner"), str) else "",
             )
             form = await self.runtime.screens.show(context, screen, reply_to=options.get("reply_to"), fallback=bool(options.get("fallback", True)))
-            return form.message_id if form is not None else None
+            return form.id if form is not None else None
         if "media_rpc" in payload:
             media_rpc = payload["media_rpc"]
             if not isinstance(media_rpc, dict):
@@ -2633,6 +2717,7 @@ class ModuleSandbox:
         if pump is not None:
             pump.cancel()
         self._readers.pop(module_id, None)
+        self._proc_readers.pop(module_id, None)
         self._queues.pop(module_id, None)
         self._fail_waiters(module_id, SandboxError(f"sandbox worker stopped: {module_id}"))
         if process is not None and process.poll() is None:
@@ -2726,6 +2811,7 @@ class ModuleSandbox:
         if pump is not None:
             pump.cancel()
         self._readers.pop(module_id, None)
+        self._proc_readers.pop(module_id, None)
         self._queues.pop(module_id, None)
         self._booted.pop(module_id, None)
         self._last_use.pop(module_id, None)

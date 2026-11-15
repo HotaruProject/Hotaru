@@ -15,6 +15,31 @@ _protected: set[str] = set()
 _telegram_guard = False
 
 
+def install_secure_random() -> Any:
+    import secrets as _sec
+    import random as _rnd
+    sysrand = _sec.SystemRandom()
+    for name in dir(sysrand):
+        if not name.startswith("_") and callable(getattr(sysrand, name)):
+            fn = getattr(sysrand, name)
+            if not hasattr(_sec, name) or name == "choice":
+                setattr(_sec, name, fn)
+            setattr(_rnd, name, fn)
+    setattr(_sec, "Random", _sec.SystemRandom)
+    setattr(_rnd, "Random", _sec.SystemRandom)
+    setattr(_sec, "seed", lambda *a, **kw: None)
+    setattr(_rnd, "seed", lambda *a, **kw: None)
+    for sec_name in ("token_bytes", "token_hex", "token_urlsafe", "randbelow", "randbits", "compare_digest"):
+        if hasattr(_sec, sec_name):
+            setattr(_rnd, sec_name, getattr(_sec, sec_name))
+    sys.modules["random"] = _sec
+    sys.modules["secrets"] = _sec
+    return _sec
+
+
+install_secure_random()
+
+
 def guard_telegram(enabled: bool = True) -> None:
     global _telegram_guard, _installed
     _telegram_guard = enabled

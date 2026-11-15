@@ -74,7 +74,7 @@ def home(ctx: Any, nav: Any = None) -> Any:
     custom_langs = lexicon.custom_languages() if lexicon is not None else ()
     if custom_langs:
         custom_label = ctx.t("kernel.translations.custom_packs", "Custom packs")
-        rows.append([k.button(f"{k.icon('apps')} {custom_label} · {len(custom_langs)}", custom_menu)])
+        rows.append([k.button(f"{custom_label} · {len(custom_langs)}", custom_menu)])
     rows.append(k.footer())
     current_label = _lang_meta(ctx, current)["name_native"]
     text = (
@@ -95,7 +95,7 @@ def custom_menu(ctx: Any, nav: Any = None) -> Any:
     ]
     rows: list[list[Any]] = k.grid(options, 2) if options else []
     back_label = ctx.t("common.back", "Back")
-    rows.append([k.button(f"{k.icon('back')} {back_label}", home), k.close()])
+    rows.append([k.button(back_label, home), k.close()])
     current_label = _lang_meta(ctx, current)["name_native"]
     title = ctx.t("kernel.translations.custom_title", "Custom language packs")
     text = (

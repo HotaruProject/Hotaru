@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import random
 import re
 import secrets
 import string
@@ -255,6 +254,53 @@ class BotFatherConversation:
             self._tracked_ids.discard(i)
         return reply
 
+    async def wait_edited_or_new(
+        self,
+        msg_id: int,
+        previous_text: str = "",
+        previous_markup: Any = None,
+        timeout: float | None = None,
+    ) -> dict[str, Any] | None:
+        deadline = time.monotonic() + (timeout if timeout is not None else self.timeout)
+        while time.monotonic() < deadline:
+            await asyncio.sleep(0.4)
+            result = await self.app.mt_messages_get_history(
+                peer=self._peer,
+                offset_id=0,
+                offset_date=0,
+                add_offset=0,
+                limit=10,
+                max_id=0,
+                min_id=0,
+                hash=0,
+            )
+            body = _result_body(result)
+            messages = body.get("messages")
+            for message in cast('list[Any]', messages) if isinstance(messages, list) else []:
+                if not isinstance(message, dict):
+                    continue
+                m_dict = cast('dict[str, Any]', message)
+                if self._is_mine(m_dict):
+                    continue
+                mid = m_dict.get("id", 0)
+                if not isinstance(mid, int) or mid <= 0:
+                    continue
+                txt = str(m_dict.get("message") or "")
+                if mid > msg_id:
+                    self._last_id = max(self._last_id, mid)
+                    self._tracked_ids.add(mid)
+                    return m_dict
+                if mid == msg_id:
+                    curr_markup = m_dict.get("reply_markup")
+                    if (
+                        (txt and txt != previous_text)
+                        or m_dict.get("edit_date")
+                        or (previous_markup is not None and curr_markup != previous_markup)
+                    ):
+                        self._tracked_ids.add(mid)
+                        return m_dict
+        return None
+
     async def click_button(self, reply: dict[str, Any], *needles: str) -> dict[str, Any] | None:
         markup: Any = reply.get("reply_markup")
         if not isinstance(markup, dict):
@@ -265,6 +311,9 @@ class BotFatherConversation:
             return None
         rows = cast('list[Any]', raw_rows)
         floor = reply.get("id", self._last_id)
+        prev_text = str(reply.get("message") or "")
+        matched_btn: dict[str, Any] | None = None
+        candidate_btn: dict[str, Any] | None = None
         for row in rows:
             if not isinstance(row, dict):
                 continue
@@ -279,18 +328,85 @@ class BotFatherConversation:
                 btn_dict = cast('dict[str, Any]', btn)
                 btn_text = str(btn_dict.get("text") or "")
                 data = btn_dict.get("data")
-                matches = not needles or any(n.casefold() in btn_text.casefold() for n in needles)
-                if matches and isinstance(data, (bytes, bytearray)):
-                    try:
-                        await self.app.mt_messages_get_bot_callback_answer(
-                            peer=self._peer,
-                            msg_id=reply["id"],
-                            data=bytes(data),
-                        )
-                        return await self.response(since=floor)
-                    except Exception:
-                        pass
+                str_data = (
+                    bytes(data).decode("utf-8", errors="ignore")
+                    if isinstance(data, (bytes, bytearray))
+                    else str(data or "")
+                )
+                if not needles:
+                    matched_btn = btn_dict
+                    break
+                if any(
+                    n.casefold() == btn_text.casefold()
+                    or (str_data and n.casefold() == str_data.casefold())
+                    for n in needles
+                ):
+                    matched_btn = btn_dict
+                    break
+                if candidate_btn is None and any(
+                    n.casefold() in btn_text.casefold()
+                    or (str_data and n.casefold() in str_data.casefold())
+                    for n in needles
+                ):
+                    candidate_btn = btn_dict
+            if matched_btn is not None:
+                break
+        target = matched_btn or candidate_btn
+        if target is not None:
+            raw_data = target.get("data")
+            if isinstance(raw_data, (bytes, bytearray)):
+                try:
+                    await self.app.mt_messages_get_bot_callback_answer(
+                        peer=self._peer,
+                        msg_id=reply["id"],
+                        data=bytes(raw_data),
+                    )
+                    edited_or_new = await self.wait_edited_or_new(
+                        reply["id"],
+                        previous_text=prev_text,
+                        previous_markup=markup,
+                        timeout=min(8.0, self.timeout),
+                    )
+                    if edited_or_new is not None:
+                        return edited_or_new
+                    return await self.response(since=floor)
+                except Exception:
+                    pass
         return None
+
+    async def send_photo(self, photo: bytes | Path, file_name: str = "banner.png") -> dict[str, Any]:
+        with trusted_scope():
+            from relay.files import put
+            source: bytes = photo.read_bytes() if isinstance(photo, Path) else photo
+            up = await put(self.app, source, file_name=file_name)
+            input_file = (
+                {
+                    "_": "inputFileBig",
+                    "id": up["id"],
+                    "parts": up["parts"],
+                    "name": up["name"],
+                }
+                if up.get("big")
+                else {
+                    "_": "inputFile",
+                    "id": up["id"],
+                    "parts": up["parts"],
+                    "name": up["name"],
+                    "md5_checksum": up.get("md5", ""),
+                }
+            )
+            media = {"_": "inputMediaUploadedPhoto", "file": input_file}
+            raw = await self.app.mt_messages_send_media(
+                peer=self._peer,
+                media=media,
+                message="",
+                random_id=secrets.randbits(63),
+            )
+            sent_id = self._extract_sent_id(raw)
+            if sent_id:
+                self._tracked_ids.add(sent_id)
+            reply = await self.response(since=sent_id or self._last_id)
+            return reply
 
 class BotFatherGuard:
     def __init__(self, app: Any) -> None:
@@ -479,57 +595,107 @@ class InlineManager:
                 raise InlineError("no inline bot available: nothing stored, nothing found, creation disabled")
             self._persist(info)
         if recovered:
+            tune_report: dict[str, Any] = {}
             try:
-                await asyncio.wait_for(self._tune_bot(info), timeout=10.0)
+                tune_report = await asyncio.wait_for(self._tune_bot(info), timeout=10.0) or {}
             except Exception:
                 if self.runtime.observatory is not None:
                     self.runtime.observatory.emit("inline", "tune_failed", username=info.username)
-            try:
-                async with BotFatherGuard(self.runtime.app), BotFatherConversation(self.runtime.app) as conv:
-                    await self._configure(conv, info.username)
-            except Exception:
-                if self.runtime.observatory is not None:
-                    self.runtime.observatory.emit("inline", "configure_failed", username=info.username)
-        asyncio.create_task(self._tune_bot(info), name="hotaru:tune-bot")
+            needs_inline = not tune_report.get("inline_ready", False)
+            needs_about = not tune_report.get("about_ready", False)
+            needs_desc = not tune_report.get("desc_ready", False)
+            needs_banner = not tune_report.get("banner_ready", True)
+            if needs_inline or needs_about or needs_desc or needs_banner:
+                try:
+                    async with BotFatherGuard(self.runtime.app), BotFatherConversation(self.runtime.app) as conv:
+                        await self._configure(conv, info.username, bot_id=info.bot_id, skip_inline=not needs_inline, skip_about=not needs_about, skip_desc=not needs_desc, skip_banner=not needs_banner)
+                except Exception:
+                    if self.runtime.observatory is not None:
+                        self.runtime.observatory.emit("inline", "configure_failed", username=info.username)
+        else:
+            asyncio.create_task(self._tune_bot(info), name="hotaru:tune-bot")
         if hasattr(self.runtime, "sync_web_app"):
             asyncio.create_task(self.runtime.sync_web_app(clean_bot=info.username), name="hotaru:sync-webapp")
         return info
 
-    async def _tune_bot(self, info: InlineBotInfo) -> None:
+    async def _tune_bot(self, info: InlineBotInfo) -> dict[str, Any]:
         from goygram import GoyGram
 
         proxy = self.runtime.config.tg_proxy
         app = GoyGram(bot_token=info.token, default_transport="api", proxy=proxy)
         route_bot_api(app, proxy)
+        report: dict[str, Any] = {"inline_ready": False, "about_ready": False, "desc_ready": False, "banner_ready": False}
         try:
-            await app.get_me()
+            me = await app.get_me()
+            me_dict = me if isinstance(me, dict) else getattr(me, "to_dict", lambda: getattr(me, "__dict__", {}))()
+            report["inline_ready"] = bool(me_dict.get("supports_inline_queries"))
             await self._inspect_webhook(app)
+            expected_name = "Hotaru Userbot"
+            expected_short_desc = "Hotaru Userbot - security-first modular userbot"
+            expected_desc = "Hotaru Userbot - security-first modular Telegram userbot with capability sandboxing."
+            expected_cmds = [
+                {"command": "start", "description": "Hotaru Userbot"},
+                {"command": "github", "description": "GitHub Repository"},
+            ]
             cmd_payload = {
-                "commands": [
-                    {"command": "start", "description": "Hotaru Userbot"},
-                    {"command": "github", "description": "GitHub Repository"},
-                ],
+                "commands": expected_cmds,
                 "scope": {"type": "all_private_chats"},
             }
             default_cmd_payload = {
-                "commands": [
-                    {"command": "start", "description": "Hotaru Userbot"},
-                    {"command": "github", "description": "GitHub Repository"},
-                ],
+                "commands": expected_cmds,
             }
-            for method, payload in (
-                ("deleteWebhook", {"drop_pending_updates": True}),
-                ("setMyName", {"name": "Hotaru Userbot"}),
-                ("setMyShortDescription", {"short_description": "Hotaru Userbot - security-first modular userbot"}),
-                ("setMyDescription", {"description": "Hotaru Userbot - security-first modular Telegram userbot with capability sandboxing."}),
-                ("setMyCommands", cmd_payload),
-                ("setMyCommands", default_cmd_payload),
-            ):
+            curr_name = ""
+            try:
+                res_name = await getattr(app, "bot_req")("getMyName")
+                if isinstance(res_name, dict):
+                    curr_name = str(res_name.get("name") or "")
+            except Exception:
+                pass
+            curr_sdesc = ""
+            try:
+                res_sdesc = await getattr(app, "bot_req")("getMyShortDescription")
+                if isinstance(res_sdesc, dict):
+                    curr_sdesc = str(res_sdesc.get("short_description") or "")
+            except Exception:
+                pass
+            if curr_sdesc == expected_short_desc:
+                report["about_ready"] = True
+            curr_desc = ""
+            try:
+                res_desc = await getattr(app, "bot_req")("getMyDescription")
+                if isinstance(res_desc, dict):
+                    curr_desc = str(res_desc.get("description") or "")
+            except Exception:
+                pass
+            if curr_desc == expected_desc:
+                report["desc_ready"] = True
+            curr_cmds = None
+            try:
+                res_cmds = await getattr(app, "bot_req")("getMyCommands")
+                if isinstance(res_cmds, list):
+                    curr_cmds = [{"command": getattr(c, "command", c.get("command") if isinstance(c, dict) else ""), "description": getattr(c, "description", c.get("description") if isinstance(c, dict) else "")} for c in res_cmds]
+            except Exception:
+                pass
+            updates: list[tuple[str, dict[str, Any]]] = [("deleteWebhook", {"drop_pending_updates": True})]
+            if curr_name != expected_name:
+                updates.append(("setMyName", {"name": expected_name}))
+            if curr_sdesc != expected_short_desc:
+                updates.append(("setMyShortDescription", {"short_description": expected_short_desc}))
+                report["about_ready"] = True
+            if curr_desc != expected_desc:
+                updates.append(("setMyDescription", {"description": expected_desc}))
+                report["desc_ready"] = True
+            if curr_cmds != expected_cmds:
+                updates.append(("setMyCommands", cmd_payload))
+                updates.append(("setMyCommands", default_cmd_payload))
+            for method, payload in updates:
                 try:
                     await getattr(app, "bot_req")(method, **payload)
                 except Exception:
                     continue
             await self._apply_bot_avatar(info)
+            banner_ok = await self._apply_bot_banner(info)
+            report["banner_ready"] = banner_ok
         except Exception:
             if self.runtime.observatory is not None:
                 self.runtime.observatory.emit("inline", "tune_failed", username=info.username)
@@ -538,6 +704,7 @@ class InlineManager:
                 await app.close()
             except Exception:
                 pass
+        return report
 
     async def _apply_bot_avatar(self, info: InlineBotInfo) -> None:
         state = getattr(self.runtime, "state", None)
@@ -575,6 +742,11 @@ class InlineManager:
                             users = cast('list[Any]', body_dict.get("users", [])) if body_dict is not None else []
                             if users and isinstance(users[0], dict):
                                 u_dict = cast('dict[str, Any]', users[0])
+                                photo = u_dict.get("photo")
+                                if photo is not None and (not isinstance(photo, dict) or photo.get("_") != "userProfilePhotoEmpty"):
+                                    if state is not None:
+                                        state.set_setting(key, digest)
+                                    return
                                 bot = {"_": "inputUser", "user_id": int(cast(int | str, u_dict.get("id", info.bot_id))), "access_hash": int(cast(int | str, u_dict.get("access_hash", 0)))}
                         except Exception:
                             bot = None
@@ -631,6 +803,192 @@ class InlineManager:
                 pass
             if not bf_ok and self.runtime.observatory is not None:
                 self.runtime.observatory.emit("inline", "avatar_failed", error=type(exc).__name__, detail=str(exc)[:140])
+
+    async def _resolve_bot_peer(self, info: InlineBotInfo) -> dict[str, Any] | None:
+        app = getattr(self.runtime, "app", None)
+        if app is None or getattr(app, "mt", None) is None:
+            return None
+        with trusted_scope():
+            bot: dict[str, Any] | None = None
+            if hasattr(app, "_typed_peer"):
+                try:
+                    res_peer = await app._typed_peer("@" + info.username, "user")
+                    if isinstance(res_peer, dict):
+                        bot = cast('dict[str, Any]', res_peer)
+                except Exception:
+                    bot = None
+            if bot is None:
+                resolve_un = getattr(app, "mt_contacts_resolve_username", None)
+                if callable(resolve_un):
+                    try:
+                        resolved = await cast(Callable[..., Awaitable[Any]], resolve_un)(username=info.username.lstrip("@"))
+                        resolved_dict = cast('dict[str, Any]', resolved) if isinstance(resolved, dict) else None
+                        body_val: Any = resolved_dict.get("result") if resolved_dict is not None and "result" in resolved_dict else resolved_dict
+                        body_dict: dict[str, Any] | None = cast('dict[str, Any]', body_val) if isinstance(body_val, dict) else None
+                        users = cast('list[Any]', body_dict.get("users", [])) if body_dict is not None else []
+                        if users and isinstance(users[0], dict):
+                            u_dict = cast('dict[str, Any]', users[0])
+                            bot = {"_": "inputUser", "user_id": int(cast(int | str, u_dict.get("id", info.bot_id))), "access_hash": int(cast(int | str, u_dict.get("access_hash", 0)))}
+                    except Exception:
+                        bot = None
+            if bot is None:
+                try:
+                    from goygram import ext
+                    peer: Any = await app.mt.resolve_peer("@" + info.username)
+                    if isinstance(peer, (bytes, bytearray, memoryview)):
+                        peer_dict: dict[str, Any] = cast('dict[str, Any]', ext.deserialize_constructor(bytes(cast(Any, peer))))
+                    elif isinstance(peer, dict):
+                        peer_dict = cast('dict[str, Any]', peer)
+                    elif hasattr(peer, "to_dict"):
+                        peer_dict = cast('dict[str, Any]', getattr(peer, "to_dict")())
+                    else:
+                        peer_dict = {}
+                    access_val: Any = peer_dict.get("access_hash")
+                    access_hash: int = int(access_val) if access_val else 0
+                    bot = {"_": "inputUser", "user_id": int(info.bot_id), "access_hash": access_hash}
+                except Exception:
+                    bot = {"_": "inputUser", "user_id": int(info.bot_id), "access_hash": 0}
+            return bot
+
+    async def _has_bot_description_photo(self, info: InlineBotInfo) -> bool | None:
+        app = getattr(self.runtime, "app", None)
+        if app is None or getattr(app, "mt", None) is None:
+            return None
+        try:
+            bot = await self._resolve_bot_peer(info)
+            if bot is None:
+                return None
+            with trusted_scope():
+                full_raw = await app.mt.call("users.getFullUser", id=bot)
+                full_body = _result_body(full_raw)
+                fu: Any = full_body.get("full_user", full_body)
+                bi: Any = fu.get("bot_info") if isinstance(fu, dict) else None
+                if isinstance(bi, dict):
+                    dp = bi.get("description_photo")
+                    if dp is not None and (not isinstance(dp, dict) or dp.get("_") != "photoEmpty"):
+                        return True
+                    return False
+        except Exception as exc:
+            log.debug("bot description photo check failed: %s", exc)
+        return None
+
+    async def _apply_bot_banner(
+        self,
+        info: InlineBotInfo,
+        conv: BotFatherConversation | None = None,
+        *,
+        force: bool = False,
+    ) -> bool:
+        state = getattr(self.runtime, "state", None)
+        root = Path(__file__).resolve().parent.parent
+        candidates: list[Path] = [root / "hotaru/assets/banner.png", root / "assets/banner.png"]
+        banner_path: Path | None = next((p for p in candidates if p.is_file()), None)
+        if banner_path is None:
+            return False
+
+        import hashlib
+        digest = hashlib.sha256(banner_path.read_bytes()).hexdigest()
+        key = f"brand-banner-bot-{info.bot_id}"
+
+        has_state = state is not None and state.get_setting(key) == digest
+        if has_state and not force:
+            has_tg = await self._has_bot_description_photo(info)
+            if has_tg is True or has_tg is None:
+                return True
+
+        async def _do_upload(c: BotFatherConversation) -> bool:
+            clean_username = info.username.lstrip("@").strip()
+            target_bot_at = f"@{clean_username}"
+            target_bot_cb = f"bots/{info.bot_id}"
+            target_edit_cb = f"bots/{info.bot_id}/edit"
+            target_descpic_cb = f"bots/{info.bot_id}/edit/descpic"
+
+            try:
+                await c.say("/cancel")
+                await c.response()
+            except Exception:
+                pass
+
+            curr_msg = await c.ask("/mybots")
+
+            found_descpic = False
+            bot_menu = await c.click_button(curr_msg, target_descpic_cb)
+            if bot_menu is not None:
+                found_descpic = True
+                curr_msg = bot_menu
+            else:
+                edit_candidate = await c.click_button(curr_msg, target_edit_cb)
+                if edit_candidate is not None:
+                    curr_msg = edit_candidate
+                else:
+                    found_bot_menu = False
+                    for _ in range(5):
+                        picked = await c.click_button(curr_msg, target_bot_cb, target_bot_at, clean_username)
+                        if picked is not None:
+                            curr_msg = picked
+                            found_bot_menu = True
+                            break
+                        nxt = await c.click_button(curr_msg, "»", "Next »", "Next", ">")
+                        if nxt is None:
+                            break
+                        curr_msg = nxt
+                    if not found_bot_menu:
+                        try:
+                            curr_msg = await c.ask(target_bot_at)
+                        except Exception:
+                            return False
+
+            if not found_descpic:
+                descpic_candidate = await c.click_button(curr_msg, target_descpic_cb)
+                if descpic_candidate is not None:
+                    curr_msg = descpic_candidate
+                    found_descpic = True
+                else:
+                    edit_menu = await c.click_button(curr_msg, target_edit_cb, "Edit Bot", "edit")
+                    if edit_menu is not None:
+                        curr_msg = edit_menu
+
+            if not found_descpic:
+                descpic_prompt = await c.click_button(
+                    curr_msg,
+                    target_descpic_cb,
+                    "Edit Description Picture",
+                    "Description Picture",
+                    "descpic",
+                )
+                if descpic_prompt is not None:
+                    curr_msg = descpic_prompt
+                    found_descpic = True
+
+            if not found_descpic:
+                log.debug("could not reach descpic button for bot %s", info.bot_id)
+                return False
+
+            photo_reply = await c.send_photo(banner_path, file_name="banner.png")
+            reply_text = str(photo_reply.get("message") or "").lower()
+            if "success" in reply_text or "updated" in reply_text or "done" in reply_text or not (
+                "error" in reply_text or "wrong" in reply_text or "invalid" in reply_text
+            ):
+                if state is not None:
+                    state.set_setting(key, digest)
+                if self.runtime.observatory is not None:
+                    self.runtime.observatory.emit("inline", "banner_updated", username=info.username, bot_id=info.bot_id)
+                return True
+            return False
+
+        if conv is not None:
+            try:
+                return await _do_upload(conv)
+            except Exception as exc:
+                log.warning("failed to set bot banner: %s", exc)
+                return False
+
+        try:
+            async with BotFatherGuard(self.runtime.app), BotFatherConversation(self.runtime.app) as new_conv:
+                return await _do_upload(new_conv)
+        except Exception as exc:
+            log.warning("failed to set bot banner: %s", exc)
+            return False
 
     async def _start_bot_chat(self, username: str, *, force: bool = False) -> bool:
         app = self.runtime.app
@@ -821,8 +1179,13 @@ class InlineManager:
             await conv.ask(self.bot_name[:64])
             username, token = await self._pick_username(conv)
             bot_id = int(token.split(":", 1)[0])
-            await self._configure(conv, username)
-            return InlineBotInfo(token, username, bot_id)
+            info = InlineBotInfo(token, username, bot_id)
+            await self._configure(conv, username, bot_id=bot_id)
+            try:
+                await self._apply_bot_banner(info, conv=conv)
+            except Exception as exc:
+                log.warning("failed to set bot banner during creation: %s", exc)
+            return info
 
     async def _pick_username(self, conv: BotFatherConversation) -> tuple[str, str]:
         wanted: list[str] = []
@@ -835,8 +1198,8 @@ class InlineManager:
 
         shuffled_roots = list(_ROOTS)
         shuffled_stems = list(_STEMS)
-        random.shuffle(shuffled_roots)
-        random.shuffle(shuffled_stems)
+        secrets.SystemRandom().shuffle(shuffled_roots)
+        secrets.SystemRandom().shuffle(shuffled_stems)
 
         for r, s in zip(shuffled_roots, shuffled_stems):
             wanted.append(f"{r}{s}bot")
@@ -845,7 +1208,7 @@ class InlineManager:
             wanted.append(f"{r}_{s}_{secrets.token_hex(2)}_bot")
 
         for _ in range(8):
-            suffix = "".join(random.choices(string.ascii_lowercase + string.digits, k=6))
+            suffix = "".join(secrets.choice(string.ascii_lowercase + string.digits) for _ in range(6))
             wanted.append(f"hotaru_{suffix}_bot")
         seen: set[str] = set()
         for username in wanted:
@@ -867,45 +1230,60 @@ class InlineManager:
             raise InlineError("unexpected BotFather reply while choosing a username: " + lowered.splitlines()[0][:120] if lowered else "empty BotFather reply")
         raise InlineError("could not allocate a bot username")
 
-    async def _configure(self, conv: BotFatherConversation, username: str) -> None:
+    async def _configure(self, conv: BotFatherConversation, username: str, *, bot_id: int | None = None, skip_inline: bool = False, skip_about: bool = False, skip_desc: bool = False, skip_banner: bool = False) -> None:
         at = f"@{username}"
-        try:
-            r_inl = await conv.ask("/setinline")
-            clicked = await conv.click_button(r_inl, at, username)
-            if not clicked:
-                await conv.ask(at)
-            await conv.ask(self.inline_placeholder)
-        except Exception:
-            pass
+        if not skip_inline:
+            try:
+                r_inl = await conv.ask("/setinline")
+                clicked = await conv.click_button(r_inl, at, username)
+                if not clicked:
+                    await conv.ask(at)
+                await conv.ask(self.inline_placeholder)
+            except Exception:
+                pass
 
-        try:
-            r_fb = await conv.ask("/setinlinefeedback")
-            clicked = await conv.click_button(r_fb, at, username)
-            if not clicked:
-                r_fb = await conv.ask(at)
-            c_en = await conv.click_button(r_fb, "Enabled")
-            if not c_en:
-                await conv.ask("Enabled")
-        except Exception:
-            pass
+            try:
+                r_fb = await conv.ask("/setinlinefeedback")
+                clicked = await conv.click_button(r_fb, at, username)
+                if not clicked:
+                    r_fb = await conv.ask(at)
+                c_en = await conv.click_button(r_fb, "100%", "Enabled (100%)", "Enabled")
+                if c_en is None:
+                    c_en = await conv.ask("Enabled")
+                    if "invalid" in str(c_en.get("message", "")).lower():
+                        c_en = await conv.ask("100%")
+                low = str(c_en.get("message", "")).lower()
+                if "percentage" in low or "probability" in low:
+                    await conv.ask("100%")
+            except Exception:
+                pass
 
-        try:
-            r_about = await conv.ask("/setabouttext")
-            clicked = await conv.click_button(r_about, at, username)
-            if not clicked:
-                await conv.ask(at)
-            await conv.ask("Hotaru Userbot - security-first modular userbot")
-        except Exception:
-            pass
+        if not skip_about:
+            try:
+                r_about = await conv.ask("/setabouttext")
+                clicked = await conv.click_button(r_about, at, username)
+                if not clicked:
+                    await conv.ask(at)
+                await conv.ask("Hotaru Userbot - security-first modular userbot")
+            except Exception:
+                pass
 
-        try:
-            r_desc = await conv.ask("/setdescription")
-            clicked = await conv.click_button(r_desc, at, username)
-            if not clicked:
-                await conv.ask(at)
-            await conv.ask("Hotaru Userbot - security-first modular Telegram userbot with capability sandboxing.")
-        except Exception:
-            pass
+        if not skip_desc:
+            try:
+                r_desc = await conv.ask("/setdescription")
+                clicked = await conv.click_button(r_desc, at, username)
+                if not clicked:
+                    await conv.ask(at)
+                await conv.ask("Hotaru Userbot - security-first modular Telegram userbot with capability sandboxing.")
+            except Exception:
+                pass
+
+        if bot_id is not None and not skip_banner:
+            try:
+                info = InlineBotInfo(token="", username=username, bot_id=bot_id)
+                await self._apply_bot_banner(info, conv=conv)
+            except Exception as exc:
+                log.debug("banner configure skipped: %s", exc)
 
     async def start(self) -> None:
         async with self._start_lock:
@@ -1111,6 +1489,12 @@ class InlineManager:
     async def _check_bot(self, app: Any) -> None:
         await app.mt_users_get_users(id=[{"_": "inputUserSelf"}], retry=0)
         await self._inspect_webhook(app)
+        if self.info is not None:
+            try:
+                await self._apply_bot_avatar(self.info)
+                await self._apply_bot_banner(self.info)
+            except Exception as exc:
+                log.debug("bot assets check skipped: %s", exc)
 
     async def _inspect_webhook(self, app: Any) -> None:
         try:
@@ -1321,6 +1705,12 @@ class InlineManager:
         if getattr(update, "update_type", None) != "updateBotInlineSend":
             return
         if not self._allows_form(update, chosen=True):
+            if self.runtime.observatory is not None:
+                nonce = str(getattr(update, "query", "") or "").strip().split(":", 1)[-1]
+                actor = getattr(update, "from_id", None)
+                if not isinstance(actor, int):
+                    actor = getattr(getattr(update, "from_user", None), "id", None)
+                self.runtime.observatory.emit("inline", "chosen_dropped", nonce=nonce, msg_id=getattr(update, "msg_id", None), actor=actor)
             return
         text = str(getattr(update, "query", "") or "").strip()
         from hotaru.security import AccessVerdict

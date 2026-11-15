@@ -21,6 +21,7 @@ if TYPE_CHECKING:
     from aiohttp.abc import ResolveResult
 from aiohttp.abc import AbstractResolver
 
+from .denylist import BLOCKED_HOSTS
 from .netproxy import NetPolicy, ProxySpec
 
 
@@ -158,6 +159,31 @@ class Job:
         bind_ro("/bin", "/bin")
         bind_ro("/etc/ssl", "/etc/ssl")
         bind_ro("/etc/resolv.conf", "/etc/resolv.conf")
+        if _os.path.exists("/etc/nsswitch.conf"):
+            bind_ro("/etc/nsswitch.conf", "/etc/nsswitch.conf")
+        if _os.path.isdir("/usr/share"):
+            bind_ro("/usr/share", "/usr/share")
+        if _os.path.exists("/etc/gitconfig"):
+            bind_ro("/etc/gitconfig", "/etc/gitconfig")
+        hosts_path = _os.path.join(newroot, "etc", "hosts")
+        _os.makedirs(_os.path.dirname(hosts_path), exist_ok=True)
+        orig_hosts = ""
+        if _os.path.exists("/etc/hosts"):
+            try:
+                with open("/etc/hosts", "r") as f:
+                    orig_hosts = f.read()
+            except OSError:
+                pass
+        blocked_entries = "\n".join(
+            f"127.0.0.1 {h}\n::1 {h}\n0.0.0.0 {h}"
+            for h in BLOCKED_HOSTS + tuple(f"www.{h}" for h in BLOCKED_HOSTS)
+        )
+        with open(hosts_path, "w") as f:
+            f.write(orig_hosts + "\n" + blocked_entries + "\n")
+        try:
+            _os.chmod(hosts_path, 0o644)
+        except OSError:
+            pass
         for dev in ("/dev/null", "/dev/zero", "/dev/urandom"):
             bind_ro(dev, dev, allow_dev=True)
         tmp_dir = os.path.join(newroot, "tmp")

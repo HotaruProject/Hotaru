@@ -462,7 +462,9 @@ class Kit:
         return _decorate({"text": text, "k": "go", "m": module_id, "f": fn, "a": _plain(args)}, style, icon)
 
     def close(self, text: Optional[str] = None) -> dict[str, Any]:
-        return _decorate({"text": "✕ Close" if not text or text in {"Close", "Закрыть", "✕ Закрыть", "閉じる", "Жабу", "关闭", "Закрити"} else text, "k": "close"}, "danger", None)
+        if not text or text in {"Close", "✕ Close"}:
+            text = self._t("common.close", "✕ Close")
+        return _decorate({"text": text, "k": "close"}, "danger", None)
 
     def back(self, fn: Any, text: Optional[str] = None, **args: Any) -> dict[str, Any]:
         return self.button(text or self._t("common.back", "Back"), fn, icon="back", **args)
@@ -734,9 +736,9 @@ class ScreenEngine:
         except Exception:
             return None
 
-    def _t(self, key: str, default: str, **params: Any) -> str:
+    def _t(self, key: str, default: str, locale: Optional[str] = None, **params: Any) -> str:
         try:
-            return self.runtime.t(key, default, **params)
+            return self.runtime.t(key, default, locale=locale, **params)
         except Exception:
             return default.format(**params)
 
@@ -820,8 +822,8 @@ class ScreenEngine:
                 kind = spec.get("k")
                 if kind == "close":
                     button["style"] = "danger"
-                    if not button.get("text") or button.get("text") in {"Close", "Закрыть", "✕ Закрыть", "閉じる", "Жабу", "关闭", "Закрити"}:
-                        button["text"] = "✕ Close"
+                    if not button.get("text") or button.get("text") in {"Close", "✕ Close"}:
+                        button["text"] = self._t("common.close", "✕ Close", locale=form.language)
                 if kind in {"go", "input", "close"}:
                     token = self._action(form, spec, actions, gen)
                     button["switch_inline_query_current_chat" if kind == "input" else "callback_data"] = "hotaru-input:" + token + " " if kind == "input" else token
@@ -1085,7 +1087,12 @@ class ScreenEngine:
             raise
         form.message_id = sent.get("id") if isinstance(sent, dict) and isinstance(sent.get("id"), int) else None
         self._commit(form, text, actions, gen, screen)
-        asyncio.get_running_loop().create_task(self._bind(form.id, nonce, gen, rows, has_emoji(text)))
+        ready_id = (runtime._form_inline_ids or {}).get(nonce) if hasattr(runtime, "_form_inline_ids") else None
+        if isinstance(ready_id, dict):
+            form.inline_id = ready_id
+            self._save(form)
+        else:
+            asyncio.get_running_loop().create_task(self._bind(form.id, nonce, gen, rows, has_emoji(text)))
         return form
 
     async def _bind(self, form_id: int, nonce: str, gen: int, rows: list[list[dict[str, Any]]], repaint: bool) -> None:
@@ -1196,13 +1203,23 @@ class ScreenEngine:
         if rich:
             data["rich_message"] = await self._rich(text)
         app = self._bot_app()
-        for attempt in range(3):
+        for attempt in range(5):
             try:
+                if form.inline_id is None:
+                    reloaded = self.load(form.id)
+                    if reloaded is not None and reloaded.inline_id is not None:
+                        form.inline_id = reloaded.inline_id
                 if form.inline_id is not None:
                     await CallbackContext.edit_inline(app, form.inline_id, plain, data)
-                elif form.bot and form.message_id is not None:
+                elif form.message_id is not None:
+                    target = app if form.bot else getattr(self.runtime, "app", None)
+                    if target is None:
+                        raise ScreenError("form has no editable identity yet")
                     with trusted_scope():
-                        await app.mt_messages_edit_message(peer=form.chat, id=form.message_id, message=plain, **data)
+                        await target.mt_messages_edit_message(peer=form.chat, id=form.message_id, message=plain, **data)
+                elif attempt < 4:
+                    await asyncio.sleep(0.5)
+                    continue
                 else:
                     raise ScreenError("form has no editable identity yet")
                 return
@@ -1212,6 +1229,8 @@ class ScreenEngine:
                 if attempt or exc.seconds > 8:
                     raise
                 await asyncio.sleep(exc.seconds + 0.5)
+            except ScreenError:
+                raise
             except Exception as exc:
                 if "rich_message" not in data:
                     raise
@@ -1319,9 +1338,10 @@ class ScreenEngine:
         return result
 
     async def dispatch(self, callback: Any) -> None:
-        expired = self._t("ui.expired", "This menu has expired. Open it again.")
         decoded = self.decode(getattr(callback, "data", None))
         form = self.load(decoded[0]) if decoded is not None else None
+        form_lang = form.language if form is not None else None
+        expired = self._t("ui.expired", "This menu has expired. Open it again.", locale=form_lang)
         log.info(
             "screen dispatch data=%r decoded=%s form=%s inline_id=%s chat=%s msg=%s actor=%s",
             getattr(callback, "data", None),
@@ -1341,9 +1361,10 @@ class ScreenEngine:
         _, gen, index = decoded
         async with self.lock(form):
             form = self.load(form.id) or form
+            form_lang = form.language
             if form.gen != gen or index >= len(form.actions):
                 log.info("screen dispatch stale: form=%s gen=%s/%s index=%s actions=%s", form.id, gen, form.gen, index, len(form.actions))
-                await self._answer(callback, self._t("ui.stale", "The menu has changed, try again."))
+                await self._answer(callback, self._t("ui.stale", "The menu has changed, try again.", locale=form_lang))
                 return
             inline_id: Any = getattr(callback, "inline_message_id", None)
             if inline_id is None and isinstance(getattr(callback, "msg_id", None), dict):
@@ -1368,7 +1389,7 @@ class ScreenEngine:
                 from .security import AccessVerdict
                 if security.check(callback, transport="mt", module_id=form.module, authorized=True) is not AccessVerdict.ALLOW:
                     log.info("screen dispatch rate limited: form=%s actor=%s", form.id, actor)
-                    await self._answer(callback, self._t("ui.slow_down", "Too fast, wait a second."))
+                    await self._answer(callback, self._t("ui.slow_down", "Too fast, wait a second.", locale=form_lang))
                     return
             if action.get("k") == "close":
                 log.info("screen dispatch close: form=%s", form.id)
@@ -1385,7 +1406,7 @@ class ScreenEngine:
                 return
             except Exception as exc:
                 self._report(form, action, exc)
-                await nav.answer(self._t("ui.failed", "Something went wrong: {error}", error=type(exc).__name__), alert=True)
+                await nav.answer(self._t("ui.failed", "Something went wrong: {error}", locale=form_lang, error=type(exc).__name__), alert=True)
                 return
             log.info("screen dispatch result: form=%s handler=%s type=%s", form.id, action.get("f"), type(result).__name__)
             await self._finish(form, action, nav, result)
@@ -1400,15 +1421,15 @@ class ScreenEngine:
         try:
             await self.render(form, result)
         except FloodWaitError as exc:
-            await nav.answer(self._t("ui.flood", "Telegram asks to wait {seconds} s.", seconds=exc.seconds), alert=True)
+            await nav.answer(self._t("ui.flood", "Telegram asks to wait {seconds} s.", locale=form.language, seconds=exc.seconds), alert=True)
             return
         except MessageIdInvalidError:
             self.drop(form)
-            await nav.answer(self._t("ui.expired", "This menu has expired. Open it again."), alert=True)
+            await nav.answer(self._t("ui.expired", "This menu has expired. Open it again.", locale=form.language), alert=True)
             return
         except Exception as exc:
             self._report(form, action, exc)
-            await nav.answer(self._t("ui.failed", "Something went wrong: {error}", error=type(exc).__name__), alert=True)
+            await nav.answer(self._t("ui.failed", "Something went wrong: {error}", locale=form.language, error=type(exc).__name__), alert=True)
             return
         await nav.answer(result.toast, alert=result.alert)
 

@@ -83,7 +83,7 @@ def secure_wipe_account(root: Path, user_id: int) -> None:
 
 
 def handle_account_critical_failure(session_dir: str | Path, user_id: int, reason: str, runtime: Any = None) -> bool:
-    import random
+    import secrets
     import sys
     root = Path(session_dir).resolve()
     reg_path = root / "sanctuary/state.sqlite3"
@@ -111,7 +111,7 @@ def handle_account_critical_failure(session_dir: str | Path, user_id: int, reaso
                 except Exception:
                     pass
             weight = en_val * 1000 + v_val * 500 + prem * 100 - p.account_number
-            return (weight, -p.account_number, random.randint(0, 100))
+            return (weight, -p.account_number, secrets.randbelow(101))
         winner = max(candidates, key=score)
         try:
             old_prof = manager.find_by_user(user_id)

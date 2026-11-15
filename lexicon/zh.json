@@ -10,7 +10,7 @@
     "brand": "<tg-emoji emoji-id=\"5985527717183888277\">⚡</tg-emoji><tg-emoji emoji-id=\"5985515480822061758\">⚡</tg-emoji><tg-emoji emoji-id=\"5985558606588681366\">⚡</tg-emoji><tg-emoji emoji-id=\"5985757321840565902\">⚡</tg-emoji>",
     "ok": "确定",
     "cancel": "取消",
-    "close": "✕ Close",
+    "close": "✕ 关闭",
     "back": "返回",
     "unknown_error": "未知错误",
     "confirm": "确认",
@@ -373,7 +373,7 @@
       "button": {
         "add": "添加账号",
         "refresh": "刷新",
-        "close": "✕ Close",
+        "close": "✕ 关闭",
         "permissions": "权限",
         "start": "启动",
         "stop": "停止",
@@ -838,7 +838,7 @@
         },
         "restore": {
           "usage": "<-f|--force> <archive>",
-          "description": "Restore from backup archive"
+          "description": "从备份归档恢复"
         }
       },
       "config_fields": {
@@ -1216,7 +1216,7 @@
     "error": "<tg-emoji emoji-id=\"5355133243773435190\">⚠️</tg-emoji> {error}",
     "failed": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> <b>发生错误：</b>\n<blockquote>{error}</blockquote>",
     "denied": "<tg-emoji emoji-id=\"5260342697075416641\">❌</tg-emoji> 该按钮不可用。",
-    "close": "✕ Close",
+    "close": "✕ 关闭",
     "back": "‹ 返回",
     "expired": "菜单已过期，请重新运行命令。",
     "stale": "菜单已更新，请再次点击。",

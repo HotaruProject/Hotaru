@@ -313,7 +313,7 @@
       "button": {
         "add": "Аккаунт қосу",
         "refresh": "Жаңарту",
-        "close": "✕ Close",
+        "close": "✕ Жабу",
         "permissions": "Рұқсаттар",
         "start": "Қосу",
         "stop": "Тоқтату",
@@ -786,7 +786,7 @@
         },
         "restore": {
           "usage": "<-f|--force> <archive>",
-          "description": "Restore from backup archive"
+          "description": "Резервтік көшірмеден қалпына келтіру"
         }
       },
       "config_fields": {
@@ -966,7 +966,7 @@
     "brand": "<tg-emoji emoji-id=\"5985527717183888277\">⚡</tg-emoji><tg-emoji emoji-id=\"5985515480822061758\">⚡</tg-emoji><tg-emoji emoji-id=\"5985558606588681366\">⚡</tg-emoji><tg-emoji emoji-id=\"5985757321840565902\">⚡</tg-emoji>",
     "ok": "ОК",
     "cancel": "Бас тарту",
-    "close": "✕ Close",
+    "close": "✕ Жабу",
     "back": "Артқа",
     "unknown_error": "Белгісіз қате",
     "confirm": "Растау",
@@ -1213,7 +1213,7 @@
     }
   },
   "ui": {
-    "close": "✕ Close",
+    "close": "✕ Жабу",
     "back": "‹ Артқа",
     "expired": "Мәзірдің мерзімі өтті. Команданы қайта шақырыңыз.",
     "stale": "Мәзір жаңа ғана жаңарды, қайта басыңыз.",

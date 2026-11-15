@@ -26,6 +26,7 @@ from .netproxy import NetPolicy, ProxySpec, parse_proxy
 from .emoji import to_entities
 from .rpc import rpcname
 from .jobs import Job
+from hotaru.observatory import scrub_text
 
 if TYPE_CHECKING:
     from .jobs import Job
@@ -530,7 +531,8 @@ class CapabilityHost:
             workspace = self.runtime.config.state_path.parent / "workspaces" / module_id
             manifest = self.runtime.modules.get(module_id)
             caps = manifest.loaded.manifest.capabilities if manifest is not None else ()
-            self.jobs[module_id, kind, key] = Job(kind, dict(payload), self._check_net_target, workspace, True, "files" not in caps, policy=self.net_policy, hops=hops)
+            net_blocked = not self._allowed(module_id, "net")
+            self.jobs[module_id, kind, key] = Job(kind, dict(payload), self._check_net_target, workspace, net_blocked, "files" not in caps, policy=self.net_policy, hops=hops)
             return {"id": key}
         key = (module_id, kind, str(payload.get("id", "")))
         job = self.jobs.get(key)
@@ -684,11 +686,11 @@ class CapabilityHost:
             if not isinstance(text, str) or not text.strip():
                 return {"ok": False}
             level = str(payload.get("level") or "info")
-            fields: dict[str, Any] = {"msg": text[:2048]}
+            fields: dict[str, Any] = {"msg": scrub_text(text[:2048])}
             if isinstance(payload.get("name"), str):
-                fields["name"] = payload["name"][:120]
+                fields["name"] = scrub_text(payload["name"][:120])
             if isinstance(payload.get("detail"), str):
-                fields["detail"] = payload["detail"][:2048]
+                fields["detail"] = scrub_text(payload["detail"][:2048])
             observatory.emit("module", "log", level=level, module=module_id, **fields)
             return {"ok": True}
         if op == "read":
@@ -714,7 +716,8 @@ class CapabilityHost:
             env.update({key: os.environ[key] for key in ("SystemRoot", "COMSPEC", "PATHEXT") if key in os.environ})
         preexec = None
         if os.name != "nt":
-            preexec = lambda: Job.jail_preexec(str(workspace), True)
+            net_blocked = not self._allowed(module_id, "net")
+            preexec = lambda: Job.jail_preexec(str(workspace), net_blocked)
         try:
             loop = asyncio.get_running_loop()
             proc = await loop.run_in_executor(
