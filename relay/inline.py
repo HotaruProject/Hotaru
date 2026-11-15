@@ -479,52 +479,99 @@ class InlineManager:
                 raise InlineError("no inline bot available: nothing stored, nothing found, creation disabled")
             self._persist(info)
         if recovered:
+            tune_report: dict[str, Any] = {}
             try:
-                await asyncio.wait_for(self._tune_bot(info), timeout=10.0)
+                tune_report = await asyncio.wait_for(self._tune_bot(info), timeout=10.0) or {}
             except Exception:
                 if self.runtime.observatory is not None:
                     self.runtime.observatory.emit("inline", "tune_failed", username=info.username)
-            try:
-                async with BotFatherGuard(self.runtime.app), BotFatherConversation(self.runtime.app) as conv:
-                    await self._configure(conv, info.username)
-            except Exception:
-                if self.runtime.observatory is not None:
-                    self.runtime.observatory.emit("inline", "configure_failed", username=info.username)
-        asyncio.create_task(self._tune_bot(info), name="hotaru:tune-bot")
+            needs_inline = not tune_report.get("inline_ready", False)
+            needs_about = not tune_report.get("about_ready", False)
+            needs_desc = not tune_report.get("desc_ready", False)
+            if needs_inline or needs_about or needs_desc:
+                try:
+                    async with BotFatherGuard(self.runtime.app), BotFatherConversation(self.runtime.app) as conv:
+                        await self._configure(conv, info.username, skip_inline=not needs_inline, skip_about=not needs_about, skip_desc=not needs_desc)
+                except Exception:
+                    if self.runtime.observatory is not None:
+                        self.runtime.observatory.emit("inline", "configure_failed", username=info.username)
+        else:
+            asyncio.create_task(self._tune_bot(info), name="hotaru:tune-bot")
         if hasattr(self.runtime, "sync_web_app"):
             asyncio.create_task(self.runtime.sync_web_app(clean_bot=info.username), name="hotaru:sync-webapp")
         return info
 
-    async def _tune_bot(self, info: InlineBotInfo) -> None:
+    async def _tune_bot(self, info: InlineBotInfo) -> dict[str, Any]:
         from goygram import GoyGram
 
         proxy = self.runtime.config.tg_proxy
         app = GoyGram(bot_token=info.token, default_transport="api", proxy=proxy)
         route_bot_api(app, proxy)
+        report: dict[str, Any] = {"inline_ready": False, "about_ready": False, "desc_ready": False}
         try:
-            await app.get_me()
+            me = await app.get_me()
+            me_dict = me if isinstance(me, dict) else getattr(me, "to_dict", lambda: getattr(me, "__dict__", {}))()
+            report["inline_ready"] = bool(me_dict.get("supports_inline_queries"))
             await self._inspect_webhook(app)
+            expected_name = "Hotaru Userbot"
+            expected_short_desc = "Hotaru Userbot - security-first modular userbot"
+            expected_desc = "Hotaru Userbot - security-first modular Telegram userbot with capability sandboxing."
+            expected_cmds = [
+                {"command": "start", "description": "Hotaru Userbot"},
+                {"command": "github", "description": "GitHub Repository"},
+            ]
             cmd_payload = {
-                "commands": [
-                    {"command": "start", "description": "Hotaru Userbot"},
-                    {"command": "github", "description": "GitHub Repository"},
-                ],
+                "commands": expected_cmds,
                 "scope": {"type": "all_private_chats"},
             }
             default_cmd_payload = {
-                "commands": [
-                    {"command": "start", "description": "Hotaru Userbot"},
-                    {"command": "github", "description": "GitHub Repository"},
-                ],
+                "commands": expected_cmds,
             }
-            for method, payload in (
-                ("deleteWebhook", {"drop_pending_updates": True}),
-                ("setMyName", {"name": "Hotaru Userbot"}),
-                ("setMyShortDescription", {"short_description": "Hotaru Userbot - security-first modular userbot"}),
-                ("setMyDescription", {"description": "Hotaru Userbot - security-first modular Telegram userbot with capability sandboxing."}),
-                ("setMyCommands", cmd_payload),
-                ("setMyCommands", default_cmd_payload),
-            ):
+            curr_name = ""
+            try:
+                res_name = await getattr(app, "bot_req")("getMyName")
+                if isinstance(res_name, dict):
+                    curr_name = str(res_name.get("name") or "")
+            except Exception:
+                pass
+            curr_sdesc = ""
+            try:
+                res_sdesc = await getattr(app, "bot_req")("getMyShortDescription")
+                if isinstance(res_sdesc, dict):
+                    curr_sdesc = str(res_sdesc.get("short_description") or "")
+            except Exception:
+                pass
+            if curr_sdesc == expected_short_desc:
+                report["about_ready"] = True
+            curr_desc = ""
+            try:
+                res_desc = await getattr(app, "bot_req")("getMyDescription")
+                if isinstance(res_desc, dict):
+                    curr_desc = str(res_desc.get("description") or "")
+            except Exception:
+                pass
+            if curr_desc == expected_desc:
+                report["desc_ready"] = True
+            curr_cmds = None
+            try:
+                res_cmds = await getattr(app, "bot_req")("getMyCommands")
+                if isinstance(res_cmds, list):
+                    curr_cmds = [{"command": getattr(c, "command", c.get("command") if isinstance(c, dict) else ""), "description": getattr(c, "description", c.get("description") if isinstance(c, dict) else "")} for c in res_cmds]
+            except Exception:
+                pass
+            updates: list[tuple[str, dict[str, Any]]] = [("deleteWebhook", {"drop_pending_updates": True})]
+            if curr_name != expected_name:
+                updates.append(("setMyName", {"name": expected_name}))
+            if curr_sdesc != expected_short_desc:
+                updates.append(("setMyShortDescription", {"short_description": expected_short_desc}))
+                report["about_ready"] = True
+            if curr_desc != expected_desc:
+                updates.append(("setMyDescription", {"description": expected_desc}))
+                report["desc_ready"] = True
+            if curr_cmds != expected_cmds:
+                updates.append(("setMyCommands", cmd_payload))
+                updates.append(("setMyCommands", default_cmd_payload))
+            for method, payload in updates:
                 try:
                     await getattr(app, "bot_req")(method, **payload)
                 except Exception:
@@ -538,6 +585,7 @@ class InlineManager:
                 await app.close()
             except Exception:
                 pass
+        return report
 
     async def _apply_bot_avatar(self, info: InlineBotInfo) -> None:
         state = getattr(self.runtime, "state", None)
@@ -575,6 +623,11 @@ class InlineManager:
                             users = cast('list[Any]', body_dict.get("users", [])) if body_dict is not None else []
                             if users and isinstance(users[0], dict):
                                 u_dict = cast('dict[str, Any]', users[0])
+                                photo = u_dict.get("photo")
+                                if photo is not None and (not isinstance(photo, dict) or photo.get("_") != "userProfilePhotoEmpty"):
+                                    if state is not None:
+                                        state.set_setting(key, digest)
+                                    return
                                 bot = {"_": "inputUser", "user_id": int(cast(int | str, u_dict.get("id", info.bot_id))), "access_hash": int(cast(int | str, u_dict.get("access_hash", 0)))}
                         except Exception:
                             bot = None
@@ -867,45 +920,48 @@ class InlineManager:
             raise InlineError("unexpected BotFather reply while choosing a username: " + lowered.splitlines()[0][:120] if lowered else "empty BotFather reply")
         raise InlineError("could not allocate a bot username")
 
-    async def _configure(self, conv: BotFatherConversation, username: str) -> None:
+    async def _configure(self, conv: BotFatherConversation, username: str, *, skip_inline: bool = False, skip_about: bool = False, skip_desc: bool = False) -> None:
         at = f"@{username}"
-        try:
-            r_inl = await conv.ask("/setinline")
-            clicked = await conv.click_button(r_inl, at, username)
-            if not clicked:
-                await conv.ask(at)
-            await conv.ask(self.inline_placeholder)
-        except Exception:
-            pass
+        if not skip_inline:
+            try:
+                r_inl = await conv.ask("/setinline")
+                clicked = await conv.click_button(r_inl, at, username)
+                if not clicked:
+                    await conv.ask(at)
+                await conv.ask(self.inline_placeholder)
+            except Exception:
+                pass
 
-        try:
-            r_fb = await conv.ask("/setinlinefeedback")
-            clicked = await conv.click_button(r_fb, at, username)
-            if not clicked:
-                r_fb = await conv.ask(at)
-            c_en = await conv.click_button(r_fb, "100%", "Enabled", "Enabled (100%)")
-            if not c_en:
-                await conv.ask("100%")
-        except Exception:
-            pass
+            try:
+                r_fb = await conv.ask("/setinlinefeedback")
+                clicked = await conv.click_button(r_fb, at, username)
+                if not clicked:
+                    r_fb = await conv.ask(at)
+                c_en = await conv.click_button(r_fb, "100%", "Enabled", "Enabled (100%)")
+                if not c_en:
+                    await conv.ask("100%")
+            except Exception:
+                pass
 
-        try:
-            r_about = await conv.ask("/setabouttext")
-            clicked = await conv.click_button(r_about, at, username)
-            if not clicked:
-                await conv.ask(at)
-            await conv.ask("Hotaru Userbot - security-first modular userbot")
-        except Exception:
-            pass
+        if not skip_about:
+            try:
+                r_about = await conv.ask("/setabouttext")
+                clicked = await conv.click_button(r_about, at, username)
+                if not clicked:
+                    await conv.ask(at)
+                await conv.ask("Hotaru Userbot - security-first modular userbot")
+            except Exception:
+                pass
 
-        try:
-            r_desc = await conv.ask("/setdescription")
-            clicked = await conv.click_button(r_desc, at, username)
-            if not clicked:
-                await conv.ask(at)
-            await conv.ask("Hotaru Userbot - security-first modular Telegram userbot with capability sandboxing.")
-        except Exception:
-            pass
+        if not skip_desc:
+            try:
+                r_desc = await conv.ask("/setdescription")
+                clicked = await conv.click_button(r_desc, at, username)
+                if not clicked:
+                    await conv.ask(at)
+                await conv.ask("Hotaru Userbot - security-first modular Telegram userbot with capability sandboxing.")
+            except Exception:
+                pass
 
     async def start(self) -> None:
         async with self._start_lock:
