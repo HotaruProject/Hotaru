@@ -917,6 +917,25 @@ class ScreenEngine:
 
     _rich = rich
 
+    def clear_banner_cache(self, media_id: str | None = None) -> None:
+        if media_id:
+            for k in list(_banner_cache.keys()):
+                if k[1] == media_id:
+                    _banner_cache.pop(k, None)
+        else:
+            _banner_cache.clear()
+        state_obj: Any = getattr(self.runtime, "state", None)
+        if state_obj is not None:
+            try:
+                if media_id:
+                    state_obj.set_setting("banner:" + media_id, None)
+                else:
+                    for k in list(getattr(state_obj, "keys", lambda: [])()):
+                        if str(k).startswith("banner:"):
+                            state_obj.set_setting(k, None)
+            except Exception:
+                pass
+
     async def _rich_impl(self, text: str) -> dict[str, Any]:
         payload: dict[str, Any] = {"_": "inputRichMessageHTML", **to_rich(text)}
         matches = re.findall(r'tg://(photo|video)\?id=(hotaru-[a-zA-Z0-9_-]+)', text)
@@ -956,17 +975,21 @@ class ScreenEngine:
                         state_val: Any = state_obj.get_setting("banner:" + media_id)
                         if isinstance(state_val, dict):
                             entry_stored: dict[str, Any] = dict(cast('dict[str, Any]', state_val))
-                            for sub in ("photo", "document"):
-                                sub_dict = entry_stored.get(sub)
-                                if isinstance(sub_dict, dict):
-                                    ref_b64 = cast('dict[str, Any]', sub_dict).get("file_reference")
-                                    if isinstance(ref_b64, str):
-                                        cast('dict[str, Any]', sub_dict)["file_reference"] = base64.b64decode(ref_b64.encode("ascii"))
-                            cached = (time.monotonic(), entry_stored)
-                            _banner_cache[key] = cached
+                            ts = entry_stored.get("_ts")
+                            if not isinstance(ts, (int, float)) or time.time() - ts > 43200:
+                                entry_stored = None
+                            else:
+                                for sub in ("photo", "document"):
+                                    sub_dict = entry_stored.get(sub)
+                                    if isinstance(sub_dict, dict):
+                                        ref_b64 = cast('dict[str, Any]', sub_dict).get("file_reference")
+                                        if isinstance(ref_b64, str):
+                                            cast('dict[str, Any]', sub_dict)["file_reference"] = base64.b64decode(ref_b64.encode("ascii"))
+                                cached = (time.monotonic(), entry_stored)
+                                _banner_cache[key] = cached
                     except Exception:
                         pass
-                if cached is not None and time.monotonic() - cached[0] < 86400:
+                if cached is not None and time.monotonic() - cached[0] < 43200:
                     files.append(cached[1])
                     if is_web:
                         tag = "video" if kind == "video" else "img"
@@ -1022,6 +1045,7 @@ class ScreenEngine:
                             def _enc(o: Any) -> Any:
                                 return base64.b64encode(bytes(o)).decode("ascii") if isinstance(o, (bytes, bytearray)) else str(o)
                             save_entry = json.loads(json.dumps(entry, default=_enc))
+                            save_entry["_ts"] = time.time()
                             state_obj.set_setting("banner:" + media_id, save_entry)
                         except Exception:
                             pass
@@ -1147,6 +1171,7 @@ class ScreenEngine:
                     log.error("screen rich delivery failed for module %s: %s: %s", module_id, type(exc).__name__, exc)
                     if self.runtime.observatory is not None:
                         self.runtime.observatory.emit("screens", "rich_failed", module=module_id, error=type(exc).__name__, detail=str(exc))
+                    self.clear_banner_cache()
                     screen.rich = False
                     result = await _send()
             except Exception as exc:
@@ -1237,6 +1262,7 @@ class ScreenEngine:
                 log.error("screen rich edit failed for module %s: %s: %s", form.module, type(exc).__name__, exc)
                 if self.runtime.observatory is not None:
                     self.runtime.observatory.emit("screens", "rich_failed", module=form.module, error=type(exc).__name__, detail=str(exc))
+                self.clear_banner_cache()
                 data.pop("rich_message", None)
 
     async def close(self, form: Form) -> None:

@@ -941,8 +941,11 @@ class Runtime:
                         if self.observatory is not None:
                             self.observatory.emit("sandbox", "worker_reaped", module=module_id)
                 try:
-                    from hotaru.observatory import prune_logs
-                    prune_logs(self.config.session_dir, max_file_bytes=8 * 1024 * 1024)
+                    now = time.monotonic()
+                    if not hasattr(self, "_last_log_prune") or now - getattr(self, "_last_log_prune", 0.0) > 60.0:
+                        self._last_log_prune = now
+                        from hotaru.observatory import prune_logs
+                        await asyncio.to_thread(prune_logs, self.config.session_dir, max_file_bytes=8 * 1024 * 1024)
                 except Exception as exc:
                     log.error("log prune failed: %s", exc)
                 try:
@@ -1340,7 +1343,19 @@ class Runtime:
                     result["input_message_content"] = {"rich_message": rich_content}
                 if buttons:
                     result["reply_markup"] = {"inline_keyboard": buttons}
-                await answer_tl(query, results=[result], cache_time=0, is_personal=True)
+                try:
+                    await answer_tl(query, results=[result], cache_time=0, is_personal=True)
+                except Exception as exc:
+                    if rich and any(err in str(exc) for err in ("RICH_MESSAGE", "PHOTO_INVALID", "DOCUMENT_INVALID")):
+                        log.warning("inline form rich answer failed: %s, retrying plain form", exc)
+                        if self.screens is not None:
+                            self.screens.clear_banner_cache()
+                        result = InlineObj.article("hotaru-form", self.t("inline.form"), form_text, parse_mode="HTML")
+                        if buttons:
+                            result["reply_markup"] = {"inline_keyboard": buttons}
+                        await answer_tl(query, results=[result], cache_time=0, is_personal=True)
+                    else:
+                        raise
             if self.observatory is not None:
                 self.observatory.emit("inline", "form_answered", buttons=len(buttons))
             return
