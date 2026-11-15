@@ -1092,7 +1092,7 @@ class ScreenEngine:
         text, rows, actions, gen = self._compile(form, screen)
         try:
             try:
-                sent, nonce = await runtime.deliver_inline(source, text, rows, rich=screen.rich, reply_to=reply_to)
+                sent, nonce = await runtime.deliver_inline(source, text, self._bindable(form, gen, rows), rich=screen.rich, reply_to=reply_to)
             except Exception as exc:
                 if not screen.banner:
                     raise
@@ -1102,7 +1102,7 @@ class ScreenEngine:
                 screen.banner = ""
                 screen.rich = False
                 text, rows, actions, gen = self._compile(form, screen)
-                sent, nonce = await runtime.deliver_inline(source, text, rows, rich=screen.rich, reply_to=reply_to)
+                sent, nonce = await runtime.deliver_inline(source, text, self._bindable(form, gen, rows), rich=screen.rich, reply_to=reply_to)
         except Exception as exc:
             self.drop(form)
             log.error("screen delivery failed for module %s: %s: %s", module_id, type(exc).__name__, exc)
@@ -1118,6 +1118,11 @@ class ScreenEngine:
         else:
             asyncio.get_running_loop().create_task(self._bind(form.id, nonce, gen, rows, has_emoji(text)))
         return form
+
+    def _bindable(self, form: Form, gen: int, rows: list[list[dict[str, Any]]]) -> list[list[dict[str, Any]]]:
+        if rows:
+            return rows
+        return [[{"text": "…", "callback_data": self.encode(form.id, gen, 0)}]]
 
     async def _bind(self, form_id: int, nonce: str, gen: int, rows: list[list[dict[str, Any]]], repaint: bool) -> None:
         inline_id = await self.runtime.chosen_inline_id(nonce)
