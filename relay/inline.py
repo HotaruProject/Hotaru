@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import random
 import re
 import secrets
 import string
@@ -888,8 +887,8 @@ class InlineManager:
 
         shuffled_roots = list(_ROOTS)
         shuffled_stems = list(_STEMS)
-        random.shuffle(shuffled_roots)
-        random.shuffle(shuffled_stems)
+        secrets.SystemRandom().shuffle(shuffled_roots)
+        secrets.SystemRandom().shuffle(shuffled_stems)
 
         for r, s in zip(shuffled_roots, shuffled_stems):
             wanted.append(f"{r}{s}bot")
@@ -898,7 +897,7 @@ class InlineManager:
             wanted.append(f"{r}_{s}_{secrets.token_hex(2)}_bot")
 
         for _ in range(8):
-            suffix = "".join(random.choices(string.ascii_lowercase + string.digits, k=6))
+            suffix = "".join(secrets.choice(string.ascii_lowercase + string.digits) for _ in range(6))
             wanted.append(f"hotaru_{suffix}_bot")
         seen: set[str] = set()
         for username in wanted:

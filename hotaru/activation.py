@@ -11,7 +11,7 @@ from typing import Any, Callable, cast
 
 from .modules import HmodLoader, LoadedModule
 from .tasks import TaskSupervisor
-from relay.firewall import module_scope
+from relay.firewall import install_secure_random, module_scope
 
 
 log = logging.getLogger(__name__)
@@ -412,9 +412,12 @@ class ModuleManager:
                 else:
                     await self._rise_sandbox(loaded, sandbox, rise_ctx)
             return active
+        sec_rand = install_secure_random()
         namespace: dict[str, Any] = {
             "__name__": f"hotaru_module_{loaded.manifest.module_id}",
             "__file__": str(loaded.path),
+            "random": sec_rand,
+            "secrets": sec_rand,
         }
         commands: Any = None
         try:

@@ -6,7 +6,7 @@ import hashlib
 import html as _html_mod
 from html.parser import HTMLParser
 import json
-import random
+import secrets
 import re
 import shlex
 import string
@@ -221,7 +221,7 @@ def random_str(size: int, charset: str | None = None) -> str:
     if size < 1:
         return ""
     pool = charset or string.ascii_lowercase + string.digits
-    return "".join(random.choice(pool) for _ in range(size))
+    return "".join(secrets.choice(pool) for _ in range(size))
 
 
 def file_size(size_bytes: int | float) -> str:
@@ -290,7 +290,7 @@ def attr(obj: Any, name: str, default: Any = None) -> Any:
 
 
 def face() -> str:
-    return escape(random.choice(_FACES))
+    return escape(secrets.choice(_FACES))
 
 
 def html_fix(text: str) -> str:
