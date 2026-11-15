@@ -104,7 +104,6 @@ def _finish_keyboard(ctx: Any) -> list[list[Any]]:
     if wb:
         rows.append([wb])
     rows.append([
-        k.link(ctx.t("kernel.genesis.btn_settings", "⚙️ Settings"), "settings", "home"),
         k.url(ctx.t("kernel.genesis.btn_github", "GitHub Repository"), "https://github.com/HotaruProject/Hotaru"),
     ])
     rows.append([k.close()])
