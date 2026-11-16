@@ -514,6 +514,39 @@ class Prefix(str):
         return str(self)
 
 
+class _ForumBoundHelper:
+    def __init__(self, helper: Any, module_id: str) -> None:
+        self._helper = helper
+        self._module_id = module_id
+
+    async def group(self) -> int | None:
+        return await self._helper.group()
+
+    async def ensure_group(self) -> int | None:
+        return await self._helper.ensure_group()
+
+    async def ensure_topic(self, title: str, icon_emoji_id: int | None = None) -> int | None:
+        return await self._helper.ensure_topic(title, icon_emoji_id=icon_emoji_id, module_id=self._module_id)
+
+    async def send(self, topic_id: int, text: str, *, rich: Any = None, reply_to: int | None = None) -> Any:
+        return await self._helper.send(topic_id, text, rich=rich, reply_to=reply_to, module_id=self._module_id)
+
+    async def send_file(self, topic_id: int, path: Any, caption: str = "", *, file_name: str | None = None) -> Any:
+        return await self._helper.send_file(topic_id, path, caption=caption, file_name=file_name, module_id=self._module_id)
+
+    async def edit(self, message_id: int, text: str, *, rich: Any = None) -> Any:
+        return await self._helper.edit(message_id, text, rich=rich, module_id=self._module_id)
+
+    async def edit_file(self, message_id: int, path: Any, caption: str = "", *, file_name: str | None = None) -> Any:
+        return await self._helper.edit_file(message_id, path, caption=caption, file_name=file_name, module_id=self._module_id)
+
+    async def topic_id_of(self, message_id: int) -> int:
+        return await self._helper.topic_id_of(message_id)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._helper, name)
+
+
 @dataclass
 class ModuleContext(ContextOperations):
     _ctx_translate_text = staticmethod(_translate_text)
@@ -576,7 +609,7 @@ class ModuleContext(ContextOperations):
         if helper is None:
             helper = ForumHelper(self.runtime)
             self.runtime._forum_helper = helper
-        return helper
+        return _ForumBoundHelper(helper, self.module_id)
 
     @property
     def inline(self) -> Any:

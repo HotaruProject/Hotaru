@@ -857,6 +857,25 @@ class ContextOperations:
     def mt(self) -> MTContext:
         return MTContext(self)
 
+    @property
+    def forum(self) -> Any:
+        helper = getattr(self, "_forum_helper", None)
+        if helper is not None:
+            return helper
+        runtime = getattr(self, "runtime", getattr(self, "_hotaru_runtime", None))
+        if runtime is not None and hasattr(runtime, "_forum_helper"):
+            h = getattr(runtime, "_forum_helper")
+            if h is None:
+                from relay.proxies import ForumHelper
+                h = ForumHelper(runtime)
+                runtime._forum_helper = h
+            mid = getattr(self, "module_id", None)
+            if mid:
+                from hotaru.response import _ForumBoundHelper
+                return _ForumBoundHelper(h, mid)
+            return h
+        raise NotImplementedError("forum is not available in this context")
+
     async def _ctx_call(self, method: str, **kwargs: Any) -> Any:
         return await self._mt_call(method, **kwargs)
 
