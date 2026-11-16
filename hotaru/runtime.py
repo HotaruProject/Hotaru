@@ -2485,6 +2485,7 @@ class Runtime:
             "shell": '<tg-emoji emoji-id="5289601856836745198">💻</tg-emoji>',
             "logs": '<tg-emoji emoji-id="5257965810634202885">📄</tg-emoji>',
             "fetch": '<tg-emoji emoji-id="5253959125838090076">👁</tg-emoji>',
+            "forum": '<tg-emoji emoji-id="5260348422266822411">💬</tg-emoji>',
         }
         caps_blocks: list[str] = []
         for cap in capabilities:
