@@ -644,6 +644,49 @@ class ForumHelper:
         self._apply_task: asyncio.Task[None] | None = None
         self._apply_chat: int | None = None
         self._applied: set[int] = set()
+        self._kernel_topic_ids: set[int] = set()
+        self._kernel_topic_titles: set[str] = set()
+        state = getattr(self._runtime, "state", None)
+        if state is not None:
+            stored_ids = state.get_setting("kernel-forum-topic-ids")
+            if isinstance(stored_ids, list):
+                self._kernel_topic_ids.update(int(x) for x in stored_ids if isinstance(x, (int, str)) and str(x).isdigit())
+            stored_titles = state.get_setting("kernel-forum-topic-titles")
+            if isinstance(stored_titles, list):
+                self._kernel_topic_titles.update(str(x) for x in stored_titles if x)
+
+    def record_kernel_topic(self, topic_id: int | None = None, title: str | None = None) -> None:
+        changed = False
+        if isinstance(topic_id, int):
+            if topic_id not in self._kernel_topic_ids:
+                self._kernel_topic_ids.add(topic_id)
+                changed = True
+        if isinstance(title, str) and title.strip():
+            t = title.strip()
+            if t not in self._kernel_topic_titles:
+                self._kernel_topic_titles.add(t)
+                changed = True
+        if changed:
+            state = getattr(self._runtime, "state", None)
+            if state is not None:
+                state.set_setting("kernel-forum-topic-ids", sorted(self._kernel_topic_ids))
+                state.set_setting("kernel-forum-topic-titles", sorted(self._kernel_topic_titles))
+
+    def is_kernel_topic(self, topic_id: int | None = None, title: str | None = None) -> bool:
+        cap_host = getattr(self._runtime, "cap_host", None)
+        if cap_host is not None and hasattr(cap_host, "_get_kernel_topic_ids"):
+            k_ids = cap_host._get_kernel_topic_ids()
+            k_titles = cap_host._get_kernel_topic_titles()
+        else:
+            k_ids = set(self._kernel_topic_ids)
+            k_titles = set(self._kernel_topic_titles)
+        if isinstance(topic_id, int) and topic_id in k_ids:
+            return True
+        if isinstance(title, str) and title.strip():
+            t_norm = title.strip().casefold()
+            if any(t_norm == str(kt).strip().casefold() for kt in k_titles):
+                return True
+        return False
 
     def _apply_background(self, chat_id: int) -> None:
         if chat_id in self._applied:
@@ -1150,7 +1193,10 @@ class ForumHelper:
             self._emit("bot_sync_failed", chat=chat_id, error=type(exc).__name__, detail=str(exc)[:160])
             return
 
-    async def ensure_topic(self, title: str, icon_emoji_id: int | None = None) -> int | None:
+    async def ensure_topic(self, title: str, icon_emoji_id: int | None = None, *, module_id: str | None = None) -> int | None:
+        is_kernel = bool(module_id and hasattr(self._runtime, "_is_kernel_module") and self._runtime._is_kernel_module(module_id))
+        if not is_kernel and self.is_kernel_topic(None, title):
+            raise PermissionError("access to kernel topic is forbidden")
         chat_id = await self.ensure_group()
         if chat_id is None:
             return None
@@ -1164,6 +1210,10 @@ class ForumHelper:
             topic = _data(item)
             if topic is not None and isinstance(topic.get("id"), int) and str(topic.get("title") or "") == title:
                 tid = int(topic["id"])
+                if is_kernel:
+                    self.record_kernel_topic(tid, title)
+                elif self.is_kernel_topic(tid, title):
+                    raise PermissionError("access to kernel topic is forbidden")
                 eid = icon_emoji_id if icon_emoji_id is not None else topic_emoji_id(title)
                 if eid:
                     prem = False
@@ -1206,14 +1256,24 @@ class ForumHelper:
                 continue
             action = _data(msg.get("action"))
             if action is not None and action.get("_") == "messageActionTopicCreate" and isinstance(msg.get("id"), int):
-                return int(msg["id"])
+                tid = int(msg["id"])
+                if is_kernel:
+                    self.record_kernel_topic(tid, title)
+                elif self.is_kernel_topic(tid, title):
+                    raise PermissionError("access to kernel topic is forbidden")
+                return tid
         self._topic_tries.pop(title, None)
         recheck = await self._user_call("messages.getForumTopics", peer=chat_id, offset_date=0, offset_id=0, offset_topic=0, limit=100)
         self._ingest_user(recheck)
         for item in _items(self._body(recheck).get("topics")):
             topic = _data(item)
             if topic is not None and isinstance(topic.get("id"), int) and str(topic.get("title") or "") == title:
-                return int(topic["id"])
+                tid = int(topic["id"])
+                if is_kernel:
+                    self.record_kernel_topic(tid, title)
+                elif self.is_kernel_topic(tid, title):
+                    raise PermissionError("access to kernel topic is forbidden")
+                return tid
         return None
 
     async def _user_peer(self, chat_id: int) -> bytes | None:
@@ -1241,7 +1301,12 @@ class ForumHelper:
         await self._sync_channel_to_bot(chat_id)
         return await self._bot_resolve(chat_id) is not None
 
-    async def send(self, topic_id: int, text: str, *, rich: Any = None, reply_to: int | None = None) -> Any:
+    async def send(self, topic_id: int, text: str, *, rich: Any = None, reply_to: int | None = None, module_id: str | None = None) -> Any:
+        is_kernel = bool(module_id and hasattr(self._runtime, "_is_kernel_module") and self._runtime._is_kernel_module(module_id))
+        if not is_kernel and self.is_kernel_topic(topic_id):
+            raise PermissionError("access to kernel topic is forbidden")
+        if is_kernel:
+            self.record_kernel_topic(topic_id)
         chat_id = await self.ensure_group()
         if chat_id is None:
             raise RuntimeError("forum group is not available")
@@ -1280,7 +1345,12 @@ class ForumHelper:
         from relay.files import document
         return document(up, mime="text/plain", file_name=file_name)
 
-    async def send_file(self, topic_id: int, path: Any, caption: str = "", *, file_name: str | None = None) -> Any:
+    async def send_file(self, topic_id: int, path: Any, caption: str = "", *, file_name: str | None = None, module_id: str | None = None) -> Any:
+        is_kernel = bool(module_id and hasattr(self._runtime, "_is_kernel_module") and self._runtime._is_kernel_module(module_id))
+        if not is_kernel and self.is_kernel_topic(topic_id):
+            raise PermissionError("access to kernel topic is forbidden")
+        if is_kernel:
+            self.record_kernel_topic(topic_id)
         chat_id = await self.ensure_group()
         if chat_id is None:
             raise RuntimeError("forum group is not available")
@@ -1309,7 +1379,15 @@ class ForumHelper:
         data["peer"] = chat_id
         return await self._user_call("messages.sendMedia", **data)
 
-    async def edit(self, message_id: int, text: str, *, rich: Any = None) -> Any:
+    async def edit(self, message_id: int, text: str, *, rich: Any = None, module_id: str | None = None) -> Any:
+        is_kernel = bool(module_id and hasattr(self._runtime, "_is_kernel_module") and self._runtime._is_kernel_module(module_id))
+        if not is_kernel:
+            try:
+                tid = await self.topic_id_of(message_id)
+            except Exception:
+                tid = None
+            if tid is not None and self.is_kernel_topic(tid):
+                raise PermissionError("access to kernel topic is forbidden")
         chat_id = await self.ensure_group()
         if chat_id is None:
             raise RuntimeError("forum group is not available")
@@ -1335,7 +1413,15 @@ class ForumHelper:
         data["peer"] = chat_id
         return await self._user_call("messages.editMessage", **data)
 
-    async def edit_file(self, message_id: int, path: Any, caption: str = "", *, file_name: str | None = None) -> Any:
+    async def edit_file(self, message_id: int, path: Any, caption: str = "", *, file_name: str | None = None, module_id: str | None = None) -> Any:
+        is_kernel = bool(module_id and hasattr(self._runtime, "_is_kernel_module") and self._runtime._is_kernel_module(module_id))
+        if not is_kernel:
+            try:
+                tid = await self.topic_id_of(message_id)
+            except Exception:
+                tid = None
+            if tid is not None and self.is_kernel_topic(tid):
+                raise PermissionError("access to kernel topic is forbidden")
         chat_id = await self.ensure_group()
         if chat_id is None:
             raise RuntimeError("forum group is not available")

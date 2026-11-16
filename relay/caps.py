@@ -83,6 +83,27 @@ MT_BLOCKED = frozenset({
 
 MT_BLOCKED_PREFIXES = ("payments.", "wallet.")
 
+FORBIDDEN_GROUP_METHODS = frozenset({
+    "messages.editchatdefaultbannedrights",
+    "messages.editchatadmin",
+    "messages.editchatabout",
+    "messages.editchatphoto",
+    "messages.editchattitle",
+    "messages.deletechatphoto",
+    "messages.deletechatuser",
+    "messages.deletechathistory",
+    "messages.deletechat",
+    "messages.setchattheme",
+    "messages.setchatwallpaper",
+    "messages.setchatavailablereactions",
+    "messages.migratechat",
+    "messages.togglenoforwards",
+    "messages.sethistoryttl",
+    "messages.toggledialogpin",
+    "messages.reorderpinneddialogs",
+    "messages.reorderpinnedforumtopics",
+})
+
 
 def _entry_hits_blocked_peer(item: Any) -> bool:
     if not isinstance(item, dict):
@@ -182,6 +203,11 @@ PROVIDERS: dict[str, dict[str, Any]] = {
         "title": "Fetch",
         "detail": "read-only access to messages, entities and reply resolution; always granted",
         "side_effect": "read",
+    },
+    "forum": {
+        "title": "Forum",
+        "detail": "access to forum group topics and messages",
+        "side_effect": "write",
     },
 }
 
@@ -483,6 +509,8 @@ class CapabilityHost:
             return self._logs_op(module_id, payload)
         elif capability == "fetch":
             return await self._fetch_op(module_id, payload)
+        elif capability == "forum":
+            return await self._forum_op(module_id, payload)
         elif not self._allowed(module_id, capability):
             if capability in {"net", "shell"}:
                 await self.close_jobs(module_id, capability)
@@ -795,10 +823,59 @@ class CapabilityHost:
             limit = kwargs.get("limit", 100)
             if isinstance(limit, (int, float)) and int(limit) > 500:
                 kwargs = dict(kwargs, limit=500)
-        for key in ("peer", "id", "bot", "user_id", "participant", "send_as", "join_as", "community"):
+        for key in ("peer", "id", "bot", "user_id", "participant", "send_as", "join_as", "community", "channel"):
             if key in kwargs:
                 kwargs = dict(kwargs, **{key: await _resolve_mt_peer_arg(app, kwargs[key])})
         kwargs = await _resolve_nested_peers(app, kwargs)
+        if not (self.runtime._is_kernel_module(module_id) or module_id in ("system", "kernel", "loader")):
+            forum_ids = self._get_forum_group_ids()
+            if self._is_forum_target(payload, forum_ids) or self._is_forum_target(kwargs, forum_ids):
+                if canonical.startswith("channels.") and not any(canonical.startswith(p) for p in ("channels.get", "channels.read", "channels.check", "channels.export")):
+                    raise PermissionError("modification of forum group profile or settings is forbidden")
+                if canonical in FORBIDDEN_GROUP_METHODS or canonical.startswith(("messages.editchat", "messages.deletechat", "messages.setchat")):
+                    raise PermissionError("modification of forum group profile or settings is forbidden")
+                kernel_titles = {str(t).strip().casefold() for t in self._get_kernel_topic_titles() if t}
+                kernel_ids = self._get_kernel_topic_ids()
+                if "title" in kwargs and str(kwargs["title"]).strip().casefold() in kernel_titles:
+                    raise PermissionError("access to kernel topic is forbidden")
+                extracted_topics: set[int] = set()
+                for tkey in ("topic_id", "top_msg_id", "reply_to_msg_id"):
+                    val = kwargs.get(tkey)
+                    if isinstance(val, int) and val:
+                        extracted_topics.add(val)
+                rep = kwargs.get("reply_to")
+                if isinstance(rep, int) and rep:
+                    extracted_topics.add(rep)
+                elif isinstance(rep, dict):
+                    for rkey in ("reply_to_top_id", "top_msg_id", "reply_to_msg_id"):
+                        rval = rep.get(rkey)
+                        if isinstance(rval, int) and rval:
+                            extracted_topics.add(rval)
+                topics_arg = kwargs.get("topics")
+                if isinstance(topics_arg, list):
+                    for tid in topics_arg:
+                        if isinstance(tid, int) and tid:
+                            extracted_topics.add(tid)
+                if canonical in ("messages.editforumtopic", "messages.updatepinnedforumtopic", "messages.deletetopichistory") and extracted_topics.intersection({1}):
+                    raise PermissionError("modification of forum group profile or settings is forbidden")
+                if any(tid in kernel_ids for tid in extracted_topics):
+                    raise PermissionError("access to kernel topic is forbidden")
+                if canonical in ("messages.editmessage", "messages.deletemessages"):
+                    msg_ids: list[int] = []
+                    mid_val = kwargs.get("id")
+                    if isinstance(mid_val, int):
+                        msg_ids.append(mid_val)
+                    elif isinstance(mid_val, list):
+                        msg_ids.extend([i for i in mid_val if isinstance(i, int)])
+                    if msg_ids:
+                        helper = self._get_forum_helper()
+                        for mid in msg_ids:
+                            try:
+                                resolved_tid = await helper.topic_id_of(mid)
+                            except Exception:
+                                resolved_tid = None
+                            if resolved_tid is not None and resolved_tid in kernel_ids:
+                                raise PermissionError("access to kernel topic is forbidden")
         timeout = payload.get("timeout")
         if timeout is not None and (isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or not 0 < timeout <= 60):
             raise ValueError("MT timeout must be between 0 and 60 seconds")
@@ -813,6 +890,228 @@ class CapabilityHost:
         if observatory is None:
             return
         observatory.emit("caps", "mt_call", module=module_id, method=method)
+
+    def _get_forum_helper(self) -> Any:
+        helper = getattr(self.runtime, "_forum_helper", None)
+        if helper is None:
+            from relay.proxies import ForumHelper
+            helper = ForumHelper(self.runtime)
+            self.runtime._forum_helper = helper
+        return helper
+
+    def _resolve_sandbox_file(self, module_id: str, path_val: Any) -> Any:
+        if not isinstance(path_val, (str, Path)):
+            return path_val
+        sandbox = getattr(self.runtime, "sandbox", None)
+        if sandbox is not None:
+            workspace = Path(sandbox.workspace(module_id))
+            root = str(workspace.resolve())
+            full_path = os.path.realpath(os.path.join(root, str(path_val)))
+            if os.path.commonpath((root, full_path)) == root and os.path.isfile(full_path):
+                return full_path
+        return str(path_val)
+
+    def _get_forum_group_ids(self) -> set[int]:
+        ids: set[int] = set()
+        state = getattr(self.runtime, "state", None)
+        if state is not None:
+            stored = state.get_setting("forum-channel-id")
+            dead = state.get_setting("forum-dead-channel-ids", [])
+            raw_list: list[int] = []
+            if isinstance(stored, int) and stored != 0:
+                raw_list.append(stored)
+            if isinstance(dead, list):
+                for item in dead:
+                    if isinstance(item, int) and item != 0:
+                        raw_list.append(item)
+            for cid in raw_list:
+                ids.add(cid)
+                raw = -cid - 1000000000000 if cid < -1000000000000 else abs(cid)
+                ids.add(raw)
+                ids.add(-raw)
+        helper = getattr(self.runtime, "_forum_helper", None)
+        if helper is not None and getattr(helper, "_apply_chat", None) is not None:
+            chat_id = helper._apply_chat
+            if isinstance(chat_id, int) and chat_id != 0:
+                ids.add(chat_id)
+                raw = -chat_id - 1000000000000 if chat_id < -1000000000000 else abs(chat_id)
+                ids.add(raw)
+                ids.add(-raw)
+        return ids
+
+    def _is_forum_target(self, value: Any, forum_ids: set[int]) -> bool:
+        if not forum_ids or value is None:
+            return False
+        if isinstance(value, bool):
+            return False
+        if isinstance(value, int):
+            return value in forum_ids
+        if isinstance(value, str):
+            try:
+                return int(value.strip()) in forum_ids
+            except ValueError:
+                return False
+        if isinstance(value, dict):
+            for k in ("channel_id", "chat_id"):
+                v = value.get(k)
+                if isinstance(v, int) and v in forum_ids:
+                    return True
+            ident = value.get("id")
+            if isinstance(ident, int) and ident in forum_ids:
+                ctor = str(value.get("_") or "").lower()
+                if not ctor or "channel" in ctor or "chat" in ctor:
+                    return True
+            for k in ("peer", "channel", "to_peer"):
+                if k in value and self._is_forum_target(value[k], forum_ids):
+                    return True
+        if isinstance(value, (list, tuple, set)):
+            return any(self._is_forum_target(item, forum_ids) for item in value)
+        return False
+
+    def _get_kernel_topic_ids(self) -> set[int]:
+        ids: set[int] = set()
+        state = getattr(self.runtime, "state", None)
+        if state is not None:
+            stored = state.get_setting("kernel-forum-topic-ids", [])
+            if isinstance(stored, (list, tuple, set)):
+                ids.update(int(i) for i in stored if isinstance(i, (int, str)) and str(i).isdigit())
+        helper = getattr(self.runtime, "_forum_helper", None)
+        if helper is not None and hasattr(helper, "_kernel_topic_ids"):
+            ids.update(helper._kernel_topic_ids)
+        modules = getattr(self.runtime, "modules", None)
+        active_map = getattr(modules, "_active", {}) if modules is not None else {}
+        for mid, active in active_map.items():
+            if not self.runtime._is_kernel_module(mid):
+                continue
+            instance = getattr(active, "instance", None)
+            if instance is not None:
+                mod_state = getattr(instance, "_state", None)
+                if isinstance(mod_state, dict):
+                    tid = mod_state.get("topic_id") or mod_state.get("topic")
+                    if isinstance(tid, int):
+                        ids.add(tid)
+                for attr in ("topic_id", "TOPIC_ID", "topic", "TOPIC"):
+                    val = getattr(instance, attr, None)
+                    if isinstance(val, int):
+                        ids.add(val)
+            if state is not None:
+                ns = state.namespace(mid)
+                for key in ("topic_id", "topic"):
+                    val = ns.get(key)
+                    if isinstance(val, int):
+                        ids.add(val)
+        return ids
+
+    def _get_kernel_topic_titles(self) -> set[str]:
+        titles: set[str] = set()
+        state = getattr(self.runtime, "state", None)
+        if state is not None:
+            stored = state.get_setting("kernel-forum-topic-titles", [])
+            if isinstance(stored, (list, tuple, set)):
+                titles.update(str(s) for s in stored if s)
+        helper = getattr(self.runtime, "_forum_helper", None)
+        if helper is not None and hasattr(helper, "_kernel_topic_titles"):
+            titles.update(helper._kernel_topic_titles)
+        modules = getattr(self.runtime, "modules", None)
+        active_map = getattr(modules, "_active", {}) if modules is not None else {}
+        for mid, active in active_map.items():
+            if not self.runtime._is_kernel_module(mid):
+                continue
+            instance = getattr(active, "instance", None)
+            if instance is not None:
+                for attr in ("TOPIC_TITLE", "topic_title", "TOPIC", "topic"):
+                    val = getattr(instance, attr, None)
+                    if isinstance(val, str) and val.strip():
+                        titles.add(val.strip())
+        translator = getattr(self.runtime, "translator", None)
+        if callable(translator):
+            try:
+                t_obj = translator()
+                translations = getattr(t_obj, "translations", {})
+                for lang_dict in translations.values():
+                    if isinstance(lang_dict, dict):
+                        for k, v in lang_dict.items():
+                            if k.startswith("kernel.") and k.endswith(".topic") and isinstance(v, str) and v.strip():
+                                titles.add(v.strip())
+            except Exception:
+                pass
+        return titles
+
+    def _is_kernel_topic(self, topic_id: int | None = None, title: str | None = None) -> bool:
+        if isinstance(topic_id, int):
+            if topic_id in self._get_kernel_topic_ids():
+                return True
+        if isinstance(title, str) and title.strip():
+            t_norm = title.strip().casefold()
+            for kt in self._get_kernel_topic_titles():
+                if t_norm == str(kt).strip().casefold():
+                    return True
+        return False
+
+    async def _forum_op(self, module_id: str, payload: dict[str, Any]) -> Any:
+        is_kernel = self.runtime._is_kernel_module(module_id) or module_id in ("system", "kernel", "loader")
+        op = payload.get("op")
+        helper = self._get_forum_helper()
+        if op == "group":
+            return await helper.group()
+        if op == "ensure_group":
+            return await helper.ensure_group()
+        if op == "ensure_topic":
+            title = str(payload.get("title") or "").strip()
+            icon_emoji_id = payload.get("icon_emoji_id")
+            if not is_kernel and self._is_kernel_topic(title=title):
+                raise PermissionError("access to kernel topic is forbidden")
+            tid = await helper.ensure_topic(title, icon_emoji_id=icon_emoji_id, module_id=module_id)
+            if not is_kernel and tid is not None and self._is_kernel_topic(topic_id=tid):
+                raise PermissionError("access to kernel topic is forbidden")
+            return tid
+        if op == "send":
+            topic_id = int(payload.get("topic_id", 0))
+            if not is_kernel and self._is_kernel_topic(topic_id=topic_id):
+                raise PermissionError("access to kernel topic is forbidden")
+            text = str(payload.get("text") or "")
+            rich = payload.get("rich")
+            reply_to = payload.get("reply_to")
+            if reply_to is not None:
+                reply_to = int(reply_to)
+            return await helper.send(topic_id, text, rich=rich, reply_to=reply_to, module_id=module_id)
+        if op == "send_file":
+            topic_id = int(payload.get("topic_id", 0))
+            if not is_kernel and self._is_kernel_topic(topic_id=topic_id):
+                raise PermissionError("access to kernel topic is forbidden")
+            path = self._resolve_sandbox_file(module_id, payload.get("path"))
+            caption = str(payload.get("caption") or "")
+            file_name = payload.get("file_name")
+            return await helper.send_file(topic_id, path, caption=caption, file_name=file_name, module_id=module_id)
+        if op == "edit":
+            message_id = int(payload.get("message_id", 0))
+            if not is_kernel:
+                try:
+                    tid = await helper.topic_id_of(message_id)
+                except Exception:
+                    tid = None
+                if tid is not None and self._is_kernel_topic(topic_id=tid):
+                    raise PermissionError("access to kernel topic is forbidden")
+            text = str(payload.get("text") or "")
+            rich = payload.get("rich")
+            return await helper.edit(message_id, text, rich=rich, module_id=module_id)
+        if op == "edit_file":
+            message_id = int(payload.get("message_id", 0))
+            if not is_kernel:
+                try:
+                    tid = await helper.topic_id_of(message_id)
+                except Exception:
+                    tid = None
+                if tid is not None and self._is_kernel_topic(topic_id=tid):
+                    raise PermissionError("access to kernel topic is forbidden")
+            path = self._resolve_sandbox_file(module_id, payload.get("path"))
+            caption = str(payload.get("caption") or "")
+            file_name = payload.get("file_name")
+            return await helper.edit_file(message_id, path, caption=caption, file_name=file_name, module_id=module_id)
+        if op == "topic_id_of":
+            message_id = int(payload.get("message_id", 0))
+            return await helper.topic_id_of(message_id)
+        raise PermissionError(f"unknown forum op: {op}")
 
     def _file_op(self, module_id: str, payload: dict[str, Any], meta: dict[str, Any]) -> Any:
         op = payload.get("op", "read")

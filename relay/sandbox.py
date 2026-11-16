@@ -551,6 +551,10 @@ class SandboxCallbackProxy(ContextOperations):
     def __init__(self, cb_data):
         self._data = cb_data
 
+    @property
+    def forum(self):
+        return _ForumProxy()
+
     async def respond(self, text="", alert=False):
         return _cb_respond_call({"action": "respond", "text": str(text), "alert": bool(alert)})
 
@@ -853,6 +857,37 @@ class SandboxContext(ContextOperations):
     @property
     def assets(self):
         return _AssetsProxy()
+
+    @property
+    def forum(self):
+        return _ForumProxy()
+
+
+class _ForumProxy:
+    async def group(self):
+        return _cap_call("forum", {"op": "group"})
+
+    async def ensure_group(self):
+        return _cap_call("forum", {"op": "ensure_group"})
+
+    async def ensure_topic(self, title, icon_emoji_id=None):
+        return _cap_call("forum", {"op": "ensure_topic", "title": title, "icon_emoji_id": icon_emoji_id})
+
+    async def send(self, topic_id, text, *, rich=None, reply_to=None):
+        return _cap_call("forum", {"op": "send", "topic_id": topic_id, "text": text, "rich": rich, "reply_to": reply_to})
+
+    async def send_file(self, topic_id, path, caption="", *, file_name=None):
+        return _cap_call("forum", {"op": "send_file", "topic_id": topic_id, "path": path, "caption": caption, "file_name": file_name})
+
+    async def edit(self, message_id, text, *, rich=None):
+        return _cap_call("forum", {"op": "edit", "message_id": message_id, "text": text, "rich": rich})
+
+    async def edit_file(self, message_id, path, caption="", *, file_name=None):
+        return _cap_call("forum", {"op": "edit_file", "message_id": message_id, "path": path, "caption": caption, "file_name": file_name})
+
+    async def topic_id_of(self, message_id):
+        return _cap_call("forum", {"op": "topic_id_of", "message_id": message_id})
+
 
 class _AssetsProxy:
     async def upload(self, file, filename=None):
