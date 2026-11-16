@@ -206,7 +206,7 @@ PROVIDERS: dict[str, dict[str, Any]] = {
     },
     "forum": {
         "title": "Forum",
-        "detail": "access to forum group topics and messages",
+        "detail": "access to forum group topics and messages; modification of group settings and kernel topics is blocked",
         "side_effect": "write",
     },
 }
