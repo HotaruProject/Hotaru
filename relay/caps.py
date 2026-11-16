@@ -825,12 +825,14 @@ class CapabilityHost:
                 kwargs = dict(kwargs, limit=500)
         for key in ("peer", "id", "bot", "user_id", "participant", "send_as", "join_as", "community", "channel"):
             if key in kwargs:
+                if key == "id" and (canonical.startswith(("messages.", "channels.")) or "message" in canonical):
+                    continue
                 kwargs = dict(kwargs, **{key: await _resolve_mt_peer_arg(app, kwargs[key])})
         kwargs = await _resolve_nested_peers(app, kwargs)
         if not (self.runtime._is_kernel_module(module_id) or module_id in ("system", "kernel", "loader")):
             forum_ids = self._get_forum_group_ids()
-            if self._is_forum_target(payload, forum_ids) or self._is_forum_target(kwargs, forum_ids):
-                if canonical.startswith("channels.") and not any(canonical.startswith(p) for p in ("channels.get", "channels.read", "channels.check", "channels.export")):
+            if self._is_forum_target(payload, forum_ids) or self._is_forum_target(raw_kwargs, forum_ids) or self._is_forum_target(kwargs, forum_ids):
+                if canonical.startswith("channels.") and canonical != "channels.deletemessages" and not any(canonical.startswith(p) for p in ("channels.get", "channels.read", "channels.check", "channels.export")):
                     raise PermissionError("modification of forum group profile or settings is forbidden")
                 if canonical in FORBIDDEN_GROUP_METHODS or canonical.startswith(("messages.editchat", "messages.deletechat", "messages.setchat")):
                     raise PermissionError("modification of forum group profile or settings is forbidden")
@@ -856,16 +858,17 @@ class CapabilityHost:
                     for tid in topics_arg:
                         if isinstance(tid, int) and tid:
                             extracted_topics.add(tid)
-                if canonical in ("messages.editforumtopic", "messages.updatepinnedforumtopic", "messages.deletetopichistory") and extracted_topics.intersection({1}):
-                    raise PermissionError("modification of forum group profile or settings is forbidden")
-                if any(tid in kernel_ids for tid in extracted_topics):
+                if canonical in ("messages.editforumtopic", "messages.updatepinnedforumtopic", "messages.deletetopichistory"):
+                    if not extracted_topics or extracted_topics.intersection({1}):
+                        raise PermissionError("modification of forum group profile or settings is forbidden")
+                if any((tid == 1 or tid in kernel_ids) for tid in extracted_topics):
                     raise PermissionError("access to kernel topic is forbidden")
-                if canonical in ("messages.editmessage", "messages.deletemessages"):
+                if canonical in ("messages.editmessage", "messages.deletemessages", "channels.deletemessages"):
                     msg_ids: list[int] = []
-                    mid_val = kwargs.get("id")
+                    mid_val = raw_kwargs.get("id") if raw_kwargs.get("id") is not None else kwargs.get("id")
                     if isinstance(mid_val, int):
                         msg_ids.append(mid_val)
-                    elif isinstance(mid_val, list):
+                    elif isinstance(mid_val, (list, tuple, set)):
                         msg_ids.extend([i for i in mid_val if isinstance(i, int)])
                     if msg_ids:
                         helper = self._get_forum_helper()
@@ -874,7 +877,7 @@ class CapabilityHost:
                                 resolved_tid = await helper.topic_id_of(mid)
                             except Exception:
                                 resolved_tid = None
-                            if resolved_tid is not None and resolved_tid in kernel_ids:
+                            if resolved_tid is not None and (resolved_tid == 1 or resolved_tid in kernel_ids):
                                 raise PermissionError("access to kernel topic is forbidden")
         timeout = payload.get("timeout")
         if timeout is not None and (isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or not 0 < timeout <= 60):
@@ -961,7 +964,7 @@ class CapabilityHost:
                 ctor = str(value.get("_") or "").lower()
                 if not ctor or "channel" in ctor or "chat" in ctor:
                     return True
-            for k in ("peer", "channel", "to_peer"):
+            for k in ("peer", "channel", "to_peer", "kwargs"):
                 if k in value and self._is_forum_target(value[k], forum_ids):
                     return True
         if isinstance(value, (list, tuple, set)):
@@ -1065,6 +1068,31 @@ class CapabilityHost:
             if not is_kernel and tid is not None and self._is_kernel_topic(topic_id=tid):
                 raise PermissionError("access to kernel topic is forbidden")
             return tid
+        if op == "create_topic":
+            title = str(payload.get("title") or "").strip()
+            icon_emoji_id = payload.get("icon_emoji_id")
+            if not is_kernel and self._is_kernel_topic(title=title):
+                raise PermissionError("access to kernel topic is forbidden")
+            tid = await helper.create_topic(title, icon_emoji_id=icon_emoji_id, module_id=module_id)
+            if not is_kernel and tid is not None and self._is_kernel_topic(topic_id=tid):
+                raise PermissionError("access to kernel topic is forbidden")
+            return tid
+        if op == "edit_topic":
+            topic_id = int(payload.get("topic_id", 0))
+            if not is_kernel and (topic_id == 1 or self._is_kernel_topic(topic_id=topic_id)):
+                raise PermissionError("access to kernel topic is forbidden")
+            title = payload.get("title")
+            if not is_kernel and title is not None and self._is_kernel_topic(title=str(title)):
+                raise PermissionError("access to kernel topic is forbidden")
+            icon_emoji_id = payload.get("icon_emoji_id")
+            closed = payload.get("closed")
+            hidden = payload.get("hidden")
+            return await helper.edit_topic(topic_id, title=title, icon_emoji_id=icon_emoji_id, closed=closed, hidden=hidden, module_id=module_id)
+        if op == "delete_topic":
+            topic_id = int(payload.get("topic_id", 0))
+            if not is_kernel and (topic_id == 1 or self._is_kernel_topic(topic_id=topic_id)):
+                raise PermissionError("access to kernel topic is forbidden")
+            return await helper.delete_topic(topic_id, module_id=module_id)
         if op == "send":
             topic_id = int(payload.get("topic_id", 0))
             if not is_kernel and self._is_kernel_topic(topic_id=topic_id):
@@ -1108,6 +1136,18 @@ class CapabilityHost:
             caption = str(payload.get("caption") or "")
             file_name = payload.get("file_name")
             return await helper.edit_file(message_id, path, caption=caption, file_name=file_name, module_id=module_id)
+        if op == "delete":
+            message_id = int(payload.get("message_id", 0))
+            revoke = bool(payload.get("revoke", True))
+            return await helper.delete(message_id, revoke=revoke, module_id=module_id)
+        if op == "delete_messages":
+            raw_ids = payload.get("message_ids") or []
+            message_ids = [int(i) for i in raw_ids if isinstance(i, (int, str)) and str(i).isdigit()]
+            revoke = bool(payload.get("revoke", True))
+            return await helper.delete_messages(message_ids, revoke=revoke, module_id=module_id)
+        if op == "get_topics":
+            limit = int(payload.get("limit", 100))
+            return await helper.get_topics(limit=limit)
         if op == "topic_id_of":
             message_id = int(payload.get("message_id", 0))
             return await helper.topic_id_of(message_id)
