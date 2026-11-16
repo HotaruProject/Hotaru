@@ -873,8 +873,20 @@ class _ForumProxy:
     async def ensure_topic(self, title, icon_emoji_id=None):
         return _cap_call("forum", {"op": "ensure_topic", "title": title, "icon_emoji_id": icon_emoji_id})
 
+    async def create_topic(self, title, icon_emoji_id=None):
+        return _cap_call("forum", {"op": "create_topic", "title": title, "icon_emoji_id": icon_emoji_id})
+
+    async def edit_topic(self, topic_id, title=None, icon_emoji_id=None, closed=None, hidden=None):
+        return _cap_call("forum", {"op": "edit_topic", "topic_id": topic_id, "title": title, "icon_emoji_id": icon_emoji_id, "closed": closed, "hidden": hidden})
+
+    async def delete_topic(self, topic_id):
+        return _cap_call("forum", {"op": "delete_topic", "topic_id": topic_id})
+
     async def send(self, topic_id, text, *, rich=None, reply_to=None):
         return _cap_call("forum", {"op": "send", "topic_id": topic_id, "text": text, "rich": rich, "reply_to": reply_to})
+
+    async def send_message(self, topic_id, text, *, rich=None, reply_to=None):
+        return await self.send(topic_id, text, rich=rich, reply_to=reply_to)
 
     async def send_file(self, topic_id, path, caption="", *, file_name=None):
         return _cap_call("forum", {"op": "send_file", "topic_id": topic_id, "path": path, "caption": caption, "file_name": file_name})
@@ -882,11 +894,42 @@ class _ForumProxy:
     async def edit(self, message_id, text, *, rich=None):
         return _cap_call("forum", {"op": "edit", "message_id": message_id, "text": text, "rich": rich})
 
+    async def edit_message(self, message_id, text, *, rich=None):
+        return await self.edit(message_id, text, rich=rich)
+
     async def edit_file(self, message_id, path, caption="", *, file_name=None):
         return _cap_call("forum", {"op": "edit_file", "message_id": message_id, "path": path, "caption": caption, "file_name": file_name})
 
+    async def delete(self, message_id, *, revoke=True):
+        return _cap_call("forum", {"op": "delete", "message_id": message_id, "revoke": revoke})
+
+    async def delete_message(self, message_id, *, revoke=True):
+        return await self.delete(message_id, revoke=revoke)
+
+    async def delete_messages(self, message_ids, *, revoke=True):
+        return _cap_call("forum", {"op": "delete_messages", "message_ids": message_ids, "revoke": revoke})
+
     async def topic_id_of(self, message_id):
         return _cap_call("forum", {"op": "topic_id_of", "message_id": message_id})
+
+    async def get_topics(self, limit=100):
+        return _cap_call("forum", {"op": "get_topics", "limit": limit})
+
+    async def get_all_topics(self, limit=100):
+        return await self.get_topics(limit=limit)
+
+    async def get_active_topics(self, limit=100):
+        topics = await self.get_topics(limit=limit)
+        return [t for t in topics if not t.get("closed") and not t.get("hidden")]
+
+    async def is_topic_exists(self, topic_id=None, title=None):
+        topics = await self.get_topics(limit=100)
+        for t in topics:
+            if topic_id is not None and t.get("id") == int(topic_id):
+                return True
+            if title is not None and str(t.get("title") or "") == str(title):
+                return True
+        return False
 
 
 class _AssetsProxy:

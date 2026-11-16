@@ -1459,6 +1459,114 @@ class ForumHelper:
                         return rid
         raise RuntimeError("topic not resolvable for message {mid}".format(mid=message_id))
 
+    async def create_topic(self, title: str, icon_emoji_id: int | None = None, *, module_id: str | None = None) -> int | None:
+        return await self.ensure_topic(title, icon_emoji_id=icon_emoji_id, module_id=module_id)
+
+    async def edit_topic(self, topic_id: int, title: str | None = None, icon_emoji_id: int | None = None, closed: bool | None = None, hidden: bool | None = None, *, module_id: str | None = None) -> Any:
+        tid = int(topic_id)
+        if tid == 1:
+            raise PermissionError("modification of forum group profile or settings is forbidden")
+        is_kernel = bool(module_id and hasattr(self._runtime, "_is_kernel_module") and self._runtime._is_kernel_module(module_id))
+        if not is_kernel:
+            if self.is_kernel_topic(tid):
+                raise PermissionError("access to kernel topic is forbidden")
+            if title is not None and self.is_kernel_topic(title=title):
+                raise PermissionError("access to kernel topic is forbidden")
+        chat_id = await self.ensure_group()
+        if chat_id is None:
+            raise RuntimeError("forum group is not available")
+        channel = self._user_channel(chat_id) or chat_id
+        kwargs: dict[str, Any] = {"peer": channel, "topic_id": tid}
+        if title is not None:
+            kwargs["title"] = str(title)
+        if icon_emoji_id is not None:
+            kwargs["icon_emoji_id"] = int(icon_emoji_id)
+        if closed is not None:
+            kwargs["closed"] = bool(closed)
+        if hidden is not None:
+            kwargs["hidden"] = bool(hidden)
+        res = await self._user_call("messages.editForumTopic", **kwargs)
+        if is_kernel and title is not None:
+            self.record_kernel_topic(tid, title)
+        return res
+
+    async def delete_topic(self, topic_id: int, *, module_id: str | None = None) -> Any:
+        tid = int(topic_id)
+        if tid == 1:
+            raise PermissionError("modification of forum group profile or settings is forbidden")
+        is_kernel = bool(module_id and hasattr(self._runtime, "_is_kernel_module") and self._runtime._is_kernel_module(module_id))
+        if not is_kernel and self.is_kernel_topic(tid):
+            raise PermissionError("access to kernel topic is forbidden")
+        chat_id = await self.ensure_group()
+        if chat_id is None:
+            raise RuntimeError("forum group is not available")
+        channel = self._user_channel(chat_id) or chat_id
+        return await self._user_call("messages.deleteTopicHistory", peer=channel, top_msg_id=tid)
+
+    async def delete_messages(self, message_ids: list[int], *, revoke: bool = True, module_id: str | None = None) -> Any:
+        is_kernel = bool(module_id and hasattr(self._runtime, "_is_kernel_module") and self._runtime._is_kernel_module(module_id))
+        ids = [int(mid) for mid in message_ids if isinstance(mid, (int, str)) and str(mid).isdigit()]
+        if not ids:
+            return None
+        if not is_kernel:
+            for mid in ids:
+                try:
+                    tid = await self.topic_id_of(mid)
+                except Exception:
+                    tid = None
+                if tid is not None and self.is_kernel_topic(tid):
+                    raise PermissionError("access to kernel topic is forbidden")
+        chat_id = await self.ensure_group()
+        if chat_id is None:
+            raise RuntimeError("forum group is not available")
+        use_bot = await self._bot_ready(chat_id)
+        if use_bot:
+            try:
+                peer = await self._bot_resolve(chat_id)
+                if peer:
+                    return await self._bot_call("channels.deleteMessages", channel=peer, id=ids)
+            except Exception:
+                pass
+        channel = self._user_channel(chat_id) or chat_id
+        return await self._user_call("channels.deleteMessages", channel=channel, id=ids)
+
+    async def delete(self, message_id: int, *, revoke: bool = True, module_id: str | None = None) -> Any:
+        return await self.delete_messages([int(message_id)], revoke=revoke, module_id=module_id)
+
+    async def send_message(self, topic_id: int, text: str, *, rich: Any = None, reply_to: int | None = None, module_id: str | None = None) -> Any:
+        return await self.send(topic_id, text, rich=rich, reply_to=reply_to, module_id=module_id)
+
+    async def edit_message(self, message_id: int, text: str, *, rich: Any = None, module_id: str | None = None) -> Any:
+        return await self.edit(message_id, text, rich=rich, module_id=module_id)
+
+    async def delete_message(self, message_id: int, *, revoke: bool = True, module_id: str | None = None) -> Any:
+        return await self.delete(message_id, revoke=revoke, module_id=module_id)
+
+    async def get_topics(self, limit: int = 100) -> list[dict[str, Any]]:
+        chat_id = await self.ensure_group()
+        if chat_id is None:
+            raise RuntimeError("forum group is not available")
+        channel = self._user_channel(chat_id) or chat_id
+        res = await self._user_call("messages.getForumTopics", peer=channel, offset_date=0, offset_id=0, offset_topic=0, limit=min(limit, 100))
+        body = self._body(res)
+        return _items(body.get("topics"))
+
+    async def get_all_topics(self, limit: int = 100) -> list[dict[str, Any]]:
+        return await self.get_topics(limit=limit)
+
+    async def get_active_topics(self, limit: int = 100) -> list[dict[str, Any]]:
+        topics = await self.get_topics(limit=limit)
+        return [t for t in topics if not t.get("closed") and not t.get("hidden")]
+
+    async def is_topic_exists(self, topic_id: int | None = None, title: str | None = None) -> bool:
+        topics = await self.get_topics(limit=100)
+        for t in topics:
+            if topic_id is not None and t.get("id") == int(topic_id):
+                return True
+            if title is not None and str(t.get("title") or "") == str(title):
+                return True
+        return False
+
 
 class InlineHelper:
 

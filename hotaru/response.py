@@ -528,8 +528,20 @@ class _ForumBoundHelper:
     async def ensure_topic(self, title: str, icon_emoji_id: int | None = None) -> int | None:
         return await self._helper.ensure_topic(title, icon_emoji_id=icon_emoji_id, module_id=self._module_id)
 
+    async def create_topic(self, title: str, icon_emoji_id: int | None = None) -> int | None:
+        return await self._helper.create_topic(title, icon_emoji_id=icon_emoji_id, module_id=self._module_id)
+
+    async def edit_topic(self, topic_id: int, title: str | None = None, icon_emoji_id: int | None = None, closed: bool | None = None, hidden: bool | None = None) -> Any:
+        return await self._helper.edit_topic(topic_id, title=title, icon_emoji_id=icon_emoji_id, closed=closed, hidden=hidden, module_id=self._module_id)
+
+    async def delete_topic(self, topic_id: int) -> Any:
+        return await self._helper.delete_topic(topic_id, module_id=self._module_id)
+
     async def send(self, topic_id: int, text: str, *, rich: Any = None, reply_to: int | None = None) -> Any:
         return await self._helper.send(topic_id, text, rich=rich, reply_to=reply_to, module_id=self._module_id)
+
+    async def send_message(self, topic_id: int, text: str, *, rich: Any = None, reply_to: int | None = None) -> Any:
+        return await self.send(topic_id, text, rich=rich, reply_to=reply_to)
 
     async def send_file(self, topic_id: int, path: Any, caption: str = "", *, file_name: str | None = None) -> Any:
         return await self._helper.send_file(topic_id, path, caption=caption, file_name=file_name, module_id=self._module_id)
@@ -537,11 +549,35 @@ class _ForumBoundHelper:
     async def edit(self, message_id: int, text: str, *, rich: Any = None) -> Any:
         return await self._helper.edit(message_id, text, rich=rich, module_id=self._module_id)
 
+    async def edit_message(self, message_id: int, text: str, *, rich: Any = None) -> Any:
+        return await self.edit(message_id, text, rich=rich)
+
     async def edit_file(self, message_id: int, path: Any, caption: str = "", *, file_name: str | None = None) -> Any:
         return await self._helper.edit_file(message_id, path, caption=caption, file_name=file_name, module_id=self._module_id)
 
+    async def delete(self, message_id: int, *, revoke: bool = True) -> Any:
+        return await self._helper.delete(message_id, revoke=revoke, module_id=self._module_id)
+
+    async def delete_message(self, message_id: int, *, revoke: bool = True) -> Any:
+        return await self.delete(message_id, revoke=revoke)
+
+    async def delete_messages(self, message_ids: list[int], *, revoke: bool = True) -> Any:
+        return await self._helper.delete_messages(message_ids, revoke=revoke, module_id=self._module_id)
+
     async def topic_id_of(self, message_id: int) -> int:
         return await self._helper.topic_id_of(message_id)
+
+    async def get_topics(self, limit: int = 100) -> list[dict[str, Any]]:
+        return await self._helper.get_topics(limit=limit)
+
+    async def get_all_topics(self, limit: int = 100) -> list[dict[str, Any]]:
+        return await self._helper.get_all_topics(limit=limit)
+
+    async def get_active_topics(self, limit: int = 100) -> list[dict[str, Any]]:
+        return await self._helper.get_active_topics(limit=limit)
+
+    async def is_topic_exists(self, topic_id: int | None = None, title: str | None = None) -> bool:
+        return await self._helper.is_topic_exists(topic_id=topic_id, title=title)
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self._helper, name)
