@@ -67,9 +67,6 @@ _MARKER_RE = re.compile(r"^(python_version|python_full_version)\s*(>=|<=|==|!=|>
 
 def normalize_version(raw: str) -> str:
     text = raw.strip().lower()
-    parts = text.split(".*")
-    if len(parts) == 2 and parts[0].isdigit() is False:
-        pass
     match = _VERSION_RE.match(text)
     if match is None:
         return text
