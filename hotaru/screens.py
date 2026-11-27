@@ -80,7 +80,7 @@ def _resolve_asset(name: str) -> tuple[str, str, Path] | None:
 
 async def _upload_asset(app: Any, media_id: str, kind: str, file_path: Path) -> dict[str, Any]:
     from relay.files import document, put
-    up = await put(app, str(file_path), file_name=file_path.name)
+    up = await put(app, str(file_path), file_name=file_path.name, connections=4)
     upload = document(up, mime="video/mp4" if kind == "video" else "image/png", force_file=False)
     if kind == "photo":
         media = {"_": "inputMediaUploadedPhoto", "file": upload["file"]}
@@ -1037,7 +1037,7 @@ class ScreenEngine:
                             actual_path = temp_p
                     else:
                         actual_path = cast('Path', path_or_url)
-                    entry = await asyncio.wait_for(_upload_asset(app, media_id, kind, actual_path), timeout=2.5)
+                    entry = await asyncio.wait_for(_upload_asset(app, media_id, kind, actual_path), timeout=12.0)
                     _banner_cache[key] = (time.monotonic(), entry)
                     state_obj = getattr(self.runtime, "state", None)
                     if state_obj is not None:
