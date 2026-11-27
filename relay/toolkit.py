@@ -1684,7 +1684,7 @@ def _has_env(*names: str) -> bool:
 
 
 def _is_hysteria() -> bool:
-    return os.environ.get("HYSTERIA", "").strip().lower() not in ("", "0", "false", "no", "off")
+    return os.environ.get("IS_HYSTERIA", "").strip().lower() in ("true", "1", "yes", "on")
 
 
 def _is_termux() -> bool:
