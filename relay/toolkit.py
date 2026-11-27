@@ -1684,6 +1684,9 @@ def _has_env(*names: str) -> bool:
 
 
 def _is_hysteria() -> bool:
+    value = os.environ.get("HYSTERIA", "").strip().lower()
+    if value and value not in ("0", "false", "no", "off"):
+        return True
     return os.environ.get("IS_HYSTERIA", "").strip().lower() in ("true", "1", "yes", "on")
 
 
