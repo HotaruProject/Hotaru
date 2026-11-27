@@ -1,6 +1,10 @@
 from __future__ import annotations
 import asyncio
+import functools
 import heapq
+import os
+import platform
+import socket
 import unicodedata
 import hashlib
 import html as _html_mod
@@ -1621,8 +1625,134 @@ def regdate(user_id: object, *, registration_month: object = None, not_after: ob
     }
 
 
+_WORDMARK_DEFAULT_EMOJI_ID = "5985527717183888277"
+_WORDMARK_TAIL = '<tg-emoji emoji-id="5985515480822061758">⚡</tg-emoji><tg-emoji emoji-id="5985558606588681366">⚡</tg-emoji><tg-emoji emoji-id="5985757321840565902">⚡</tg-emoji>'
+
+_PLATFORM_EMOJI_IDS: dict[str, str] = {
+    "aws": "5983370909161890072",
+    "cloudflare": "5983277961774638074",
+    "docker": "5985715179621458867",
+    "hysteria": "5787578601566117979",
+    "lxc": "5985824344805219991",
+    "railway": "5985425952228778632",
+    "azure": "5983585721951198506",
+    "contabo": "5985485012324065700",
+    "proxmox": "5985819684765703389",
+    "digitalocean": "5985626544381369838",
+    "vultr": "5985407191811629864",
+    "flyio": "5985739321632629365",
+    "oracle": "5985823533056401761",
+    "hetzner": "5985632441371468472",
+    "koyeb": "5985349841113325792",
+    "scaleway": "5985596556919710438",
+    "raspberrypi": "5985687378298151271",
+    "termux": "5985467506037369347",
+}
+
+_PLATFORM_ENV_MARKERS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("railway", ("RAILWAY_ENVIRONMENT", "RAILWAY_ENVIRONMENT_ID", "RAILWAY_PROJECT_ID", "RAILWAY_SERVICE_ID")),
+    ("koyeb", ("KOYEB_APP_NAME", "KOYEB_SERVICE_NAME", "KOYEB_REGION")),
+    ("flyio", ("FLY_APP_NAME", "FLY_MACHINE_ID", "FLY_ALLOC_ID")),
+    ("cloudflare", ("CLOUDFLARE_DEPLOYMENT_ID", "CLOUDFLARE_LOCATION", "CLOUDFLARE_COUNTRY_A2", "CF_PAGES", "WORKERS_CI")),
+    ("aws", ("AWS_EXECUTION_ENV", "ECS_CONTAINER_METADATA_URI", "ECS_CONTAINER_METADATA_URI_V4", "AWS_LAMBDA_FUNCTION_NAME")),
+)
+
+_PLATFORM_DMI_MARKERS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("hetzner", ("hetzner",)),
+    ("digitalocean", ("digitalocean",)),
+    ("vultr", ("vultr",)),
+    ("oracle", ("oraclecloud",)),
+    ("azure", ("7783-7084-3265-9085-8269-3286-77",)),
+    ("aws", ("amazon",)),
+    ("scaleway", ("scaleway",)),
+    ("contabo", ("contabo",)),
+)
+
+_DMI_FIELDS = ("sys_vendor", "product_name", "product_version", "board_vendor", "bios_vendor", "chassis_vendor", "chassis_asset_tag")
+
+
+def _read_lowered(path: str, limit: int = 16384) -> str:
+    try:
+        with open(path, "r", encoding="utf-8", errors="ignore") as handle:
+            return handle.read(limit).strip().lower()
+    except OSError:
+        return ""
+
+
+def _has_env(*names: str) -> bool:
+    return any(os.environ.get(name) for name in names)
+
+
+def _is_hysteria() -> bool:
+    return os.environ.get("HYSTERIA", "").strip().lower() not in ("", "0", "false", "no", "off")
+
+
+def _is_termux() -> bool:
+    return bool(os.environ.get("TERMUX_VERSION")) or "/com.termux/" in os.environ.get("PREFIX", "") or os.path.isdir("/data/data/com.termux")
+
+
+def _is_docker() -> bool:
+    if os.path.exists("/.dockerenv"):
+        return True
+    return "docker" in _read_lowered("/proc/1/cgroup") or "/docker/containers/" in _read_lowered("/proc/self/mountinfo", 262144)
+
+
+def _is_proxmox() -> bool:
+    return os.path.isdir("/etc/pve") or "-pve" in platform.release().lower()
+
+
+def _is_lxc() -> bool:
+    if _read_lowered("/run/systemd/container").startswith("lxc"):
+        return True
+    try:
+        with open("/proc/1/environ", "rb") as handle:
+            return b"container=lxc" in handle.read(65536)
+    except OSError:
+        return False
+
+
+def _is_raspberry_pi() -> bool:
+    return any("raspberry pi" in _read_lowered(path) for path in ("/proc/device-tree/model", "/sys/firmware/devicetree/base/model", "/proc/cpuinfo"))
+
+
+def _hostname_platform() -> str:
+    hostname = socket.gethostname().lower()
+    if hostname.startswith("scw-") or os.path.exists("/etc/scw-release"):
+        return "scaleway"
+    if "contabo" in hostname or re.match(r"vmi\d+", hostname):
+        return "contabo"
+    if os.path.isdir("/var/lib/waagent"):
+        return "azure"
+    return ""
+
+
+@functools.lru_cache(maxsize=1)
+def _detect_platform() -> str:
+    if _is_hysteria():
+        return "hysteria"
+    if _is_termux():
+        return "termux"
+    for name, variables in _PLATFORM_ENV_MARKERS:
+        if _has_env(*variables):
+            return name
+    if _is_docker():
+        return "docker"
+    if _is_proxmox():
+        return "proxmox"
+    if _is_lxc():
+        return "lxc"
+    if _is_raspberry_pi():
+        return "raspberrypi"
+    hardware = " ".join(_read_lowered(f"/sys/class/dmi/id/{field}") for field in _DMI_FIELDS)
+    for name, markers in _PLATFORM_DMI_MARKERS:
+        if any(marker in hardware for marker in markers):
+            return name
+    return _hostname_platform()
+
+
 def wordmark() -> str:
-    return '<tg-emoji emoji-id="5985527717183888277">⚡</tg-emoji><tg-emoji emoji-id="5985515480822061758">⚡</tg-emoji><tg-emoji emoji-id="5985558606588681366">⚡</tg-emoji><tg-emoji emoji-id="5985757321840565902">⚡</tg-emoji>'
+    emoji_id = _PLATFORM_EMOJI_IDS.get(_detect_platform(), _WORDMARK_DEFAULT_EMOJI_ID)
+    return f'<tg-emoji emoji-id="{emoji_id}">⚡</tg-emoji>{_WORDMARK_TAIL}'
 
 
 def paginate_chunks(text: str, limit: int = 4000) -> list[str]:
