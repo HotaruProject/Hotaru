@@ -61,7 +61,10 @@ def _prepare_database(path: Path) -> None:
             continue
         if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_nlink != 1:
             raise OSError("private storage must be an owned regular file")
-        target.chmod(0o600, follow_symlinks=False)
+        try:
+            target.chmod(0o600, follow_symlinks=False)
+        except NotImplementedError:
+            target.chmod(0o600)
 
 
 def key_file_value() -> str:
